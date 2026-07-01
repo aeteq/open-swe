@@ -22,43 +22,8 @@ SUPPORTED_MODELS: list[ModelOption] = [
         "supports_images": True,
     },
     {
-        "id": "anthropic:claude-sonnet-5",
-        "label": "Sonnet 5",
-        "efforts": ["low", "medium", "high", "xhigh", "max"],
-        "default_effort": "high",
-        "supports_images": True,
-    },
-    {
-        "id": "anthropic:claude-fable-5",
-        "label": "Fable 5",
-        "efforts": ["low", "medium", "high", "xhigh", "max"],
-        "default_effort": "high",
-        "supports_images": True,
-    },
-    {
         "id": "openai:gpt-5.5",
         "label": "GPT-5.5",
-        "efforts": ["none", "low", "medium", "high", "xhigh"],
-        "default_effort": "xhigh",
-        "supports_images": True,
-    },
-    {
-        "id": "openai:gpt-5.6-sol",
-        "label": "GPT-5.6 Sol",
-        "efforts": ["none", "low", "medium", "high", "xhigh"],
-        "default_effort": "xhigh",
-        "supports_images": True,
-    },
-    {
-        "id": "openai:gpt-5.6-terra",
-        "label": "GPT-5.6 Terra",
-        "efforts": ["none", "low", "medium", "high", "xhigh"],
-        "default_effort": "xhigh",
-        "supports_images": True,
-    },
-    {
-        "id": "openai:gpt-5.6-luna",
-        "label": "GPT-5.6 Luna",
         "efforts": ["none", "low", "medium", "high", "xhigh"],
         "default_effort": "xhigh",
         "supports_images": True,
@@ -95,34 +60,7 @@ SUPPORTED_MODELS: list[ModelOption] = [
 
 SUPPORTED_MODEL_IDS: frozenset[str] = frozenset(m["id"] for m in SUPPORTED_MODELS)
 
-FABLE_MODEL_IDS: frozenset[str] = frozenset(
-    m["id"] for m in SUPPORTED_MODELS if m["id"].startswith("anthropic:claude-fable")
-)
-
-
-def fable_disabled_fallback(effort: object = None) -> tuple[str, str]:
-    """Newest supported non-Fable Anthropic model (keeps the Claude family),
-    else the global default. Substitutes a Fable selection when Fable is
-    disabled workspace-wide, preserving ``effort`` when the fallback supports it."""
-    for m in SUPPORTED_MODELS:
-        if m["id"].startswith("anthropic:") and m["id"] not in FABLE_MODEL_IDS:
-            return m["id"], _fallback_effort_for(m, effort) or m["default_effort"]
-    return default_model_pair()
-
-
-def gate_fable_model(
-    model_id: str, effort: str | None, *, fable_enabled: bool
-) -> tuple[str, str | None]:
-    """ZDR guard: if Fable is disabled but a Fable id was resolved, swap in a
-    safe non-Fable model. Non-Fable selections pass through unchanged. Applied
-    at every model-construction entrypoint so a disabled Fable model can never
-    reach ``make_model``, no matter which layer selected it."""
-    if not fable_enabled and isinstance(model_id, str) and model_id in FABLE_MODEL_IDS:
-        return fable_disabled_fallback(effort)
-    return model_id, effort
-
-
-DEFAULT_MODEL_ID: str = "openai:gpt-5.5"
+DEFAULT_MODEL_ID: str = "anthropic:claude-opus-4-8"
 DEFAULT_MODEL_EFFORT: str = "medium"
 
 
@@ -145,16 +83,6 @@ def _provider_of(model_id: str) -> str | None:
     return provider if rest else None
 
 
-def _claude_family_of(model_id: str) -> str | None:
-    provider, _, name = model_id.partition(":")
-    if provider != "anthropic" or not name.startswith("claude-"):
-        return None
-    parts = name.split("-")
-    if len(parts) < 2:
-        return None
-    return "-".join(parts[:2])
-
-
 def _fallback_effort_for(model: ModelOption, effort: object) -> str | None:
     if not isinstance(effort, str):
         return None
@@ -170,25 +98,19 @@ def _fallback_effort_for(model: ModelOption, effort: object) -> str | None:
 
 
 def provider_fallback_pair(model_id: object, effort: object = None) -> tuple[str, str] | None:
-    """Newest supported ``(model_id, effort)`` for the same provider/family.
+    """Newest supported ``(model_id, effort)`` for the same provider as ``model_id``.
 
     Keeps a stored selection on its original provider when its exact id has
-    dropped out of the supported set (e.g. an Opus minor-version bump), preferring
-    the same Claude family when available instead of falling through to the
-    cross-provider global default. Preserves ``effort`` when the fallback model
-    supports it, otherwise uses that model's default effort. Returns ``None`` when
-    no supported model shares the provider.
+    dropped out of the supported set (e.g. an Opus minor-version bump), instead
+    of falling through to the cross-provider global default. Preserves ``effort``
+    when the fallback model supports it, otherwise uses that model's default
+    effort. Returns ``None`` when no supported model shares the provider.
     """
     if not isinstance(model_id, str):
         return None
     provider = _provider_of(model_id)
     if provider is None:
         return None
-    family = _claude_family_of(model_id)
-    if family is not None:
-        for m in SUPPORTED_MODELS:
-            if _provider_of(m["id"]) == provider and _claude_family_of(m["id"]) == family:
-                return m["id"], _fallback_effort_for(m, effort) or m["default_effort"]
     for m in SUPPORTED_MODELS:
         if _provider_of(m["id"]) == provider:
             return m["id"], _fallback_effort_for(m, effort) or m["default_effort"]
