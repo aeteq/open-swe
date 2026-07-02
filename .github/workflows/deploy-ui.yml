@@ -7,6 +7,9 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
     steps:
       - name: Checkout repo
         uses: actions/checkout@v6
