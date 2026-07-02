@@ -1028,7 +1028,9 @@ async def test_reviewer_injects_pr_review_threads_into_re_review_context() -> No
             "original_line": 5,
             "is_resolved": False,
             "is_outdated": False,
-            "comments": [{"author": "jarvis-aeteq[bot]", "body": "same bug again", "created_at": ""}],
+            "comments": [
+                {"author": "jarvis-aeteq[bot]", "body": "same bug again", "created_at": ""}
+            ],
         }
     ]
 

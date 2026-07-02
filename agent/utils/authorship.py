@@ -185,7 +185,9 @@ def add_pr_collaboration_note(
         legacy_footers.append(
             f"_Opened collaboratively by {identity.pr_attribution_name} and jarvis-aeteq._"
         )
-        legacy_footers.append(f"_Opened collaboratively by {identity.display_name} and jarvis-aeteq._")
+        legacy_footers.append(
+            f"_Opened collaboratively by {identity.display_name} and jarvis-aeteq._"
+        )
     for legacy in legacy_footers:
         if legacy in normalized_body:
             return normalized_body.replace(legacy, note)

@@ -46,7 +46,9 @@ async def _resolve_pr_author_token() -> tuple[str | None, str]:
         user_token = await get_valid_access_token(github_login.strip())
         if user_token:
             return user_token, "user"
-        logger.info("No valid user token for %s; opening PR as jarvis-aeteq[bot]", github_login.strip())
+        logger.info(
+            "No valid user token for %s; opening PR as jarvis-aeteq[bot]", github_login.strip()
+        )
 
     return await get_github_app_installation_token(), "bot"
 
