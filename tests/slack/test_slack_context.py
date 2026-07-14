@@ -500,10 +500,12 @@ def _setup_slack_mention_fakes(
         runs = _FakeRunsClient()
         threads = _FakeThreadsClientForProcess()
 
-    monkeypatch.setattr(webapp, "SLACK_BOT_USERNAME", "jarvis-aeteq")
-    monkeypatch.setattr(webapp, "get_slack_user_info", fake_get_slack_user_info)
-    monkeypatch.setattr(webapp, "fetch_slack_thread_messages", fake_fetch_slack_thread_messages)
-    monkeypatch.setattr(webapp, "get_slack_user_names", fake_get_slack_user_names)
+    monkeypatch.setattr(webhook_common, "SLACK_BOT_USERNAME", "jarvis-aeteq")
+    monkeypatch.setattr(webhook_common, "get_slack_user_info", fake_get_slack_user_info)
+    monkeypatch.setattr(
+        webhook_common, "fetch_slack_thread_messages", fake_fetch_slack_thread_messages
+    )
+    monkeypatch.setattr(webhook_common, "get_slack_user_names", fake_get_slack_user_names)
     monkeypatch.setattr(
         webhook_common, "fetch_slack_thread_messages", fake_fetch_slack_thread_messages
     )

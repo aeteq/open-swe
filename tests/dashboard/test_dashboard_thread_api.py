@@ -12,6 +12,8 @@ from agent.dashboard.options import model_supports_images
 
 _TEXT_ONLY_MODEL = "fireworks:accounts/fireworks/models/deepseek-v4-pro"
 _VISION_MODEL = "anthropic:claude-opus-4-8"
+_FABLE = "anthropic:claude-fable-5"
+_PAIR = ("openai:gpt-5.6-sol", "medium")
 
 
 def _image() -> thread_api.DashboardImageBody:
