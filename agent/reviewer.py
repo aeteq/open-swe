@@ -1282,11 +1282,6 @@ async def get_reviewer_agent(config: RunnableConfig) -> Pregel:
         logger.info("No thread_id or not for execution, returning reviewer agent without sandbox")
         return create_deep_agent(system_prompt="", tools=[]).with_config(config)
 
-<<<<<<< HEAD
-    configurable = config["configurable"]
-    configured_model_id = configurable.get("reviewer_model_id")
-    configured_effort = configurable.get("reviewer_reasoning_effort")
-=======
     repo_config = config["configurable"].get("repo") or {}
     github_token: str | None = None
     if config["configurable"].get("source"):
@@ -1535,7 +1530,6 @@ async def get_reviewer_agent(config: RunnableConfig) -> Pregel:
 
     configured_model_id = config["configurable"].get("reviewer_model_id")
     configured_effort = config["configurable"].get("reviewer_reasoning_effort")
->>>>>>> 8920c08a (feat: create dispatch workflow to deploy to s3 #9 (#10))
     if isinstance(configured_model_id, str) and configured_model_id:
         model_id = configured_model_id
         reasoning_effort = configured_effort if isinstance(configured_effort, str) else None

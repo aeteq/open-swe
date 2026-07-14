@@ -733,11 +733,7 @@ async def process_github_pr_comment(payload: dict[str, Any], event_type: str) ->
             repo_config, pr_number, token=github_token
         )
     if not comments:
-<<<<<<< HEAD
-        common.logger.info("No comments found since last @open-swe tag for PR %s", pr_number)
-=======
-        webapp.logger.info("No comments found since last @jarvis-aeteq tag for PR %s", pr_number)
->>>>>>> 8920c08a (feat: create dispatch workflow to deploy to s3 #9 (#10))
+        common.logger.info("No comments found since last @jarvis-aeteq tag for PR %s", pr_number)
         return
 
     prompt = common.build_pr_prompt(comments, pr_url, repo_config=repo_config)

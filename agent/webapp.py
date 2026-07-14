@@ -2000,4 +2000,3 @@ from .webhooks.github import (  # noqa: E402,F401
 )
 from .webhooks.linear import process_linear_issue  # noqa: E402,F401
 from .webhooks.slack import process_slack_mention  # noqa: E402,F401
->>>>>>> 19e57b39 (feat: use aeteq github handle (#7))

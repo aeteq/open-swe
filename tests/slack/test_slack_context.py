@@ -500,15 +500,10 @@ def _setup_slack_mention_fakes(
         runs = _FakeRunsClient()
         threads = _FakeThreadsClientForProcess()
 
-<<<<<<< HEAD:tests/slack/test_slack_context.py
-    monkeypatch.setattr(webhook_common, "SLACK_BOT_USERNAME", "open-swe")
-    monkeypatch.setattr(webhook_common, "get_slack_user_info", fake_get_slack_user_info)
-=======
     monkeypatch.setattr(webapp, "SLACK_BOT_USERNAME", "jarvis-aeteq")
     monkeypatch.setattr(webapp, "get_slack_user_info", fake_get_slack_user_info)
     monkeypatch.setattr(webapp, "fetch_slack_thread_messages", fake_fetch_slack_thread_messages)
     monkeypatch.setattr(webapp, "get_slack_user_names", fake_get_slack_user_names)
->>>>>>> 8920c08a (feat: create dispatch workflow to deploy to s3 #9 (#10)):tests/test_slack_context.py
     monkeypatch.setattr(
         webhook_common, "fetch_slack_thread_messages", fake_fetch_slack_thread_messages
     )

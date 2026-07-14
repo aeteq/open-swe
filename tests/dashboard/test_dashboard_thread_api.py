@@ -11,13 +11,9 @@ from agent.dashboard.agent_overrides import resolve_agent_model_id
 from agent.dashboard.options import model_supports_images
 
 _TEXT_ONLY_MODEL = "fireworks:accounts/fireworks/models/deepseek-v4-pro"
-<<<<<<< HEAD:tests/dashboard/test_dashboard_thread_api.py
-_VISION_MODEL = "openai:gpt-5.5"
 _FABLE = "anthropic:claude-fable-5"
 _PAIR = ("openai:gpt-5.6-sol", "medium")
-=======
 _VISION_MODEL = "anthropic:claude-opus-4-8"
->>>>>>> 8920c08a (feat: create dispatch workflow to deploy to s3 #9 (#10)):tests/test_dashboard_thread_api.py
 
 
 def _image() -> thread_api.DashboardImageBody:
