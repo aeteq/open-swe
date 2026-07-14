@@ -296,7 +296,7 @@ def test_github_webhook_ignores_unmentioned_comment_without_info_log(monkeypatch
     assert response.status_code == 200
     assert response.json() == {
         "status": "ignored",
-        "reason": "Comment does not mention @jarvis-aeteq",
+        "reason": "Comment does not mention @jarvisaeteq or @jarvis-aeteq",
     }
     assert "does not mention @jarvis-aeteq" not in caplog.text
 
