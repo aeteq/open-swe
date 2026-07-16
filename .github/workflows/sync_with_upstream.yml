@@ -40,8 +40,8 @@ jobs:
       - name: Replay fork commits on top of upstream
         id: rebase
         run: |
-          # Get all fork-only commits (commits in main that aren't in upstream)
-          FORK_COMMITS=$(git rev-list --reverse upstream/main..origin/main)
+          # Get all fork-only commits, skipping merge commits (previous syncs)
+          FORK_COMMITS=$(git rev-list --reverse --no-merges upstream/main..origin/main)
           if [ -z "$FORK_COMMITS" ]; then
             echo "No fork-specific commits to replay."
             echo "has_commits=false" >> $GITHUB_OUTPUT
