@@ -67,22 +67,27 @@ jobs:
             exit 0
           fi
           CONFLICT_FILES="${{ steps.conflicts.outputs.files }}"
-          if [ -n "$CONFLICT_FILES" ]; then
-            TITLE="chore: sync with upstream (conflicts auto-resolved)"
-            FILE_LIST=$(echo "$CONFLICT_FILES" | sed 's/^/- `/' | sed 's/$/`/')
-            BODY="Automated sync hit merge conflicts that were auto-resolved by keeping our fork's version (\`-X ours\`).
-
-**Files where our version was kept over upstream's:**
-$FILE_LIST
-
-Review these files to check if upstream made important changes."
-          else
-            TITLE="chore: sync with upstream"
-            BODY="Automated PR to pull in upstream changes."
-          fi
           EXISTING_PR=$(gh pr list --repo aeteq/open-swe --head sync-upstream --base main --json number --jq '.[0].number')
           if [ -n "$EXISTING_PR" ]; then
             echo "PR #$EXISTING_PR already exists."
+            exit 0
+          fi
+          if [ -n "$CONFLICT_FILES" ]; then
+            FILE_LIST=$(echo "$CONFLICT_FILES" | sed 's/^/- `/' | sed 's/$/`/')
+            BODY=$(cat <<EOF
+          Automated sync hit merge conflicts that were auto-resolved by keeping our fork's version (\`-X ours\`).
+
+          **Files where our version was kept over upstream's:**
+          ${FILE_LIST}
+
+          Review these files to check if upstream made important changes.
+          EOF
+          )
+            gh pr create --repo aeteq/open-swe --head sync-upstream --base main \
+              --title "chore: sync with upstream (conflicts auto-resolved)" \
+              --body "$BODY"
           else
-            gh pr create --repo aeteq/open-swe --head sync-upstream --base main --title "$TITLE" --body "$BODY"
+            gh pr create --repo aeteq/open-swe --head sync-upstream --base main \
+              --title "chore: sync with upstream" \
+              --body "Automated PR to pull in upstream changes."
           fi
