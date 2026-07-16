@@ -91,7 +91,11 @@ function RepositoriesOwnerPage() {
       title={owner}
       description={
         canEdit
+<<<<<<< HEAD
           ? "Choose which repositories run Jarvis Review automatically. All installed repositories remain available for on-demand reviews."
+=======
+          ? "Choose which repositories run Open SWE Review automatically. All installed repositories remain available for on-demand reviews."
+>>>>>>> upstream/main
           : "Automatic review settings are read-only for non-admins."
       }
       backTo={{ to: "/review", label: "Back to Jarvis Review" }}

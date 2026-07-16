@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import hmac
 import logging
 import os
-import random
 import re
 import time
 from dataclasses import dataclass
@@ -19,6 +19,7 @@ from langgraph_sdk.client import LangGraphClient
 
 from agent.utils.dashboard_links import dashboard_thread_url
 from agent.utils.langsmith import get_langsmith_trace_url
+from agent.utils.thread_ids import generate_thread_id_from_slack_thread
 
 from .http import DEFAULT_HTTP_TIMEOUT
 
@@ -47,6 +48,8 @@ DEFAULT_LOADING_MESSAGES: tuple[str, ...] = (
     "Tinkering…",
     "Schlepping…",
 )
+SLACK_WEB_LINK_FOOTER_LABEL = "Open in Web"
+SLACK_SECTION_TEXT_MAX_CHARS = 3000
 
 
 @dataclass(frozen=True)
@@ -363,6 +366,68 @@ async def _post_slack_message_with_ts(
             return None, f"http_error: {type(exc).__name__}"
 
 
+def _slack_thread_dashboard_url(channel_id: str, thread_ts: str) -> str | None:
+    thread_id = generate_thread_id_from_slack_thread(channel_id, thread_ts)
+    return dashboard_thread_url(thread_id)
+
+
+def format_slack_web_link_footer(dashboard_url: str | None) -> str:
+    """Format the compact Slack Web footer link."""
+    if not dashboard_url:
+        return ""
+    return f"<{dashboard_url}|{SLACK_WEB_LINK_FOOTER_LABEL}>"
+
+
+def append_slack_web_link_footer(text: str, dashboard_url: str | None) -> str:
+    """Append the compact Slack Web footer link to fallback text."""
+    footer = format_slack_web_link_footer(dashboard_url)
+    if not footer or footer in text:
+        return text
+    stripped = text.rstrip()
+    if not stripped:
+        return footer
+    return f"{stripped} {footer}"
+
+
+def _slack_web_link_context_block(dashboard_url: str | None) -> dict[str, Any] | None:
+    footer = format_slack_web_link_footer(dashboard_url)
+    if not footer:
+        return None
+    return {"type": "context", "elements": [{"type": "mrkdwn", "text": footer}]}
+
+
+def _block_contains_text(block: dict[str, Any], needle: str) -> bool:
+    text = block.get("text")
+    if isinstance(text, dict) and needle in str(text.get("text") or ""):
+        return True
+    elements = block.get("elements")
+    if isinstance(elements, list):
+        return any(
+            isinstance(item, dict) and needle in str(item.get("text") or "") for item in elements
+        )
+    return False
+
+
+def _with_slack_web_link_context_block(
+    text: str, blocks: list[dict[str, Any]] | None, dashboard_url: str | None
+) -> list[dict[str, Any]] | None:
+    context_block = _slack_web_link_context_block(dashboard_url)
+    if context_block is None:
+        return blocks
+    if not blocks:
+        if len(text) > SLACK_SECTION_TEXT_MAX_CHARS:
+            return None
+        return [
+            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+            context_block,
+        ]
+    updated_blocks = copy.deepcopy(blocks)
+    if any(_block_contains_text(block, dashboard_url) for block in updated_blocks):
+        return updated_blocks
+    updated_blocks.append(context_block)
+    return updated_blocks
+
+
 async def post_slack_thread_reply_with_ts(
     channel_id: str,
     thread_ts: str,
@@ -373,6 +438,9 @@ async def post_slack_thread_reply_with_ts(
     blocks: list[dict[str, Any]] | None = None,
 ) -> tuple[str | None, str | None]:
     """Post a reply in a Slack thread and return its Slack timestamp and error."""
+    dashboard_url = _slack_thread_dashboard_url(channel_id, thread_ts)
+    blocks = _with_slack_web_link_context_block(text, blocks, dashboard_url)
+    text = append_slack_web_link_footer(text, dashboard_url)
     return await _post_slack_message_with_ts(
         channel_id,
         text,
@@ -969,6 +1037,7 @@ async def resolve_slack_links_in_context(
     return resolved_links_section, image_urls
 
 
+<<<<<<< HEAD
 TRACE_REPLY_TIPS: tuple[str, ...] = (
     "You can message me in this thread while I'm running — I'll pick up your follow-up before my next step.",
     "Kick off another task in parallel — each one runs in its own isolated sandbox, no queuing.",
@@ -990,6 +1059,8 @@ TRACE_REPLY_TIPS: tuple[str, ...] = (
     "Ask me to search the web — I have a `web_search` tool for finding docs, examples, and GitHub repos mid-task.",
     "I can read, update, and create Linear issues directly — useful for filing follow-up tickets or linking work back to a project.",
 )
+=======
+>>>>>>> upstream/main
 TRACE_REPLY_WEB_HANDOFF_NOTICE = (
     "Conversation moved to Web — use the `Open in Web` link above for follow-ups."
 )
@@ -998,7 +1069,7 @@ TRACE_REPLY_WEB_HANDOFF_NOTICE = (
 def _format_trace_reply(
     trace_url: str | None, dashboard_url: str | None, *, moved_to_web: bool = False
 ) -> str:
-    """Format the initial trace reply with status text."""
+    """Format the trace reply with status text."""
     links = []
     if trace_url:
         links.append(f"<{trace_url}|View trace>")
@@ -1007,8 +1078,7 @@ def _format_trace_reply(
     head = f"{' • '.join(links)}\n" if links else ""
     if moved_to_web:
         return f"{head}_{TRACE_REPLY_WEB_HANDOFF_NOTICE}_"
-    tip = random.choice(TRACE_REPLY_TIPS)
-    return f"{head}_Tip: {tip}_"
+    return head.rstrip()
 
 
 async def post_slack_trace_reply(

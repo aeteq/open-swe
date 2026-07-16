@@ -32,10 +32,17 @@ async def _resolve_pr_author_token() -> tuple[str | None, str]:
     """Return ``(token, kind)`` for opening the PR.
 
     Prefers the triggering user's OAuth token (so the PR is created *as them*)
+<<<<<<< HEAD
     for Slack/dashboard runs with a mapped GitHub login, resolving it by login
     from the dashboard OAuth store. Falls back to the GitHub App installation
     token (creator = jarvis-aeteq[bot]) for GitHub-triggered runs, unmapped users,
     or bot-token-only deployments — preserving today's behavior.
+=======
+    for Slack/Linear/dashboard runs with a mapped GitHub login, resolving it by
+    login from the dashboard OAuth store. Falls back to the GitHub App
+    installation token (creator = open-swe[bot]) for GitHub-triggered runs,
+    unmapped users, or bot-token-only deployments — preserving today's behavior.
+>>>>>>> upstream/main
 
     The token is resolved by login rather than read from the shared thread
     metadata: Slack thread ids are shared across a conversation, so a cached

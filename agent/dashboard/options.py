@@ -122,7 +122,11 @@ def gate_fable_model(
     return model_id, effort
 
 
+<<<<<<< HEAD
 DEFAULT_MODEL_ID: str = "anthropic:claude-opus-4-8"
+=======
+DEFAULT_MODEL_ID: str = "openai:gpt-5.5"
+>>>>>>> upstream/main
 DEFAULT_MODEL_EFFORT: str = "medium"
 
 

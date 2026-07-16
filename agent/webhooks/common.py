@@ -121,6 +121,10 @@ from ..utils.slack_feedback import (
     process_slack_reaction_removed,
 )
 from ..utils.thread_ids import generate_thread_id_from_slack_thread
+<<<<<<< HEAD
+=======
+from ..utils.thread_ops import queue_message_for_thread  # noqa: F401
+>>>>>>> upstream/main
 
 __all__ = [
     "Any",
@@ -234,6 +238,10 @@ __all__ = [
     "post_slack_trace_reply",
     "process_slack_reaction_added",
     "process_slack_reaction_removed",
+<<<<<<< HEAD
+=======
+    "queue_message_for_thread",
+>>>>>>> upstream/main
     "react_to_github_comment",
     "react_to_linear_comment",
     "reconcile_findings_with_review_threads",

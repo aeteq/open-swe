@@ -59,6 +59,23 @@ async def slack_webhook(
             return {"status": "accepted", "message": "Reaction removal queued"}
         return {"status": "ignored", "reason": "Reaction not tracked for feedback"}
 
+<<<<<<< HEAD
+=======
+    bot_user_id = common.SLACK_BOT_USER_ID
+    if not bot_user_id:
+        authorizations = payload.get("authorizations", [])
+        if isinstance(authorizations, list) and authorizations:
+            auth_user_id = authorizations[0].get("user_id")
+            if isinstance(auth_user_id, str):
+                bot_user_id = auth_user_id
+    if not bot_user_id:
+        authed_users = payload.get("authed_users", [])
+        if isinstance(authed_users, list) and authed_users:
+            first_user = authed_users[0]
+            if isinstance(first_user, str):
+                bot_user_id = first_user
+
+>>>>>>> upstream/main
     is_direct_message = (
         event.get("type") == "message"
         and event.get("channel_type") == "im"
@@ -85,8 +102,30 @@ async def slack_webhook(
                 str(event.get("user") or ""),
             )
         )
+<<<<<<< HEAD
         should_handle_message = any(
             (has_username_mention, has_id_mention, is_ready_plan_reply, is_direct_message)
+=======
+        is_untagged_two_party_reply = bool(
+            event.get("type") == "message"
+            and not event.get("subtype")
+            and not is_direct_message
+            and await service._slack_thread_allows_untagged_reply(
+                str(event.get("channel") or ""),
+                str(event.get("thread_ts") or ""),
+                message_text,
+                bot_user_id,
+            )
+        )
+        should_handle_message = any(
+            (
+                has_username_mention,
+                has_id_mention,
+                is_ready_plan_reply,
+                is_direct_message,
+                is_untagged_two_party_reply,
+            )
+>>>>>>> upstream/main
         )
         if not should_handle_message:
             return {"status": "ignored", "reason": "Not an app mention, DM, or plan reply"}
@@ -102,6 +141,7 @@ async def slack_webhook(
     if not channel_id or not event_ts or not thread_ts:
         return {"status": "ignored", "reason": "Missing channel/thread timestamp"}
 
+<<<<<<< HEAD
     bot_user_id = common.SLACK_BOT_USER_ID
     if not bot_user_id:
         authorizations = payload.get("authorizations", [])
@@ -116,6 +156,8 @@ async def slack_webhook(
             if isinstance(first_user, str):
                 bot_user_id = first_user
 
+=======
+>>>>>>> upstream/main
     if bot_user_id and user_id == bot_user_id:
         return {"status": "ignored", "reason": "Event from this bot user"}
 

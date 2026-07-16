@@ -90,7 +90,11 @@ function ReviewPage() {
   return (
     <AppShell
       user={session.data}
+<<<<<<< HEAD
       title="Jarvis Review"
+=======
+      title="Open SWE Review"
+>>>>>>> upstream/main
       description="Review pull requests for bugs and issues on demand, or run reviews automatically. Runs are billed based on underlying agent usage."
     >
       <RepositoriesSection canEdit={canEdit} />

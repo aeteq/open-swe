@@ -11,7 +11,11 @@ from agent.dashboard.agent_overrides import resolve_agent_model_id
 from agent.dashboard.options import model_supports_images
 
 _TEXT_ONLY_MODEL = "fireworks:accounts/fireworks/models/deepseek-v4-pro"
+<<<<<<< HEAD
 _VISION_MODEL = "anthropic:claude-opus-4-8"
+=======
+_VISION_MODEL = "openai:gpt-5.5"
+>>>>>>> upstream/main
 _FABLE = "anthropic:claude-fable-5"
 _PAIR = ("openai:gpt-5.6-sol", "medium")
 

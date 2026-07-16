@@ -1,5 +1,6 @@
 export function Logo() {
   const ascii = [
+<<<<<<< HEAD
 "      ███                                   ███          ",
 "      ░░░                                   ░░░          ",
 "     █████  ██████   ████████  █████ █████ ████   █████ ",
@@ -11,12 +12,27 @@ export function Logo() {
 " ███ ░███                                               ",
 "░░██████                                                ",
 " ░░░░░░                                                 ",
+=======
+    "  ██████  ████████   ██████  ████████               █████  █████ ███ █████  ██████ ",
+    " ███░░███░░███░░███ ███░░███░░███░░███  ██████████ ███░░  ░░███ ░███░░███  ███░░███",
+    "░███ ░███ ░███ ░███░███████  ░███ ░███ ░░░░░░░░░░ ░░█████  ░███ ░███ ░███ ░███████ ",
+    "░███ ░███ ░███ ░███░███░░░   ░███ ░███             ░░░░███ ░░███████████  ░███░░░  ",
+    "░░██████  ░███████ ░░██████  ████ █████            ██████   ░░████░████   ░░██████ ",
+    " ░░░░░░   ░███░░░   ░░░░░░  ░░░░ ░░░░░            ░░░░░░     ░░░░ ░░░░     ░░░░░░  ",
+    "          ░███                                                                     ",
+    "          █████                                                                    ",
+    "         ░░░░░                                                                     ",
+>>>>>>> upstream/main
   ].join("\n");
 
   return (
     <div className="w-full" style={{ containerType: "inline-size" }}>
       <pre
+<<<<<<< HEAD
         className="m-0 w-full overflow-hidden text-center font-mono leading-none text-[#F5A623]"
+=======
+        className="m-0 w-full overflow-hidden text-center font-mono leading-none text-[#87CEEB]"
+>>>>>>> upstream/main
         style={{ fontSize: "min(7px, 1.9cqw)" }}
       >
         {ascii}

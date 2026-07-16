@@ -141,10 +141,14 @@ async def github_webhook(
             event_type,
             f" action={action}" if action else "",
         )
+<<<<<<< HEAD
         return {
             "status": "ignored",
             "reason": "Comment does not mention @jarvisaeteq or @jarvis-aeteq",
         }
+=======
+        return {"status": "ignored", "reason": "Comment does not mention @openswe or @open-swe"}
+>>>>>>> upstream/main
 
     gate_rejection = await common._enforce_public_repo_org_gate(payload, event_type)
     if gate_rejection is not None:

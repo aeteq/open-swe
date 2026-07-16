@@ -733,7 +733,11 @@ async def process_github_pr_comment(payload: dict[str, Any], event_type: str) ->
             repo_config, pr_number, token=github_token
         )
     if not comments:
+<<<<<<< HEAD
         common.logger.info("No comments found since last @jarvis-aeteq tag for PR %s", pr_number)
+=======
+        common.logger.info("No comments found since last @open-swe tag for PR %s", pr_number)
+>>>>>>> upstream/main
         return
 
     prompt = common.build_pr_prompt(comments, pr_url, repo_config=repo_config)
