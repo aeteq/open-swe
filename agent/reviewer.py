@@ -1276,11 +1276,13 @@ async def get_reviewer_agent(config: RunnableConfig) -> Pregel:
     """Get or create a reviewer agent with checkpointed run prep."""
     thread_id = config["configurable"].get("thread_id", None)
 
-    config["recursion_limit"] = DEFAULT_RECURSION_LIMIT
 
-    if thread_id is None or not graph_loaded_for_execution(config):
-        logger.info("No thread_id or not for execution, returning reviewer agent without sandbox")
-        return create_deep_agent(system_prompt="", tools=[]).with_config(config)
+async def _cached_gateway_enabled() -> bool:
+    return await ttl_cache.cached(
+        f"team:gateway-enabled:{id(get_effective_gateway_enabled)}",
+        60,
+        get_effective_gateway_enabled,
+    )
 
     configurable = config["configurable"]
     configured_model_id = configurable.get("reviewer_model_id")

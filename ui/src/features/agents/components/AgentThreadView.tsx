@@ -12,6 +12,10 @@ import type { ModelSelection } from "@/features/agents/lib/provider/useModelOpti
 import {
   AgentGitPanel,
   PANEL_MIN_CHAT_WIDTH,
+} from "@/features/agents/components/AgentGitPanel"
+import { AgentPromptBar } from "@/features/agents/components/AgentPromptBar"
+import { WorkflowApprovalCard } from "@/features/agents/components/WorkflowApprovalCard"
+import {
   readStoredPanelCollapsed,
   writeStoredPanelCollapsed,
 } from "@/features/agents/components/AgentGitPanel"
@@ -137,6 +141,19 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
           <div className="border-b border-[var(--ui-border)] bg-[var(--ui-danger)]/10 px-4 py-2 text-xs text-[var(--ui-danger)]">
             The last run hit an error before it could finish. Send another
             message to retry.
+            {thread.traceUrl && (
+              <>
+                {" "}
+                <a
+                  href={thread.traceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium underline underline-offset-2"
+                >
+                  Open trace
+                </a>
+              </>
+            )}
           </div>
         )}
         <WorkflowApprovalCard

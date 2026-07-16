@@ -118,6 +118,20 @@ def _format_slack_thread_section(
     return "\n".join(lines)
 
 
+def _format_slack_run_links_section(thread_id: str) -> str:
+    dashboard_url = common.dashboard_thread_url(thread_id)
+    trace_url = get_langsmith_trace_url(thread_id)
+    lines = ["## Open SWE Links"]
+    if dashboard_url:
+        lines.append(f"- Web: {dashboard_url}")
+    if trace_url:
+        lines.append(f"- Trace: {trace_url}")
+    lines.append(
+        "- A compact Web footer is added automatically to Slack replies; do not duplicate it manually. Share the Web or trace URL above only if asked."
+    )
+    return "\n".join(lines)
+
+
 async def process_slack_mention(event_data: dict[str, Any], repo_config: dict[str, str]) -> None:
     """Process a Slack request by creating a run or queuing a mid-run message."""
     try:
@@ -328,11 +342,14 @@ async def _process_slack_mention_impl(
         "Use this only if the Slack conversation does not identify a different repository.\n\n"
         f"## Triggered by\n{trigger_user}\n\n"
         f"{slack_thread_section}\n\n"
+        f"{_format_slack_run_links_section(thread_id)}\n\n"
         f"## Conversation Context\n{context_text}\n\n"
         f"## Latest Mention Request\n{clean_text}\n\n"
         + (f"{resolved_links_section}\n\n" if resolved_links_section else "")
         + "Use `slack_thread_reply` to communicate in this Slack thread for clarifications, "
-        "substantive updates, and final summaries. Use `slack_add_reaction` with :eyes: "
+        "substantive updates, and final summaries. For Slack requests that require non-trivial "
+        "work, post a very short acknowledgement like `On it!` as soon as possible before "
+        "cloning/checking out repositories, then continue. Use `slack_add_reaction` with :eyes: "
         "instead of posting perfunctory confirmation replies to user follow-up requests. "
         "Use `slack_read_thread_messages` to read any Slack messages by providing channel_id "
         "and message_ts."
@@ -491,9 +508,7 @@ async def _process_slack_mention_impl(
                 channel_id,
                 thread_ts,
                 run_id,
-                message_ts=trace_message_ts,
                 triggering_user_id=user_id,
-                trace_message_ts=trace_message_ts,
             )
     else:
         common.logger.info(
