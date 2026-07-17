@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROMPT_PATH = os.environ.get("DEFAULT_PROMPT_PATH")
 ENABLE_TODOS_ENV_VAR = "OPEN_SWE_ENABLE_TODOS"
 
+
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
