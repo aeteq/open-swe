@@ -152,7 +152,12 @@ def test_harness_profile_replaces_deepagents_base_for_supported_providers() -> N
     import deepagents.profiles.harness.harness_profiles as hp
 
     import agent.prompt  # noqa: F401  (registers the profile on import)
-    from agent.prompt import HARNESS_PROFILE_KEYS, OPEN_SWE_SHARED_BASE
+    from agent.prompt import (
+        HARNESS_EXCLUDED_MIDDLEWARE,
+        HARNESS_EXCLUDED_TOOLS,
+        HARNESS_PROFILE_KEYS,
+        OPEN_SWE_SHARED_BASE,
+    )
 
     hp._ensure_harness_profiles_loaded()
     assert set(HARNESS_PROFILE_KEYS) >= {"anthropic", "openai", "google_genai", "fireworks"}

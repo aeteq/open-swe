@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import hmac
 import logging
@@ -20,6 +21,7 @@ from langgraph_sdk.client import LangGraphClient
 
 from agent.utils.dashboard_links import dashboard_thread_url
 from agent.utils.langsmith import get_langsmith_trace_url
+from agent.utils.thread_ids import generate_thread_id_from_slack_thread
 
 from .http import DEFAULT_HTTP_TIMEOUT
 
@@ -48,6 +50,8 @@ DEFAULT_LOADING_MESSAGES: tuple[str, ...] = (
     "Tinkering…",
     "Schlepping…",
 )
+SLACK_WEB_LINK_FOOTER_LABEL = "Open in Web"
+SLACK_SECTION_TEXT_MAX_CHARS = 3000
 
 
 @dataclass(frozen=True)

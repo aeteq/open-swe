@@ -9,7 +9,16 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import urlparse
+from collections.abc import Callable, Mapping
+from typing import Any
+from urllib.parse import urljoin, urlparse, urlunparse
+
+import httpx
+
+_MAX_REDIRECTS = 5
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+_ENTITY_HEADERS = {"content-encoding", "content-language", "content-length", "content-type"}
+_SENSITIVE_HEADERS = {"authorization", "cookie", "proxy-authorization"}
 
 
 def resolve_and_validate(url: str) -> tuple[bool, str, str | None, list | None]:
