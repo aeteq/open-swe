@@ -174,6 +174,7 @@ def test_harness_profile_replaces_deepagents_base_for_supported_providers() -> N
     assert "write_todos" in resolved_profile.excluded_tools
     assert HARNESS_EXCLUDED_MIDDLEWARE <= resolved_profile.excluded_middleware
 
+
 def test_enable_todos_env_clears_harness_exclusions(monkeypatch) -> None:
     from agent import prompt as prompt_module
 
