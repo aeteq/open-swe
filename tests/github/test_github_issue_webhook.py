@@ -1497,7 +1497,7 @@ def test_process_github_issue_existing_thread_uses_followup_prompt(monkeypatch) 
         )
     )
 
-    assert captured["prompt"] == "**octocat:**\n@openswe please handle this"
+    assert captured["prompt"] == "**octocat:**\n@jarvis-aeteq please handle this"
     prompt = cast(str, captured["prompt"])
     assert "## Repository" not in prompt
 
