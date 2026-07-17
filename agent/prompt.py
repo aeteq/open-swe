@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from deepagents import HarnessProfile, register_harness_profile
-from langchain.agents.middleware import TodoListMiddleware
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
 
 from .utils.authorship import (

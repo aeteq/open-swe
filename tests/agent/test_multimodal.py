@@ -332,4 +332,3 @@ async def test_fetch_image_block_keeps_auth_within_slack_host_family(monkeypatch
     assert all(
         call["headers"]["Authorization"] == "Bearer test-slack-token" for call in client.calls
     )
-

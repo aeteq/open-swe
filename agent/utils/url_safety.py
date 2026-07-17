@@ -185,4 +185,3 @@ async def request_with_safe_redirects(
         current_url = next_url
 
     return None, _blocked_response(current_url, "Too many redirects")
-

@@ -371,4 +371,3 @@ async def test_dispatch_or_queue_tagged_message_interrupts_even_when_busy(
     assert run == {"run_id": "run-1"}
     queue.assert_not_awaited()
     dispatch.assert_awaited_once()
-
