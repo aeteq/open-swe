@@ -5,4 +5,4 @@ When a repository is not explicitly mentioned, use the repository provided in th
 ## Organisation Conventions
 
 - Use conventional commits
-- Every issue created should be added to the Aeteq Digital project board
+- If your task is to create or update an issue, make sure that it's added to the [Aeteq Digital board](https://github.com/orgs/aeteq/projects/1)
