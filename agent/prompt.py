@@ -50,7 +50,7 @@ def _load_default_prompt() -> str:
 # Static, run-invariant guidance for the main agent. The per-thread,
 # main-agent-specific prompt (working dir, repo setup, PR workflow,
 # source-channel reply) is layered in front of this via `construct_system_prompt`.
-OPEN_SWE_SHARED_BASE = """You are **Open SWE**, an open-source agent built on LangGraph and Deep Agents, operating in a remote, git-backed Linux sandbox invoked from Slack, Linear, or GitHub.
+OPEN_SWE_SHARED_BASE = """You are **Jarvis**, an open-source agent built on LangGraph and Deep Agents, operating in a remote, git-backed Linux sandbox invoked from Slack, Linear, or GitHub.
 
 ### Core Behavior
 
@@ -78,7 +78,7 @@ OPEN_SWE_SHARED_BASE = """You are **Open SWE**, an open-source agent built on La
 ### Communication
 
 - Focus on the substance and keep summaries brief. Use light markdown (`###`/`####` headings, bold, code) — avoid `#`/`##` titles.
-- Whenever calling `slack_thread_reply`, make `message` as terse as possible while still conveying the necessary information. Default to one sentence containing only the outcome/status and link, or one blocking question. Omit greetings, preambles, headings, recaps, implementation details, and redundant context; use bullets only when multiple items are essential. This rule applies only to Slack tool messages, not normal assistant messages shown in the web UI. Never paste long output, diffs, file listings, or multi-section write-ups into Slack. When detail is necessary, write it to a Markdown file under `/workspace/plans/`, publish it with `save_plan`, and send only a one-line summary plus the plan-review link. This non-plan share path does not enter plan mode.
+- Whenever calling `slack_thread_reply`, make `message` as terse as possible while still conveying the necessary information. Default to one sentence containing only the outcome/status and link, or one blocking question. Omit greetings, preambles, headings, recaps, implementation details, and redundant context; use bullets only when multiple items are essential. This rule applies only to Slack tool messages, not normal assistant messages shown in the web UI. For Slack-triggered requests that require non-trivial work, post a very short acknowledgement such as `On it!` as soon as possible before cloning/checking out repositories, then continue. Never paste long output, diffs, file listings, or multi-section write-ups into Slack. When detail is necessary, write it to a Markdown file under `/workspace/plans/`, publish it with `save_plan`, and send only a one-line summary plus the plan-review link. This non-plan share path does not enter plan mode.
 - In Slack, when a user asks to “break out,” “split out,” or “start a separate thread” for part of the work, summarize the requested aspect and relevant context into self-contained instructions, then call `slack_start_new_thread` instead of only replying in the current thread.
 - In Slack, acknowledge user follow-ups with `slack_add_reaction` instead of a perfunctory “Updating…” / “I’ll check…” reply. Choose a common reaction that fits the moment: `saluting_face` for taking ownership, `eyes` for active review, `thinking_face` for investigation, `white_check_mark` for handled or completed work, and `tada` for a genuine win. Do not reflexively repeat one emoji, and never use playful reactions for serious, sensitive, or ambiguous messages.
 - For Slack-triggered information-only answers, post only a concise summary in the associated Slack thread with `slack_thread_reply`, then provide the complete answer inline in your final assistant response. For other Slack updates, keep thread replies brief and avoid duplicating the same text later.
@@ -141,7 +141,7 @@ SELF_AWARENESS_SECTION = """---
 
 ### About You
 
-Your own source code lives at `langchain-ai/open-swe` on GitHub. Only when the user is clearly talking about *yourself* — modifying "yourself", "your code", "your prompt", "your behavior", "the open-swe repo", or "open-swe" — should you target `langchain-ai/open-swe`. For every other request (one naming a different repo, or naming none and not about you), defer to the default-repository guidance in the Custom Instructions below."""
+Your own source code lives at `aeteq/open-swe` on GitHub. Only when the user is clearly talking about *yourself* — modifying "yourself", "your code", "your prompt", "your behavior", "the jarvis repo", or "jarvis" — should you target `aeteq/open-swe`. For every other request (one naming a different repo, or naming none and not about you), defer to the default-repository guidance in the Custom Instructions below."""
 
 
 REPO_SETUP_SECTION = """---
@@ -159,7 +159,7 @@ Before any task that changes code, set up the repo in your sandbox, in order:
    ```
 
    This authors every commit. It is required for CI (e.g. Vercel preview deploys reject commits whose author email can't be resolved to a GitHub account; this email resolves). Do NOT set any other identity, pass `--author`, or export `GIT_AUTHOR_*` / `GIT_COMMITTER_*`.
-4. **Choose a thread-stable branch** like `open-swe/<short-task-slug>`. If a branch already exists for this thread, reuse it: fetch and check it out, starting from `origin/<branch>` (not the base branch) so prior commits are preserved for review — do not recreate it.
+4. **Choose a thread-stable branch** like `jarvis/<short-task-slug>`. If a branch already exists for this thread, reuse it: fetch and check it out, starting from `origin/<branch>` (not the base branch) so prior commits are preserved for review — do not recreate it.
 5. **Read `AGENTS.md`** — immediately after cloning, check for `AGENTS.md` at the repo root. If it exists, you MUST read it in full before any other work: its contents are mandatory rules that OVERRIDE your defaults, with the same authority as this prompt. If it doesn't exist, skip this.
 
 Complete all of these before any other work."""
@@ -250,7 +250,7 @@ COLLABORATION_TEMPLATE = """---
 
 ### Collaborative Attribution
 
-This run was triggered by **{display_name}**. You author the work **as them** — their git identity is configured in Repository Setup, so every commit and the PR are attributed to them. Credit open-swe as the collaborator:
+This run was triggered by **{display_name}**. You author the work **as them** — their git identity is configured in Repository Setup, so every commit and the PR are attributed to them. Credit jarvis as the collaborator:
 
 - **Commits**: append this trailer verbatim (on its own line, a blank line after the body) to every commit you author, including follow-ups:
 
@@ -258,7 +258,7 @@ This run was triggered by **{display_name}**. You author the work **as them** �
   {bot_coauthor_trailer}
   ```
 
-- **PR body**: append this line at the bottom of the PR description (blank line before it) when you open/update the draft PR; don't duplicate it if present. If the body already has a `Made by [Open SWE]` footer pointing at a different link, or a legacy footer like `_Opened collaboratively by {display_name} and jarvis-aeteq._`, replace that existing footer with this line instead of appending a second footer:
+- **PR body**: append this line at the bottom of the PR description (blank line before it) when you open/update the draft PR; don't duplicate it if present. If the body already has a `Made by [Jarvis]` footer pointing at a different link, or a legacy footer like `_Opened collaboratively by {display_name} and jarvis._`, replace that existing footer with this line instead of appending a second footer:
 
   ```
   {pr_attribution_footer}
@@ -301,6 +301,23 @@ def _render_repo_instructions_section(instructions: str | None) -> str:
     )
 
 
+def _render_user_instructions_section(instructions: str | None) -> str:
+    if not instructions or not instructions.strip():
+        return ""
+    return (
+        "---\n\n"
+        "### Your Custom Instructions (user-level)\n\n"
+        "The triggering user configured the following standing instructions for "
+        "you. Treat them as mandatory rules with the same authority as this "
+        "system prompt: they override default behavior, but repository-specific "
+        "custom instructions and `AGENTS.md` win when they conflict. The user "
+        "edits them in the dashboard Profile tab; when they ask you to change a "
+        'standing preference ("always…", "never…", "from now on…"), update '
+        "them with the `save_user_instructions` tool.\n\n"
+        f"{instructions.strip()}"
+    )
+
+
 # Per-thread, main-agent prompt layered in front of OPEN_SWE_SHARED_BASE. Holds
 # only run-specific content (working dir, commit identity, plan/collaboration/
 # repo toggles); standing guidance lives in the shared base above.
@@ -319,6 +336,7 @@ SYSTEM_PROMPT_TEMPLATE = (
     + "{pr_policy_override_section}"
     + "{collaboration_section}"
     + "{repo_instructions_section}"
+    + "{user_instructions_section}"
     + "\n\n{shared_base_section}"
 )
 
@@ -333,6 +351,7 @@ def construct_system_prompt(
     plan_mode: bool = False,
     plan_url: str | None = None,
     repo_custom_instructions: str | None = None,
+    user_custom_instructions: str | None = None,
     thread_url: str | None = None,
     corridor_enabled: bool = False,
 ) -> str:
@@ -366,6 +385,7 @@ def construct_system_prompt(
         pr_policy_override_section=ALWAYS_CREATE_PR_SECTION if create_prs else "",
         collaboration_section=_render_collaboration_section(triggering_user_identity, thread_url),
         repo_instructions_section=_render_repo_instructions_section(repo_custom_instructions),
+        user_instructions_section=_render_user_instructions_section(user_custom_instructions),
         shared_base_section=OPEN_SWE_SHARED_BASE,
         commit_identity_name=commit_identity_name,
         commit_identity_email=commit_identity_email,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,6 +17,7 @@ from agent.dashboard import review_chat_api
 list_review_findings = importlib.import_module("agent.tools.list_review_findings")
 read_repo_file = importlib.import_module("agent.tools.read_repo_file")
 search_repo_code = importlib.import_module("agent.tools.search_repo_code")
+web_search = importlib.import_module("agent.tools.web_search")
 
 
 def _fake_async_client(handler):
@@ -654,7 +656,7 @@ def test_chat_general_purpose_subagent_is_read_only() -> None:
     spec = _chat_general_purpose_subagent()
 
     assert spec["name"] == "general-purpose"
-    fs_middleware = [m for m in spec["middleware"] if isinstance(m, FilesystemMiddleware)]
+    fs_middleware = [m for m in spec.get("middleware", []) if isinstance(m, FilesystemMiddleware)]
     assert len(fs_middleware) == 1
     enabled = fs_middleware[0]._enabled_tools
     assert enabled is not None
