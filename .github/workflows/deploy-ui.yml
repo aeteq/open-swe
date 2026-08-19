@@ -27,6 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "latest"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install
       - name: Build
