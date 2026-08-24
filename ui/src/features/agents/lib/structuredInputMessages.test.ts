@@ -54,6 +54,21 @@ describe("structured input messages", () => {
       content: "please add a greet() helper",
       sender: "slack:U_ALICE",
       senderKind: "person",
+      surface: "slack",
+    })
+  })
+
+  it("hides a sender_context that follows the content element", () => {
+    expect(
+      parseStructuredInput(
+        '<input-message sender="slack:U_ALICE" surface="slack" kind="human">\n<content>ship it</content>\n<sender_context>Git identity command: `git config user.name \'Alice\'`\n\nCo-authored-by: bot &lt;bot@example.com&gt;</sender_context>\n</input-message>'
+      )
+    ).toEqual({
+      type: "message",
+      content: "ship it",
+      sender: "slack:U_ALICE",
+      senderKind: "person",
+      surface: "slack",
     })
   })
 
@@ -67,6 +82,7 @@ describe("structured input messages", () => {
       content: "Fix it",
       sender: "linear:dev@example.com",
       senderKind: "person",
+      surface: "linear",
     })
   })
 
@@ -89,6 +105,7 @@ describe("structured input messages", () => {
       content: "Hello & welcome",
       sender: "github:alice",
       senderKind: "person",
+      surface: "web",
     })
     expect(
       parseStructuredInput(
@@ -100,7 +117,23 @@ describe("structured input messages", () => {
       content: "Check CI",
       sender: "system:scheduler",
       senderKind: "system",
+      surface: "automation",
     })
+  })
+
+  it("carries the bot marker and account link status of an entity", () => {
+    const bot = `<dynamic-context kind="system" id="system:slack-bot-B9">
+  <display_name>CI Bot</display_name>
+  <sender_type>bot</sender_type>
+</dynamic-context>`
+    const guest = `<dynamic-context kind="person" id="slack:U456">
+  <display_name>Guest</display_name>
+  <open_swe_account>unlinked</open_swe_account>
+</dynamic-context>`
+    const entities = collectStructuredEntities([bot, guest])
+
+    expect(entities.get("system:slack-bot-B9")?.senderType).toBe("bot")
+    expect(entities.get("slack:U456")?.openSweAccount).toBe("unlinked")
   })
 
   it("decodes escaped markup as plain text and supports numeric entities", () => {

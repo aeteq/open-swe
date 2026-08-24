@@ -76,7 +76,7 @@ LAST_SLACK_EVENT: dict[str, Any] = {"payload": None}
 # a rerun's mentions look like redeliveries of the previous run's.
 EVENT_ID_SALT = uuid.uuid4().hex[:8]
 
-fakes.seed_bare_remote()
+fakes.seed_bare_remotes()
 
 
 # --- control + Slack compose (the test driver) -----------------------------
@@ -122,6 +122,18 @@ async def control_repo_private(request: Request) -> JSONResponse:
     value = bool(body.get("private", False))
     fakes.set_repo_private(value)
     return JSONResponse({"ok": True, "private": value})
+
+
+@app.post("/control/pull-request-health")
+async def control_pull_request_health(request: Request) -> JSONResponse:
+    body = await request.json()
+    number = body.get("number")
+    if not isinstance(number, int) or isinstance(number, bool):
+        raise HTTPException(400, "A pull request number is required")
+    pull = fakes.update_pull_health(number, body)
+    if pull is None:
+        raise HTTPException(404, "Pull request not found")
+    return JSONResponse({"ok": True, "pull_request": fakes.pull_health_json(pull)})
 
 
 @app.get("/control/queued")
@@ -502,6 +514,11 @@ async def ui_logo_mark() -> FileResponse:
 # App routes used by the handoff tests. Kept explicit (no catch-all) so
 # LangGraph's own root routes — which the dashboard proxy calls server-side —
 # are untouched.
+@app.get("/my-settings", response_class=HTMLResponse)
+async def ui_settings(request: Request) -> Response:
+    return await _render_app_route(request)
+
+
 @app.get("/agents", response_class=HTMLResponse)
 async def ui_agents_home(request: Request) -> Response:
     return await _render_app_route(request)
@@ -630,14 +647,20 @@ def _gh_pr_json(pr: dict[str, Any]) -> dict[str, Any]:
         "state": pr["state"],
         "draft": pr["draft"],
         "merged": pr["merged"],
+        "mergeable": pr["mergeable"],
+        "mergeable_state": pr["mergeable_state"],
         "title": pr["title"],
         "body": pr["body"],
-        "user": {"login": pr["author"]},
-        "head": {"ref": pr["head"]},
+        "user": {
+            "login": pr["author"],
+            "avatar_url": f"{BASE_URL}/logo-mark.png",
+        },
+        "head": {"ref": pr["head"], "sha": pr["head_sha"]},
         "base": {"ref": pr["base"], "repo": {"private": fakes.repo_private()}},
         "additions": pr["additions"],
         "deletions": pr["deletions"],
         "changed_files": len(pr["files"]),
+        "created_at": pr["created_at"],
     }
 
 
@@ -648,7 +671,7 @@ async def gh_get_repo(owner: str, repo: str) -> JSONResponse:
 
 @app.get("/fake-gh/repos/{owner}/{repo}/branches/{branch:path}")
 async def gh_get_branch(owner: str, repo: str, branch: str) -> JSONResponse:  # noqa: ARG001
-    if not fakes.branch_exists(branch):
+    if not fakes.branch_exists(owner, repo, branch):
         return JSONResponse({"message": "Branch not found"}, status_code=404)
     return JSONResponse({"name": branch, "commit": {"sha": "deadbeef"}})
 
@@ -674,11 +697,58 @@ async def gh_create_pull(owner: str, repo: str, request: Request) -> JSONRespons
 
 
 @app.get("/fake-gh/repos/{owner}/{repo}/pulls/{number}")
-async def gh_get_pull(owner: str, repo: str, number: int) -> JSONResponse:  # noqa: ARG001
-    pr = fakes.find_pull(number)
+async def gh_get_pull(owner: str, repo: str, number: int) -> JSONResponse:
+    pr = fakes.find_pull(number, owner, repo)
     if pr is None:
         return JSONResponse({"message": "Not Found"}, status_code=404)
     return JSONResponse(_gh_pr_json(pr))
+
+
+@app.get("/fake-gh/repos/{owner}/{repo}/commits/{sha}/check-runs")
+async def gh_get_check_runs(owner: str, repo: str, sha: str) -> JSONResponse:
+    pr = fakes.find_pull_by_sha(owner, repo, sha)
+    if pr is None:
+        return JSONResponse({"message": "Not Found"}, status_code=404)
+    return JSONResponse({"total_count": len(pr["check_runs"]), "check_runs": pr["check_runs"]})
+
+
+@app.get("/fake-gh/repos/{owner}/{repo}/commits/{sha}/status")
+async def gh_get_commit_status(owner: str, repo: str, sha: str) -> JSONResponse:
+    pr = fakes.find_pull_by_sha(owner, repo, sha)
+    if pr is None:
+        return JSONResponse({"message": "Not Found"}, status_code=404)
+    return JSONResponse({"state": "pending", "sha": sha, "statuses": pr["statuses"]})
+
+
+@app.post("/fake-gh/graphql")
+async def gh_graphql(request: Request) -> JSONResponse:
+    body = await request.json()
+    variables = body.get("variables", {})
+    owner = variables.get("owner")
+    repo = variables.get("repo")
+    number = variables.get("number")
+    if not isinstance(owner, str) or not isinstance(repo, str) or not isinstance(number, int):
+        return JSONResponse({"errors": [{"message": "Invalid variables"}]}, status_code=400)
+    pr = fakes.find_pull(number, owner, repo)
+    if pr is None:
+        return JSONResponse({"errors": [{"message": "Pull request not found"}]})
+    return JSONResponse(
+        {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "nodes": [
+                                fakes.review_thread_graphql(thread)
+                                for thread in pr["review_threads"]
+                            ],
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        }
+                    }
+                }
+            }
+        }
+    )
 
 
 # --- fake Slack API (real slack code hits this) ----------------------------

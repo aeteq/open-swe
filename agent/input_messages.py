@@ -22,6 +22,7 @@ class PersonIdentity(TypedDict):
     github_login: NotRequired[str]
     email: NotRequired[str]
     timezone: NotRequired[str]
+    open_swe_account: NotRequired[str]
 
 
 class ChannelIdentity(TypedDict):
@@ -37,6 +38,7 @@ class SystemIdentity(TypedDict):
     id: str
     display_name: str
     platform: NotRequired[str]
+    sender_type: NotRequired[str]
 
 
 Identity = PersonIdentity | ChannelIdentity | SystemIdentity
@@ -53,6 +55,7 @@ class InputMessageContext(TypedDict):
 class RunMessage(TypedDict):
     role: Literal["user", "system"]
     content: str | list[dict[str, Any]]
+    id: NotRequired[str]
 
 
 class RunInput(TypedDict):
@@ -61,9 +64,17 @@ class RunInput(TypedDict):
 
 
 _ENTITY_FIELDS: dict[EntityKind, tuple[str, ...]] = {
-    "person": ("display_name", "handle", "platform", "github_login", "email", "timezone"),
+    "person": (
+        "display_name",
+        "handle",
+        "platform",
+        "github_login",
+        "email",
+        "timezone",
+        "open_swe_account",
+    ),
     "channel": ("platform", "name", "thread_id", "topic", "purpose"),
-    "system": ("display_name", "platform"),
+    "system": ("display_name", "platform", "sender_type"),
 }
 _UNTRUSTED_ENTITY_FIELDS = frozenset({"topic", "purpose"})
 _SYSTEM_ENTITY_ID = "system:open-swe"
@@ -71,6 +82,10 @@ _SYSTEM_WRAPPER_MARKER = '<system-instructions format="open-swe-v1">'
 
 
 def _xml_text(value: object) -> str:
+    return escape(str(value), quote=False)
+
+
+def _xml_attr(value: object) -> str:
     return escape(str(value), quote=True)
 
 
@@ -184,7 +199,7 @@ def _entity_message(identity: Identity, kind: EntityKind) -> RunMessage:
         trust = ' trust="untrusted"' if field in _UNTRUSTED_ENTITY_FIELDS else ""
         children.append(f"<{field}{trust}>{_xml_text(value)}</{field}>")
     body = "\n".join(children)
-    canonical = f'<dynamic-context kind="{kind}" id="{_xml_text(entity_id)}">'
+    canonical = f'<dynamic-context kind="{kind}" id="{_xml_attr(entity_id)}">'
     if body:
         canonical += f"\n{body}\n"
     canonical += "</dynamic-context>"
@@ -220,17 +235,49 @@ def _data_element(name: str, value: object) -> str:
 def _serialize_message(text: str, context: InputMessageContext) -> str:
     sender_id = _validate_entity_id(context["sender_id"])
     attributes = [
-        f'sender="{_xml_text(sender_id)}"',
+        f'sender="{_xml_attr(sender_id)}"',
         f'surface="{context["surface"]}"',
         f'kind="{context["kind"]}"',
     ]
     channel_id = context.get("channel_id")
     if channel_id:
-        attributes.insert(1, f'channel="{_xml_text(_validate_entity_id(channel_id))}"')
+        attributes.insert(1, f'channel="{_xml_attr(_validate_entity_id(channel_id))}"')
     children = [_data_element(name, value) for name, value in context.get("data", {}).items()]
     children.append(f"<content>{_xml_text(text)}</content>")
     body = "\n".join(children)
     return f"<input-message {' '.join(attributes)}>\n{body}\n</input-message>"
+
+
+_ENVELOPE_CLOSE = "</input-message>"
+
+
+def _splice_envelope_data(text: str, element: str) -> str | None:
+    if "<input-message " not in text:
+        return None
+    close = text.rfind(_ENVELOPE_CLOSE)
+    if close == -1:
+        return None
+    return f"{text[:close]}{element}\n{text[close:]}"
+
+
+def append_message_data(
+    content: str | list[Any], name: str, value: object
+) -> str | list[Any] | None:
+    """Add a data field to an already-serialized envelope, or None when there is none."""
+    element = _data_element(name, value)
+    if isinstance(content, str):
+        return _splice_envelope_data(content, element)
+    for index in range(len(content) - 1, -1, -1):
+        block = content[index]
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        if not isinstance(block.get("text"), str):
+            continue
+        spliced = _splice_envelope_data(block["text"], element)
+        if spliced is None:
+            continue
+        return [*content[:index], {**block, "text": spliced}, *content[index + 1 :]]
+    return None
 
 
 def _structured_content(

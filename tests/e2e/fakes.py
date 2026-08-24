@@ -11,7 +11,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-from e2e_env import BARE_REMOTE, BASE_BRANCH, OWNER, REPO, TMP
+from e2e_env import (
+    BARE_REMOTE,
+    BASE_BRANCH,
+    OWNER,
+    REPO,
+    SECOND_BARE_REMOTE,
+    SECOND_OWNER,
+    SECOND_REPO,
+    TMP,
+)
 
 # --- Slack -----------------------------------------------------------------
 # (channel, thread_ts) -> list of {user, text, ts, blocks, is_bot}
@@ -92,6 +101,10 @@ def update_slack_message(
 PULLS: list[dict[str, Any]] = []
 REPO_PRIVATE = [False]
 _pr_seq = [0]
+_REMOTES = {
+    (OWNER, REPO): BARE_REMOTE,
+    (SECOND_OWNER, SECOND_REPO): SECOND_BARE_REMOTE,
+}
 
 
 def _git(*args: str, cwd: Path | None = None) -> str:
@@ -105,37 +118,48 @@ def _git(*args: str, cwd: Path | None = None) -> str:
     return result.stdout
 
 
-def seed_bare_remote() -> None:
-    """Create a fresh bare repo (the fake GitHub remote) with one commit on main."""
-    if BARE_REMOTE.exists():
-        shutil.rmtree(BARE_REMOTE)
-    seed_work = BARE_REMOTE.parent / f"seed-{OWNER}-{REPO}"
-    if seed_work.exists():
-        shutil.rmtree(seed_work)
+def seed_bare_remotes() -> None:
+    """Create fresh fake GitHub remotes with one commit on main."""
+    for (owner, repo), remote in _REMOTES.items():
+        if remote.exists():
+            shutil.rmtree(remote)
+        seed_work = remote.parent / f"seed-{owner}-{repo}"
+        if seed_work.exists():
+            shutil.rmtree(seed_work)
 
-    seed_work.mkdir(parents=True)
-    ident = ["-c", "user.email=seed@example.com", "-c", "user.name=Seed"]
-    _git("init", "-b", BASE_BRANCH, str(seed_work))
-    (seed_work / "README.md").write_text("# demo\n\nA tiny demo repo.\n")
-    _git("add", "-A", cwd=seed_work)
-    _git(*ident, "commit", "-m", "Initial commit", cwd=seed_work)
-    _git("init", "--bare", "-b", BASE_BRANCH, str(BARE_REMOTE))
-    _git("remote", "add", "origin", str(BARE_REMOTE), cwd=seed_work)
-    _git("push", "origin", BASE_BRANCH, cwd=seed_work)
-    shutil.rmtree(seed_work)
+        seed_work.mkdir(parents=True)
+        ident = ["-c", "user.email=seed@example.com", "-c", "user.name=Seed"]
+        _git("init", "-b", BASE_BRANCH, str(seed_work))
+        (seed_work / "README.md").write_text(f"# {repo}\n\nA tiny demo repo.\n")
+        _git("add", "-A", cwd=seed_work)
+        _git(*ident, "commit", "-m", "Initial commit", cwd=seed_work)
+        _git("init", "--bare", "-b", BASE_BRANCH, str(remote))
+        _git("remote", "add", "origin", str(remote), cwd=seed_work)
+        _git("push", "origin", BASE_BRANCH, cwd=seed_work)
+        shutil.rmtree(seed_work)
 
 
 def seed_sandbox_repo() -> None:
-    repo = TMP / "work" / "repo"
-    if repo.exists():
-        shutil.rmtree(repo)
-    _git("clone", str(BARE_REMOTE), str(repo))
+    """Leave the shared sandbox root holding exactly one checkout, named `repo`.
+
+    The local sandbox root is shared by every thread in a run, and the turn
+    checkpoint resolves the repo by globbing that root — so a checkout another
+    spec cloned alongside `repo` would silently win the glob.
+    """
+    work = TMP / "work"
+    for path in sorted(work.glob("*")):
+        if path.is_dir():
+            shutil.rmtree(path)
+    _git("clone", str(BARE_REMOTE), str(work / "repo"))
 
 
-def _diff_files(base: str, head: str) -> list[dict[str, Any]]:
+def _diff_files(owner: str, repo: str, base: str, head: str) -> list[dict[str, Any]]:
     """Compute changed files for a PR from the pushed branch in the bare remote."""
+    remote = _REMOTES.get((owner, repo))
+    if remote is None:
+        return []
     try:
-        out = _git("--git-dir", str(BARE_REMOTE), "diff", "--numstat", base, head)
+        out = _git("--git-dir", str(remote), "diff", "--numstat", base, head)
     except subprocess.CalledProcessError:
         return []
     files = []
@@ -153,10 +177,13 @@ def _diff_files(base: str, head: str) -> list[dict[str, Any]]:
     return files
 
 
-def branch_exists(branch: str) -> bool:
+def branch_exists(owner: str, repo: str, branch: str) -> bool:
     """Check whether a branch exists in the bare remote (the fake GitHub)."""
+    remote = _REMOTES.get((owner, repo))
+    if remote is None:
+        return False
     try:
-        _git("--git-dir", str(BARE_REMOTE), "rev-parse", "--verify", f"refs/heads/{branch}")
+        _git("--git-dir", str(remote), "rev-parse", "--verify", f"refs/heads/{branch}")
         return True
     except subprocess.CalledProcessError:
         return False
@@ -167,19 +194,28 @@ def create_pull(
 ) -> dict[str, Any]:
     _pr_seq[0] += 1
     number = _pr_seq[0]
-    files = _diff_files(base, head)
+    files = _diff_files(owner, repo, base, head)
     pr = {
         "number": number,
         "owner": owner,
         "repo": repo,
         "head": head,
+        "head_sha": f"{number:040x}",
         "base": base,
         "title": title,
         "body": body,
         "draft": draft,
         "state": "open",
         "merged": False,
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "check_runs": [],
+        "statuses": [],
+        "review_threads": [],
         "author": "jarvis-aeteq[bot]",
+        "created_at": time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5 * 24 * 60 * 60)
+        ),
         "files": files,
         "additions": sum(f["additions"] for f in files),
         "deletions": sum(f["deletions"] for f in files),
@@ -188,8 +224,85 @@ def create_pull(
     return pr
 
 
-def find_pull(number: int) -> dict[str, Any] | None:
-    return next((p for p in PULLS if p["number"] == number), None)
+def find_pull(
+    number: int, owner: str | None = None, repo: str | None = None
+) -> dict[str, Any] | None:
+    return next(
+        (
+            pull
+            for pull in PULLS
+            if pull["number"] == number
+            and (owner is None or pull["owner"] == owner)
+            and (repo is None or pull["repo"] == repo)
+        ),
+        None,
+    )
+
+
+def find_pull_by_sha(owner: str, repo: str, sha: str) -> dict[str, Any] | None:
+    return next(
+        (
+            pull
+            for pull in PULLS
+            if pull["owner"] == owner and pull["repo"] == repo and pull["head_sha"] == sha
+        ),
+        None,
+    )
+
+
+def update_pull_health(number: int, values: dict[str, Any]) -> dict[str, Any] | None:
+    pull = find_pull(number)
+    if pull is None:
+        return None
+    allowed = {
+        "draft",
+        "state",
+        "merged",
+        "mergeable",
+        "mergeable_state",
+        "head_sha",
+        "check_runs",
+        "statuses",
+        "review_threads",
+    }
+    pull.update({key: value for key, value in values.items() if key in allowed})
+    return pull
+
+
+def review_thread_graphql(thread: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "isResolved": bool(thread.get("is_resolved", False)),
+        "path": thread.get("path", ""),
+        "line": thread.get("line"),
+        "originalLine": thread.get("original_line"),
+        "comments": {
+            "nodes": [
+                {
+                    "author": {"login": thread.get("author")},
+                    "body": thread.get("body", ""),
+                    "url": thread.get("url"),
+                }
+            ]
+        },
+    }
+
+
+def pull_health_json(pull: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: pull[key]
+        for key in (
+            "number",
+            "draft",
+            "state",
+            "merged",
+            "mergeable",
+            "mergeable_state",
+            "head_sha",
+            "check_runs",
+            "statuses",
+            "review_threads",
+        )
+    }
 
 
 def set_repo_private(value: bool) -> None:
@@ -227,4 +340,4 @@ def reset() -> None:
     DELETED_SNAPSHOTS.clear()
     REPO_PRIVATE[0] = False
     _pr_seq[0] = 0
-    seed_bare_remote()
+    seed_bare_remotes()
