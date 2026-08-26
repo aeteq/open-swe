@@ -9,19 +9,23 @@ import os
 import re
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 from langgraph_sdk.client import LangGraphClient
+from langgraph_sdk.errors import ConflictError
 
+from agent.thread_ids import slack_thread_id
 from agent.utils.dashboard_links import dashboard_thread_url
 from agent.utils.langsmith import get_langsmith_trace_url
 from agent.utils.run_usage import RunUsageSummary
 
 from .http import DEFAULT_HTTP_TIMEOUT
+from .url_safety import request_with_safe_redirects
 from .user_messages import WARNING_ICON
 
 logger = logging.getLogger(__name__)
@@ -29,6 +33,7 @@ logger = logging.getLogger(__name__)
 SLACK_API_BASE_URL = "https://slack.com/api"
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_THREAD_MAX_MESSAGES = 500
+SLACK_FILE_UPLOAD_MAX_BYTES = 16 * 1024 * 1024
 SLACK_CHANNEL_INFO_CACHE_TTL_SECONDS = 300
 
 SlackChannelContext = dict[str, str]
@@ -45,6 +50,11 @@ SLACK_FORWARDED_ATTACHMENT_MAX_COUNT = 10
 SLACK_FORWARDED_ATTACHMENT_MAX_DEPTH = 4
 SLACK_FORWARDED_ATTACHMENT_MAX_NODES = 50
 SLACK_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS = 8000
+_SLACK_THREAD_VERSION_NAMESPACE = "slack_thread_versions"
+_SLACK_THREAD_VERSION_PAGE_SIZE = 100
+_SLACK_THREAD_MUTATION_LOCK_TTL_MINUTES = 1
+_SLACK_THREAD_MUTATION_LOCK_RETRY_SECONDS = 0.05
+_SLACK_THREAD_MUTATION_LOCK_TIMEOUT_SECONDS = 10
 
 
 @dataclass(frozen=True)
@@ -695,6 +705,104 @@ async def update_slack_message(
             return False, f"http_error: {type(exc).__name__}"
 
 
+async def upload_slack_thread_file(
+    channel_id: str,
+    thread_ts: str,
+    filename: str,
+    content: bytes,
+    *,
+    title: str | None = None,
+    initial_comment: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Upload one file to a Slack thread and return its file ID and any error."""
+    if not SLACK_BOT_TOKEN:
+        return None, "missing_slack_bot_token"
+    if not content:
+        return None, "empty_file"
+    if len(content) > SLACK_FILE_UPLOAD_MAX_BYTES:
+        return None, "file_too_large"
+
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT) as http_client:
+            ticket_response = await http_client.post(
+                f"{SLACK_API_BASE_URL}/files.getUploadURLExternal",
+                headers=_slack_headers(),
+                json={"filename": filename, "length": len(content)},
+            )
+            ticket_error = _slack_response_error(ticket_response)
+            if ticket_error:
+                return None, ticket_error
+            ticket = ticket_response.json()
+            upload_url = ticket.get("upload_url")
+            file_id = ticket.get("file_id")
+            if not isinstance(upload_url, str) or not isinstance(file_id, str):
+                return None, "invalid_upload_ticket"
+
+            upload_response, blocked = await request_with_safe_redirects(
+                http_client,
+                "POST",
+                upload_url,
+                content=content,
+                headers={"Content-Type": "application/octet-stream"},
+                validate_url=_validate_slack_upload_url,
+            )
+            if blocked:
+                return None, "unsafe_upload_url"
+            if upload_response is None:
+                return None, "upload_failed"
+            upload_response.raise_for_status()
+
+            payload: dict[str, Any] = {
+                "files": [{"id": file_id, "title": title or filename}],
+                "channel_id": channel_id,
+                "thread_ts": thread_ts,
+            }
+            if initial_comment:
+                payload["initial_comment"] = initial_comment
+            complete_response = await http_client.post(
+                f"{SLACK_API_BASE_URL}/files.completeUploadExternal",
+                headers=_slack_headers(),
+                json=payload,
+            )
+            complete_error = _slack_response_error(complete_response)
+            if complete_error:
+                return None, complete_error
+            return file_id, None
+    except httpx.HTTPError as exc:
+        logger.exception("Slack file upload failed")
+        return None, f"http_error: {type(exc).__name__}"
+    except (TypeError, ValueError):
+        logger.exception("Slack file upload returned an invalid response")
+        return None, "invalid_slack_response"
+
+
+def _validate_slack_upload_url(url: str) -> tuple[bool, str]:
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or (parsed.hostname or "").lower() != "files.slack.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in (None, 443)
+    ):
+        return False, "Slack returned an invalid upload URL"
+    return True, ""
+
+
+def _slack_response_error(response: httpx.Response) -> str | None:
+    if response.status_code == 429:
+        retry_after = response.headers.get("Retry-After")
+        return f"rate_limited: {retry_after}" if retry_after else "rate_limited"
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, Mapping):
+        raise ValueError("Slack API response must be an object")
+    if data.get("ok"):
+        return None
+    error = data.get("error")
+    return "rate_limited" if error == "ratelimited" else str(error or "slack_api_error")
+
+
 async def post_slack_thread_reply(
     channel_id: str,
     thread_ts: str,
@@ -1029,6 +1137,86 @@ async def fetch_slack_thread_messages(channel_id: str, thread_ts: str) -> list[d
         messages = messages[-SLACK_THREAD_MAX_MESSAGES:]
     messages.sort(key=lambda item: _parse_ts(item.get("ts")))
     return messages
+
+
+def _slack_thread_version_namespace(channel_id: str, thread_ts: str) -> tuple[str, str, str]:
+    channel, timestamp = _normalize_slack_location(channel_id, thread_ts)
+    return (_SLACK_THREAD_VERSION_NAMESPACE, channel, timestamp.replace(".", "_"))
+
+
+@asynccontextmanager
+async def slack_thread_mutation_lock(
+    langgraph_client: LangGraphClient,
+    channel_id: str,
+    thread_ts: str,
+    *,
+    thread_id: str | None = None,
+) -> AsyncIterator[dict[str, Any] | None]:
+    """Lock a Slack thread and optionally return its current active location."""
+    channel, timestamp = _normalize_slack_location(channel_id, thread_ts)
+    lock_id = str(
+        uuid.uuid5(uuid.NAMESPACE_URL, f"open-swe:slack-thread-lock:{channel}:{timestamp}")
+    )
+    deadline = asyncio.get_running_loop().time() + _SLACK_THREAD_MUTATION_LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            await langgraph_client.threads.create(
+                thread_id=lock_id,
+                if_exists="raise",
+                ttl=_SLACK_THREAD_MUTATION_LOCK_TTL_MINUTES,
+            )
+            break
+        except ConflictError:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("Timed out waiting for the Slack thread mutation lock") from None
+            await asyncio.sleep(_SLACK_THREAD_MUTATION_LOCK_RETRY_SECONDS)
+    try:
+        yield await get_active_slack_thread(langgraph_client, thread_id) if thread_id else None
+    finally:
+        try:
+            await langgraph_client.threads.delete(lock_id)
+        except Exception:
+            logger.warning(
+                "Failed to release Slack thread mutation lock for %s/%s",
+                channel,
+                timestamp,
+                exc_info=True,
+            )
+
+
+async def get_slack_thread_version(
+    langgraph_client: LangGraphClient, channel_id: str, thread_ts: str
+) -> int:
+    """Return the number of distinct inbound messages recorded for a Slack thread."""
+    namespace = _slack_thread_version_namespace(channel_id, thread_ts)
+    offset = 0
+    version = 0
+    while True:
+        response = await langgraph_client.store.search_items(
+            namespace, limit=_SLACK_THREAD_VERSION_PAGE_SIZE, offset=offset
+        )
+        items = response.get("items") if isinstance(response, Mapping) else None
+        page = items if isinstance(items, list) else []
+        version += len(page)
+        if len(page) < _SLACK_THREAD_VERSION_PAGE_SIZE:
+            return version
+        offset += len(page)
+
+
+async def increment_slack_thread_version(
+    langgraph_client: LangGraphClient,
+    channel_id: str,
+    thread_ts: str,
+    message_ts: str,
+) -> int:
+    """Record one inbound Slack event and return the resulting thread version."""
+    message_key = message_ts.strip()
+    if not _SLACK_MESSAGE_TS_RE.fullmatch(message_key):
+        raise ValueError("A valid Slack message timestamp is required")
+    async with slack_thread_mutation_lock(langgraph_client, channel_id, thread_ts):
+        namespace = _slack_thread_version_namespace(channel_id, thread_ts)
+        await langgraph_client.store.put_item(namespace, message_key, {"message_ts": message_key})
+        return await get_slack_thread_version(langgraph_client, channel_id, thread_ts)
 
 
 async def fetch_slack_thread_message_by_ts(
@@ -1455,7 +1643,7 @@ async def resolve_slack_thread_id(
 
     candidate = next(
         iter(matching_ids),
-        str(uuid.uuid5(uuid.NAMESPACE_URL, f"slack:{channel}:{timestamp}:{nonce or ''}")),
+        slack_thread_id(channel, timestamp, nonce),
     )
     await bind_slack_thread_id(langgraph_client, channel, timestamp, candidate)
     return candidate

@@ -270,6 +270,28 @@ async def test_agent_includes_recreate_sandbox_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agent_includes_sandbox_reset_only_in_admin_threads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agent.tools import sandbox_reset
+
+    captured = await _capture_create_deep_agent_kwargs()
+    tools = captured["tools"]
+    assert isinstance(tools, list)
+    assert sandbox_reset not in tools
+
+    monkeypatch.setenv("CONFIGURED_ADMINS", "octocat")
+    config = _base_config()
+    configurable = config.get("configurable")
+    assert isinstance(configurable, dict)
+    configurable["admin_thread"] = True
+    captured = await _capture_create_deep_agent_kwargs(config)
+    tools = captured["tools"]
+    assert isinstance(tools, list)
+    assert sandbox_reset in tools
+
+
+@pytest.mark.asyncio
 async def test_agent_includes_sandbox_file_download_url_tools() -> None:
     from agent.tools import create_sandbox_file_download_url, output_iframe
 
@@ -325,6 +347,7 @@ async def test_dashboard_agent_excludes_slack_tools() -> None:
     assert tool_names.isdisjoint(
         {
             "slack_add_reaction",
+            "slack_attach_html",
             "slack_move_thread",
             "slack_read_thread_messages",
             "slack_start_new_thread",
@@ -353,6 +376,7 @@ async def test_slack_source_context_includes_slack_tools(source: str) -> None:
     tool_names = {getattr(tool, "name", None) or getattr(tool, "__name__", None) for tool in tools}
     assert {
         "slack_add_reaction",
+        "slack_attach_html",
         "slack_move_thread",
         "slack_read_thread_messages",
         "slack_start_new_thread",
@@ -453,6 +477,7 @@ async def test_general_purpose_subagent_cannot_use_slack_tools() -> None:
     slack_names = {
         "notify_automation_channel",
         "slack_add_reaction",
+        "slack_attach_html",
         "slack_move_thread",
         "slack_read_thread_messages",
         "slack_start_new_thread",
