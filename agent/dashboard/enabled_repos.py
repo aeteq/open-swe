@@ -22,7 +22,6 @@ async def list_enabled_review_repos() -> list[str]:
     record = await get_value(ENABLED_REVIEW_REPOS_NAMESPACE, ENABLED_REVIEW_REPOS_KEY)
     repos = record.get("repos") if record else None
     if not isinstance(repos, list):
-        logger.warning("enabled-review-repos value missing 'repos' list: %r", value)
         return []
     return [r for r in repos if isinstance(r, str)]
 
