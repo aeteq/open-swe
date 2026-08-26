@@ -22,6 +22,7 @@ async def list_enabled_review_repos() -> list[str]:
     record = await get_value(ENABLED_REVIEW_REPOS_NAMESPACE, ENABLED_REVIEW_REPOS_KEY)
     repos = record.get("repos") if record else None
     if not isinstance(repos, list):
+        logger.warning("enabled-review-repos value missing 'repos' list: %r", value)
         return []
     return [r for r in repos if isinstance(r, str)]
 
@@ -49,6 +50,11 @@ async def is_review_repo_enabled(owner: str, name: str) -> bool:
     must read as "not opted in" (skip the review) rather than 500 the webhook.
     """
     if not owner or not name:
+        logger.warning(
+            "is_review_repo_enabled called with missing owner/name (owner=%r, name=%r)",
+            owner,
+            name,
+        )
         return False
     full_name = f"{owner.lower()}/{name.lower()}"
     try:
