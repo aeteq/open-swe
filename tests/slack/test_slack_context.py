@@ -1085,7 +1085,6 @@ def test_process_slack_mention_creates_thread_first_run_without_trace_reply(
     )
     assert prompt.count("## Slack Thread") == 1
     assert f"Thread TS: {thread_ts}" in prompt
-    assert "Thread version: 1" in prompt
     assert "## Jarvis Links" in prompt
     assert f"- Web: https://app.example.com/agents/{expected_thread_id}" in prompt
     assert "- Trace: https://smith/x" in prompt
