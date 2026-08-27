@@ -297,7 +297,7 @@ export function AgentsSidebar({
           className="flex items-center gap-2 font-heading text-sm font-medium tracking-tight text-foreground"
         >
           <img src="/logo-mark.png" alt="" className="size-5" />
-          Open SWE
+          jarvis
         </Link>
         <div className="flex items-center gap-1">
           <button
