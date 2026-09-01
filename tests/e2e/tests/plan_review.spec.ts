@@ -143,7 +143,7 @@ test.describe("Plan review", () => {
     await expect(loggedOut).toHaveURL(
       new RegExp(`/login\\?redirect=.*${threadId}.*plan`),
     );
-    await expect(loggedOut.getByText("Sign in to Open SWE")).toBeVisible({
+    await expect(loggedOut.getByText("Sign in to jarvis")).toBeVisible({
       timeout: 30_000,
     });
     await loggedOut.getByRole("link", { name: "Continue with GitHub" }).click();
