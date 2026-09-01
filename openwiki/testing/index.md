@@ -1,3 +1,3 @@
 # Files
 
-- [Testing Guide](overview.md) - How Open SWE's test suites are laid out, the pytest and Playwright conventions that govern them, and the commands to run the narrowest validation that proves a change.
+- [Testing Guide](overview.md) - A production-owner test map for Open SWE's Python, dashboard, desktop, and Playwright layers. It highlights dashboard-thread and sandbox contracts plus the isolated Electron end-to-end scenario.

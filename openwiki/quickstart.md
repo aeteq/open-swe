@@ -1,20 +1,28 @@
 ---
 type: quickstart-hub
 title: Open SWE Quickstart & Wiki Map
-description: Entry point that orients a coding agent to Open SWE — a LangGraph + Deep Agents framework for internal coding agents — with the dev loop and a task-routing map to every wiki section.
-tags: [open-swe, langgraph, deepagents, coding-agent, quickstart, wiki-map, architecture-overview]
+description: Start here to orient yourself in the Open SWE LangGraph application, select the appropriate local developer command, and route a change to its owning agent, dashboard, tools, sandbox, or testing guide.
+tags: [open-swe, quickstart, langgraph, deepagents, development, wiki-map]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
+    at: 2026-08-31T08:17:06.525Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
+  - id: openwiki-source-921ec88ab63280d28b3dddb5
+    resource: repo://agent/chat.py
+  - id: openwiki-source-61ace7d4952db9ddb8316aeb
+    resource: repo://agent/dashboard/routes.py
+  - id: openwiki-source-c48b309c5ca416cf623f0866
+    resource: repo://agent/dispatch.py
   - id: openwiki-source-f8665996049065d2172f68e2
     resource: repo://agent/graphs/agent.py
   - id: openwiki-source-368e3a3da2c40119aead4316
     resource: repo://agent/graphs/chat.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
+  - id: openwiki-source-276ab38291eb5741b4c2141c
+    resource: repo://agent/reviewer.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
   - id: openwiki-source-3096620cfd0eb1bae6d9e78c
@@ -31,116 +39,95 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+  - id: openwiki-source-f0a6e7dc03522b2682f88655
+    resource: repo://tests/conftest.py
+  - id: openwiki-source-7ef60dc4372e1a33c7728fe6
+    resource: repo://tests/e2e/README.md
+generated: { by: "openwiki/0.4.2", at: "2026-08-31T08:17:06.525Z" }
 ---
 
 # Open SWE Quickstart & Wiki Map
 
-This is the navigational hub for the Open SWE wiki. It orients you to what the
-system is, how to run it locally, and which section to open for a given task.
-Deep content lives in the linked pages; treat source code and tests as
-authoritative over any prose here.
+Open SWE is an open-source framework for building an organization's internal coding agent. It composes Deep Agents (`deepagents.create_deep_agent`) into a LangGraph application. This is a routing hub, not a subsystem specification: follow the linked guide that owns a behavior before changing it, and use source and focused tests as the authority.
 
-## What Open SWE is
+## Start with the runtime boundary
 
-Open SWE is an open-source framework for building an org's internal coding
-agent. It is **composed on** the Deep Agents framework
-(`deepagents.create_deep_agent`) and runs as a **LangGraph app**: each thread
-spawns its own isolated cloud sandbox, and the agent is invoked from Slack,
-Linear, or GitHub (PR comments, plus auto-review on `opened` /
-`ready_for_review`).
+`langgraph.json` is the deployment registration point. It serves five named graphs and the FastAPI HTTP app together under `langgraph dev`; the graph modules in `agent/graphs/` are intentionally thin re-exports of their owning implementation modules.
 
-The runtime is served by `langgraph dev` from `langgraph.json`, which declares
-**five graph entrypoints plus a FastAPI app**, all served together:
+| Entrypoint | Registered target | Ownership boundary |
+|---|---|---|
+| `agent` | `agent.graphs.agent:traced_agent` | Main coding work. `get_agent` builds a fresh, stateless graph per thread; sandbox and thread metadata carry continuity. |
+| `reviewer` | `agent.graphs.reviewer:traced_reviewer_agent` | Non-mutating PR review and findings. |
+| `analyzer` | `agent.graphs.analyzer:traced_analyzer` | Per-repository review-style analysis. |
+| `chat` | `agent.graphs.chat:traced_chat_agent` | Read-only dashboard chat about one PR; it has no sandbox and uses seeded PR virtual files plus GitHub-backed repository reads. |
+| `scheduler` | `agent.graphs.scheduler:get_scheduler` | A one-node cron router for reconciliation, watches, background tasks, session costs, or scheduled agent work. |
+| HTTP app | `agent.webapp:app` | API composition, dashboard, health, and platform webhook routes. |
 
-| Graph | `langgraph.json` entrypoint | Underlying factory | Purpose |
-|---|---|---|---|
-| `agent` | `agent.graphs.agent:traced_agent` | `agent.server:get_agent` | Main coding agent (Slack/Linear/GitHub-triggered). |
-| `reviewer` | `agent.graphs.reviewer:traced_reviewer_agent` | `agent.reviewer:get_reviewer_agent` | Read-only PR reviewer; findings model + `publish_review`. |
-| `analyzer` | `agent.graphs.analyzer:traced_analyzer` | `agent.analyzer:get_analyzer` | Learns per-repo review style from historical PRs. |
-| `chat` | `agent.graphs.chat:traced_chat_agent` | `agent.chat:get_chat_agent` | Dashboard Agents chat graph. |
-| `scheduler` | `agent.graphs.scheduler:get_scheduler` | `agent.scheduler:get_scheduler` | Deterministic cron fan-out, reconciliation, `/baby-sit` CI checks. |
+Slack, Linear, GitHub, and dashboard work enter the durable-run dispatch contract; its graph selection is normally `agent` or `reviewer`, and overlapping work defaults to the interrupt multitask strategy. GitHub can also start automatic PR review for opted-in repositories and authors on supported PR actions. For invocation-specific validation, thread identity, and follow-up behavior, use [Invocation: Slack, Linear & GitHub Webhooks](workflows/invocation.md).
 
-The FastAPI app is `agent.webapp:app` (a compatibility shim re-exporting
-`agent.api.app:app`). At startup it mounts the dashboard router and the plan,
-workflow-approval, Linear, Slack, health, and GitHub webhook routers.
+### Boundaries that prevent unsafe changes
 
-The agent itself is **stateless** — all per-thread state lives in the sandbox
-plus thread metadata — and is rebuilt per thread by the graph factory.
+- **Agent assembly, tools, and middleware:** Start at [Agent Graph & get_agent Factory](architecture/agent-graph.md) for model/backend resolution, curated tools, subagent limits, plan mode, and middleware order. For the tool catalog and graph-specific availability, use [Agent Tools (Curated Toolset)](concepts/tools.md); do not duplicate Deep Agents built-ins in the application tool list.
+- **Review is separate from coding:** The reviewer is deliberately non-mutating, while PR chat is sandbox-less and read-only. Route reviewer or analyzer work to [Reviewer & Review-Style Analyzer Graphs](architecture/reviewer-and-analyzer.md) and PR workflow changes to [PR Review Workflow](workflows/pr-review.md).
+- **Sandbox state is work state:** The main agent does not silently replace an unreachable existing sandbox, because a replacement could hide the loss of uncommitted work. The reviewer can opt into replacement because it reconstructs its checkout for each review. Provider selection, startup configuration, timeouts, and recovery belong in [Sandbox Provider Integrations](integrations/sandbox-providers.md) and [Sandbox Lifecycle & Providers](architecture/sandbox-lifecycle.md).
+- **Models and instructions are run configuration:** Route model/profile/default resolution and instruction precedence to [Models, Profiles, Team Defaults & Instructions](concepts/models-profiles-instructions.md), rather than embedding preference logic in a tool or webhook.
+- **HTTP composition is centralized:** `agent.webapp:app` re-exports the app constructed in `agent/api/app.py`. The lifespan pins an event loop, validates sandbox and local-development LLM configuration before serving, and closes cached models at shutdown. It mounts the dashboard, plan, workflow-approval, platform webhook, and health routers. Credentialed CORS is enabled only for configured dashboard origins; `*` is rejected.
 
-```mermaid
-flowchart TD
-  subgraph Triggers
-    SL["Slack mention"]
-    LI["Linear comment"]
-    GH["GitHub PR comment / PR event"]
-  end
-  SL --> WA["FastAPI webapp (agent.webapp:app)"]
-  LI --> WA
-  GH --> WA
-  WA --> AG["agent graph (get_agent)"]
-  WA --> RV["reviewer graph"]
-  WA --> DASH["dashboard router + ui/ dashboard"]
-  SCH["scheduler graph"] --> AG
-  AN["analyzer graph"] --> RV
-  AG --> SB["per-thread cloud sandbox"]
-  RV --> SB
-```
+## Local developer loop
 
-Inbound triggers land on the FastAPI webapp, which dispatches LangGraph runs; every agent/reviewer thread owns an isolated sandbox.
-
-## Developer loop
-
-Python dependencies are managed with **uv**; the JS dashboard/desktop use
-**pnpm**. `langgraph dev` serves all graphs and the FastAPI app together.
+Python dependencies are managed with **uv**; the JavaScript workspace uses **pnpm**. Use `make dev` when a change needs a graph runtime. `make run` starts only the FastAPI app, which is useful for route work but cannot execute LangGraph graphs.
 
 ```bash
-make install            # uv sync --extra dev (pytest, ruff, basedpyright, …)
-make dev                # uv run langgraph dev — serves all graphs + FastAPI app
-make run                # uvicorn agent.webapp:app --reload --port 8000 (FastAPI only)
-make test               # uv run pytest -vvv tests/
-make lint               # ruff check + ruff format --diff
-make format             # ruff format + ruff check --fix
-make typecheck          # basedpyright agent tests
-make web                # pnpm run dev — the ui/ dashboard
+make install            # uv sync --extra dev
+make dev                # uv run langgraph dev --no-browser --port 2024
+make run                # uv run uvicorn agent.webapp:app --reload --port 8000
+make web                # pnpm run dev
+make desktop            # pnpm run dev:desktop
 ```
 
-Conventions that matter: `requires-python = ">=3.11"` while `langgraph.json`
-pins the runtime to 3.12; ruff uses line-length 100; tests default to unit-only
-under `tests/` with `asyncio_mode = "auto"`; the app is **async-only** (do not
-add sync/async dual implementations).
+The project requires Python `>=3.11`; the served LangGraph runtime is Python 3.12. Ruff uses a 100-character line length, pytest uses `asyncio_mode = "auto"`, and the repository is async-only by convention—implement the async path rather than parallel sync and async implementations.
+
+### Validate at the owner boundary
+
+```bash
+make test
+make test TEST_FILE=tests/dashboard/test_dashboard_thread_api.py
+uv run pytest -vvv tests/path/to_test.py::test_name
+make lint
+make format
+make typecheck
+```
+
+`make test` runs the supplied `TEST_FILE` when it exists and prints a skip message otherwise; `make integration_tests` does the same for `tests/integration_tests/`. The shared pytest fixtures provide an in-memory store through the real `agent.store` serialization path and clear the process-wide TTL cache around every test. They also enable auto-review by default in the no-live-store test environment, so an auto-review gate test must override that stub.
+
+For dashboard, desktop, or cross-boundary work, do not stop at pytest by default. [Testing Guide](testing/overview.md) maps Python subsystem tests, dashboard Vitest, desktop Node tests, and the Playwright harness. The e2e harness runs real application code with a local sandbox and local git remote while faking the LLM and external SaaS boundaries; use `pnpm run test:e2e` or `pnpm run test:e2e:desktop` when the changed contract crosses those boundaries.
 
 ## Task-routing map
 
-Pick the section that matches what you are trying to do.
+### Core agent and state
 
-### Architecture
-- [System Architecture Overview](architecture/overview.md) — the five graphs, the FastAPI webapp, dashboard router, sandbox layer, and web/desktop UI, and how they connect.
-- [Agent Graph & get_agent Factory](architecture/agent-graph.md) — how a deep agent is assembled per-thread with resolved model, curated tools, backend, subagents, and middleware.
-- [Middleware Stack](architecture/middleware-stack.md) — the ordered middleware chain around every model call for the agent and reviewer.
-- [Sandbox Lifecycle & Providers](architecture/sandbox-lifecycle.md) — per-thread get-or-create-then-reconnect lifecycle, provider selection, the GitHub proxy, and failure handling.
-- [Reviewer & Review-Style Analyzer Graphs](architecture/reviewer-and-analyzer.md) — read-only reviewer graph and the analyzer that learns per-repo review style.
+- [System Architecture Overview](architecture/overview.md) — top-level components and request paths.
+- [Agent Graph & get_agent Factory](architecture/agent-graph.md) — factory assembly, main-agent capability boundaries, tools, subagents, and plan mode.
+- [Middleware Stack](architecture/middleware-stack.md) — ordering, retries, model timeouts, queued follow-ups, tool errors, and sandbox failures.
+- [Threads, Thread IDs & Persistence](concepts/threads-and-state.md) — continuity, metadata, durable runs, and access semantics.
+- [Sandbox Lifecycle & Providers](architecture/sandbox-lifecycle.md) — reuse/reconnect/create behavior and preservation of working state.
+- [Sandbox Provider Integrations](integrations/sandbox-providers.md) — provider selector, LangSmith execution behavior, and adding a provider.
+- [Agent Tools (Curated Toolset)](concepts/tools.md) — curated and optional tools, authorization, and extension work.
+- [Models, Profiles, Team Defaults & Instructions](concepts/models-profiles-instructions.md) — model choice, profiles, defaults, and prompt inputs.
 
-### Concepts
-- [Agent Tools (Curated Toolset)](concepts/tools.md) — what tools the agent/reviewer/analyzer expose and the agent/UI parity principle.
-- [Models, Profiles, Team Defaults & Instructions](concepts/models-profiles-instructions.md) — model + reasoning-effort resolution precedence and layered instructions.
-- [Threads, Thread IDs & Persistence](concepts/threads-and-state.md) — deterministic thread-id derivation, thread metadata/state, and Slack code-channel keying.
-- [Authentication, Authorization & Security Boundaries](concepts/auth-and-security.md) — GitHub dual-mode auth, webhook signature verification, dashboard OAuth, and encryption at rest.
+### User-facing surfaces and automation
 
-### Workflows
-- [Invocation: Slack, Linear & GitHub Webhooks](workflows/invocation.md) — how an inbound mention/comment/event becomes a dispatched run.
-- [PR Creation & GitHub Delivery](workflows/pr-creation.md) — commit, push, and draft-PR flow plus guards and CI feedback.
-- [PR Review Workflow](workflows/pr-review.md) — auto-review and comment-triggered reviews from webhook to published findings.
-- [Scheduling, Cron & Baby-Sit CI Monitoring](workflows/scheduling-and-baby-sit.md) — scheduler graph and the opt-in `/baby-sit` CI monitoring flow.
-- [Context Engineering: AGENTS.md, Source Context & Skills](workflows/context-engineering.md) — how the agent gathers context and uses skills.
-- [Mid-Run Follow-Up Messages](workflows/follow-up-messages.md) — how messages sent while the agent is working are queued and injected.
+- [Dashboard API & Web/Desktop UI](integrations/dashboard-ui.md) — GitHub login, profiles, repository settings, reviews, skills, schedules, thread access, UI proxy, and Electron boundary. Add an HTTP endpoint in `agent/dashboard/routes.py`; keep its policy and storage behavior in the focused module that the route delegates to.
+- [Invocation: Slack, Linear & GitHub Webhooks](workflows/invocation.md) — platform gates, input construction, dispatch, and replies.
+- [PR Creation & GitHub Delivery](workflows/pr-creation.md) — commits, pushes, PR creation, and delivery guards.
+- [PR Review Workflow](workflows/pr-review.md) — findings, publication, auto-review, and reconciliation.
+- [Scheduling, Cron & Baby-Sit CI Monitoring](workflows/scheduling-and-baby-sit.md) — schedule lifecycle and scheduler tasks.
+- [Context Engineering: AGENTS.md, Source Context & Skills](workflows/context-engineering.md) — repository instructions, source context, and skills.
+- [Authentication, Authorization & Security Boundaries](concepts/auth-and-security.md) — credentials, webhook verification, and dashboard authorization.
+- [Observability & MCP Integrations](integrations/observability-and-mcp.md) — optional server-side integrations and their security boundary.
 
-### Integrations
-- [Dashboard API & Web/Desktop UI](integrations/dashboard-ui.md) — the dashboard router and the `ui/` React dashboard + `desktop/` Electron wrapper.
-- [Observability & MCP Integrations](integrations/observability-and-mcp.md) — Datadog/LangSmith tools, Corridor/Notion MCP, Currents, and Stagehand browser.
-- [Sandbox Provider Integrations](integrations/sandbox-providers.md) — pluggable sandbox providers and how to add a new one.
+### Configuration, operations, and tests
 
-### Operations & Testing
-- [Configuration & Environment Variables](operations/configuration.md) — environment variables across sandbox, models, auth, webhooks, and integrations.
-- [Local Dev, Build & Deployment](operations/deployment.md) — running locally, building, and deploying the backend and dashboard.
-- [Testing Guide](testing/overview.md) — test layout, conventions, and how to run unit and e2e tests.
+- [Configuration & Environment Variables](operations/configuration.md) — service, sandbox, model, auth, webhook, and integration settings.
+- [Local Dev, Build & Deployment](operations/deployment.md) — setup, build, and deployment operations.
+- [Testing Guide](testing/overview.md) — focused test ownership, fixture isolation, quality gates, and browser/Electron e2e.

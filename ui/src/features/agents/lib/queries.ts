@@ -30,7 +30,6 @@ export const agentThreadKeys = {
   sidebar: (params: {
     activeLimit: number
     resolvedLimit: number
-    activeThreadId?: string
     includeAutomations: boolean
   }) => ["agent-threads", "lists", "sidebar", params] as const,
   sidebarActive: (threadId: string) =>
@@ -153,6 +152,54 @@ function restoreAgentThreadQueries(
     }
     if (existed) queryClient.setQueryData(key, data)
     else queryClient.removeQueries({ queryKey: key, exact: true })
+  }
+}
+
+/**
+ * Clear a thread's unread dot the instant its row is clicked. The detail GET
+ * that navigation triggers is what actually marks the thread viewed
+ * server-side; this only stops the dot from lingering for that round trip.
+ */
+export function markAgentThreadViewed(
+  queryClient: QueryClient,
+  threadId: string
+): void {
+  const view = (thread: AgentThread) =>
+    thread.id === threadId && !thread.viewed
+      ? { ...thread, viewed: true, viewedAt: Date.now() }
+      : thread
+  const viewList = (threads: Array<AgentThread>) => threads.map(view)
+
+  // Patched as already-stale: the detail GET is what marks the thread viewed
+  // server-side, and a plain setQueryData would stamp this fresh under the
+  // detail query's staleTime — suppressing that fetch, so the next list refetch
+  // would serve `viewed: false` right back and the dot would return.
+  queryClient.setQueryData<AgentThread>(
+    agentThreadKeys.detail(threadId),
+    (prev) => (prev ? view(prev) : prev),
+    { updatedAt: 0 }
+  )
+  queryClient.setQueryData<AgentThread>(
+    agentThreadKeys.sidebarActive(threadId),
+    (prev) => (prev ? view(prev) : prev)
+  )
+  for (const [key, data] of queryClient.getQueriesData<SidebarThreads>({
+    queryKey: ["agent-threads", "lists", "sidebar"],
+  })) {
+    if (!data) continue
+    queryClient.setQueryData<SidebarThreads>(key, (prev) =>
+      prev
+        ? {
+            ...prev,
+            pinned: prev.pinned && viewList(prev.pinned),
+            active: { ...prev.active, items: viewList(prev.active.items) },
+            resolved: {
+              ...prev.resolved,
+              items: viewList(prev.resolved.items),
+            },
+          }
+        : prev
+    )
   }
 }
 
@@ -477,7 +524,6 @@ export function useSidebarThreads({
   const params = {
     activeLimit,
     resolvedLimit: includeResolved ? resolvedLimit : 0,
-    activeThreadId,
     includeAutomations,
   }
   const query = useQuery({
@@ -485,6 +531,8 @@ export function useSidebarThreads({
     queryFn: () => agentsApi.listSidebarThreads(params),
     enabled,
     placeholderData: (previous) => previous,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
     refetchInterval: (current) =>
       sidebarThreads(current.state.data).some(
         (thread) => thread.status === "running"
@@ -492,11 +540,40 @@ export function useSidebarThreads({
         ? 2000
         : false,
   })
-  const data = query.data ?? {
+  const activeThreadLoaded = sidebarThreads(query.data).some(
+    (thread) => thread.id === activeThreadId
+  )
+  const activeThreadQuery = useQuery({
+    queryKey: agentThreadKeys.sidebarActive(activeThreadId ?? ""),
+    queryFn: () => agentsApi.getThread(activeThreadId!, { markViewed: false }),
+    enabled:
+      enabled &&
+      Boolean(activeThreadId) &&
+      query.isSuccess &&
+      !activeThreadLoaded,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchInterval: (current) =>
+      current.state.data?.status === "running" ? 2000 : false,
+    retry: false,
+  })
+  const baseData = query.data ?? {
     active: { items: [], limit: activeLimit, hasMore: false },
     resolved: { items: [], limit: resolvedLimit, hasMore: false },
     pinned: [],
   }
+  const activeThread = activeThreadLoaded ? undefined : activeThreadQuery.data
+  const group = activeThread?.resolved ? "resolved" : "active"
+  const data =
+    activeThread && (!activeThread.resolved || includeResolved)
+      ? {
+          ...baseData,
+          [group]: {
+            ...baseData[group],
+            items: [activeThread, ...baseData[group].items],
+          },
+        }
+      : baseData
 
   return {
     data,
@@ -513,6 +590,9 @@ export function useSidebarThreads({
         setResolvedLimit((limit) => limit + SIDEBAR_PAGE_SIZE),
     },
     isPending: query.isPending,
+    isError: query.isError,
+    error: query.error,
+    refetch: query.refetch,
   }
 }
 

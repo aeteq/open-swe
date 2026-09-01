@@ -22,7 +22,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..utils.thread_ops import langgraph_url
 from ..utils.timing import server_timing_header
@@ -97,6 +97,7 @@ from .profiles import (
     upsert_access_token_from_github_response,
     upsert_profile,
 )
+from .pull_request_checks import PullRequestState
 from .repo_access import require_repo_access_for_user
 from .repo_cache import (
     REPO_LIST_FRESH_MS,
@@ -197,6 +198,7 @@ from .thread_api import (
     admin_cancel_dashboard_thread,
     cancel_dashboard_thread,
     delete_dashboard_thread,
+    get_dashboard_pull_request_checks,
     get_dashboard_terminal_sandbox,
     get_dashboard_thread,
     get_dashboard_thread_branch_diff,
@@ -1783,21 +1785,18 @@ async def api_agent_usage_leaderboard(
 
 @router.get("/schedules")
 async def api_list_schedules(
-    session: dict[str, Any] = _SESSION_DEP,
+    _session: dict[str, Any] = _SESSION_DEP,
 ) -> list[dict[str, Any]]:
-    return await list_agent_schedules(session["sub"], email=session.get("email"))
+    return await list_agent_schedules()
 
 
 @router.post("/schedules")
 async def api_create_schedule(
     body: ScheduleCreateBody,
-    session: dict[str, Any] = _SESSION_DEP,
+    admin: dict[str, Any] = _ADMIN_DEP,
 ) -> dict[str, Any]:
     return await create_agent_schedule(
-        session["sub"],
-        body,
-        email=session.get("email"),
-        allow_admin_thread=_session_is_admin(session),
+        admin["sub"], body, email=admin.get("email"), allow_admin_thread=True
     )
 
 
@@ -1805,31 +1804,31 @@ async def api_create_schedule(
 async def api_update_schedule(
     schedule_id: str,
     body: ScheduleUpdateBody,
-    session: dict[str, Any] = _SESSION_DEP,
+    admin: dict[str, Any] = _ADMIN_DEP,
 ) -> dict[str, Any]:
     return await update_agent_schedule(
         schedule_id,
-        session["sub"],
+        admin["sub"],
         body,
-        email=session.get("email"),
-        allow_admin_thread=_session_is_admin(session),
+        email=admin.get("email"),
+        allow_admin_thread=True,
     )
 
 
 @router.post("/schedules/{schedule_id}/trigger")
 async def api_trigger_schedule(
     schedule_id: str,
-    session: dict[str, Any] = _SESSION_DEP,
+    _admin: dict[str, Any] = _ADMIN_DEP,
 ) -> dict[str, Any]:
-    return await trigger_agent_schedule(schedule_id, session["sub"], email=session.get("email"))
+    return await trigger_agent_schedule(schedule_id)
 
 
 @router.delete("/schedules/{schedule_id}")
 async def api_delete_schedule(
     schedule_id: str,
-    session: dict[str, Any] = _SESSION_DEP,
+    _admin: dict[str, Any] = _ADMIN_DEP,
 ) -> Response:
-    await delete_agent_schedule(schedule_id, session["sub"], email=session.get("email"))
+    await delete_agent_schedule(schedule_id)
     return Response(status_code=204)
 
 
@@ -1923,6 +1922,25 @@ async def api_list_threads_page(
         scope=scope,
         automation_id=automation_id,
         sort_by=sort_by,
+    )
+
+
+class PullRequestChecksRef(BaseModel):
+    repoFullName: str = Field(max_length=140)
+    number: int = Field(ge=1)
+
+
+class PullRequestChecksRequest(BaseModel):
+    pullRequests: list[PullRequestChecksRef] = Field(default_factory=list, max_length=50)
+
+
+@router.post("/threads/pull-request-checks")
+async def api_get_pull_request_checks(
+    payload: PullRequestChecksRequest,
+    session: dict[str, Any] = _SESSION_DEP,
+) -> dict[str, PullRequestState]:
+    return await get_dashboard_pull_request_checks(
+        [ref.model_dump() for ref in payload.pullRequests], session["sub"]
     )
 
 

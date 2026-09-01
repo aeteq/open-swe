@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, render, waitFor } from "@testing-library/react"
+import { act, render, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { agentsApi } from "./api"
 import {
   SIDEBAR_PAGE_SIZE,
   agentThreadKeys,
+  markAgentThreadViewed,
   setAgentThreadStatus,
   useAgentThreadWorkingTreeDiff,
   useResolveAgentThread,
@@ -299,7 +300,6 @@ describe("useSidebarThreads", () => {
     expect(listThreads).toHaveBeenLastCalledWith({
       activeLimit: SIDEBAR_PAGE_SIZE,
       resolvedLimit: 0,
-      activeThreadId: undefined,
       includeAutomations: false,
     })
 
@@ -313,9 +313,30 @@ describe("useSidebarThreads", () => {
     expect(listThreads).toHaveBeenLastCalledWith({
       activeLimit: SIDEBAR_PAGE_SIZE,
       resolvedLimit: SIDEBAR_PAGE_SIZE,
-      activeThreadId: undefined,
       includeAutomations: false,
     })
+  })
+
+  it("adds a selected thread outside the shared sidebar window", async () => {
+    const opened = { id: "opened-thread", resolved: false } as AgentThread
+    vi.spyOn(agentsApi, "listSidebarThreads").mockResolvedValue(
+      emptySidebar(SIDEBAR_PAGE_SIZE, 0)
+    )
+    const getThread = vi.spyOn(agentsApi, "getThread").mockResolvedValue(opened)
+    const client = testClient()
+    const { result } = renderHook(
+      () => useSidebarThreads({ activeThreadId: opened.id }),
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      }
+    )
+
+    await waitFor(() =>
+      expect(result.current.data.active.items).toEqual([opened])
+    )
+    expect(getThread).toHaveBeenCalledWith(opened.id, { markViewed: false })
   })
 
   it("increases the activity window when loading more", async () => {
@@ -345,15 +366,17 @@ describe("useSidebarThreads", () => {
 
     await waitFor(() => expect(listThreads).toHaveBeenCalledTimes(1))
     act(() => sidebar?.activeQuery.fetchNextPage())
-    await waitFor(() => expect(listThreads).toHaveBeenCalledTimes(2))
-    expect(listThreads).toHaveBeenLastCalledWith(
-      expect.objectContaining({ activeLimit: SIDEBAR_PAGE_SIZE * 2 })
+    await waitFor(() =>
+      expect(listThreads).toHaveBeenCalledWith(
+        expect.objectContaining({ activeLimit: SIDEBAR_PAGE_SIZE * 2 })
+      )
     )
 
     act(() => sidebar?.resolvedQuery.fetchNextPage())
-    await waitFor(() => expect(listThreads).toHaveBeenCalledTimes(3))
-    expect(listThreads).toHaveBeenLastCalledWith(
-      expect.objectContaining({ resolvedLimit: SIDEBAR_PAGE_SIZE * 2 })
+    await waitFor(() =>
+      expect(listThreads).toHaveBeenCalledWith(
+        expect.objectContaining({ resolvedLimit: SIDEBAR_PAGE_SIZE * 2 })
+      )
     )
   })
 
@@ -505,5 +528,44 @@ describe("useSidebarThreads", () => {
     expect(
       client.getQueryData<AgentThread>(agentThreadKeys.detail(unrelated.id))
     ).toMatchObject({ title: "After" })
+  })
+})
+
+describe("markAgentThreadViewed", () => {
+  const unread = { id: "thread-1", viewed: false } as AgentThread
+
+  it("clears the unread flag across the caches, leaving the detail stale", () => {
+    const client = testClient()
+    const sidebarKey = [...agentThreadKeys.lists, "sidebar", { limit: 10 }]
+    client.setQueryData(sidebarKey, {
+      pinned: [unread],
+      active: { items: [unread], limit: 10, hasMore: false },
+      resolved: { items: [], limit: 10, hasMore: false },
+    })
+    client.setQueryData(agentThreadKeys.sidebarActive("thread-1"), unread)
+    client.setQueryData(agentThreadKeys.detail("thread-1"), unread)
+
+    markAgentThreadViewed(client, "thread-1")
+
+    const sidebar = client.getQueryData<{
+      pinned: Array<AgentThread>
+      active: { items: Array<AgentThread> }
+    }>(sidebarKey)
+    expect(sidebar?.pinned[0]?.viewed).toBe(true)
+    expect(sidebar?.active.items[0]?.viewed).toBe(true)
+    expect(
+      client.getQueryData<AgentThread>(
+        agentThreadKeys.sidebarActive("thread-1")
+      )?.viewed
+    ).toBe(true)
+    // A fresh detail entry would suppress the refetch that marks the thread
+    // viewed server-side, and the dot would come back on the next list refetch.
+    expect(
+      client.getQueryData<AgentThread>(agentThreadKeys.detail("thread-1"))
+        ?.viewed
+    ).toBe(true)
+    expect(
+      client.getQueryState(agentThreadKeys.detail("thread-1"))?.dataUpdatedAt
+    ).toBe(0)
   })
 })
