@@ -142,7 +142,7 @@ function CloudAgentsPage() {
     <AppShell
       user={session.data}
       title="Jarvis Agent"
-      description="Configure how the Jarvis Agent picks a model, repository, and PR defaults."
+      description="Personal defaults for Jarvis Agent runs you trigger. These settings only apply to your account."
     >
       <SettingsSection title="Defaults">
         <div className="divide-y divide-border">
