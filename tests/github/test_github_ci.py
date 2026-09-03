@@ -97,7 +97,7 @@ async def test_list_failing_check_runs_filters(monkeypatch: pytest.MonkeyPatch) 
     failing = await github_ci.list_failing_check_runs(owner="o", repo="r", ref="sha", token="t")
     assert failing is not None
     names = {c["name"] for c in failing}
-    assert names == {"lint"}
+    assert names == {"Jarvis Auto-fix", "lint"}
 
 
 @pytest.mark.asyncio
