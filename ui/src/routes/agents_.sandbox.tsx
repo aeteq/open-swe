@@ -28,7 +28,7 @@ function SandboxSettingsPage() {
       user={session.data}
       title="Sandbox"
       description="The snapshot new sandboxes boot from when their environment has none."
-      backTo={{ to: "/cloud-agents", label: "Back to Open SWE Agent" }}
+      backTo={{ to: "/cloud-agents", label: "Back to Jarvis Agent" }}
     >
       <div className="rounded-lg border border-border bg-card">
         <SandboxSettingsPanel />
