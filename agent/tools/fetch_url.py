@@ -35,7 +35,7 @@ async def fetch_url(url: str, timeout: int = 30) -> dict[str, Any]:
     """
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response, blocked = await request_with_safe_redirects(
+            response, blocked = await _request_with_safe_redirects(
                 client,
                 "GET",
                 url,
