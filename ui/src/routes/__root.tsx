@@ -33,7 +33,7 @@ export const Route = createRootRouteWithContext<{
         name: "viewport",
         content: "width=device-width, initial-scale=1, maximum-scale=1",
       },
-      { name: "theme-color", content: "#000000" },
+      { name: "theme-color", content: THEME_COLOR.light },
       { title: "jarvis" },
     ],
     links: [
