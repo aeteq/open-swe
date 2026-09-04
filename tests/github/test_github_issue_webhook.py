@@ -188,7 +188,7 @@ def test_github_webhook_accepts_issue_events(monkeypatch) -> None:
             "issue": {
                 "id": 12345,
                 "number": 42,
-                "title": "@openswe fix the flaky test",
+                "title": "@jarvis-aeteq fix the flaky test",
                 "body": "The test is failing intermittently.",
             },
             "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
@@ -221,7 +221,7 @@ def test_github_webhook_ignores_issue_events_without_body_or_title_change(monkey
             "issue": {
                 "id": 12345,
                 "number": 42,
-                "title": "@openswe fix the flaky test",
+                "title": "@jarvis-aeteq fix the flaky test",
                 "body": "The test is failing intermittently.",
             },
             "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
@@ -251,7 +251,7 @@ def test_github_webhook_accepts_issue_comment_events(monkeypatch) -> None:
         {
             "action": "created",
             "issue": {"id": 12345, "number": 42, "title": "Fix the flaky test"},
-            "comment": {"body": "@openswe please handle this"},
+            "comment": {"body": "@jarvis-aeteq please handle this"},
             "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
             "sender": {"login": "octocat"},
         },
@@ -527,7 +527,7 @@ def test_github_webhook_ignores_unsupported_comment_action(monkeypatch) -> None:
         "pull_request_review",
         {
             "action": "dismissed",
-            "review": {"body": "@openswe please check this"},
+            "review": {"body": "@jarvis-aeteq please check this"},
             "pull_request": {
                 "number": 1244,
                 "html_url": "https://github.com/langchain-ai/open-swe/pull/1244",
@@ -554,7 +554,7 @@ def test_github_webhook_ignores_review_requested(monkeypatch) -> None:
         "pull_request",
         {
             "action": "review_requested",
-            "requested_reviewer": {"login": "open-swe[bot]"},
+            "requested_reviewer": {"login": "jarvis-aeteq[bot]"},
             "pull_request": {
                 "number": 1244,
                 "html_url": "https://github.com/langchain-ai/public-demo/pull/1244",
@@ -1312,7 +1312,7 @@ def test_process_github_pr_comment_without_email_skips(
 
     async def fake_fetch_comments(repo_config: dict[str, str], pr_number: int, *, token: str):
         captured["fetch_token"] = token
-        return [{"body": "@open-swe review", "author": "external-user", "created_at": "now"}]
+        return [{"body": "@jarvis-aeteq review", "author": "external-user", "created_at": "now"}]
 
     async def fake_trigger_or_queue_run(*args, **kwargs) -> None:
         captured["triggered"] = {"args": args, "kwargs": kwargs}
@@ -1328,7 +1328,7 @@ def test_process_github_pr_comment_without_email_skips(
     asyncio.run(
         github_webhooks.process_github_pr_comment(
             {
-                "comment": {"id": 9, "body": "@open-swe review"},
+                "comment": {"id": 9, "body": "@jarvis-aeteq review"},
                 "sender": {"login": "external-user", "id": 123},
             },
             "issue_comment",
@@ -1407,7 +1407,7 @@ def test_process_github_issue_uses_resolved_user_token_for_reaction(monkeypatch)
                     "body": "The test is failing intermittently.",
                     "html_url": "https://github.com/langchain-ai/open-swe/issues/42",
                 },
-                "comment": {"id": 999, "body": "@openswe please handle this"},
+                "comment": {"id": 999, "body": "@jarvis-aeteq please handle this"},
                 "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
                 "sender": {"login": "octocat"},
             },
@@ -1492,7 +1492,7 @@ def test_process_github_issue_existing_thread_uses_followup_prompt(monkeypatch) 
                 },
                 "comment": {
                     "id": 999,
-                    "body": "@openswe please handle this",
+                    "body": "@jarvis-aeteq please handle this",
                     "user": {"login": "octocat"},
                 },
                 "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
@@ -1507,7 +1507,7 @@ def test_process_github_issue_existing_thread_uses_followup_prompt(monkeypatch) 
     entity = ElementTree.fromstring(messages[0]["content"])
     request = ElementTree.fromstring(messages[1]["content"])
     assert entity.attrib["id"] == "github:octocat"
-    assert request.findtext("content") == "**octocat:**\n@openswe please handle this"
+    assert request.findtext("content") == "**octocat:**\n@jarvis-aeteq please handle this"
     assert request.find("repository") is None
 
 
@@ -1533,7 +1533,7 @@ def test_github_webhook_routes_pr_comment_review_to_agent(monkeypatch) -> None:
                 "number": 1244,
                 "pull_request": {"url": "https://api.github.com/repos/x/y/pulls/1244"},
             },
-            "comment": {"id": 9, "body": "@open-swe review"},
+            "comment": {"id": 9, "body": "@jarvis-aeteq review"},
             "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
             "sender": {"login": "octocat"},
         },
@@ -1566,7 +1566,7 @@ def test_github_webhook_routes_pr_review_request_comment_to_agent(monkeypatch) -
                 "number": 1244,
                 "pull_request": {"url": "https://api.github.com/repos/x/y/pulls/1244"},
             },
-            "comment": {"id": 9, "body": "@open-swe review"},
+            "comment": {"id": 9, "body": "@jarvis-aeteq review"},
             "repository": {"owner": {"login": "langchain-ai"}, "name": "public-demo"},
             "sender": {"login": "octocat"},
         },

@@ -9,18 +9,8 @@
     "chat": "agent.graphs.chat:traced_chat_agent",
     "scheduler": "agent.graphs.scheduler:get_scheduler"
   },
-  "dependencies": [
-    "."
-  ],
   "http": {
-    "app": "agent.webapp:app"
+	  "app": "agent.webapp:app"
   },
-  "checkpointer": {
-    "ttl": {
-      "strategy": "delete",
-      "sweep_interval_minutes": 60,
-      "default_ttl": 43200
-    }
-  },
-  "env": ".env"
+  "dependencies": ["."]
 }
