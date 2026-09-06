@@ -3,45 +3,41 @@ type: concept
 title: Threads, Thread IDs & Persistence
 description: How Open SWE derives deterministic LangGraph thread ids per surface, persists per-thread state and settings, checkpoints runs durably, and keys Slack code-channel sessions so follow-ups route back to the same run.
 tags: [threads, thread-id, persistence, checkpointing, langgraph, slack, reviewer, sandbox, durability]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-6a5aabdd5f4475a361d59377
-    resource: repo://agent/dashboard/review_api.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
+  - id: openwiki-source-ba064e884edcde6097165df2
+    resource: repo://agent/github/webhook.py
+  - id: openwiki-source-2d78b3dc0a340eaacb9e53e2
+    resource: repo://agent/linear/webhook.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
     resource: repo://agent/review/findings.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
+  - id: openwiki-source-6fd11c8bb15f5eb94b765440
+    resource: repo://agent/sandboxes/lifecycle.py
+  - id: openwiki-source-3f4feeeb872e0d43c9b850c8
+    resource: repo://agent/sandboxes/state.py
+  - id: openwiki-source-41a696e92db10ba3dc9c66b0
+    resource: repo://agent/slack/client.py
+  - id: openwiki-source-92871ba83020d97558f679b2
+    resource: repo://agent/slack/code_channels.py
+  - id: openwiki-source-e747dfa76de43823582b8bab
+    resource: repo://agent/slack/tools/manage_code_channel.py
   - id: openwiki-source-e7e51eafe569197d9f0f4de2
     resource: repo://agent/store.py
   - id: openwiki-source-2df3763659a7f9d1944f28e7
     resource: repo://agent/thread_ids.py
-  - id: openwiki-source-ba666a428b107356ed2aa395
-    resource: repo://agent/tools/manage_code_channel.py
-  - id: openwiki-source-dda55642ec835b46e8451674
-    resource: repo://agent/utils/sandbox_state.py
-  - id: openwiki-source-b68b3987e288912dbd67d2b1
-    resource: repo://agent/utils/slack_code_channels.py
-  - id: openwiki-source-26fb18bb848e9c2987d40767
-    resource: repo://agent/utils/slack.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
   - id: openwiki-source-7c60191e42b8e30b62935af1
     resource: repo://agent/utils/thread_participants.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-  - id: openwiki-source-021c9f7e0d1658b726348b52
-    resource: repo://agent/webhooks/github.py
-  - id: openwiki-source-eaf184b71081c2500012ddb3
-    resource: repo://agent/webhooks/linear.py
-  - id: openwiki-source-5bbba7b2a8ea8360ff233d63
-    resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Threads, Thread IDs & Persistence
@@ -140,7 +136,7 @@ derivation so the same issue always maps to the same thread across redeliveries.
 ### Slack: explicit mapping first, deterministic id as fallback
 
 Slack resolution is a two-step process in `resolve_slack_thread_id`
-(`agent/utils/slack.py`). It first looks up an **explicit** stored mapping in the
+(`agent/slack/client.py`). It first looks up an **explicit** stored mapping in the
 Store namespace `(_SLACK_THREAD_MAP_NAMESPACE, channel)` keyed by timestamp. If
 none exists, it searches existing threads by `source_context` metadata for the
 Slack location; only if nothing matches does it fall back to the deterministic
@@ -243,11 +239,10 @@ that's already in flight" path, capped at `MAX_QUEUED_MESSAGES`.
 
 ### Checkpointer TTL
 
-Durability keeps every step, so checkpoints must be swept. `langgraph.json`
-configures the checkpointer with a TTL: `strategy="delete"`,
-`default_ttl=43200` minutes (30 days), and a `sweep_interval_minutes=60`. Expired
-checkpoints are deleted on the hourly sweep, bounding how long a dormant thread's
-checkpointed state survives.
+Durability keeps every step, so checkpoints must be swept. The deployment
+configures the checkpointer with a TTL and a sweep interval so that expired
+checkpoints of dormant threads are deleted periodically, bounding how long a
+dormant thread's checkpointed state survives.
 
 ## Slack code-channel session keying
 
@@ -255,7 +250,7 @@ A Slack **code channel** (a channel Slack has marked as an agent channel;
 `is_code_channel`) is treated as *one* agent session spanning the whole channel,
 not a per-thread conversation. Because there is no single Slack thread timestamp
 for the channel, Open SWE keys the session with a sentinel timestamp
-`CODE_CHANNEL_SESSION_TS = "0"` (`agent/utils/slack_code_channels.py`).
+`CODE_CHANNEL_SESSION_TS = "0"` (`agent/slack/code_channels.py`).
 `is_code_channel_session(thread_ts)` returns true exactly when `thread_ts` is
 that sentinel.
 
@@ -266,11 +261,10 @@ normal Slack threads:
   `(channel_id, CODE_CHANNEL_SESSION_TS)` via `bind_slack_thread_id`, so every
   message in the channel resolves to the one session thread.
 - **Context source selection** — when Open SWE fetches conversation context
-  (`fetch_slack_thread_messages`, `fetch_slack_thread_message_by_ts`), a code
-  channel session reads the **whole channel** with `conversations.history`,
-  whereas a normal Slack thread reads only that thread with
-  `conversations.replies` (which requires the thread `ts`). The sentinel is what
-  switches the API method.
+  (`fetch_slack_thread_messages`), a code channel session reads the **whole
+  channel** with `conversations.history`, whereas a normal Slack thread reads
+  only that thread with `conversations.replies` (which requires the thread `ts`).
+  The sentinel is what switches the API method.
 - **Session lifecycle** — a code channel session has its own status
   (`processing` / `active` / `suspended` / `closed`) set through
   `set_session_status`, distinct from LangGraph thread status.

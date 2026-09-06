@@ -1,11 +1,11 @@
 ---
 type: developer guide
-title: Testing Guide
-description: Test-layer routing and focused test inventory for Open SWE, including dashboard thread contracts, shared pytest isolation, workspace suites, and the Playwright cross-boundary harness.
-tags: [testing, pytest, vitest, playwright, dashboard, desktop, e2e]
+title: Testing Strategy & Fixtures
+description: Unit tests, integration tests, e2e tests, and test infrastructure for agents and workflows. Choose the lowest-cost testing layer that directly owns changed behavior.
+tags: [testing, pytest, vitest, playwright, dashboard, e2e, fixtures, quality-gates]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
+    at: 2026-09-06T12:00:28.268Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -35,8 +35,6 @@ sources:
     resource: repo://tests/e2e/global-setup.ts
   - id: openwiki-source-aefe409f90608437573cbad3
     resource: repo://tests/e2e/harness.py
-  - id: openwiki-source-16e94b1dfd40df68fa54c87f
-    resource: repo://tests/e2e/package.json
   - id: openwiki-source-28a3fe2bdb4cd54e328962f0
     resource: repo://tests/e2e/patches.py
   - id: openwiki-source-859f98720585f4648f0f7b2e
@@ -45,8 +43,6 @@ sources:
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-  - id: openwiki-source-fbac30b19a864a52310a1665
-    resource: repo://tests/e2e/tests/dashboard_pull_requests.spec.ts
   - id: openwiki-source-84b0f9cd64db5f62b58c0ae3
     resource: repo://tests/e2e/tests/dashboard.spec.ts
   - id: openwiki-source-86954185ec7b6e72d7a5a7a7
@@ -63,47 +59,50 @@ sources:
     resource: repo://tests/e2e/tests/slack_event_dedupe.spec.ts
   - id: openwiki-source-50d5bb6d0d448392edc9d1ea
     resource: repo://tests/e2e/tests/ssr.spec.ts
-  - id: openwiki-source-3fc3591ebb7e0b354b4c3ae0
-    resource: repo://tests/e2e/tests/thread_tools.spec.ts
   - id: openwiki-source-f05d7497d4c60c3b322628eb
     resource: repo://tests/sandbox/test_sandbox_state.py
   - id: openwiki-source-440ae1e215cb02721dda855c
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
 ---
 
-# Testing Guide
+# Testing Strategy & Fixtures
 
-Choose the lowest-cost layer that owns the changed contract. Put agent assembly, API, webhook, middleware, and sandbox behavior in focused Python tests; dashboard component or client state in Vitest; and Electron main-process behavior in desktop Node tests. Use Playwright when the contract crosses real webhook, authenticated dashboard, local git/sandbox, or Electron boundaries—not as a substitute for focused coverage.
+Test routing: Put agent assembly, API, webhook, middleware, and sandbox behavior in focused Python tests; dashboard component or client state in Vitest; Electron main-process behavior in desktop Node tests. Use Playwright when a contract crosses real webhook, authenticated dashboard, local git/sandbox, or Electron boundaries—never as a substitute for focused coverage.
 
-## Test routing
+## Test routing and layers
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
     Change["Code change"] --> Boundary{"Owning boundary"}
-    Boundary -->|"Agent API webhook middleware sandbox"| Python["Focused pytest test"]
-    Boundary -->|"Dashboard component or client state"| Dashboard["Dashboard Vitest"]
-    Boundary -->|"Electron main process"| Desktop["Desktop Node test"]
-    Boundary -->|"Cross-boundary integration"| E2E["Playwright harness"]
+    Boundary -->|"Agent API webhook middleware sandbox"| Python["Focused pytest test<br/>(tests/)"]
+    Boundary -->|"Dashboard component or client state"| Dashboard["Vitest<br/>(ui/)"]
+    Boundary -->|"Electron main process"| Desktop["Node test<br/>(desktop/)"]
+    Boundary -->|"Cross-boundary integration"| E2E["Playwright e2e<br/>(tests/e2e/)"]
     Python --> Gates["Run relevant quality gates"]
     Dashboard --> Gates
     Desktop --> Gates
     E2E --> Gates
 ```
 
-This routes a change to the layer that directly owns its observable behavior; one change can need a focused contract test and an e2e proof when it crosses a boundary.
+One change can need a focused contract test *and* an e2e proof when it crosses a boundary.
 
-## Python contracts and isolation
+## Python test structure and fixtures
 
-Pytest collects from `tests/` and uses asyncio auto mode, so async tests and fixtures need no per-test asyncio marker. The suite is organized by production owner, with agent, dashboard, sandbox, Slack, webhook, middleware, tool, reviewer, and GitHub areas under `tests/`. `tests/e2e/` is Playwright infrastructure even though it is below that directory.
+Pytest collects from `tests/` and uses asyncio auto mode, so async tests and fixtures need no per-test asyncio marker. The suite is organized by production owner: `agent/`, `dashboard/`, `sandbox/`, `tools/`, `reviewer/`, `github/`, `slack/`, `webhook/`, and `middleware/` subdirectories under `tests/`. `tests/e2e/` is Playwright infrastructure even though it is below that directory.
+
+### Shared isolation fixtures
 
 Keep common isolation fixtures unless the test deliberately replaces their boundary:
 
-- `fake_store` routes `agent.store` through an in-memory `FakeStore`, preserving the production `model_dump`/`model_validate` round trip. Seed it when stored state matters.
-- The autouse TTL-cache reset prevents cached team settings from leaking between cases.
-- The autouse auto-review stub treats every repository as enabled because the no-live-store environment otherwise has an empty opt-in list. Override it when testing the opt-in gate.
+**fake_store** routes `agent.store` through an in-memory `FakeStore`, preserving the production `model_dump`/`model_validate` round trip. Seed it when stored state matters.
+
+**_reset_ttl_cache** (autouse) clears the process-global TTL cache before and after each test so cached team settings do not leak between cases.
+
+**_default_enable_auto_review** (autouse) treats every repository as enabled for automatic reviews because the no-live-store test environment has an empty opt-in list. Override it when testing the auto-review gate.
 
 ### Focused contracts worth preserving
 
@@ -124,40 +123,45 @@ Keep route-validation tests separate from authentication defenses. `tests/dashbo
 
 **Sandbox state.** `tests/sandbox/test_sandbox_state.py` protects the lazy sandbox proxy. It must remain `BaseSandbox`-compatible for capture offload, delegate to an offload-capable backend or safely execute normally, coalesce concurrent reconnects, survive cancellation of a waiter, retry failed startup, and recover a sandbox ID from live thread metadata.
 
-## Commands and quality gates
+## Python test commands and quality gates
 
 ```bash
-make install
-make test
+make install                     # uv sync --extra dev
+make test                        # uv run pytest -vvv tests/
 make test TEST_FILE=tests/dashboard/test_dashboard_thread_api.py
 uv run pytest -vvv tests/dashboard/test_dashboard_thread_api.py::test_name
-make lint
-make typecheck
+make lint                        # ruff check + format --diff
+make format                      # ruff format + check --fix
+make typecheck                   # basedpyright over agent/ and tests/
 ```
 
-`make install` runs `uv sync --extra dev`. `make test` (also `make tests`) runs `uv run pytest -vvv $(TEST_FILE)` with `TEST_FILE` defaulting to `tests/`; a missing target prints a skip message rather than failing. Linting, formatting, and typing are separate checks: `make lint` runs Ruff checking plus a format diff, `make format` fixes both, and `make typecheck` runs basedpyright over `agent` and `tests`.
+`make install` runs `uv sync --extra dev`, which installs pytest, pytest-asyncio, ruff, basedpyright, and Pygments. `make test` runs `uv run pytest -vvv $(TEST_FILE)` where `TEST_FILE` defaults to `tests/`; a missing target prints a skip message rather than failing. Linting, formatting, and typing are separate checks: `make lint` runs Ruff checking plus a format diff, `make format` fixes both in place, and `make typecheck` runs basedpyright over `agent/` and `tests/`.
 
-For workspace packages:
+## Workspace package tests
+
+Dashboard, UI, and desktop packages have their own test commands:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm --filter open-swe-dashboard run test
-pnpm --dir desktop run test
-pnpm test
+pnpm --filter open-swe-dashboard run test    # dashboard: vitest run
+pnpm --dir desktop run test                   # desktop: build + node --test test/*.test.cjs
+pnpm test                                     # root: delegates workspace tasks to Turbo
 ```
 
-The dashboard command is `vitest run`. Desktop builds its main bundle and then runs `node --test test/*.test.cjs`; root `pnpm test` delegates workspace test tasks to Turbo.
+The dashboard runs component and client unit tests via `vitest run`. The desktop package builds its main bundle and runs Node tests via `node --test test/*.test.cjs`. Root `pnpm test` uses Turbo to run test tasks across all workspace packages.
 
 ## Playwright cross-boundary harness
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm run test:e2e:install
-pnpm run test:e2e
-pnpm run test:e2e:desktop
+pnpm run test:e2e:install       # playwright install --with-deps chromium (once)
+pnpm run test:e2e               # browser suite (90s timeout, serial, 1 worker)
+pnpm run test:e2e:desktop       # Electron spec (180s timeout, 120s expect timeout)
 ```
 
-Install Chromium before the first run. Browser Playwright uses one worker, excludes `desktop.spec.ts`, has a 90-second test timeout, and starts real `langgraph dev` with `tests/e2e/langgraph.e2e.json`. The desktop configuration selects only `desktop.spec.ts`, raises the test timeout to 180 seconds and the expectation timeout to 120 seconds, and writes separate results and reports.
+Install Chromium before the first run.
+
+### Happy path flow
 
 ```mermaid
 sequenceDiagram
@@ -179,8 +183,6 @@ sequenceDiagram
     Dash->>API: Dashboard API requests
 ```
 
-The harness keeps the production paths real while controlling its external seams.
-
 ### Real paths, controlled seams
 
 The harness overlays the real agent API with fake GitHub and Slack HTTP endpoints, mock UIs, and control endpoints, and signs simulated Slack Events API deliveries before posting them to the real webhook route. The fake stores are the shared source of truth rendered by the mock UIs. Git is real: runs use seeded local bare remotes, and PR file lists are calculated from pushed branches.
@@ -193,24 +195,37 @@ The dashboard is not mocked. Global setup builds `ui/` with `VITE_DASHBOARD_API_
 
 The Electron scenario resets shared harness state, clones the seeded local bare remote into an isolated temporary project, injects a harness-issued `osw_session` cookie, and runs a local-agent request. It verifies both the project edit and the fake-GitHub PR title, branches, draft flag, and changed file. It also records its own Electron trace and screenshots, then removes temporary desktop state unless `E2E_KEEP_TMP` is set.
 
+### Playwright config and artifact retention
+
+Browser Playwright runs retain trace and video on failure locally and on the first retry in CI, with screenshots on failure. Set `E2E_ARTIFACTS=1` to capture trace and video for every attempt. Artifacts are under `test-results/<test>/` and `playwright-report/`.
+
+Browser configuration: runs serially (1 worker), excludes `desktop.spec.ts`, has a 90-second test timeout and 20-second expect timeout, and starts real `langgraph dev` with `tests/e2e/langgraph.e2e.json`.
+
+Desktop configuration: selects only `desktop.spec.ts`, raises the test timeout to 180 seconds and expect timeout to 120 seconds, disables automatic Playwright artifacts (the spec explicitly records Electron trace and screenshots), and writes separate results and reports to `test-results/desktop/` and `playwright-report/desktop/`.
+
+Replay: download artifacts, then `pnpm exec playwright show-report <unzipped-dir>` or drag a `trace.zip` onto <https://trace.playwright.dev>.
+
 ## Diagnostics and operations
 
-Browser traces and videos are retained on failure locally and on the first retry in CI; screenshots are failure-only. Set `E2E_ARTIFACTS=1` to capture trace and video for every attempt. Artifacts are under `test-results/<test>/` and `playwright-report/`. The desktop configuration disables automatic Playwright artifacts because its spec explicitly records an Electron trace and attaches screenshots of the unified and completed local-agent views.
+Watch Playwright run in human time:
 
 ```bash
-pnpm exec playwright show-report
-pnpm exec playwright show-trace test-results/<test>/trace.zip
 SLOW_MO=700 pnpm exec playwright test --headed
-pnpm exec playwright test tests/full_flow.spec.ts
 ```
 
-Prefer a warm server and a single relevant spec while iterating. Inspect the trace, screenshot, and fake-boundary state before raising timeouts or weakening an assertion.
+Reclaim the harness for manual testing without running the suite:
 
-## Related pages
+```bash
+uv run langgraph dev --config tests/e2e/langgraph.e2e.json --port 2024 \
+  --no-browser --allow-blocking --no-reload
+# open http://127.0.0.1:2024/mock/slack  and  /mock/github
+```
 
-- [Agent graph](/openwiki/architecture/agent-graph.md)
-- [Authentication and security](/openwiki/concepts/auth-and-security.md)
-- [Dashboard UI](/openwiki/integrations/dashboard-ui.md)
-- [Deployment](/openwiki/operations/deployment.md)
-- [Quickstart](/openwiki/quickstart.md)
-- [PR creation](/openwiki/workflows/pr-creation.md)
+## GitHub Actions CI
+
+Lint, type check, and test runs execute on pull requests:
+
+- `lint`: `make lint` — Ruff check and format diff
+- `typecheck`: `make typecheck` — basedpyright on agent/ and tests/
+- `test`: `make test` — pytest on tests/
+- `e2e-browser` and `e2e-desktop`: Playwright suites with artifacts on CI (first-retry trace/video)

@@ -3,9 +3,6 @@ type: workflow
 title: Mid-Run Follow-Up Messages
 description: How messages that arrive while the agent is already working are handled — either by interrupting and resuming the active run, or by enqueuing them onto the thread's store queue so a before-model middleware injects them as user messages before the next LLM call.
 tags: [follow-up, message-queue, middleware, interrupt, multitask-strategy, slack-stop, webhooks, langgraph]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
@@ -23,13 +20,16 @@ sources:
     resource: repo://agent/reviewer.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-8b97ebf23a7d6b08aa1161d4
-    resource: repo://agent/utils/slack_stop.py
+  - id: openwiki-source-a26c1e1c3e9e7df7de591923
+    resource: repo://agent/slack/stop.py
+  - id: openwiki-source-4ffd3d31ffb2d798faaaad59
+    resource: repo://agent/slack/webhook.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
-  - id: openwiki-source-e8033e29419d205e5ac2fbb1
-    resource: repo://agent/webhooks/slack.py
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
 ---
 
 # Mid-Run Follow-Up Messages
@@ -199,7 +199,7 @@ read still flushes whatever autofix/content blocks were already assembled.
 ## Stop and cancel handling
 
 A Slack `:x:` reaction (or a Slack code-channel session-stop event) is an
-emergency stop, handled in `agent/utils/slack_stop.py`. Processing a stop:
+emergency stop, handled in `agent/slack/stop.py`. Processing a stop:
 
 1. Resolves the reacted-to message back to its Open SWE thread and verifies the
    thread metadata matches the Slack channel/thread, ignoring reactions that do

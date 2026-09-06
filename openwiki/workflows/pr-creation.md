@@ -3,35 +3,35 @@ type: workflow
 title: PR Creation & GitHub Delivery
 description: How an agent pushes work, creates an attributed GitHub pull request, records it on the thread, and returns CI and review feedback to operators. Covers PR-creation protection, workflow-change approval, Slack code-channel delivery, and dashboard health.
 tags: [pull-request, github, ci, middleware, draft-pr, workflow-approval, delivery]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
 sources:
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
   - id: openwiki-source-bd55a0c7231ffb3eb9e8ded0
     resource: repo://agent/dashboard/agent_overrides.py
-  - id: openwiki-source-c4bfb5bdc71fdd8c41973c7f
-    resource: repo://agent/dashboard/pull_request_status.py
   - id: openwiki-source-dc33a233b67bb1d08952543c
     resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-57243115e7bcd3ec2dd6e92e
     resource: repo://agent/dashboard/workflow_approval.py
+  - id: openwiki-source-ebb5b62f813c3a42bf86c39b
+    resource: repo://agent/github/ci.py
+  - id: openwiki-source-6664f6fd05037c7c782f7b09
+    resource: repo://agent/github/comments.py
+  - id: openwiki-source-d21a577a855c4fdf68476b81
+    resource: repo://agent/github/pull_request_status.py
   - id: openwiki-source-3d6d2704e3f7fa58a6207393
     resource: repo://agent/middleware/pr_creation_guard.py
   - id: openwiki-source-c53f5f816c45a89d9453ccd6
     resource: repo://agent/middleware/workflow_push_guard.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-ed9809a543500e4a0b811342
+    resource: repo://agent/slack/tools/request_pr_review.py
   - id: openwiki-source-d9f2a513cf28971a9676bf89
     resource: repo://agent/tools/open_pull_request.py
-  - id: openwiki-source-acf0e8d4cf8b4efe4bcc05e6
-    resource: repo://agent/tools/request_pr_review.py
-  - id: openwiki-source-7418b4f092ea92e859486d74
-    resource: repo://agent/utils/github_ci.py
-  - id: openwiki-source-a58165bf9ff2f12f48411509
-    resource: repo://agent/utils/github_comments.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # PR Creation & GitHub Delivery
@@ -59,7 +59,7 @@ Caption: commit-to-feedback control flow; workflow approval gates the push, whil
 
 The agent must push its branch to `origin` before calling `open_pull_request(owner, repo, head, base, title, body, draft=True)`. It returns a structured success result with URL, number, author, token kind, and a `created` flag. It is for new PRs only; `gh` remains the route for editing an existing PR, marking it ready, commenting, or reading status.
 
-Attribution is deliberate. `_resolve_pr_author_token` preferentially obtains a current OAuth token by the configured GitHub login for Slack, Linear, and dashboard invocations, creating the PR as the requester. The lookup is fresh rather than sourced from shared thread metadata, since a Slack thread can have a different triggering user later. GitHub-triggered runs, unmapped users, unavailable user tokens, and bot-only deployments fall back to the GitHub App installation token, making `open-swe[bot]` the creator.
+Attribution is deliberate. `_resolve_pr_author_token` preferentially obtains a current OAuth token by the configured GitHub login for Slack, Linear, and dashboard invocations, creating the PR as the requester. The lookup is fresh rather than sourced from shared thread metadata, since a Slack thread can have a different triggering user later. GitHub-triggered runs, unmapped users, unavailable user tokens, and bot-only deployments fall back to the GitHub App installation token, making the GitHub App bot the creator.
 
 Before the POST, preflight GETs the repository and base branch and, when the head belongs to the target owner, the head branch. Failures distinguish absent App/repository access (`github_app_access_missing_or_repo_not_found`), an invisible branch (`github_pr_branch_not_visible`), and another preflight error (`github_pr_preflight_failed`). The returned diagnostic includes GitHub's status, selected useful headers, and a bounded response body; failure telemetry also records the step, token kind, and whether the head was known pushed. This gives the agent an actionable failure rather than an opaque create error.
 

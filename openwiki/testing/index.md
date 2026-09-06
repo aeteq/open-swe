@@ -1,3 +1,3 @@
 # Files
 
-- [Testing Guide](overview.md) - Test-layer routing and focused test inventory for Open SWE, including dashboard thread contracts, shared pytest isolation, workspace suites, and the Playwright cross-boundary harness.
+- [Testing Strategy & Fixtures](overview.md) - Unit tests, integration tests, e2e tests, and test infrastructure for agents and workflows. Choose the lowest-cost testing layer that directly owns changed behavior.

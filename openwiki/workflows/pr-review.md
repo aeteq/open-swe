@@ -1,16 +1,13 @@
 ---
 type: workflow
 title: PR Review Workflow
-description: End-to-end trace of Open SWE's automated code review — from GitHub webhook (PR open/ready, @open-swe review request, push) through the reviewer run to findings persisted on a canonical reviewer thread and published to GitHub, including watch-mode reconciliation across pushes.
+description: End-to-end trace of Open SWE's automated code review — from GitHub webhook (PR open/ready, push) through the reviewer run to findings persisted on a canonical reviewer thread and published to GitHub, including watch-mode reconciliation across pushes.
 tags: [reviewer, pr-review, webhooks, findings, reconciliation, github, workflow]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
-  - id: openwiki-source-12d25830292f99d633a162d2
-    resource: repo://agent/dashboard/enabled_repos.py
-  - id: openwiki-source-6a5aabdd5f4475a361d59377
-    resource: repo://agent/dashboard/review_api.py
+  - id: openwiki-source-3d1c7beecd605173281a3bf6
+    resource: repo://agent/github/routes.py
+  - id: openwiki-source-ba064e884edcde6097165df2
+    resource: repo://agent/github/webhook.py
   - id: openwiki-source-626b1e5ad4f4c7d45dbc8f12
     resource: repo://agent/middleware/settle_review_check.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
@@ -19,29 +16,26 @@ sources:
     resource: repo://agent/review/publish.py
   - id: openwiki-source-290b6c9567021d70bc012c7c
     resource: repo://agent/review/reconcile.py
+  - id: openwiki-source-ed9809a543500e4a0b811342
+    resource: repo://agent/slack/tools/request_pr_review.py
   - id: openwiki-source-2df3763659a7f9d1944f28e7
     resource: repo://agent/thread_ids.py
   - id: openwiki-source-f821cbba108557a41969274b
     resource: repo://agent/tools/add_finding.py
   - id: openwiki-source-c451a6086ffd6238062ba879
     resource: repo://agent/tools/publish_review.py
-  - id: openwiki-source-acf0e8d4cf8b4efe4bcc05e6
-    resource: repo://agent/tools/request_pr_review.py
   - id: openwiki-source-25a50e8385de61204afe1bcf
     resource: repo://agent/webhooks/common.py
-  - id: openwiki-source-e826c6215694b90b318ced2a
-    resource: repo://agent/webhooks/github_routes.py
-  - id: openwiki-source-021c9f7e0d1658b726348b52
-    resource: repo://agent/webhooks/github.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
   - id: openwiki-source-03ba010e8e4b61992958c82b
     resource: repo://tests/reviewer/test_pr_ready_auto_review.py
-  - id: openwiki-source-a565a4a1fb4d3fc05d998ca3
-    resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # PR Review Workflow
@@ -58,10 +52,10 @@ later get reviewed), and testing/overview (`tests/reviewer`).
 
 ## Triggers and routing
 
-All GitHub deliveries land on a single signed endpoint that verifies the
-`X-Hub-Signature-256` HMAC, rejects unsupported event types, and dispatches the
-work as a FastAPI background task. Routing branches by event and action to the
-matching handler in `agent/webhooks/github.py`.
+All GitHub deliveries land on a single signed endpoint (`POST /webhooks/github`)
+that verifies the `X-Hub-Signature-256` HMAC, rejects unsupported event types,
+and dispatches the work as a FastAPI background task. Routing branches by event
+and action through handlers in `agent/github/webhook.py`.
 
 The reviewer is triggered three ways:
 
@@ -171,10 +165,10 @@ Findings must anchor to lines the PR actually changed. `add_finding` validates
 retry" message. The diff line set comes from the reviewer run's injected state
 or config, or is fetched and computed on demand
 (`compute_diff_line_set`/`fetch_pr_diff`). File-level findings (both lines
-`None`) are accepted but do not render as inline comments. The reviewer system
-prompt reinforces the same bar: a finding must anchor to a specific changed
-line, name a concrete failure mode, and out-of-diff findings — even a proven
-base-vs-head regression at an unchanged callsite — cannot be filed.
+`None`) are accepted but do not render as inline GitHub comments. The reviewer
+system prompt reinforces the same bar: a finding must anchor to a specific
+changed line, name a concrete failure mode, and out-of-diff findings — even a
+proven base-vs-head regression at an unchanged callsite — cannot be filed.
 
 `add_finding` also normalizes and requires a non-default generated title,
 validates severity/confidence/side enums, and clips suggestions over the

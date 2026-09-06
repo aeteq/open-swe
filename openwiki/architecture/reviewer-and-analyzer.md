@@ -3,16 +3,11 @@ type: architecture
 title: Reviewer & Review-Style Analyzer Graphs
 description: How the read-only reviewer graph reviews one PR through a durable findings model and how the analyzer graph learns a per-repo review style in bootstrap and nightly continual modes.
 tags: [reviewer, analyzer, code-review, findings, review-style, langgraph, sandbox, deep-agent]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
-  - id: openwiki-source-748c14fabe44db187a05fcd6
-    resource: repo://agent/dashboard/analyzer_cron.py
-  - id: openwiki-source-305bab7eba6963087152f73a
-    resource: repo://agent/dashboard/review_style_jobs.py
+  - id: openwiki-source-8f8da8ebd37830cfae55d76c
+    resource: repo://agent/review/analyzer_cron.py
   - id: openwiki-source-f96cfff6ea4e2f0216c827e0
     resource: repo://agent/review/diff.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
@@ -25,6 +20,8 @@ sources:
     resource: repo://agent/review/reconcile.py
   - id: openwiki-source-e0831f51028e19f266889975
     resource: repo://agent/review/style_guidance.py
+  - id: openwiki-source-92590907348b7bf56e1762fa
+    resource: repo://agent/review/style_jobs.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
   - id: openwiki-source-9950d0e32f48b63eef01b7e2
@@ -48,6 +45,9 @@ sources:
   - id: openwiki-source-10026b2dd7b7368bb04e27f0
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
 generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Reviewer & Review-Style Analyzer Graphs
