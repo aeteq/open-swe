@@ -3,20 +3,13 @@ type: integration
 title: Dashboard API & Web/Desktop UI
 description: How the dashboard FastAPI surface exposes authenticated thread discovery, project grouping, pinning, and thread operations to the TanStack Start UI while preserving proxy and Electron local-execution boundaries.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
   - id: openwiki-source-412c2c84023da365b8201b9f
     resource: repo://agent/dashboard/__init__.py
-  - id: openwiki-source-09b129ff728dd4990ea2f25e
-    resource: repo://agent/dashboard/agent_instructions.py
   - id: openwiki-source-5460c3972fe61bb256d07994
     resource: repo://agent/dashboard/oauth.py
-  - id: openwiki-source-acdc56addb3618ddf7d67472
-    resource: repo://agent/dashboard/review_styles.py
   - id: openwiki-source-61ace7d4952db9ddb8316aeb
     resource: repo://agent/dashboard/routes.py
   - id: openwiki-source-202e70aa1fb446ab05cc6d99
@@ -29,8 +22,6 @@ sources:
     resource: repo://agent/dashboard/thread_pins.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-2f66613e587b7c57d9be522e
@@ -51,7 +42,10 @@ sources:
     resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Dashboard API & Web/Desktop UI
@@ -96,9 +90,9 @@ Thread **discovery is participant/admin scoped**, not a general readable-thread 
 
 Project grouping is metadata-only: `/threads/projects` collapses matching threads by case-insensitive configured repository, uses the most recent update as `updatedAt`, skips ownerless threads, and by default excludes resolved and automation work. It therefore does not fetch run data or produce thread summaries. `include_resolved` and `include_automations` widen that participant/admin-scoped discovery set.
 
-Thread **readability is separate**. Any authenticated organization member may read a thread whose source is in the surfaced-source set, enabling shared “Open in Web” links; unsurfaced threads intentionally appear as `404`. Reading is not ownership, and posting first requires readability then requires an administrator for `admin_thread` or automation threads.
+Thread **readability is separate**. Any authenticated organization member may read a thread whose source is in the surfaced-source set, enabling shared "Open in Web" links; unsurfaced threads intentionally appear as `404`. Reading is not ownership, and posting first requires readability then requires an administrator for `admin_thread` or automation threads.
 
-Pins have a third, deliberately independent path. Pin IDs are persisted in the store namespace `thread_pins/<login>`, so they are per-login rather than thread metadata. Pinning first fetches the candidate thread and requires it to be readable. Listing `/threads/pinned` fetches each saved ID independently and returns only currently readable threads, silently omitting missing, inaccessible, or failed lookups. Consequently, a pin does not bypass current read checks, and it can surface a readable teammate thread even though the main discovery list is participant-scoped. Unpin simply removes that login’s stored ID.
+Pins have a third, deliberately independent path. Pin IDs are persisted in the store namespace `thread_pins/<login>`, so they are per-login rather than thread metadata. Pinning first fetches the candidate thread and requires it to be readable. Listing `/threads/pinned` fetches each saved ID independently and returns only currently readable threads, silently omitting missing, inaccessible, or failed lookups. Consequently, a pin does not bypass current read checks, and it can surface a readable teammate thread even though the main discovery list is participant-scoped. Unpin simply removes that login's stored ID.
 
 ```mermaid
 flowchart TD

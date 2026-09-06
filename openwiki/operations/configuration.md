@@ -3,45 +3,41 @@ type: operations reference
 title: Configuration & Environment Variables
 description: Central reference for Open SWE's runtime configuration and environment variables across sandbox provisioning, model selection, auth/webhooks, and third-party integrations, plus the langgraph.json runtime config and admin runtime overrides.
 tags: [configuration, environment-variables, sandbox, models, auth, webhooks, integrations, operations]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
+  - id: openwiki-source-328bde9e94017848bb09ba23
+    resource: repo://agent/api/app.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
   - id: openwiki-source-ef92164b6963a5a6100712cb
     resource: repo://agent/dashboard/admin.py
-  - id: openwiki-source-b26707b64bee931c416620a7
-    resource: repo://agent/dashboard/notion_oauth.py
+  - id: openwiki-source-abba304194f5a40187cffde3
+    resource: repo://agent/dashboard/options.py
   - id: openwiki-source-07762d55411a883aaa28e2ed
     resource: repo://agent/dashboard/sandbox_settings.py
-  - id: openwiki-source-941341430e1d08d8e7e54dfe
-    resource: repo://agent/dashboard/user_credentials.py
-  - id: openwiki-source-e01f650ad19daacbf8aa5146
-    resource: repo://agent/integrations/corridor_mcp.py
-  - id: openwiki-source-654935a74cea8df94781a2a3
-    resource: repo://agent/integrations/currents_tools.py
-  - id: openwiki-source-91fc7c96eeba465eb9307d1c
-    resource: repo://agent/integrations/datadog_mcp.py
   - id: openwiki-source-0b53777f0ea426a90cf976b4
     resource: repo://agent/middleware/model_call_timeout.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
   - id: openwiki-source-ecd2116a1064fa0da51e5630
     resource: repo://agent/runtime/constants.py
+  - id: openwiki-source-49bfbb811c25e99235121924
+    resource: repo://agent/sandboxes/providers/registry.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
-  - id: openwiki-source-9393f5c0c83356ac7031b652
-    resource: repo://agent/utils/sandbox.py
   - id: openwiki-source-8010c6e64af5a375d8d3b70b
     resource: repo://docs/CUSTOMIZATION.md
   - id: openwiki-source-bb241754e70259fd67d23952
     resource: repo://docs/INSTALLATION.md
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+  - id: openwiki-source-012f2c78e3b1446dfc35803f
+    resource: repo://Makefile
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
 ---
 
 # Configuration & Environment Variables
@@ -76,6 +72,26 @@ Checkpointer thread state is garbage-collected by a TTL policy: the `delete`
 strategy sweeps every 60 minutes and expires checkpoints after a default TTL of
 43200 minutes (30 days). The `env` key points the platform at the `.env` file
 that supplies the variables described on this page.
+
+## Local development setup
+
+### Backend and LangGraph server
+
+The backend is a LangGraph app plus a FastAPI app mounted as the HTTP component:
+
+- **`make install`** — install dependencies (including dev extras).
+- **`make dev`** — start the LangGraph dev server with both graphs and the FastAPI app on port 2024 (bundles `langgraph dev`).
+- **`make run`** — start only the FastAPI webhook/dashboard server on port 8000 (useful when the LangGraph platform is running separately).
+- **`make test`** — run unit tests.
+- **`make lint`** — run linters (ruff).
+
+### Web dashboard
+
+- **`make web`** — start the Vite dev server for the dashboard UI on port 3000. The dev proxy automatically routes `/dashboard/api/*` to the backend (default `http://localhost:2024`; override with `DASHBOARD_API_URL` environment variable).
+
+### Desktop app
+
+- **`make desktop`** — spawn the desktop app (backend-supervisor + Electron). This also starts both `make dev` and `make web`, so all three run together. The command is `pnpm run dev:desktop` in `ui/desktop/`.
 
 ## Sandbox
 
@@ -137,10 +153,11 @@ value is opaque, provider-scoped free text validated only for length
 ### Model selection and fallback
 
 The primary model id is read from `LLM_MODEL_ID`, defaulting to `DEFAULT_MODEL_ID`
-when unset. `LLM_FALLBACK_MODEL_ID` sets an explicit fallback; when unset a
-provider-appropriate default (`fallback_model_id_for`) is used, and a fallback is
-wired via `ModelFallbackMiddleware` only when it differs from the primary model.
-Both are `provider:model` strings (e.g. `anthropic:claude-sonnet-5`,
+(currently `anthropic:claude-opus-5`) when unset. `LLM_FALLBACK_MODEL_ID` sets an
+explicit fallback; when unset a provider-appropriate default
+(`fallback_model_id_for`) is used, and a fallback is wired via
+`ModelFallbackMiddleware` only when it differs from the primary model. Both are
+`provider:model` strings (e.g. `anthropic:claude-sonnet-5`,
 `openai:gpt-5.6-sol`).
 
 The default output budget is `DEFAULT_LLM_MAX_TOKENS` (64000) — a completion/
@@ -175,6 +192,27 @@ Model calls can be proxied through the LangSmith LLM Gateway.
 `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES` (default `true`) controls Responses vs
 Chat Completions for OpenAI. A per-workspace admin toggle stored in team settings
 overrides the env default when set (an unset team value inherits it).
+
+## Dashboard
+
+### CORS and session configuration
+
+Dashboard CORS is configured via `DASHBOARD_ALLOWED_ORIGINS`, a comma-separated
+list of origins allowed for credentialed cross-origin requests and post-login
+redirects. When unset, CORS is disabled and the dashboard and backend must share
+the same origin. The allowed origins list is also used as a CSRF gate: every
+non-GET request checks the browser's `Origin` header against this list.
+
+Dashboard sessions and OAuth state are signed with `DASHBOARD_JWT_SECRET` (a 32-byte
+hex string; generate with `openssl rand -hex 32`). Stored GitHub tokens are encrypted
+with `TOKEN_ENCRYPTION_KEY`, which supports an ordered, most-recent-first key list for
+rotation so writes use the first key while reads try each key in order.
+
+The dashboard runs on the same FastAPI app as webhooks and uses the following
+base URLs:
+
+- `DASHBOARD_API_BASE_URL` — the public URL browsers use for `/dashboard/api/*` requests and OAuth callbacks (default: `http://localhost:2024` locally; set to your production backend or dashboard-proxy URL).
+- `DASHBOARD_BASE_URL` — the public URL of the dashboard frontend after login (default: `http://localhost:3000`).
 
 ## Auth and webhooks
 
@@ -218,23 +256,6 @@ read-only team observability tools; `is_observability_authorized` grants access
 to configured admins unconditionally and otherwise to emails in this list. Active
 members of orgs in `ALLOWED_GITHUB_ORGS` also gain observability access when team
 LangSmith credentials are connected.
-
-## Integrations
-
-Integration credentials are read in the LangGraph server process and attached to
-MCP/API connections there; the sandbox never holds these credentials.
-
-- **Corridor** MCP is enabled when a token is present in one of
-  `CORRIDOR_API_TOKEN`, `CORRIDOR_MCP_TOKEN`, or `CORRIDOR_TOKEN` (or embedded in a
-  URL query). The URL comes from `CORRIDOR_MCP_URL` / `CORRIDOR_MCP_SERVER_URL`,
-  defaulting to `https://app.corridor.dev/api/mcp`; a non-Corridor host is rejected
-  with a logged warning, and only the `analyzePlan` tool is exposed.
-- **Datadog** credentials live in encrypted team settings and are attached as
-  `DD_API_KEY`/`DD_APPLICATION_KEY` headers; `DATADOG_MCP_TOOLSETS` overrides the
-  default `core` toolset.
-- **Notion** MCP uses per-user OAuth against `https://mcp.notion.com/mcp`;
-  `NOTION_MCP_CLIENT_NAME` (default `Open SWE`) names the registered OAuth client.
-- **Currents** uses a per-user API key against `https://api.currents.dev/v1`.
 
 ## See also
 

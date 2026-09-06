@@ -26,10 +26,10 @@ sources:
     resource: repo://AGENTS.md
   - id: openwiki-source-fef236c0a2029fbda76955d6
     resource: repo://tests/agent/test_plan_mode.py
+generated: { by: "openwiki/0.4.2", at: "2026-08-31T08:17:06.525Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-08-31T08:17:06.525Z
-generated: { by: "openwiki/0.4.2", at: "2026-08-31T08:17:06.525Z" }
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Agent Tools (Curated Toolset)

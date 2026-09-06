@@ -3,9 +3,6 @@ type: quickstart hub
 title: Open SWE Quickstart & Wiki Map
 description: Entry point for selecting the Open SWE runtime, workflow, integration, operations, or testing guide. It provides the supported local commands, validation entrypoints, and ownership map for contributors.
 tags: [open-swe, quickstart, development, langgraph, testing, wiki-map]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -25,8 +22,6 @@ sources:
     resource: repo://agent/scheduler.py
   - id: openwiki-source-3096620cfd0eb1bae6d9e78c
     resource: repo://agent/webapp.py
-  - id: openwiki-source-25a50e8385de61204afe1bcf
-    resource: repo://agent/webhooks/common.py
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
@@ -46,6 +41,9 @@ sources:
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
 generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Open SWE Quickstart & Wiki Map

@@ -1,18 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:4781c95101ad4224563c62b37acf0b21427f54eaac16c2ad23eabb6235f665c7",
+  "pageVersion": "sha256:4d24749c7c5c2efba9e121231906e4fbda813e1b3785adab7e66c21fbff145ce",
   "claims": [
     {
       "id": "claim_546378dd07a04b50822ce54a69069bb8",
       "statement": "resolve_github_token routes GitHub token resolution by run source: sources carrying a mapped GitHub login (slack, linear, dashboard, schedule) prefer the triggering user's per-user OAuth token from the dashboard store — even in bot-token-only mode — so PRs and comments are attributed to that user.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/auth.py#L433-L453",
-          "version": "repo-lines-v1:sha256:852bb9a45a04f72f1aa2de05d037cbf54db101c74251490d119224d34e325799:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxNjkyYTFhZGU5NjRkOWQ2YzY5YTU5OTNhNmY3MTI0NGExMTdlYmY5ZjAyODU4Y2E3NTYzNmVkYzNjZDMwZGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI2ZTQ0NmRjMWQ5YTNiMzJkYmI1ZDMyZTdhNmFlZjRmMzUzOGYyNWQzZTlmZmRmZDI2NTg4MWJhYjUwZDVjNzkifQ"
-        },
-        {
-          "resource": "repo://agent/utils/auth.py#L473-L519",
-          "version": "repo-lines-v1:sha256:42b646d30d7f3b68d5821d87072a04a82d0a0de7e6e227c88bec2f03c8a36700:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMTNmNDA4MGZhYmY5Yjk1MDA2ZDBlY2VhYzRmNTllYTExYmMyZGRlNmRmODM0MTdmYjkwNjc1YjFlMjAxODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk5ZjY0OTVhNmE0NGI3YzBjODUxNzE2Y2FhYzQyZjNhNjM2OGM4NTgyOThkODZlNjVkMDYwZWZjODY2MGJiNDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYwOTM5MDcyNjliMTBmZDJmODE0ZTNkYzdhMDFjMmRjZDZiNDdjOTc4M2RkNzAxY2Q0NjBkMDYwMDAyNWVmMTgifQ"
+          "resource": "repo://agent/github/token.py#L472-L537",
+          "version": "repo-lines-v1:sha256:a3a6f942336d0951ec25bdb79fda645584793eb56c39f2f758824c1f0f49dcb2:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkyMTNmNDA4MGZhYmY5Yjk1MDA2ZDBlY2VhYzRmNTllYTExYmMyZGRlNmRmODM0MTdmYjkwNjc1YjFlMjAxODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5YTM2NjlmY2NhY2UzYTU5Mzg3ZGYyM2Y1ZDU1ODkzYWMxOTgwNTBkZTU5OGM3OWQ4NjNjZDhjYjIwMTY2MTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -21,16 +17,12 @@
       "statement": "When no valid per-user GitHub token is available, resolve_github_token falls back to a GitHub App installation token only in bot-token-only mode; in interactive mode it instead raises GitHubUserAuthRequired to force (re-)authentication rather than silently acting as the bot.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/auth.py#L33-L44",
+          "resource": "repo://agent/github/token.py#L37-L48",
           "version": "repo-lines-v1:sha256:3b232d85f55b26fbdbfeedf9b99e515a0bc8ef0b8540bcd107d071a9081e7794:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhZWE3N2ExYjg4NmIxNDRhZTk5MGY3YjFjYTUwNGI0MmQwMjY3ZGJlN2E2NDcyNTFlZDk0OTc4YTA0OGY4M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyM2FjZDQ0M2IyNDhjMDJjZDYzYmI3NDQxZTI5MDEyNTI3YzAzYTc2NDVjZTVkYzQzMGJkMzM3ZTFlYjk0MGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4MzJkMzE2ZmM5YzRjNTA4NjUyYTA5MGYwZDg2NDg5NTBmZDYzZTMyZTdjNjllNGRmMDlmNzE5Y2I2Yzk0N2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM5MTUyNDVlMmJlZTZkZjNjMzQ4MTMzN2Q4NzA5MWMyOGVjOGJmYjRiM2E0YjI1MGYyOTNkNDhmZGM0MmE1MDIifQ"
         },
         {
-          "resource": "repo://agent/utils/auth.py#L456-L471",
-          "version": "repo-lines-v1:sha256:dd3044bf6401c8f42dfea880132cc5361133027cbd4aacd95055a5d26c073532:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMzMxMmFiZTRiM2FhNGY4MWY5YTJmMGYyNzYxMTA4Nzk5Y2RmZGI5MzU1NDgwOTkwMjQ3NTA1MGQwY2RhOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzNTZiMjYxODM0MWViOGM5OWYxMGFmZTNiMTQzNTZmY2FmYjEzN2YxZTQ2YTFhNjBiOTYzN2M4MTVkYzA0MWEifQ"
-        },
-        {
-          "resource": "repo://agent/utils/auth.py#L513-L522",
-          "version": "repo-lines-v1:sha256:72deb3a695405c811f4934618fd3826fb5f402df592bd5f0c1033f48ab472a8e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxM2UzM2FkOGI3Njk5ODljYTQzM2Y2MGI3YzMxYjFmZWE2NGExM2IzMzY0YmVhYzRkZTRjMTM5NTExYTI4OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2NDVjNDM0ZTBmMjU1ZmYxZTk5OWRlNDA2M2MwM2JlYzY1MmZiZWU5ZDk2YWE2ODcwMGJmZGEyNzI0YjRhY2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5MmNjNTk0ZDVmZmFlZWY2Njk3ZmM4MjA2YmM5NjM4MDc3ZWQ2ZGY5YmI2MTIwNjJkMmVmZjdkYTAzMGVmYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlmNzYyOWRkY2JmNTZjODdkZjZkMDdiODYwOGJjNTNiMzI2OGQxYTZkY2Q0Nzc5NTFjMGQ1ZDZlNjA4ZmU3OTMifQ"
+          "resource": "repo://agent/github/token.py#L510-L520",
+          "version": "repo-lines-v1:sha256:43cddd960bcabbf2b01c63b57599c3d740b2ab972db5c02255583f3cc800f3e0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxM2UzM2FkOGI3Njk5ODljYTQzM2Y2MGI3YzMxYjFmZWE2NGExM2IzMzY0YmVhYzRkZTRjMTM5NTExYTI4OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5MmNjNTk0ZDVmZmFlZWY2Njk3ZmM4MjA2YmM5NjM4MDc3ZWQ2ZGY5YmI2MTIwNjJkMmVmZjdkYTAzMGVmYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzNzM5MzE3ZDJkNWIzMWFhMmYxNWUwNTUyYjNjOTFkNTBiYTAxYzY2YWQ5ODI3MDAyZTkwZWFmN2Y5ZWQ3MzcifQ"
         }
       ]
     },
@@ -39,8 +31,8 @@
       "statement": "is_bot_token_only_mode() is true when LANGSMITH_API_KEY_PROD is set but neither X_SERVICE_AUTH_JWT_SECRET nor USER_ID_API_KEY_MAP is configured, meaning per-user OAuth tokens cannot be resolved and the GitHub App installation token is used for git operations.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/auth.py#L64-L72",
-          "version": "repo-lines-v1:sha256:dd0ae2e9eb0cd4e6a0dd69d9c93503e96c055861fc320cfc33223dc232e7d659:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTJjYjgzYjgxZjhiZDI3ZDMyMGM3MmNkYThkNWZhNWFiNzQ1NWU4ZWQxOTBmM2RkYzY0MzM3NzVhMzgxM2E3NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTM2NTFlYTVjMWVhYzQ0M2E3MmNmNzJhN2NiMDgyZjk1NmZjNzk0NTMyNWYzYWY3MmE0NjQ2ZGVjNTRjOTQyNyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTk4YjA2M2Q5YjQ3ZTY1Mzc5NjI1NTcyY2NlMTk3NjY5ZDU3NjdlMTJjMThiZTA3NTY1MmI4Y2Q5ODFjZThkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODMzYmE2OTg0NjFmYzIzOGM1ZTY1YjMwODY2MGRlNTI4MTNmMjZiZTM5YzFjMTNlNmZkZTM3ZWQ5OWNhOTE4MSJ9"
+          "resource": "repo://agent/github/token.py#L68-L77",
+          "version": "repo-lines-v1:sha256:469509ef87bc7e4b66c417665c7e1dc0fec57d3815f5180c96b0597370ee66c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyY2I4M2I4MWY4YmQyN2QzMjBjNzJjZGE4ZDVmYTVhYjc0NTVlOGVkMTkwZjNkZGM2NDMzNzc1YTM4MTNhNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5OGIwNjNkOWI0N2U2NTM3OTYyNTU3MmNjZTE5NzY2OWQ1NzY3ZTEyYzE4YmUwNzU2NTJiOGNkOTgxY2U4ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1ZjdlMDE2YjdmOWUxNzIxNGQ4NWQ0ZTUxYWQ0NTUwYzkxOWQ0YzYxMzBhYzY0ZTU2Yjc4OWZhODAwMDk3MDkifQ"
         }
       ]
     },
@@ -49,12 +41,8 @@
       "statement": "Resolved GitHub tokens are cached only in process memory keyed by (thread_id, principal), where the principal isolates one user's token from another (login:/email:) and a distinct bot principal isolates installation tokens; tokens are never persisted and caching an unbound user token with no principal is refused.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/github_token.py#L18-L53",
-          "version": "repo-lines-v1:sha256:48172156bf164c5eaf1685dfe000d1d9e3406f34d6aeec0b5949c5c58cbbc2a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1YTFlZThiZTU5Mjk0ZGM2NDI3MGI5YjcyYmU5OTM4YzRlZDk3ZWJhMzdhNGQxOTY2ZDI5NDhjN2JlY2JmOGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllOWM0YjE1NDA3NDAzNDI2MzgyY2QwYjQxZDViYzg1NTI2YzIyY2E4ODU2YWM0NTBhZmFlMTRiMmM1YjhhODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0Nzk5NTA4ZWUyYjU2ZGU0NjE5MDlkNGY3NDY2ZDlkY2M1NjZjNmRlMWQ1M2MxNTQ0OGUxZjE0YWZkZWY5MmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxYjY1OTFiNDhlYjEzNjhkNjgzNjcwMzc2NjEwOTI0MDRlYWQyNmVhMTNmN2ExN2ViNGI2MTc5Y2I4NTlkNmEifQ"
-        },
-        {
-          "resource": "repo://agent/utils/github_token.py#L23-L29",
-          "version": "repo-lines-v1:sha256:d5994f0a6d6766aa11c2e0ae791459effe68e094b913f6b4c4193fd0b447ed4d:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWYzMzZhOTNkNzQwNDZkYzQ0MzBiNzEwYTEwMjQ3N2JkZGRmMjU5OGQ1MjQzMmQ5MTg3N2ExMzA0OTY1NGI1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5NjAwYTczZDJlMDJmMzUyYjkwZmVmMWQ4ZDYzODExYmE0YThlZTBjMWJlYWE3YWU0NjU4ZjM2YWEyZTE5OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzVjODNhMjY1ZTcwZjUzMTFmNGE0ZjBiY2Q0NGU2MDc1MDIxYjIyYTNjNTY4NjZiOWM4YTVkOTZhNmRmODk5NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmQ4NzNiYTQyOGMyZTMxNGI4ZGU0YThmMGM5MWQ3NDBmOWM1YzEwMmRmNjE2Yzg1NTNhMGMzMjg0ZTVkYzNiMSJ9"
+          "resource": "repo://agent/github/thread_token.py#L21-L55",
+          "version": "repo-lines-v1:sha256:a5147dbbccbf1466e8b6ad485b48568a67c45d3702d69d846a6d9ab9e826ebd3:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MWJjYTA3NDVlOGY4MjFlYWM3ZTJmMDkzODc4ZjU3MGYwZGViMGJlNTY3ZDYwYTcwMDNmNmE2YTdiOTVhMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllOWM0YjE1NDA3NDAzNDI2MzgyY2QwYjQxZDViYzg1NTI2YzIyY2E4ODU2YWM0NTBhZmFlMTRiMmM1YjhhODYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc3NTI0NGRkZDgyNzI2MWYxYWVmNGJhZjhjZDc0YzU2Yzk3MmQ5MWM3Y2RmN2JmYzQ1ZjM4ZmJmOTI1YjU4YjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxYjY1OTFiNDhlYjEzNjhkNjgzNjcwMzc2NjEwOTI0MDRlYWQyNmVhMTNmN2ExN2ViNGI2MTc5Y2I4NTlkNmEifQ"
         }
       ]
     },
@@ -63,16 +51,16 @@
       "statement": "Cached GitHub token entries expire on the token's own expiry (with a 60-second skew) or a hard 24-hour TTL cap, whichever comes first, and invalidate_cached_github_token clears a thread's entries when a stale/revoked token is detected.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/github_token.py#L12-L20",
-          "version": "repo-lines-v1:sha256:a2bc1bcf7bd0218ae9b0df9c9467c117c2b990bac4df1c15b161460d99030a42:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDA3MzY0YmQwOGQ4Y2ZmNjVlN2U0OTQ1NTY3MWU3ZWY1YjNmNmFkYzNkZTEyZGI5Yzg0ZWUxNTY0NTA3ODY1MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDBiMTBlYmYzYjk4ODJlNWZhZmI3YmYwN2YzM2UzOGFkYWEzZWYxNDI4YjkzOTFhZTA4NDkyOTQyZTVkNjZhMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGY5NTlmZDQxZjA5YzkyMmMyYzVjMTUwZmQ1OWVjODhhNmFlMDA1YTdkODJiMTliYzE1MGE3Y2NmZWM0MGFkOSJ9"
+          "resource": "repo://agent/github/thread_token.py#L14-L20",
+          "version": "repo-lines-v1:sha256:8261284f4b26a90c5e3f96aa1be40e91ad8f42ec0759882147617383e54afe38:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDA3MzY0YmQwOGQ4Y2ZmNjVlN2U0OTQ1NTY3MWU3ZWY1YjNmNmFkYzNkZTEyZGI5Yzg0ZWUxNTY0NTA3ODY1MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDVhMWVlOGJlNTkyOTRkYzY0MjcwYjliNzJiZTk5MzhjNGVkOTdlYmEzN2E0ZDE5NjZkMjk0OGM3YmVjYmY4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGY1N2E4YWUxNTQ0ODM1ZGI1MWYzZmRhNjBiOWU2MTRlOTM3ZjBhYzk5YTUzZjM3ZTIyNTBlNjRmNmQ3OTEwNiJ9"
         },
         {
-          "resource": "repo://agent/utils/github_token.py#L161-L165",
+          "resource": "repo://agent/github/thread_token.py#L154-L158",
           "version": "repo-lines-v1:sha256:a5235a58166837e1bfce56f47cfce057e74a21c30427f23307632e727c1ae370:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGFiY2VjNWZiZDBiMmUyNTRjN2VmNmM1MzVlNmNkNjg5MTJjYWZkYmFlZDQ2MTA5MThjZjVhNTE5MjI3YWRlZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjkxZGQzMjc3ZGMxYWU3OGE4MzgwOGY4M2FjOThiNmYyZWU1NmM2ODBiNWQ1MGUxODk1YTAyMTg2Njg3NDQ3MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTUyYjM0ZWNiYzQxMGU1NGQxZDhmYjBkMzBjMzgyY2NmNjkyMWNjYmFkM2NhYTY3MWFmNmM0OTIxM2JlNDc0NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         },
         {
-          "resource": "repo://agent/utils/github_token.py#L87-L124",
-          "version": "repo-lines-v1:sha256:ce780a70cf8e125d142fb91be06aab32ae5fc194a71821d69a04f7b42eb8f51b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YjNmYWM4OGFlNWEzNTM0OTRlZDBjZTMxZmRhYjA1OTdmODY2ODcxZThkMTU4NDk3MGQwZjNlMzcxYjQwMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3ZGNlYmVjMGNiNTU0OTRiNGRlZDk4NWQ0OTg0OGEzNGQ5MjJmYzQ0NTc5Y2VmMDVjOTYzYzc4MGE5NGE4ZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZjNjNjQzMzExNDAxYmE5MDg3MGViN2RlOTYxN2ZjZjA2ZjAyMGM2Mjg5N2Q3YmMyYWYwZGQ1NTM5YjhjZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlYTFhMzY3YmZmYjA1NzY2ZmEyOGM0ZTM1NWQ1NGJiMWM2N2U1ZTZhZThkZjYyNzMzMmU1ZGUzOTQ4NTFhOTQifQ"
+          "resource": "repo://agent/github/thread_token.py#L89-L104",
+          "version": "repo-lines-v1:sha256:ee56f1eb304964ca0662114d353d423c33e420db42c5e5fd0797cb0ec4e93e63:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4YjNmYWM4OGFlNWEzNTM0OTRlZDBjZTMxZmRhYjA1OTdmODY2ODcxZThkMTU4NDk3MGQwZjNlMzcxYjQwMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3MTA3YjQ5ZWZhZDVhNzgwMWYzNWQzN2YyYzNlNmU3ZGE4MGMxNzM3OThiOGIxOWI0YmJmNWE1MmI4OTEyZjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZjNjNjQzMzExNDAxYmE5MDg3MGViN2RlOTYxN2ZjZjA2ZjAyMGM2Mjg5N2Q3YmMyYWYwZGQ1NTM5YjhjZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyZmIxZWJjNDk1ZmJhYmNjNjEwMWNlZDQzOGM5MTRkNTQ3MTcwYTZhZjRiMWYwMTQyY2I4YTNiZWJlN2E0YjMifQ"
         }
       ]
     },
@@ -81,30 +69,16 @@
       "statement": "GitHub App installation tokens are minted by signing a short-lived RS256 JWT with the App private key and exchanging it for an installation access token, cached in-process by a scope key of installation id, repository ids/names, and permissions, and reused until within a 10-minute margin of expiry that exceeds the proxy refresh window.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/github_app.py#L168-L222",
-          "version": "repo-lines-v1:sha256:20e2da2e09b1cc1b6e751533b290f325f9099379f6f24406904e0ba96a4d9a90:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNWVlNmIxOTg4NmQ4NjYyY2FiYmY4YzFlMzdjNDc4NDI5YjU4NjZjMWZmNzEzODhkMGI1OTVmMTYxMWFmNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YjliYTg3NGZjOGYwNmEyZTI5ZTYwNTA3ODQ0NzRjMWEyZjk0YjcxZTZjOWU0NjJkYjQwM2E3NDhjN2U5N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZDdjMGM0MWQwNmE4NWI3MjRlN2FlYWVkMDc4MjM1YmY5M2E5ODY4NDkzMjliYTI2MzNhNmU5ZTQ0YmQ4ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmZjU4NmE5YTEzMDQ5ZmYzM2M2MjU2MzhlYWM5YjM3ZmM5MWEzNzM5NmFhOTExZTkzODJmNTRiNGMzM2MxMjEifQ"
+          "resource": "repo://agent/github/app.py#L168-L228",
+          "version": "repo-lines-v1:sha256:6b1ac164ca70e8ce0ac17c7dbd2990e2882ca8856e0a67285bb8d05602f9f579:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNWVlNmIxOTg4NmQ4NjYyY2FiYmY4YzFlMzdjNDc4NDI5YjU4NjZjMWZmNzEzODhkMGI1OTVmMTYxMWFmNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2Yzk4ZDk5NjdiNDA2YjM1Zjk2NTU3NWZmNjVkM2VkYTJkZmEyNWU3ODNmMWU0ZmZlZDU5NzQ2YjlkYzFiMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5ZDdjMGM0MWQwNmE4NWI3MjRlN2FlYWVkMDc4MjM1YmY5M2E5ODY4NDkzMjliYTI2MzNhNmU5ZTQ0YmQ4ZjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://agent/utils/github_app.py#L21-L52",
-          "version": "repo-lines-v1:sha256:0debe8ec650c882d125b14ec44ac831a03fac2fe68efdb4479ff87f9cfa47da6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkMDVkNzk5OTljMGViNTU0MWI5YWUzZTBiMjE2OTJmYjA2N2NkM2YzN2NjN2VjMjY5OWYwNzNjMmQzMzZmZjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5N2YyOGQ3Mzg3MWNkYmI5NTc1ODgzYTdiZDBlZDE0MTMwYjQ0YTFiYjUyMDA3NmQ4Mjc1NmI5ZTkwNzBhZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyYTBkOWUzYTZlZjg5M2VmZTM0NDMwMzRkZDBmYTA3ODM1ZmZjY2E5NTVmM2Q1NGUxOWNiYTdkZDZjNGE1MjAifQ"
+          "resource": "repo://agent/github/app.py#L21-L30",
+          "version": "repo-lines-v1:sha256:1fd35ac7ef1526890adfd8e05917433e9ea34ec8f3649e8bd671ada7bab2b0fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1OWQ1YzhiNDY4ZTIwMmU1Zjk4YjM3OGQyMjE4YjkwYWQ1YTdmZWFiNTYxMTI3NWNkNTI0MDRhOWVmMzBhNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5N2YyOGQ3Mzg3MWNkYmI5NTc1ODgzYTdiZDBlZDE0MTMwYjQ0YTFiYjUyMDA3NmQ4Mjc1NmI5ZTkwNzBhZGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhOTViZDJkZTRkMDVlNDJkMmFhNmM2ZTk3ZTA0YjI5OGE1NmRjYTkyOTRjMTJjMjY2YTllNzM5OTE0NGRjM2YifQ"
         },
         {
-          "resource": "repo://agent/utils/github_app.py#L87-L96",
-          "version": "repo-lines-v1:sha256:a20a6c62ce633b7028010ad0fd2d24ee7ef8f75379581b50976abe62abe99f29:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlY2Y4YmJkMDI2ZGM3Y2Q4NzQzZWMzZGQxY2RjMTY4MWJhYjAyNzUyY2NkMTNhOTJkNjNiMDY5NDhhOTliODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyYmVhMzVkYjIxZDkxMWQ0ZjMyZTAyNDllY2JhOGExMGQ4ZDUzMzY2MDgxMjlhZWQxZjc5MTJiY2VjY2E1OTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkNWQ2ZGZmN2QwOWJlYzRlYjA5NDdmYTgzNTM3Y2E5OWRlM2NiNTAyMzdhOWViZjRhYzRlZDA2YjVmNGFmMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhNDFiNDQxNWU0ZGJlZmRkMmI2ZDE4NjM4YmVhNjQwZWNjMzc0OWMzODNjNmNkM2ZhM2Q2MTUzN2EyNmExY2UifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_2c76e70d28184a25ad80db82593c874c",
-      "statement": "The resolved GitHub token powers the LangSmith GitHub proxy: proxy rules inject the real token on the wire as Authorization headers for api.github.com and github.com while the sandbox only sees a placeholder GH_TOKEN, and a before-model middleware refreshes the proxy token as it nears expiry.",
-      "evidence": [
-        {
-          "resource": "repo://agent/integrations/langsmith.py#L190-L218",
-          "version": "repo-lines-v1:sha256:37449046e486bcd1a3644d657a4d5a057cb0a7fbd8d1b11e70feae5371f2643e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzNzZiYmNjMzRiMGI2MjkxM2NlNmZjYzcwYmI5ZDIxNGVlNTU0YzliY2M0NDlhMzIxYWRjODNjMjExY2NjZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkZDI0NDU4MmI2ZmIwM2QyM2I4NDE1YWJlY2QzNDZiMGM5ZjQ2NmI2Zjc1MmIwNjgxODljZTdlOWEyZGMzNTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4MmY4ZjcxZDVjYjZhYTBlZTVhMzJjZjQwYTFhY2RhMWU2MzRhOWFiOGE3MjI5ZTY4NzUwOGQ1OWZhMjQxMDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI0ZDhmNzlkZjY3OGU2ZTcwMjEzOWQxOGYyMTYxYTY5NTk1YWQ5NTJmNDNjMjExMWI1MTFkZDMxZmEyNTc2MjkifQ"
-        },
-        {
-          "resource": "repo://agent/middleware/refresh_github_proxy.py#L17-L23",
-          "version": "repo-lines-v1:sha256:a712a98f386c4339988fa476e6c9097f2ff9a37c0263dfa5a143339a907308e0:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGFhYzUwMzc5M2FiNWRlMDY3MmE4NjI5YTBlMzY4MThkMjVhZjdkMjBhN2FkODcwNzM1NGFmYjgwMDBhNjJhNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzI4MDY1MTBmZTVmZDIyYjQ5MGJlNTZiNzVjYjk2YjBmM2RlZjg2ZTIzNTZiMmUxMGE4MmMwZjRiMzI5ZDJkNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTkwZWE5MTc1Yzg0NTA5MGMzYWVlODllNjNmZTZhMzZmOWY4NDNhNDg3ZDRiMWE5YjRiZTdlOTA4YmRkNzBmNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTdlN2RkMThiZWUwZjFiZGUxNTgxMmY2OTc1Zjc1NzE0NzY1M2UxODNlZGQzZWFmOTI4OTI1NzViNDJiMDMzMCJ9"
+          "resource": "repo://agent/github/app.py#L87-L97",
+          "version": "repo-lines-v1:sha256:5c4629bcc120c891c234bf0da2c3f92a3216b68d4e990091605251e91ff22f20:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlY2Y4YmJkMDI2ZGM3Y2Q4NzQzZWMzZGQxY2RjMTY4MWJhYjAyNzUyY2NkMTNhOTJkNjNiMDY5NDhhOTliODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkNWQ2ZGZmN2QwOWJlYzRlYjA5NDdmYTgzNTM3Y2E5OWRlM2NiNTAyMzdhOWViZjRhYzRlZDA2YjVmNGFmMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1OWJiMzNkM2U3ZTZmYjI3ZWEyZmFmNzdlNGI5NjEzYzA4OTkwMzA3Nzc5YzI5NTFiYTUwYjRmZWI5YTAwZTIifQ"
         }
       ]
     },
@@ -113,7 +87,7 @@
       "statement": "The dashboard authenticates browsers via GitHub App OAuth and a HS256 session JWT stored in the osw_session cookie signed with DASHBOARD_JWT_SECRET, valid for 7 days; require_session rejects requests without a valid session cookie and /me returns the signed-in identity plus is_admin.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L189-L205",
+          "resource": "repo://agent/dashboard/oauth.py#L212-L228",
           "version": "repo-lines-v1:sha256:b906347ec7ed3514d93953237d617dae8cafa876e835a973aba04a94f38bee43:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJmNzJhNjg3MjEyNThlYTZhZTk4YjY2MThmOTMyYjUzYjc1MmUxMjkzYTVkYTBmOTE2NWMzZmNmOWY2ODdhOTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhN2YxMDE4MTIzYmRjOTg0ODBmM2FhNTM0ZGVlMTA1NDIzMDUwOGUzNDhmMGFhMGI0MTM3YjMyM2NmNjBkNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmMWQ0YzJkMzJlOGYzY2M0ODI3NTY5OGQxOTdhZWJhYTA3ZDJiNjI2NjNiZDM0M2EzNGEwZmVjNTE4ZDNhMjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3ZmU5NDVjZGI3YWZiZGM1OGE2ZWY4ZjZhNGFmMTNlOGI0ZTY5NTFlZDBhYjNjMTc2ZDBlMmFiYjVhNDUzZmMifQ"
         },
         {
@@ -121,11 +95,11 @@
           "version": "repo-lines-v1:sha256:0d43b101ad29e3387354dc3598277642211965644c6541f8b5cde3854196b1df:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJiMjVhOTc2YzEwYmUwMjUwZDQyNDdlZTU4MDEyMjhjYmFjMmI1YjhlZDE2YWZlOWRhYzhmZDhlMTkwZWQyZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTdlODZhMzg4MmMwZDlkYWExZTM4NmE4NzQwMTA4NmM1YTUzMGI2OGQyNDFlNWQ0MDkwMmEzMGMyM2ZmZGY1OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDZhZDhiZGVhYTA2NTZmODJiMGNmMjNmZWEwYTE4MGMxMDlkYmIyNWVjYWQ3OTI2MWU1OTI3NTFkZDYzZGRkNCJ9"
         },
         {
-          "resource": "repo://agent/dashboard/oauth.py#L342-L346",
-          "version": "repo-lines-v1:sha256:671f49a410c3e8bc006c36587c34dac6170f5297fcd5a3489bcbd6fc456540ef:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWM0YTAyZjRjM2VkYWE2ZmNiODk4MGJjZjlhOTdkZTMwNGJmZTViMmEzNGMwYzdmNTU2ZTc3NDdkOWFiZjdlZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODA4MzdlNjA5MGUzMzY2NWE1OGM5Y2NkNjI4OWM4MjYxNzY3YjM3YmEwN2M2M2ZmMTFiNmExZWZiZjcxNWUxNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTE2NTE4ZDAxNDk1NGQzZGQyNzkzZmI5Zjc1YTFhZTI3MTUwMWI0MDY2MGQ1MDhiNTVkMjZjMDhjNTdkZmE1MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGUyNzFiYTBlMzBjZWU0ZDZmMzg1Yzc3MmIwZWYwMTJkNzI1YjZjNjM2ODdkYzlkNTE4Y2Q0MzAzZTIyMGUxMiJ9"
+          "resource": "repo://agent/dashboard/oauth.py#L365-L370",
+          "version": "repo-lines-v1:sha256:65b995f10e6c1d227a50e945102003965c5b85b94109976073f535cf12c455a3:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWM0YTAyZjRjM2VkYWE2ZmNiODk4MGJjZjlhOTdkZTMwNGJmZTViMmEzNGMwYzdmNTU2ZTc3NDdkOWFiZjdlZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTE2NTE4ZDAxNDk1NGQzZGQyNzkzZmI5Zjc1YTFhZTI3MTUwMWI0MDY2MGQ1MDhiNTVkMjZjMDhjNTdkZmE1MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTQwNTNmYTY1ZDlkODRmYjE5Y2FiMjkwNjk2M2Y4NDEyMzdjZTVhMmY5NWUzOGQ0ZjdhYTA4YTFiN2MyOTNjNSJ9"
         },
         {
-          "resource": "repo://agent/dashboard/routes.py#L565-L573",
+          "resource": "repo://agent/dashboard/routes.py#L568-L576",
           "version": "repo-lines-v1:sha256:34b35dca3cdcb7e1fb9426f7fd0c3f16af64b3afdf299b816493492552c82f08:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTRkMjU5MDhiNTBjM2QwODhmZDJkY2EwMDM2OGQxZDRlYTIzMDRlOWYxN2E0OGRlYmFjZTg4ZmYzMjM1MjZhYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDg5M2Y0MGUzNzgxZWI4OTZjODJkMDQ2YTA4MDY3YTExZTM1Y2RmMmYxZGZhZjI2ZmVhOTBiOGRiNjY3NjQxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzMwMzI1Zjk4MGI0YWJlMGE1YmZkZWIyZDNlYjkzNDg3NmQzYTA0MzMyNTY0NDQ3MmMxMzZjY2EwMmI5YTgwYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjRmMGUwMDZlMzFmOTAzZTgyNmE4YzRmNWZjMzFhMzhkYjM2NDYxODMyYTc0YTk4MWVjOTNkZGNhYjUyYTk0ZSJ9"
         }
       ]
@@ -135,11 +109,11 @@
       "statement": "The OAuth login/callback flow binds a random state nonce to the browser: /auth/login stores the nonce's HMAC in a signed state JWT and the raw nonce in a cookie, and /auth/callback verifies them with a constant-time compare before exchanging the code, resolving the login, enforcing the org gate, and issuing the session.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L208-L248",
-          "version": "repo-lines-v1:sha256:89c015386683efdd4f6fa2df9cd9fa1f8af12f2523697ea1cc1c11ea8ad104ca:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZGQwODg3OTcyYjA4YjcyYWI0MDAxNjBhOTU4YzExMGIwZDAwZjJhOWNhY2JiMWE4YjY0ZTE2OWRiOWIxZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNGFiMzY1Y2E2Y2I2MTJlMTAwYWNkNjI0ZjM3NjU4ZTQ1MTYxNWI1Yzc3YmU3ZDliZTNjMzE4YWJiODdkYTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwZjI1ODhkMTRkMTVlNDA4NjZmN2UwZWMwM2UwNjc2ZTc4M2E1MDA2YmU5MDAzNmYyOGNkYTRkZTVjZjE4NTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2ZGZkNmY1MGE0MzM0ZmQ5ZWU4ZjhiMzA4NDFmOTQxMjc0YTNiOGE1MWYxMjU1NDViNzU4OGNkMDMyNGExYzYifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L231-L244",
+          "version": "repo-lines-v1:sha256:f87438a98790d6ae207d0721b6a262d630e2de77e11ea7277b8aa0b0f8503e07:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlZGQwODg3OTcyYjA4YjcyYWI0MDAxNjBhOTU4YzExMGIwZDAwZjJhOWNhY2JiMWE4YjY0ZTE2OWRiOWIxZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkMWJjMGJmZGE2OTdiNTNlODFkYTY5MTU1ZTg1NDIzMWNkYzZmNzI4MWU5M2I3OTAyNjAzNjAwZDc5ZTIzNDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjEwZjI1ODhkMTRkMTVlNDA4NjZmN2UwZWMwM2UwNjc2ZTc4M2E1MDA2YmU5MDAzNmYyOGNkYTRkZTVjZjE4NTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxOWMyZWZhYTNjYjUyMzM5NmZlOTZiNzQyYTI2YjllYzAzNGJkZjk5NzMzMmM2YzUwZGQwY2ZjYWZiNjM1ZjgifQ"
         },
         {
-          "resource": "repo://agent/dashboard/routes.py#L450-L541",
+          "resource": "repo://agent/dashboard/routes.py#L453-L544",
           "version": "repo-lines-v1:sha256:ff70f8315a2b90cdca48ebca6a65ff4ac1ccb4b45f6571a91d27f48b6da4b357:eyJzZWxlY3RlZExpbmVDb3VudCI6OTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5MzI3ZjU2NTU1YjllZTA5MWZjMDYxNzY1NzYxNDU4OGRjNDA2ZTI5MjM3YTkwNWJmNjQ4NGY5NWMzMzEwY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyMDg1MzI5MTBjZmNlZmU1ODcwM2Q0MzQ0NWE5YzIwMmIxMjQ4NzcyZjE2ZWY1YTE2MzBlNjJmMjVkZjAyNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyMDAyZTIxMmQwNTVmNTdlYjFlZGJkZTE1ODVkODM0NGJiNTdkNjY0NWI1YmIzZmVhMGJjYjBmZjcxNzMyMTcifQ"
         }
       ]
@@ -149,8 +123,8 @@
       "statement": "Post-login redirects are constrained by sanitize_redirect_to, which permits only same-origin relative paths or origins on the dashboard allowlist (DASHBOARD_BASE_URL plus DASHBOARD_ALLOWED_ORIGINS) and blocks known open-redirect paths, preventing a login link from being steered to an attacker origin.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L83-L155",
-          "version": "repo-lines-v1:sha256:58187a5f0dd558b9ee1ac942f6a71364fcdc7fbc808c4ec290c2e52cc920ea00:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNTc5OWY1N2I1NmM2MGYyM2I4M2M0NmU0NjNhMWViNTA1NTExMjJkMmJkYWRhNjNmNjY3OTc5ZTU3ZjQ5NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMDU1ZWIyYTZhYmY3MTlhOGQ0NTE5YjhiYzg2M2ZiY2RlNzg5YzBiNzFmNTZhYmUwMWE5NWZmNmM1YWYzNjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI1MjU5YjY1OTA3NThmODllMzUwMzRkZmNkNjdiYjQwMjIwZDMxY2Y1ZjQzOTYzN2JjZThjMGI5MDk0NDM1ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzMGVkZWNlYzA0MTdlY2VlMjg0NTJiYTU1MjdhMGVjNDE1OTk5M2NmY2YxYmZlZjRjYjc0MWQ2NzBiZTYzMmEifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L130-L156",
+          "version": "repo-lines-v1:sha256:259225a625cda77188a5228e9d57fd9a92537a005d537e3717d295d4ccf592bf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViMTUwNzhmNjI5ZWE4MTNkZTYwN2EyYzZiNGEyZjVjZjQxZTUxZmFlNmExMWM1N2UzY2Y3YTliMjk2YjM1Y2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhYTI3MjYwYTRhZGMwZDdjMzJmNmI0NzBiYWE0YjdlMzA0MzQ3ZDI3ZGRiNmZmZDFmODFmZWY5NGYyMWU2NzcifQ"
         }
       ]
     },
@@ -159,15 +133,15 @@
       "statement": "enforce_org_login_gate treats a nonempty ALLOWED_GITHUB_ORGS allowlist as fail-closed: it allows only an active member of at least one listed org, checking membership with a GitHub App installation token and rejecting API/token/membership failures; when the allowlist is empty it intentionally fails open but logs once per process that any GitHub account may log in and all logged-in users can read surfaced threads.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L159-L210",
-          "version": "repo-lines-v1:sha256:58836ffa285bb76ff6df57d3f6349e8c9b9da2881e7b2011af3f6df1d12e867b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExMmY3OTdjNDE5YzFiNDRmMzI4NmNiMjc2YmEzNTZiODZlZTY1MTNhZDQ1ZjNiMGMyNTZhYWZhMDE5MGY4Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4NTBjMzNiOTZmMzMwMTlhYjQxMmQ1YTYwNWU4OWFjMmE2ODQ5OTdlYTRjNDgzNzEzZGFmMzc5YWFmMzFlYzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4ZDc0NDI3YzdlOWU3ZjkyMDFmZGM5NWRhNGM0NzAxZDFlNzE4NmI0NzlkZTY1ZDc3NTEwNWMwMWVmZjZkOTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhMDZiMjQwYjE4ZDA5N2ZmZWY2YTIzODQwYWIwZDc4NGE5ZDUyMmM1ZjZkOTg2M2E3MWY1Mzg2MWM0N2U5NDMifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L192-L210",
+          "version": "repo-lines-v1:sha256:9869f59edb12a9a46206d70feceb461a08882736acb6c6918bb30f54175a7290:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI5YzNlMWYyNzMzYmQzMjg0NjNjZmUyM2MyNDA5N2FhYjVkYWJlMDEyNDQ0M2UwYzQyZmZjYmIxZTk1YzBjOTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBiZGE0OTVkYzQxMTliMzE0OWMyYzc1NjY2MGZjNTE1NDM5YmIxN2JlZDdiYmI1OTBmM2JhZDZkZDVlN2MzN2QifQ"
         },
         {
-          "resource": "repo://agent/dashboard/routes.py#L492-L544",
-          "version": "repo-lines-v1:sha256:286b531466655b5f9dddecb966d1e5497c74d1a5aad257f11a625c5f7841396d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE5ODIyMjFiMGU1MGU1OTMyM2VhNDY1ZTI3NzZiZjQ2OTkwMjZkMTIxZmI1OGFlZGNjYjJiNjAxMzJlYzk5ODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyMDg1MzI5MTBjZmNlZmU1ODcwM2Q0MzQ0NWE5YzIwMmIxMjQ4NzcyZjE2ZWY1YTE2MzBlNjJmMjVkZjAyNzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczMDMyNWY5ODBiNGFiZTBhNWJmZGViMmQzZWI5MzQ4NzZkM2EwNDMzMjU2NDQ0NzJjMTM2Y2NhMDJiOWE4MGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyMDAyZTIxMmQwNTVmNTdlYjFlZGJkZTE1ODVkODM0NGJiNTdkNjY0NWI1YmIzZmVhMGJjYjBmZjcxNzMyMTcifQ"
+          "resource": "repo://agent/dashboard/routes.py#L520-L520",
+          "version": "repo-lines-v1:sha256:fc56d81b3fae80cee54e055c43c04ba049a3f355245beb4d7eabe09dd5b89d74:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM1NmQ4MWIzZmFlODBjZWU1NGUwNTVjNDNjMDRiYTA0OWEzZjM1NTI0NWJlYjRkN2VhYmUwOWRkNWI4OWQ3NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmM1NmQ4MWIzZmFlODBjZWU1NGUwNTVjNDNjMDRiYTA0OWEzZjM1NTI0NWJlYjRkN2VhYmUwOWRkNWI4OWQ3NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTAyYTgxYWY4MzE0NjdmMDk1OWNlMTVkOWQ3NzMxMzUzY2U1MmNmZmVmZWU4NWM2YzMwODljM2M2Njg5ZjQ2NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGYxNzBhZWI1NjViZDE3MjYyZmU1Mzg0YjlkZDMwYjZkZDE0NzY0OGU1MmU2NTA3ZDAxNTk0YmRjZjJhMDY4OSJ9"
         },
         {
-          "resource": "repo://agent/utils/github_org_membership.py#L26-L89",
+          "resource": "repo://agent/github/org_membership.py#L26-L89",
           "version": "repo-lines-v1:sha256:fe4087d8a694ea0d6f97770d8d68127ec186da7748600c3d5c94244074b39e90:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5NDFiZmY5ZmQ0NjQyNjM1OTI2ODlmZTk4NWUwMzljYjFkOTllY2YzMjg1NGIxM2IwM2VjOTFjOGE5NDhlMWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljM2UwNmJkZDgxM2M0Mzc1OTNlNzMyYzRhNGQ5YjlmOTlmZDEzNWU2NDA0ZmE5MTllYzhmNGIxMDQzZGU1ODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5OGIwNjNkOWI0N2U2NTM3OTYyNTU3MmNjZTE5NzY2OWQ1NzY3ZTEyYzE4YmUwNzU2NTJiOGNkOTgxY2U4ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
@@ -181,8 +155,8 @@
       "statement": "Cookie-authenticated dashboard mutations are CSRF-protected by an origin allowlist (require_same_origin / require_same_origin_for_mutations): safe methods are exempt and a request whose only credential is an explicit bearer GitHub token without a session cookie is exempt because a browser cannot forge it.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L364-L401",
-          "version": "repo-lines-v1:sha256:5f9549985697afe54da821ef6dbeb870ef418e6494c07fc3fd32c0ed9af2d9f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyYTA5ZWNkNjYzNjY4NGQ4N2U0ZGViNTEyYTc1MTgzZGYxMjg2MjdhMjdjNDE3MmNjYzExNzliZDI3NTNhZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YzJlY2JiMjA2ZmY2NjQzMWYzNTk3Yzk4NGFjMzJlYjk4NTk0ZmVlNGY5ZjZhNWI4YmMwOGRmNGUxMTllZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjNjA5MjRlYzUxMmQ3NTJiOWE3Y2RiNTIwZTNjNmZkNWQ5MzEzNTFiZGFhYjJhZWNiYWJhNDM2NDRhNjZmNWUifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L411-L425",
+          "version": "repo-lines-v1:sha256:037d6a713591db10069d397858195df4609707923b22d38492a4edd20c6da143:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhN2FmOGJjZmM0NGU0Y2M3MjcwYzMyZDJmM2Y5MDBlNjViYTZmZWI4M2JjOTFmMTdiOGFhNDNkOGQ0ZmM0Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyOTMwZjE5YWFmNWZjZGRjOTM0NDQ0ZmFjODZmYzQ1ODMwYzYyMmI2YTY1Y2IwOTgwYzc1Mzc2YTcyMTY4ODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyMWMyNzYzN2I2Mjc2ZmJiMDIxZjQyZDFhOGM4YzhlZDk1NzE3ZDE1MDE2NDE0NjllNmJhYjQ2ZDI5YmQ4YjEifQ"
         }
       ]
     },
@@ -191,8 +165,8 @@
       "statement": "Desktop login uses PKCE so no session is placed on a loopback URL: the browser receives a short-lived handoff JWT carrying identity and the app's S256 challenge, and redeem_desktop_handoff mints the session only when presented the matching verifier via constant-time compare; cloud-terminal access uses a 60-second ticket bound to a specific thread_id and audience.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L277-L322",
-          "version": "repo-lines-v1:sha256:f34b461cfe96b8f70881d5388d2e5ead9c56839fd2ebe9027bc8db9f6b4943a0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlY2Y0OTgyYTcyODI0MTg5ZjFjN2VjNjEyMThkNDJjZTc0ODAyNWY0NjFlMGY2YmI2MTUyYmExNjQ1YzE0ZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg4MTcxNWI5YmI1OTFlYmI0MDljYjhkMzY2Zjc0NzM5ZWY2MjJkZThkMDk3ODZlNjE5NjQ4ZDgxNDZjOTMxODEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhMjVjOTkzNGNlYzljMDhhNGQ2OGNjZjFhNmNjNDAyN2ZlZDI0ZThmMGE4MDgzODkwYTM4ZGNlNDhhNTE1ZmMifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L277-L346",
+          "version": "repo-lines-v1:sha256:303c6d2da1e665c796079ab4bd682432afdfed3bc3836473a0545b38efab6838:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMWEwNDkzODQyZjU4YWViNWE0NWQ0ZTE3NTYyNmNmNDRjMDRiNmM0YjE1ZjU4NWFlYjJkZjllMWY2Y2Q2YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxYmI1ZDUyMmRkMjFmODE4NWJiZTc3YzlkYjFiNmJkYmU2OGQ3ODNhNGFjM2ZlMWU1MWYzZjk2YjVhYjgwYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMxYTcyYjc3YWQ3YWUyYzUzMmMzZjUwNWFlYmE2NDYyYjc2MmI4YjUzOThmOWMwMzEyZTFmZTRmMWE0MzAxZTIifQ"
         },
         {
           "resource": "repo://agent/dashboard/oauth.py#L38-L69",
@@ -205,7 +179,7 @@
       "statement": "Slack accounts are linked to GitHub identities through verified Slack OIDC, and verify_team refuses identities from a different workspace when SLACK_TEAM_ID is configured (cross-workspace / Slack Connect refusal).",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/slack_oauth.py#L65-L86",
+          "resource": "repo://agent/slack/oauth.py#L65-L86",
           "version": "repo-lines-v1:sha256:44c65d794074661a85b73a3a43c6bfa84fe7dacc72d0c20467abd99465961f33:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3ZmU1M2JlNDFiODcyYzcxNWQ1NDRiMmY1ODkzMWQ2NjRhOWQxMDlkYjY5ZTYyYTVhYThhYmI4OTM2MjVkMmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU4Mjk1N2QyNzg1ZjZjYjY2MGRiNjk4ZjI5M2RjNjc2ZTcyYjQ1MTkzYTk4MzRkOWE0NWFmMGIzZjExYzlkNTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3YzRlYjRkMGIxNWQ4ODdmNjkxZGEzNzc4MjZiNmM5MmM1MmE1MmIwMzQ3ZTliMTZmZjM0OWNmZWJiZTkyMzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmYTJlOTM1OTEwYjUwY2IxOWQ1NzE0MmJlMDA4MDlmZWNiMjM2YjUyNmY3MWI3ZGVlNDk4MDA1ZTU0N2U1ZTgifQ"
         }
       ]
@@ -215,12 +189,12 @@
       "statement": "Auth-failure notices posted into a shared Slack thread are token-free and link only to build_settings_url() rather than a per-user GitHub auth URL, so nobody else in the thread can complete auth and bind the wrong account.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L329-L339",
-          "version": "repo-lines-v1:sha256:010ddbba8dacc0186384444490708303ee03465970227668f00c72498393d570:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjNzI3MTFhZmQ3NTkxYjJlYTMyZjlhY2JkZWYxMmZiZjc1MmFlZjY1ZGQ3MjAwN2M1MTE1MDg0Mjk5YWNiMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5ZmM5NmM1YTJkOWNlMjhjOGI5NzYxZjA1NzRhYTFiNWE2NjQ1OWQ1MDBlYWI4MjVmZmI4ZDQ4MWU4ODQ5YTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2MjEzMWFkY2E1MWMxZjc2NDZhZDg5ZWU4OWRhYTI5MTE1MGU0OTNiZTZlY2I4ZTIwYzc5Njc2MTcwNzdkYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyMmRlOGNkM2VmM2E4YTQ1MzQ4MDJmZTQ5NDhhMTE2YWQ5Yjc2OGY3YzdjODc0MWVjODkxYzY5NGIxNGFkODcifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L352-L363",
+          "version": "repo-lines-v1:sha256:5197d4c3300bfa9999596d77882751d4e3c6353accf1ec2657946ac14e1d3275:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjNzI3MTFhZmQ3NTkxYjJlYTMyZjlhY2JkZWYxMmZiZjc1MmFlZjY1ZGQ3MjAwN2M1MTE1MDg0Mjk5YWNiMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE2MjEzMWFkY2E1MWMxZjc2NDZhZDg5ZWU4OWRhYTI5MTE1MGU0OTNiZTZlY2I4ZTIwYzc5Njc2MTcwNzdkYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzZDQ1MzYwZjhlNzY4MTZjYWI0OWE0NGJlZjE5NTJlZDIxZDEzZWM0NmJiNzlhOTIwMGMyN2U3NjFmOTgzNmMifQ"
         },
         {
-          "resource": "repo://agent/utils/auth.py#L259-L296",
-          "version": "repo-lines-v1:sha256:5827e2e947fc82678a8508ba256787c7aaf94df94654311f54a62e01596e5785:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMjE4NDQxNDMzYjU4Nzk3NDhiZDRlODk5MTYxYWM1ZGQ1MzQyYmVkZDdhNTYzYzY0NWE1N2VkOGJkNmY5ZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiNWM4MjYzMmZjODJkNGIyYzM0MGY0MjU1OGJhM2RmYTMxYzc2NTVkZjZmY2MxNjhiNGZkY2U1N2ZhYzYwNDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmYjc4MDczODZlOTI5MmEwNjAyZmEzOGFkMGJmYjQ3M2Q3OGY0ODc3MjYzODEzYmUxMGI1YmMxNjdiYjI0YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViM2MyOGMyOTBhZTA4YTc4ZmNhNTZhZTgwZTQ0OGFhODNmNGE0ZWEzZmEwMDdkYmE0YjU5ZmNhZTllZDNkNjkifQ"
+          "resource": "repo://agent/github/token.py#L261-L296",
+          "version": "repo-lines-v1:sha256:6e7752cc4be4a35f6fc84792ae680dca80870503aad184a2613938a230570c04:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliMjE4NDQxNDMzYjU4Nzk3NDhiZDRlODk5MTYxYWM1ZGQ1MzQyYmVkZDdhNTYzYzY0NWE1N2VkOGJkNmY5ZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiNWM4MjYzMmZjODJkNGIyYzM0MGY0MjU1OGJhM2RmYTMxYzc2NTVkZjZmY2MxNjhiNGZkY2U1N2ZhYzYwNDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlmYjc4MDczODZlOTI5MmEwNjAyZmEzOGFkMGJmYjQ3M2Q3OGY0ODc3MjYzODEzYmUxMGI1YmMxNjdiYjI0YzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViM2MyOGMyOTBhZTA4YTc4ZmNhNTZhZTgwZTQ0OGFhODNmNGE0ZWEzZmEwMDdkYmE0YjU5ZmNhZTllZDNkNjkifQ"
         }
       ]
     },
@@ -229,11 +203,11 @@
       "statement": "verify_github_signature authenticates GitHub webhooks by recomputing sha256=HMAC(GITHUB_WEBHOOK_SECRET, body) and comparing to X-Hub-Signature-256 with constant-time compare, failing closed (returns False) when the secret is unset, and is enforced by the GitHub webhook route.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/github_comments.py#L85-L104",
+          "resource": "repo://agent/github/comments.py#L85-L104",
           "version": "repo-lines-v1:sha256:b2e824c57d3f7b98d73ae56cf6e803fe2910263f32562900e0f3f8feeaccd7fe:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlZGU2ODBmMTNmNmUyZTVhMWE4ZDViZDkyZDM0OGYzMmMyMzA3MWJhYzljMzgxOTRiNjQ2ZTVhMDNiMWYyNDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5ZDdhNTFkY2E1NzM0YmI1NmM2MjhmZGI1YzUyNGEzNzZjMDY1OTNhNTA4MWQ4NzU1NmRlMWI0OWVkOGIwMGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0ZWVlMjA4MWUwODliNzdkMmY2MmRhMmQzNjQ4MDE4NjViZDgzNDdkNDVhNjUzODU4OGMzZjg5MDM0M2Q1YjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk2OGQ0YmY3OGQ5OTE2OGFmZTk0ZjhhZWJlYTYxMWMwZGU2YTZlNTQ3OWEzMzkwYzAzYWYxOWZiN2MyYmU0ZDQifQ"
         },
         {
-          "resource": "repo://agent/webhooks/github_routes.py#L19-L19",
+          "resource": "repo://agent/github/routes.py#L19-L19",
           "version": "repo-lines-v1:sha256:3978fe96d996bfcd024e7fd26e9297ecd3a76a41947f3405d6a92a72abfbb732:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzk3OGZlOTZkOTk2YmZjZDAyNGU3ZmQyNmU5Mjk3ZWNkM2E3NmE0MTk0N2YzNDA1ZDZhOTJhNzJhYmZiYjczMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzk3OGZlOTZkOTk2YmZjZDAyNGU3ZmQyNmU5Mjk3ZWNkM2E3NmE0MTk0N2YzNDA1ZDZhOTJhNzJhYmZiYjczMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWQwZGFjOWM5Mzk0NTY1ODUyYjIzNzBlYzE1YzdmZDNiYzgzODk2NDUwZDA4MGFmNzNiODRlNGY5YjBhMTdkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGRkMmE2OTY5MDA5YmUyNGNjZTRmZjE5NzZmMTkyOWU2NGYzMDcyNmU5OTgzMDgxNTNjM2Q3YmE3ZmQyZmYxMCJ9"
         }
       ]
@@ -243,8 +217,8 @@
       "statement": "verify_slack_signature validates the v0:timestamp:body HMAC against the Slack signature and additionally rejects requests whose timestamp is older than 300 seconds to block replay, failing closed when the signing secret is unset.",
       "evidence": [
         {
-          "resource": "repo://agent/utils/slack.py#L153-L178",
-          "version": "repo-lines-v1:sha256:8257bedaca87d8906512e0f4d1a987259e7a999fef8f6e1e3d653dde2e49e8e4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2OTkxNDg5NWI5ODA4MDE5Y2M0OTQ0NmVhNTQ1ZDE1YTM4ZjA4YmUxZGZmYWM0ODk5NTkwOTc1NzYyOWRjMjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5ZDdhNTFkY2E1NzM0YmI1NmM2MjhmZGI1YzUyNGEzNzZjMDY1OTNhNTA4MWQ4NzU1NmRlMWI0OWVkOGIwMGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3N2M2MTA5NDY4ZTljYmNmMTIwMDRlYWVkYjVmODNkM2FmZjc0YzdkZTFjMjk4NzdkNTk4OTE1NGFjMzczNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkYzc5ZDdkYjNjZjdmNTM1MWM5YTA2ZmMyMmMwZTExMzg4NWQxYzI1OTVkNTBkNmMzNjVmZmM3NDNlY2JhZGQifQ"
+          "resource": "repo://agent/slack/client.py#L153-L178",
+          "version": "repo-lines-v1:sha256:65592eec16808c38bfbf479bfe0ffd6e1a6ef260542e400c6c73256094ad351c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJkNjg3MGI0ODBlZGYxYWZjYmI2NGQ0YTQ2YjU4MjI0ZGNiOGQ3YmQyZmQ1OGEwYTBlMjA4YzJkNjkzMjA0NjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwMjU4NTcwMDkwMWNkYWRjZTZiOGYzYzlkM2JhODJkNzBjMTNlYzg0NWY5MWJiNWVjZGE0YzkwMzUwZDBjODcifQ"
         }
       ]
     },
@@ -253,8 +227,8 @@
       "statement": "verify_linear_signature authenticates Linear webhooks by comparing the raw-body HMAC-SHA256 against the Linear-Signature header with constant-time compare, failing closed when LINEAR_WEBHOOK_SECRET is unset.",
       "evidence": [
         {
-          "resource": "repo://agent/webhooks/common.py#L1015-L1035",
-          "version": "repo-lines-v1:sha256:d7bcea3cc07a03a71c874615b26b864dcf67875b23e696ad4a325ab3efa0ee10:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YmQxMjg2MDg0NmMzYzAwN2E0ZWY4NWUwYWJjODMzNDA5YzUzNjM2ZWEzMTMzNjE1MDE4MTlhZDc1YmFmMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5ZDdhNTFkY2E1NzM0YmI1NmM2MjhmZGI1YzUyNGEzNzZjMDY1OTNhNTA4MWQ4NzU1NmRlMWI0OWVkOGIwMGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5Y2IwMjY1Mjk2MDQ3ODNlMjcxOTRjNDFmOGI2YWRhODc2ZjcxNjZmNWIxNWEyZTRlMWFkMTliZjQ5OGQzNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4YzAwMDA4NzUyMDRkZThhNGMwZTk1OWI1ZmQ1MmZlZTg2NDJkMDk4YjU4NWQxNDk0YjMxNjcxMGQ1NDU2MzQifQ"
+          "resource": "repo://agent/webhooks/common.py#L1032-L1051",
+          "version": "repo-lines-v1:sha256:8b66fb0b86589a922ebbf845a9508c61b592d5657811e768c4699a2625f0c7d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2YmQxMjg2MDg0NmMzYzAwN2E0ZWY4NWUwYWJjODMzNDA5YzUzNjM2ZWEzMTMzNjE1MDE4MTlhZDc1YmFmMTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5Y2IwMjY1Mjk2MDQ3ODNlMjcxOTRjNDFmOGI2YWRhODc2ZjcxNjZmNWIxNWEyZTRlMWFkMTliZjQ5OGQzNTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmMzRjMWM2NmY1MjViZGVmNWVmNzI1M2FkMjkxZmZlNjJhZjJiNzMxODY0MzExNDg1Mjg1YTlmOTQyMjQ5ZmYifQ"
         }
       ]
     },
@@ -263,12 +237,8 @@
       "statement": "The publicly reachable /webhooks/run-complete route is authenticated by verify_run_complete_token against a shared secret (RUN_COMPLETE_WEBHOOK_SECRET) using constant-time compare, and is fail-closed: when the secret is unset every call is rejected and run-failure replies are disabled.",
       "evidence": [
         {
-          "resource": "repo://agent/api/health.py#L17-L20",
-          "version": "repo-lines-v1:sha256:66e9f2cb833a546f8cc99f43ccfa6c8398530f17ef11412a7519b875cb72ba39:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjBmNmJmZjVlMTA5YTkyM2U3Njk1NzkwZTQ2MzBmOTM1MWFmOTQyYmRjMjZhNTQwMzNkNTZkYzRlNDQ2OWM3OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjljODQ1NWMzNDJiYzM0NjAxNWJlNjM0ZGE3ZmFmZjJjYTI4YzQwMzJhYTM2NzQwYmZjNWQ3YzcyMGQzODk5MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTQ1MTA1NTI3N2M3ZmE3YTMyN2E0ZDFkNmQyODA1Mjc3ZTg5MjRiMThkYjVkNzdiOGMwYTIwOTM0MmJiZThlZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTczMzI1OWU0MDkzNjI1MjAwMmY0Yjc5YjQwMzA1ZTMyZTlmOTkzYWExYjE0MDUxYzU5NDIwMGQ3YmEyOWNiMCJ9"
-        },
-        {
-          "resource": "repo://agent/completion.py#L50-L71",
-          "version": "repo-lines-v1:sha256:fbf5fea31471c03dd2a2c8cf063002712a92cda3f54a9815a66fe7259a1d0bf4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkYTlkYWJlNGRlYjQ5ZmI2MmY1ZGM4NjhkMWY4N2Q1ZmYyNDgzMGRmMDFjZDFjYWQ3ZjhmYTRiYWNkNWRjYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNzQxZjFkNDliZGVkOWQyZGU3ZjY2ZDU5Nzg0OTYyZWMyOTZiOGQ2ZDBkYTI3YTFmYjE2NWM3ZTZhYzk3N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwOTczOTcwYTAzYzcxNmYzM2FlZmI0Y2Y0MDBlNzY0MzFlM2NhMDRlNzM4NjIxOGRlYWJlYzQ3NDQwZGIxZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYwMmQ0N2NmZTY2ZDFiMTlmNjBmMTlkOWFmYmUyZDIyNjYyMmVhMDA3YWJmNmYxOGUyMTM1ZTE4NDFiZWVjYzMifQ"
+          "resource": "repo://agent/completion.py#L50-L72",
+          "version": "repo-lines-v1:sha256:a9160c89dedf12776e802ced64d590901c000f43806d041c0e61094de2674cbe:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkYTlkYWJlNGRlYjQ5ZmI2MmY1ZGM4NjhkMWY4N2Q1ZmYyNDgzMGRmMDFjZDFjYWQ3ZjhmYTRiYWNkNWRjYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIwOTczOTcwYTAzYzcxNmYzM2FlZmI0Y2Y0MDBlNzY0MzFlM2NhMDRlNzM4NjIxOGRlYWJlYzQ3NDQwZGIxZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0YTI5OTUxZjljMzFlMThkZDg4ZmVlZjg2YWI3MDY5ZDYyZjRjOWU2ZWVjM2EzY2FjMWNkNGY3OWUyYWUyNDkifQ"
         }
       ]
     },
@@ -277,8 +247,8 @@
       "statement": "Persisted credentials are encrypted at rest with a MultiFernet built from TOKEN_ENCRYPTION_KEY, which may be a most-recent-first key list so the first key encrypts and every key is tried for decryption to enable rotation; decrypt_token degrades to an empty string on an invalid token or missing key rather than raising.",
       "evidence": [
         {
-          "resource": "repo://agent/encryption.py#L11-L71",
-          "version": "repo-lines-v1:sha256:4326c61fc6de2234a78d765fd6ddc96313f1a51c23ae6d3d248c090e7f5823a1:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNWMzMmU2NzQ4ZDc3YzhjYTg4MWI5ZjI1MjczNGQ2ODFmYmQ5NTZiNDM1NTA0ZWE4Zjg2MzY2NTE2NjZjMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYWFhYzdiOTVkNzAzNWMyYTEyY2RjNzMyZTc4YzA3MGQwMDQ4ZDA5Y2I1YzgyNmIxZjdkNmVlZWIxZjY1ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMDA5N2U0YWE1MDA2OGJhMTU3ZjlhMjczOWZhZDg2OTk1ZTFlMGNkY2NkYWRjNTg5N2MyMDM0Yzc0ZDNlZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/encryption.py#L15-L71",
+          "version": "repo-lines-v1:sha256:6167f7eb2fedd7dbdf29d0a9ce280e804cf5bd91583c624ed5754375ed1f883d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ZTI3YzZjMDk5Yzk3Zjc2Zjk4ZWRlMzI0OTBmMDI1OTAxZTVlYzVmMGQ3OTEyOWEyYTc4YWY4YzFkOTllNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYWFhYzdiOTVkNzAzNWMyYTEyY2RjNzMyZTc4YzA3MGQwMDQ4ZDA5Y2I1YzgyNmIxZjdkNmVlZWIxZjY1ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNWZiMGE4ZjBhNTIwMGQ5NDU3N2RiMDBlM2ZiYWE3MjRjNGEzMTAyYTNkYTkzYmNmM2FiYWQzY2UwMDY3Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -287,16 +257,12 @@
       "statement": "The dashboard credential stores encrypt tokens before persistence via encrypt_token/decrypt_token, including GitHub OAuth access and refresh tokens in profiles.py and per-user, team, and Notion credentials.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/profiles.py#L189-L221",
-          "version": "repo-lines-v1:sha256:f9c798cc59044c7144dc108edc879338d18f70c3a777004bd4e7dc3369b48c8a:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3ZDg4OTMyM2UzMTg1MzhhNzVjMjQ4OTQ0NTY4OTljMjdjMTgwZWQwY2Y2NmU2MTAyMmVkZDgyNDVhNzY0ZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJjYTBjNTAwM2NiOWZhMDA4YzA1ZmJkYjFjOTg1NDQ5ZTM2MDE4MzM4M2ZmMWRlNTE3YmU4NTM0OWRlOTZkM2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJiMGUyOTY5N2ExZTVhZTkyMDQyZGNhNTE4MjEwNTFkZDNmODU2MmEzMjYzYmE5YTBiNTk2YjI0MTcwZDliNTYifQ"
+          "resource": "repo://agent/dashboard/profiles.py#L189-L241",
+          "version": "repo-lines-v1:sha256:0cbe696613f9a3dcbdd9eda80bde46eef4183e6c043a9f4933c3255027495961:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiN2RkYzYxMzY3ZDlkM2Y0MTkyZGUwZjdiYWY4OWYyMzFiZTRiZjJjMGNlOGUxN2Q0MDg1YmMwOWUxYWZlNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhOWY0YzE3NTk2YjJlODQ1YjI3MjhlNTVkNjJiMDE4ODI4YjBiOTU3OWM2MDM3ZWIyZDhhMDljNmI5YTc2NTYifQ"
         },
         {
-          "resource": "repo://agent/dashboard/team_credentials.py#L176-L197",
-          "version": "repo-lines-v1:sha256:06c1ce216bda047e528b8985653122cf368aef904be7b4226be0cd0df0dab8e0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5M2ZjOTc4OTQxNDA2MjMwOTZjYTlkYjcxNTQ0MjJkNDA0NGNkZGJmYzk1YWQ0MGRhYTc4NWY5YjkzNDJjZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3MWY4ZWU5YTdlNmVkMTViZDU2N2ViMDI3Nzk1ZWYxMDgxM2VmMTI3YTQ0ODQ4NmMxYTExODhkZDVkNWZiZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI4NDBmOThhZTI2ODZiOWViNWRiYjVhNGIzY2QwZDFmNDUwMjNiNmFhMzc0NjlmYzAyOTcwOWVjN2JmOWRkYWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY5OTgzNTllZmQxNWU2ZGQ1ZTNiMTA5YTE2NjA4ZWUwZDBlMWZkNzUzNWY3OTlkZmYzZTQ5YzJlMTA5NDBmZjgifQ"
-        },
-        {
-          "resource": "repo://agent/dashboard/user_credentials.py#L145-L173",
-          "version": "repo-lines-v1:sha256:ca956f72db5d57e600047eedf24584510931df57972d4ccda4ec7d941fe9eb0c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFhNmZhNjc3YTg3YzJlZWM1MjkxM2NmNWEwNzU1YmZmOWVmNGY2NWJlNDVjZWY3ODdlZWJkMjBlMWUyYTM0NGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA4OTUzZTc3Nzk3MGFlZWNmMzk1MDY5MzNmNWQxOGZjNmUxNjkzMjJmZjc5Y2UzYjJjMmU2NzBmNTg1NDIxYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNlZGY3ZGVmNTg4NjQ2OTMzYmM4ZTU4MDZkZDkwMWRiMGM0OGRkNGEwNTFiZDVjYmUyYzkxMzQxN2FiM2UyYTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhYmQ1NGQ2NmFlNDk4Yzg4YjAyYjc4MDQ2NjM2OTE1Y2Y1ZDNiMzBlNDMwMTI0Y2ZkMmYzODdhOTRmNjUzMDYifQ"
+          "resource": "repo://agent/dashboard/team_credentials.py#L121-L131",
+          "version": "repo-lines-v1:sha256:b30f57fd89c227bea08c1982d0e767cb3c95db79c6cc740e3dc1a97ed0315af4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNjAyMTg1ODJiNGNkYjZmNDQ3YmEwYzZiZmM4MjJhZDA5Y2Q4M2E5ZDAwMzY3ODhmYzMxMTk5ZWQyNjQxNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwZjAxYWEwYTY2ZTUyZTI1MjZmYTYwMzZlNGU0MDJlNGJhNzY5YzI0NTkzYTdlMTViNTVlNjdkMTAxNWVkN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4OTM1NWVhZmFjMGY4ZmQ5Mjk2OTQ3MGM4ZTFmZjAzMDg4ZWFkMjA2NmIyMDYwN2U3MmEyOTQzMWE3MDI4MjYifQ"
         }
       ]
     },
@@ -305,12 +271,12 @@
       "statement": "When GitHub reports an unrecoverable refresh error (bad_refresh_token or unauthorized_client), the stored GitHub OAuth authorization is dropped so callers prompt a clean re-login instead of serving a known-stale access token.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L420-L431",
-          "version": "repo-lines-v1:sha256:d07a74292b1be3f7a4167a0f03bf7b7365630f4cd1e5170b1ec9fe3c73753a4f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2YTlmNmQ3NTA4OWZhYjc0MjY2YzQ1NDY0ZjJjNWYzZjZiNzIxNWY1MGE0ODM3NDFiMTc2NDE3YTQxMWI2NWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI2NWVlM2IzYTQ1YmU1ZjgzNTM5ZWUwNmFkMTUwNzliM2RlZGU3YTg5MjUxZTU3NzZmNzg1NGE1NWI5M2QxY2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNWQxZTVkYzQ5MzlhOWQxYTI2OTg1YTkyNzAzMTcyMTFhNGFmNWZhOTg0OTBjYzQ4OTJhMzFkNDE3MmEwN2UifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L435-L454",
+          "version": "repo-lines-v1:sha256:1c005f4b23bcd012e0b856634912347b0fd305f2e7d495d5d2d0c1493d735911:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2ZGYwOTczNjQ5MDJmMTQ3NjA4ZjUwZTJiZDZkMDcxOWMxNzEzYWNkZGY0YTQ4ZDhjOTE2ZTk2ZTQwMjE5MTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1MmQyMGE1YjU0ZjljMzQwMjc5NGJmZGJjNjZkZjY1ODc5YTZiNTVjODg0ODYyMzkyN2M2NjA0NTQwNzZjNWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwNWQxZTVkYzQ5MzlhOWQxYTI2OTg1YTkyNzAzMTcyMTFhNGFmNWZhOTg0OTBjYzQ4OTJhMzFkNDE3MmEwN2UifQ"
         },
         {
-          "resource": "repo://agent/dashboard/profiles.py#L243-L249",
-          "version": "repo-lines-v1:sha256:6c432bdacd395381ec4d46fd48015f0d1a866e9fc7f09f697f49fb5d6e83eabb:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjY5NTA3MTUzMmVjNzc5NDFjNTUwN2IxMTBkNzY5ZjVkMGQyNmQxZDY5NDI5N2IzNTMyN2VlZGNmMmFjNjBjOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWMyZGJiNDQwZjFjMmE4Yzc3MzYyOTg2ZTFkNjI2NWYxY2MwN2U2NTg2YzliY2QzYzI0ZGE0Zjc0MWNjYjFmZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGNjNGE3ZDFjYzc5NmFiYTNlNDY3MjMzMjdmNTE3ZTlmODExOTgyZDI1MGYwNzAyOTg2ZTRiNTc2NGFkOTU4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDQ3MmY3OGRkNGFhZjZmMjEzOTAyY2VkZDJkODA4M2IyYTQ4MTUzNjQ3Y2NhMDUxNWQ2NTMyZDJlZWNmMTU0NCJ9"
+          "resource": "repo://agent/dashboard/profiles.py#L314-L330",
+          "version": "repo-lines-v1:sha256:c533cc941c24e65d5dfa324abddd3631c244383483b72072848699da6089eed9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMDllZDNhOTZjODJlZjgxNTc3Mjg2M2YzZDYxMWE0YWZhNzAwZTA2YzYyMjgwYmU4YTZmZWQ5NzQwOWMyMWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNGI4ZTkyZmRjM2M3N2YxMGE4ZGRiMTEwZjAyNDRmM2MzZWZiOGFjMjRhMWRmOTAxN2M0OWVkZDhhMDY4ZTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkNzg1NDUyZmQ0ZTQzYTg0ZmEyZTcxYjY5MWE1NGEzMGUwY2YyZTMxNjg2ZWI4Y2IzZmVhNGNiZWY5YzIxMjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0YTBlMTMxZThmNzczMzMyM2RlYTdjOTFlY2U1MGVjNWVhNjU1NmEwYWRiNTM3NjYxNWY1NzUwMjVhMDUwYTgifQ"
         }
       ]
     },
@@ -323,8 +289,8 @@
           "version": "repo-lines-v1:sha256:8b10feea94edddd71708dc98a407e991b3ee1b0c822921c2e7838b54c6a773f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MDU2ZTM4MTRlZGI2ZTEwMTdjYTFkZjIxY2ZkODczNDUyYjY0YzZjY2YyNjMwNDUzZGUyOTc3NWNkYjJhZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NGUxYzM5NTc1ZGYxMWQ3MTk3NzBjNTc1MzhhNzYzY2FjYmE4ZGM4M2ViN2M4OTUwZDhiODk3YmMyNDEzZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNjM2QxYWYzNDhhZTgyYjQzMjBhMmQ5NzcyZGNiYjI4OThiMzgzNjA4ZmMxOWE2OWYzNjNmZTQ5ZDlhMDA0NmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE2ZjZmOTc3ODk0MDBiYTdmMjQ4NThjNmQ5NWMxOTI0ZTIyNTNlOTY3YTc5NTlhMGRiOGFlMGEwMjU3NjM2N2QifQ"
         },
         {
-          "resource": "repo://agent/tools/admin_gate.py#L23-L33",
-          "version": "repo-lines-v1:sha256:68c98d4cbbd74a819fb7f78c255f6bc3a336fb7204412d1f1b90965aa859c08f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiMTkxNmExMzE1ZjBiNDE1ZGFlMWY0Yjc0NGU5YWI5NmJjYmZiM2QzZjdhMTYxMGJlNjA2N2MyYzRlNmFhNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhMDM1MTRkMmEzMTljYzJlODA2Zjg0ODQzZWNhYWM1MWUzMmFmZTMyM2VhYmVjOGIwNmY4Y2VlZDFhZjFhNWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ1OGE2ODJkMWFmZTJmZjljZWFmMDdlYzdiYTY5OWU2YjVlZDRkMWZlMTQ3ZDBhNGIzZTY3NjE1Mzk4ZmRhNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/tools/admin_gate.py#L18-L22",
+          "version": "repo-lines-v1:sha256:34e5e88f1624b67011ba81737a99842f408e2ec1d331051035ddfa1e7c1508d9:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmIxOTE2YTEzMTVmMGI0MTVkYWUxZjRiNzQ0ZTlhYjk2YmNiZmIzZDNmN2ExNjEwYmU2MDY3YzJjNGU2YWE0MCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWU3Yzk1N2JjYjQ0ZmI2NzNjOThiMDA1MGE3NWQzODA4MmRiODFkOTE4ZGUzMTNhM2YwN2MxMjM1MzA2ZDdlYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWUzY2NhODBjNDk4NmE2NWIxYzMxMTI0OWYxZGQwMDg4MWIwYjI0M2M4OTI3NTBmMDdhYzMzNzIyYmI4ZWM1YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjEsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmEwMzUxNGQyYTMxOWNjMmU4MDZmODQ4NDNlY2FhYzUxZTMyYWZlMzIzZWFiZWM4YjA2ZjhjZWVkMWFmMWE1ZCJ9"
         }
       ]
     },
@@ -337,12 +303,8 @@
           "version": "repo-lines-v1:sha256:9b763b317569678c78d1529ed0523f6c3e040f4a15593d5a3004348451be5ad4:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQ0Y2NjYWNmODQ0NzljNjI5NjIyMjUzNTZjNmQwZDRmMTE3NWNkMDI5NjAzZmQyYTRkNzkyNDMyMDEzZjk4OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmI1NjMwOWZlYmE0YTQyNzRlNTU2NmJjOGNjZWJjNDYwODk0ZGJjZDY5ZDJmY2IxMzcxYTNkNGM5NDI5MTdhOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWU3NWFjOTQ5MWJhMTE4NDQxNGFmMGNlMmQ5Y2IzMjlhYjUwMDJkNWI1NDg3Y2M3MDc5YjhkMTQ1Nzk5Y2YzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         },
         {
-          "resource": "repo://agent/server.py#L1045-L1066",
-          "version": "repo-lines-v1:sha256:7ec4901417694970e74dab5ac31415e59c94d4f0b86aa622c61bfa052491bd8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0YjhkYjE4ZmJlN2RlZWIyNGQyOTg2MDYxYWZhODE5YmNlYTE0YTIzZWUxNzgwNzg0MDM4ZGVlMzAwYzFhMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyMmI3M2UyYmU0OWI2Njk5YzVmN2U0ODVjM2Y1YTRmNWY5ODJlYjMwOWM4ZDAzZWYyMDIxMjQ4MWIyOTYxYmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5Yjg5M2Q0MDQ3OTc2ZWYyMjVlN2Q3YjgwMjM4YTZhNzk0YzhkN2M1NmY3NjA0Zjg0ZjhmOGVjN2JhMThjNGQifQ"
-        },
-        {
-          "resource": "repo://agent/server.py#L921-L939",
-          "version": "repo-lines-v1:sha256:7b0363da7da07d762b45cb9df67276e96c9f4d0b280a8993b74c16e3992c6743:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjODdmNzEzYmUyZTI2ZWUzYTk5Y2NmNjM5NzMyYTVmMmQ0ZDFmNWY1N2EzNDk2ZjBiZDI2M2NlZmJmN2NiODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjYTkwNDEyZGNhYTE5YzM3OWQ4NTEwYzVkYWUxNmQwYzYwNTAwMzExYjhhODZmYTA3YzZhNWZlYzEyZTA3YmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjZDExYTBiMDFiNGZiNGNlNmFmYzkxYzZmZGRmNDJjOGNjN2VjMzY0NTdjYTI3ZWY3ZDhiMDBkYTAyOWQ5NjUifQ"
+          "resource": "repo://agent/server.py#L435-L451",
+          "version": "repo-lines-v1:sha256:f15f1b0adc686ed68cee42ff53e54fc67b3431f0d5f04c3af3242bcf37f73d4a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjODdmNzEzYmUyZTI2ZWUzYTk5Y2NmNjM5NzMyYTVmMmQ0ZDFmNWY1N2EzNDk2ZjBiZDI2M2NlZmJmN2NiODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4N2VhNjJlMzAwOGViYWY1ZGU3OGM4ODZmNjc3NDExMjMwYjU5MDEwZDkzNGMzNjEwYTNjZGQ5OGJkNjdkOTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjZDExYTBiMDFiNGZiNGNlNmFmYzkxYzZmZGRmNDJjOGNjN2VjMzY0NTdjYTI3ZWY3ZDhiMDBkYTAyOWQ5NjUifQ"
         }
       ]
     },
@@ -351,16 +313,16 @@
       "statement": "Optional server-side observability and MCP tools (Datadog, LangSmith, Corridor) run in the LangGraph server process and never expose their credentials to the sandbox, with an intentionally read-only surface, because the content they return is attacker-influenceable and could carry prompt-injection payloads.",
       "evidence": [
         {
-          "resource": "repo://agent/integrations/corridor_mcp.py#L1-L6",
-          "version": "repo-lines-v1:sha256:976def297e20ac48870cfc580835662e1b32ddd23b8c81ed01f7a4f8ff97092b:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWJkMDMyNTMzMjU5ZmNhMDkwNWRmMzU0NmE3OGI5MTNiZjEwNjVkMTkwMzNhMmJjZjE0NTU5OGJhZjFkNmIwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjliZWM0YTE5OTlhYjI3OGZjOTI2NWY4M2Q2ZjExZGZmZTcxMDQ2ZGMzNjM2MmFmMDQ3YWM1MDdmNjQ0YTYyOSJ9"
+          "resource": "repo://agent/dashboard/team_credentials.py#L1-L7",
+          "version": "repo-lines-v1:sha256:de6e133ea6fed7ab75a61520809efba624d399578165df4694745fd19267a28a:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjJjMWMxYjlmY2U4OTNmMzNjOWU1ZTZmYWQ1NDEzMGMzMDhiZTljOGJjMWRlODk3NDNhNzdmNzliNjBiNWM2NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWE4ZDRiMjcxYzc3ZDI3MTk3NjhhOWU2NzNmYTMwM2FlNWFiOWNmNGU0NzQ5ZWJlMzZhZjVjZGQxNjNhYTI1MSJ9"
         },
         {
-          "resource": "repo://agent/integrations/corridor_mcp.py#L33-L34",
-          "version": "repo-lines-v1:sha256:089dd9d80ff7a2fa5e1aab27eccad716b16ecead8b5684cb589dde03781b7668:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGY2MTM2M2Q1YTFmYWQ5MDlhYmVjYjg3MjU4NDZiZWIzMjE4NDU1MWQ0MjM2M2FjMDY5ZDZjNDYyMWYwMzM0MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQxYjM0MjY5MGQ1MmZiOWQzMDU4ZDdmYzhlZDkwYTVhZWY5ZWIwZjRlNGU3MDMzZDI0ZTUwZDg3NGEyYzFjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzcyMWMwMWU5ZTkzNDM2MTJiMThhM2ZjMTE5YjBiY2FlOGMwODYxZjgwN2UxZmViZWQxNTQ4YTMwODAzNzVhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzBjZTNmMjRhYjQ3YzJmNWE5ZDMzN2YzNzdlZDg1NzNmYTU2NTg0MDc2NDAyZjFhZjA1NGEzZGVkNjE5NDYyZiJ9"
+          "resource": "repo://agent/tool_loaders/datadog_mcp.py#L1-L6",
+          "version": "repo-lines-v1:sha256:3f94ce4d2e299ae0c774832c4428feba9e51fe07b89129c92e4902028d5a525d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWJjYWQ1N2I5MGNiNDRmMWFlMTI3M2NmMWJiOWMxZjIxYjk2OWUzMzg3MzRmOTUyNjNjYmQ3MDhkNDg5NzQ1MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMGMzM2RlNjYzOGZiMWJhNWJkNDRkZDMwN2NlM2EwMjYzMzc1ZWFkY2I2NDA3YjgzOTQ0MGE5ZjM0MjZjZjg2OSJ9"
         },
         {
-          "resource": "repo://agent/integrations/langsmith_tools.py#L1-L7",
-          "version": "repo-lines-v1:sha256:0fa3a3a32c8abde23e04fd0007b3b5bfd97fdc10831a67c7adc1a6203babb450:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU2NDhkMTc0NTFhNTVkODA5NzMxNDg4NjhlODkzM2Q5MjRiZDU5MGY0OTU3OTEwN2QyMWE4MTJjMTc2ZDcwZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWYwOTA2MGVhNzExZjBiN2RiNjEyMDM5YmQ4NGMxOTljOWRjMTMwOTY1ZGE3OThhM2ZhNjBlNWJiZWYyZDljOCJ9"
+          "resource": "repo://agent/tool_loaders/datadog_mcp.py#L32-L48",
+          "version": "repo-lines-v1:sha256:49734ed60e156679da2e24db23377562a049dc7e782087243f578ec0a2160a7d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwYTg0M2ZjNmUwZDg0ZTg4YThkZDM1ZDZiMThiNDlmYTc3YmI5Yjg4ZGUwYjliZWM0MmU2YTc5MGRkZmEzZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZDFkYzE1Yjc5NzQ5NjA1YmY3Nzc0NGUwODcxZDIxYTdjMTI1MGU2MDQ0ODI2M2I1MjY2OWYwNjU5ZjJmMWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmYTdhZWQ5ODc5YmRmOTI4YWU2NWU4OWQ4Y2Q4MTIxYmNhNTc4ZWEwMmNlN2Y3ZWQ4OGY0OTAwNGFiZThmMmQifQ"
         }
       ]
     },
@@ -369,16 +331,16 @@
       "statement": "Untrusted external GitHub comment content is wrapped in reserved <dangerous-external-untrusted-users-comment> trust tags, and sanitize_github_comment_body strips those reserved tags from raw comment bodies so external content cannot spoof the trust wrapper.",
       "evidence": [
         {
-          "resource": "repo://agent/prompt.py#L337-L337",
-          "version": "repo-lines-v1:sha256:0753014f27147146fa4dd629428649a26461df148de46e8f5770728d17be199f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc1MzAxNGYyNzE0NzE0NmZhNGRkNjI5NDI4NjQ5YTI2NDYxZGYxNDhkZTQ2ZThmNTc3MDcyOGQxN2JlMTk5ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDc1MzAxNGYyNzE0NzE0NmZhNGRkNjI5NDI4NjQ5YTI2NDYxZGYxNDhkZTQ2ZThmNTc3MDcyOGQxN2JlMTk5ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzE4NGVmYmVlNjQzYjE2YmEzMjUyZjJmYThlNGJiMTNmYjcxYTBlYjU3N2I3ZjAxYmM3MzEzYTBjN2JmM2I2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDU5YzY4MDY5ZDEzN2U5ZDg3MGMyYmM0ZWE1MWZhMGZkMjQ5ZTVkZjQ3M2UwZmU3NTk0MDM3ZGJiMWZlY2NkOCJ9"
+          "resource": "repo://agent/github/comments.py#L118-L129",
+          "version": "repo-lines-v1:sha256:a9a7158cbb52733c07d649a9fc09c33cb5091c466d711ab657f03369191cba61:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiZTJlNmU2NTJjODM0NTBmMjZmZDkzOTA2YTJlMzk5YjQ2MTFkNmJmNDliY2QyYWU1NmIzOTc0YWEzMGJmNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyNmViMGRkMGUwZjA4YmJmN2ExNzRhOGU5Nzk4NjIzZmI1MzNjNTBmZTczMzcyMmVhZjkzMjc5ZGExZTdkY2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3N2UxNTFjYmU0OGZmMTg5ZTg5NWJkMmM3NDJlMjkxZWQ4ZDliZjViYmE2ZDUwNmRhMmE5NmQwNmE1ZmQxMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhlYzE2MmNlNDdhZGRlYTk4YWY5NGRkMzE1NjA4YjdjOTgyZTg4NzY5ZGI1MmZmNjgwM2I5ODYwMmUyOTk3MTAifQ"
         },
         {
-          "resource": "repo://agent/utils/github_comments.py#L118-L128",
-          "version": "repo-lines-v1:sha256:516b5cd822ace86e94dd4a7818cb45dc165383c44386e33684f04c649fab4b5e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiZTJlNmU2NTJjODM0NTBmMjZmZDkzOTA2YTJlMzk5YjQ2MTFkNmJmNDliY2QyYWU1NmIzOTc0YWEzMGJmNTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllYTdmMTYyMTQ5MWJlNDliNWQ5YjhiOWU1ZTY1ZTA4NjA2MmMxOTY3NzdmMThlNDJhZTkxZWY2MDM2ZDljYzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3N2UxNTFjYmU0OGZmMTg5ZTg5NWJkMmM3NDJlMjkxZWQ4ZDliZjViYmE2ZDUwNmRhMmE5NmQwNmE1ZmQxMjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNWFmNDA2Njg0NjY3ZDQyZDhhOTllOTg5Zjg1Zjc0MmExNTNkOGIxYzlkNGZhNWY2NWZlOTJjYmVjMzc5NzIifQ"
+          "resource": "repo://agent/github/comments.py#L70-L72",
+          "version": "repo-lines-v1:sha256:ca00303f9381d941f2947566683fa381adb9816174e342894f407046fc4e1d05:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQ4YjI1OTllMWJiMmUzZmQ1MjkxZDYyMWVmMWNmZjAwZDAyZTMyZjQ4ODkwMDE4NDhiMDU0ZDZkYWUyOTJhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjE0ZjEzZGM3MzE2NjZiZTM4MjAxMjk1NjZmZjRiMjMzMjQwNWEyYjYyNjQ5YzI0ZGI3NjE1NzdjMDU4MzA3NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmY1MTA0M2ZkYjRmMGVjNDFhNDliNWQ4MDc4NWQ3NzZiM2QzMDdjZjY0ZTFkOWZmODE2MDdlMGEzMTMwYzQyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWZlYzQ2ZjhjZDA1OTgxODg2Njc3NDY5NzNkYmQyMTk2NGMxNWU4NzA1ZDFiMTRiMTczMTk3YzBiMjdhMzU0YiJ9"
         },
         {
-          "resource": "repo://agent/utils/github_comments.py#L70-L73",
-          "version": "repo-lines-v1:sha256:88ab6908a750d3fe4138c59b9aa9303d5552e4a3b3c1841b15b9a85c9aed0f5b:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjQ4YjI1OTllMWJiMmUzZmQ1MjkxZDYyMWVmMWNmZjAwZDAyZTMyZjQ4ODkwMDE4NDhiMDU0ZDZkYWUyOTJhYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzY4ZjRlOGFiYzA5MmM2NzMzZWJhMTQ3NGZjODFjMjlmZWE1NjJhMzlkZTYyOGYwMWYxYzI3ZjFmNzk4Yjg0NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmY1MTA0M2ZkYjRmMGVjNDFhNDliNWQ4MDc4NWQ3NzZiM2QzMDdjZjY0ZTFkOWZmODE2MDdlMGEzMTMwYzQyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmQ3NWQ5YTQwOGMwZjE1ZTA4YmU4MzUzY2JhYmFiOWNiYzA2YzY4NWQwOTU3NDBlNTViNmNkODdhMTk1MTljMSJ9"
+          "resource": "repo://agent/prompt.py#L333-L338",
+          "version": "repo-lines-v1:sha256:1cbd14174a19034bdf124c0ac0e9054ba7b02830e4947a0b690cf774bc055250:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODdhN2Y4YTY3M2IxZjJlYWJlNDdjYmU2NGExZmI3YTkxMGQzZTNlMWM0NzRkODVmZGIyMmY1MDg4NDZjZmUyNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzkwNmQ0NTliY2RlYTk2MjdjZWYyZGRkMDIxYWNkNGVlODlmMTE2ZWI3MzNkMTc3NjA3MTljZjI0YmJjODc1NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTQ5Njg3NDVjNDczNjdjM2U4MDQxYmM2YWM3MTk0MjdkNjFiZDllN2I3NWVjYjBhZTAzYmNlZGFjYTFiMmFmMSJ9"
         }
       ]
     },
@@ -391,8 +353,8 @@
           "version": "repo-lines-v1:sha256:5c89840205d5e1ad6f74e52d173ea3eada05b30a1c76cf3151a9924efa558f36:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1ODFiMGMyZjIwNzZlMGFiMzQ2N2M2ZDMyNDQ3ZTU4NDRkZGY4NmUxNmZlZjE4YzliNGQ3YTE5YmU0MWZhZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
         },
         {
-          "resource": "repo://agent/dashboard/oauth.py#L388-L425",
-          "version": "repo-lines-v1:sha256:5f9549985697afe54da821ef6dbeb870ef418e6494c07fc3fd32c0ed9af2d9f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyYTA5ZWNkNjYzNjY4NGQ4N2U0ZGViNTEyYTc1MTgzZGYxMjg2MjdhMjdjNDE3MmNjYzExNzliZDI3NTNhZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YzJlY2JiMjA2ZmY2NjQzMWYzNTk3Yzk4NGFjMzJlYjk4NTk0ZmVlNGY5ZjZhNWI4YmMwOGRmNGUxMTllZGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjNjA5MjRlYzUxMmQ3NTJiOWE3Y2RiNTIwZTNjNmZkNWQ5MzEzNTFiZGFhYjJhZWNiYWJhNDM2NDRhNjZmNWUifQ"
+          "resource": "repo://agent/dashboard/oauth.py#L387-L425",
+          "version": "repo-lines-v1:sha256:3f83c1ad3333c434e3e2944a53bc4146a2872b670fe0f96d3eda99307d0d81ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyYTA5ZWNkNjYzNjY4NGQ4N2U0ZGViNTEyYTc1MTgzZGYxMjg2MjdhMjdjNDE3MmNjYzExNzliZDI3NTNhZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyMWMyNzYzN2I2Mjc2ZmJiMDIxZjQyZDFhOGM4YzhlZDk1NzE3ZDE1MDE2NDE0NjllNmJhYjQ2ZDI5YmQ4YjEifQ"
         }
       ]
     },
@@ -401,8 +363,8 @@
       "statement": "Dashboard session cookies are HttpOnly; HTTPS DASHBOARD_API_BASE_URL produces Secure, SameSite=None session cookies for cross-origin dashboard use, while local HTTP uses non-secure SameSite=Lax, and the OAuth state cookie is HttpOnly, SameSite=Lax, auth-path scoped, and limited to the state TTL.",
       "evidence": [
         {
-          "resource": "repo://agent/dashboard/oauth.py#L28-L35",
-          "version": "repo-lines-v1:sha256:7c189c7bde85d47ba925342d114b32145cb62617396d8da2528905acd6faa105:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJiMjVhOTc2YzEwYmUwMjUwZDQyNDdlZTU4MDEyMjhjYmFjMmI1YjhlZDE2YWZlOWRhYzhmZDhlMTkwZWQyZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2U3ZjkwODBiNTBlMzc2YWQ1NzNhNjViODY4NGJiNDdlMmExNjhiZTczODI1NzhjMTIyYzAyM2U0NDk3ZGYxZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjE5OWYzNWE0YTRlYjQ1OWU0MjFkNzY0NWU5ZTkxZGZmYTk3ZWUwMzU5ODcyNTg0OGZkZTg1NmMyNGM0MmYxNCJ9"
+          "resource": "repo://agent/dashboard/oauth.py#L27-L35",
+          "version": "repo-lines-v1:sha256:0d43b101ad29e3387354dc3598277642211965644c6541f8b5cde3854196b1df:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTJiMjVhOTc2YzEwYmUwMjUwZDQyNDdlZTU4MDEyMjhjYmFjMmI1YjhlZDE2YWZlOWRhYzhmZDhlMTkwZWQyZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTdlODZhMzg4MmMwZDlkYWExZTM4NmE4NzQwMTA4NmM1YTUzMGI2OGQyNDFlNWQ0MDkwMmEzMGMyM2ZmZGY1OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDZhZDhiZGVhYTA2NTZmODJiMGNmMjNmZWEwYTE4MGMxMDlkYmIyNWVjYWQ3OTI2MWU1OTI3NTFkZDYzZGRkNCJ9"
         },
         {
           "resource": "repo://agent/dashboard/routes.py#L363-L410",
@@ -431,6 +393,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-02T08:15:43.727Z"
+    "at": "2026-09-06T12:00:28.268Z"
   }
 }

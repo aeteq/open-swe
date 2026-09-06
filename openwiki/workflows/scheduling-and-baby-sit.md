@@ -3,9 +3,6 @@ type: workflow
 title: Scheduling, Cron & Baby-Sit CI Monitoring
 description: How the scheduler graph fans LangGraph cron ticks into scheduled agent runs, stale-run reconciliation, baby-sit CI watch evaluation, background-task monitoring, and session-cost refresh, and how the opt-in /baby-sit flow monitors PR CI with signed webhooks plus a deterministic cron fallback.
 tags: [scheduler, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, github-webhooks]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
@@ -17,10 +14,18 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-202e70aa1fb446ab05cc6d99
     resource: repo://agent/dashboard/schedules.py
+  - id: openwiki-source-6664f6fd05037c7c782f7b09
+    resource: repo://agent/github/comments.py
+  - id: openwiki-source-3d1c7beecd605173281a3bf6
+    resource: repo://agent/github/routes.py
+  - id: openwiki-source-ba064e884edcde6097165df2
+    resource: repo://agent/github/webhook.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
   - id: openwiki-source-d2c2e4ba7449d086f84f8ccd
     resource: repo://agent/reconcile.py
+  - id: openwiki-source-8f8da8ebd37830cfae55d76c
+    resource: repo://agent/review/analyzer_cron.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
   - id: openwiki-source-75a22f97d6fc2af5a1a279e7
@@ -29,15 +34,12 @@ sources:
     resource: repo://agent/tools/manage_baby_sit.py
   - id: openwiki-source-9a9aaf4b265831fa9c7e3bd2
     resource: repo://agent/tools/schedule_thread_wakeup.py
-  - id: openwiki-source-7418b4f092ea92e859486d74
-    resource: repo://agent/utils/github_ci.py
-  - id: openwiki-source-e826c6215694b90b318ced2a
-    resource: repo://agent/webhooks/github_routes.py
-  - id: openwiki-source-021c9f7e0d1658b726348b52
-    resource: repo://agent/webhooks/github.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
 ---
 
 # Scheduling, Cron & Baby-Sit CI Monitoring
@@ -182,10 +184,9 @@ A watch is evaluated on two independent triggers, and both funnel into the same
 `_evaluate_watch` under a per-key lock so at most one evaluation runs at a time:
 
 1. **Signed GitHub CI webhooks (immediate).** The GitHub webhook route
-   (`agent/webhooks/github_routes.py`) verifies every request's
-   `X-Hub-Signature-256` HMAC before processing. CI events
-   (`check_run`, `check_suite`, `workflow_run`, `status`) reach
-   `handle_ci_webhook`, which ignores non-failing payloads
+   (`agent/github/routes.py`) verifies every request's `X-Hub-Signature-256`
+   HMAC before processing. CI events (`check_run`, `check_suite`, `workflow_run`,
+   `status`) reach `handle_ci_webhook`, which ignores non-failing payloads
    (`is_failing_ci_payload`), matches active watches for the repo by head SHA or
    branch, de-duplicates by the webhook `delivery_id`, and evaluates each match
    immediately.
@@ -284,6 +285,15 @@ resets when a new human message arrives (system-kind messages do not reset it).
 Because a wakeup cron's row is never removed by firing, `schedule_thread_wakeup`
 opportunistically purges expired `thread_wakeup` crons (matched conservatively on
 `kind` plus a past `end_time`) before creating a new one.
+
+## Per-repo analyzer nightly continual-learning crons
+
+`agent/review/analyzer_cron.py` manages per-repo nightly crons that run the
+analyzer in continual-learning mode. When a repo's bootstrap analysis completes,
+one daily LangGraph cron is registered to fire a fresh analyzer thread and sandbox
+each night on a staggered schedule (computed per-repo to avoid thundering herd).
+These threadless runs authenticate via the GitHub App installation token
+resolved inside the analyzer graph, not a fresh user token carried by the cron.
 
 ## Tests that matter
 

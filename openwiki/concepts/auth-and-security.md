@@ -6,8 +6,6 @@ tags: [authentication, authorization, github-oauth, github-app, webhooks, encryp
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
-  - id: openwiki-source-4817379f332cdbc419964b44
-    resource: repo://agent/api/health.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
   - id: openwiki-source-ef92164b6963a5a6100712cb
@@ -18,52 +16,44 @@ sources:
     resource: repo://agent/dashboard/profiles.py
   - id: openwiki-source-61ace7d4952db9ddb8316aeb
     resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-4e1d63d9cd0eee8a60fa35da
-    resource: repo://agent/dashboard/slack_oauth.py
   - id: openwiki-source-054ae1f93e565567e2cc7462
     resource: repo://agent/dashboard/team_credentials.py
-  - id: openwiki-source-941341430e1d08d8e7e54dfe
-    resource: repo://agent/dashboard/user_credentials.py
   - id: openwiki-source-eb53b48336d1b5fc0816441a
     resource: repo://agent/encryption.py
-  - id: openwiki-source-e01f650ad19daacbf8aa5146
-    resource: repo://agent/integrations/corridor_mcp.py
-  - id: openwiki-source-feaa30acd8710fce0d8b65e4
-    resource: repo://agent/integrations/langsmith_tools.py
-  - id: openwiki-source-06c03a92563e32b1726c4a22
-    resource: repo://agent/integrations/langsmith.py
-  - id: openwiki-source-9d5775155057d8f8c3a08e3e
-    resource: repo://agent/middleware/refresh_github_proxy.py
+  - id: openwiki-source-b9f836649dd06f67bc38d11f
+    resource: repo://agent/github/app.py
+  - id: openwiki-source-6664f6fd05037c7c782f7b09
+    resource: repo://agent/github/comments.py
+  - id: openwiki-source-827347e6fb585d77ccf9c4d7
+    resource: repo://agent/github/org_membership.py
+  - id: openwiki-source-3d1c7beecd605173281a3bf6
+    resource: repo://agent/github/routes.py
+  - id: openwiki-source-5309b9767fbe9ada6e6717e6
+    resource: repo://agent/github/thread_token.py
+  - id: openwiki-source-44138fc28bbb6b76c90cb1cf
+    resource: repo://agent/github/token.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-41a696e92db10ba3dc9c66b0
+    resource: repo://agent/slack/client.py
+  - id: openwiki-source-962c8f95135eb5d6f64654e6
+    resource: repo://agent/slack/oauth.py
+  - id: openwiki-source-7b11edd9f01f467abe58409b
+    resource: repo://agent/tool_loaders/datadog_mcp.py
   - id: openwiki-source-9bef6ead94fcf55bf6db8787
     resource: repo://agent/tools/admin_gate.py
-  - id: openwiki-source-cc6f2e37134ad25d894c4b62
-    resource: repo://agent/utils/auth.py
-  - id: openwiki-source-28f5389ad8822f49ed6458d1
-    resource: repo://agent/utils/github_app.py
-  - id: openwiki-source-a58165bf9ff2f12f48411509
-    resource: repo://agent/utils/github_comments.py
-  - id: openwiki-source-1f809ac2af9bff123b0a1656
-    resource: repo://agent/utils/github_org_membership.py
-  - id: openwiki-source-935fe3c409ec28677d6ec643
-    resource: repo://agent/utils/github_token.py
-  - id: openwiki-source-26fb18bb848e9c2987d40767
-    resource: repo://agent/utils/slack.py
   - id: openwiki-source-25a50e8385de61204afe1bcf
     resource: repo://agent/webhooks/common.py
-  - id: openwiki-source-e826c6215694b90b318ced2a
-    resource: repo://agent/webhooks/github_routes.py
   - id: openwiki-source-3a1539e01daa921ba15e9617
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-7b9c4eb39f597fd0bd3652b4
     resource: repo://tests/dashboard/test_dashboard_org_login_gate.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Authentication, Authorization & Security Boundaries
@@ -72,7 +62,7 @@ Open SWE crosses several trust boundaries: it obtains a GitHub credential to act
 
 ## GitHub credentials for agent runs
 
-`resolve_github_token` selects a token using the run source and deployment mode.
+`resolve_github_token` in `/agent/github/token.py` selects a token using the run source and deployment mode.
 
 - For `slack`, `linear`, `dashboard`, and `schedule` runs carrying a `github_login`, it first retrieves that user's dashboard OAuth token. This preference applies even in bot-token-only mode, preserving attribution of PRs and comments to the triggering user.
 - If that token is unavailable, **bot-token-only mode** may use a GitHub App installation token. In interactive mode, the same condition raises `GitHubUserAuthRequired`; it must prompt a re-authentication rather than silently acting as the bot.

@@ -3,9 +3,6 @@ type: integration reference
 title: Observability & MCP Integrations
 description: Optional server-side integrations — Datadog and LangSmith observability tools, Corridor and Notion MCP, Currents, and the Stagehand browser — and the security model that gates them and keeps credentials out of the sandbox.
 tags: [integrations, observability, mcp, datadog, langsmith, corridor, notion, currents, stagehand, security, credentials]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
   - id: openwiki-source-ef92164b6963a5a6100712cb
     resource: repo://agent/dashboard/admin.py
@@ -15,25 +12,30 @@ sources:
     resource: repo://agent/dashboard/team_credentials.py
   - id: openwiki-source-941341430e1d08d8e7e54dfe
     resource: repo://agent/dashboard/user_credentials.py
-  - id: openwiki-source-e01f650ad19daacbf8aa5146
-    resource: repo://agent/integrations/corridor_mcp.py
-  - id: openwiki-source-654935a74cea8df94781a2a3
-    resource: repo://agent/integrations/currents_tools.py
-  - id: openwiki-source-91fc7c96eeba465eb9307d1c
-    resource: repo://agent/integrations/datadog_mcp.py
-  - id: openwiki-source-feaa30acd8710fce0d8b65e4
-    resource: repo://agent/integrations/langsmith_tools.py
-  - id: openwiki-source-f1adbca8f55cd1509b7cfde1
-    resource: repo://agent/integrations/notion_mcp.py
-  - id: openwiki-source-8bb3c950b607253433be2e2d
-    resource: repo://agent/integrations/stagehand_browser.py
+  - id: openwiki-source-9103280889fa6c4d9c5bb0df
+    resource: repo://agent/middleware/dynamic_tools.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-e4901f6a09c372487ff11987
+    resource: repo://agent/tool_loaders/corridor_mcp.py
+  - id: openwiki-source-252c217caee95d761fdf9d4b
+    resource: repo://agent/tool_loaders/currents.py
+  - id: openwiki-source-7b11edd9f01f467abe58409b
+    resource: repo://agent/tool_loaders/datadog_mcp.py
+  - id: openwiki-source-6de9e7b7779ea6aada343f2a
+    resource: repo://agent/tool_loaders/langsmith.py
+  - id: openwiki-source-2cd7e2018ae35c5972204803
+    resource: repo://agent/tool_loaders/notion_mcp.py
+  - id: openwiki-source-49907d748d9e1812d9705ce0
+    resource: repo://agent/tool_loaders/stagehand_browser.py
   - id: openwiki-source-7c60191e42b8e30b62935af1
     resource: repo://agent/utils/thread_participants.py
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-06T12:00:28.268Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-06T12:00:28.268Z
 ---
 
 # Observability & MCP Integrations
@@ -104,7 +106,7 @@ dashboards, monitors, incidents, hosts, services, events), overridable via
 MCP server is accepted when connecting.
 
 The LangSmith surface is a small, intentionally **read-only** toolset built in
-`langsmith_tools.py`: `langsmith_get_trace` fetches a single run (optionally with
+`langsmith.py`: `langsmith_get_trace` fetches a single run (optionally with
 child runs) and `langsmith_list_runs` lists recent runs in a project (capped at
 50). These tools call the LangSmith API directly from the server process using
 encrypted-at-rest credentials, so the sandbox never holds a LangSmith key. A
