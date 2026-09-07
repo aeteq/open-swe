@@ -15,7 +15,7 @@ from agent.dashboard.options import model_supports_images
 from agent.dashboard.ttft import AssistantTextObservation
 
 _TEXT_ONLY_MODEL = "fireworks:accounts/fireworks/models/deepseek-v4-pro"
-_VISION_MODEL = "anthropic:claude-opus-5"
+_VISION_MODEL = "openai:gpt-5.6-sol"
 _FABLE = "anthropic:claude-fable-5-1"
 _PAIR = ("openai:gpt-5.6-sol", "medium")
 
@@ -2432,7 +2432,7 @@ async def test_options_includes_fable_when_enabled() -> None:
         payload = await routes.options()
     assert _FABLE in [m["id"] for m in payload["models"]]
     vision_model = next(m for m in payload["models"] if m["id"] == _VISION_MODEL)
-    assert vision_model["context_window"] == 1_000_000
+    assert vision_model["context_window"] == 272000
 
 
 @pytest.mark.asyncio
