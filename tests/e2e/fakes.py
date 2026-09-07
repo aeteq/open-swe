@@ -246,7 +246,7 @@ def create_pull(
         "review_threads": [],
         "reviews": [],
         "review_decision": "REVIEW_REQUIRED",
-        "author": "open-swe[bot]",
+        "author": "jarvis-aeteq[bot]",
         "created_at": time.strftime(
             "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5 * 24 * 60 * 60)
         ),
