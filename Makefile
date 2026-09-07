@@ -1,4 +1,4 @@
-.PHONY: all format format-check lint typecheck test tests integration_tests help run dev web desktop install-desktop install-checkout
+.PHONY: all format format-check lint typecheck test tests integration_tests help run dev web build-dashboard desktop install-desktop install-checkout
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -12,6 +12,13 @@ dev:
 
 web:
 	pnpm run dev
+
+# Build the dashboard into ui/.output/public; `make dev` then serves it at /.
+# With a LangGraph http.mount_prefix, pass DASHBOARD_BASE_PATH=<prefix>/ so the
+# build's asset URLs and router match where the server mounts it.
+build-dashboard:
+	pnpm install --frozen-lockfile --filter open-swe-dashboard...
+	pnpm --filter open-swe-dashboard run build
 
 run:
 	uv run uvicorn agent.webapp:app --reload --port 8000
@@ -69,7 +76,7 @@ format-check:
 	uv run ruff format $(PYTHON_FILES) --check
 
 typecheck:
-	uv run basedpyright agent tests
+	uv run ty check agent tests
 
 ######################
 # HELP
@@ -86,7 +93,7 @@ help:
 	@echo 'install                      - install dependencies (incl. dev extras)'
 	@echo 'format                       - run code formatters'
 	@echo 'lint                         - run linters'
-	@echo 'typecheck                    - run basedpyright on agent/ and tests/'
+	@echo 'typecheck                    - run ty on agent/ and tests/'
 	@echo 'test                         - run unit tests'
 	@echo 'integration_tests            - run integration tests'
 	@echo '----'
