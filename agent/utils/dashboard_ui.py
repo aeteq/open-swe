@@ -72,6 +72,13 @@ def dashboard_static_dir() -> Path | None:
     return None
 
 
+def is_single_origin() -> bool:
+    """True when the dashboard and the API share this backend's origin: a bundled
+    build, or the Vite dev server the backend fronts. ``LANGGRAPH_URL`` is then
+    also the dashboard's URL."""
+    return bool(ENV.DASHBOARD_DEV_SERVER_URL.optional()) or dashboard_static_dir() is not None
+
+
 def is_reserved_path(path: str) -> bool:
     return any(path == prefix or path.startswith(prefix + "/") for prefix in RESERVED_PREFIXES)
 
