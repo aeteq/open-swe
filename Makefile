@@ -1,4 +1,4 @@
-.PHONY: all format format-check lint typecheck test tests integration_tests help run dev web build-dashboard desktop install-desktop install-checkout
+.PHONY: all format format-check lint typecheck test tests integration_tests help run dev dev-ui web build-dashboard desktop install-desktop install-checkout
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -9,6 +9,12 @@ all: help
 
 dev:
 	uv run langgraph dev --no-browser --port 2024
+
+# UI development in one terminal: Vite (`make web`) and the backend fronting it, so
+# http://localhost:2024 hot-reloads without a build or any cross-origin setup. The two
+# run side by side under -j2; Ctrl-C stops both. Command-line variables reach both recipes.
+dev-ui:
+	$(MAKE) --no-print-directory -j2 web dev DASHBOARD_DEV_SERVER_URL=http://localhost:3000 TURBO_UI=stream
 
 web:
 	pnpm run dev
@@ -85,6 +91,7 @@ typecheck:
 help:
 	@echo '----'
 	@echo 'dev                          - run LangGraph dev server'
+	@echo 'dev-ui                       - Vite dev server plus the LangGraph dev server fronting it (UI hot reload on :2024)'
 	@echo 'web                          - run the dashboard web server'
 	@echo 'run                          - run webhook server'
 	@echo 'desktop                      - run the Electron desktop app (backend must be running)'
