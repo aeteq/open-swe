@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
+import httpx2
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def _identity_from_github_token(github_token: str | None) -> CollaboratorIdentit
         return None
 
     try:
-        response = httpx.get(
+        response = httpx2.get(
             "https://api.github.com/user",
             headers={
                 "Authorization": f"Bearer {github_token}",
@@ -90,7 +90,7 @@ def _identity_from_github_token(github_token: str | None) -> CollaboratorIdentit
             commit_email=commit_email,
             github_login=login,
         )
-    except httpx.HTTPError:
+    except httpx2.HTTPError:
         logger.debug("Failed to resolve GitHub user identity from token", exc_info=True)
         return None
 
