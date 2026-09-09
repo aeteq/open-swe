@@ -88,7 +88,7 @@ test.describe("Open SWE full flow", () => {
 
     const breakout = page
       .locator(".msg.bot")
-      .filter({ hasText: /Open SWE breakout thread:\* Add greet\(\) helper/ });
+      .filter({ hasText: /Jarvis breakout thread:\* Add greet\(\) helper/ });
     await expect(breakout).toBeVisible({ timeout: 60_000 });
     const breakoutThreadTs = await breakout.getAttribute("data-thread-ts");
     expect(breakoutThreadTs).toBeTruthy();
@@ -104,7 +104,7 @@ test.describe("Open SWE full flow", () => {
     await expect(
       page
         .locator(".msg.bot")
-        .filter({ hasText: "I started a separate Open SWE thread" }),
+        .filter({ hasText: "I started a separate Jarvis thread" }),
     ).toBeVisible({ timeout: 60_000 });
   });
 });

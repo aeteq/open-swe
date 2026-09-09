@@ -622,7 +622,7 @@ export function AgentsSidebar({
             alt=""
             className="size-5"
           />
-          Open SWE
+          Jarvis
         </Link>
         <div className="flex items-center gap-1">
           <button

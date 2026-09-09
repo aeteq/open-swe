@@ -43,7 +43,7 @@ test.describe("thread pull requests", () => {
     await expect(hoverCard).toBeVisible();
     await expect(hoverCard).toContainText("anotherorg/companion #2");
     await expect(hoverCard).toContainText("Add companion integration");
-    await expect(hoverCard).toContainText("open-swe[bot]");
+    await expect(hoverCard).toContainText("jarvis-aeteq[bot]");
     await expect(hoverCard).toContainText("main");
     await expect(hoverCard).toContainText("add-integration");
     await expect(hoverCard).toContainText("1 file");
