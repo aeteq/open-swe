@@ -1,10 +1,11 @@
 ---
 type: "Reference"
 title: "System Architecture Overview"
-openwiki_generated: true
+description: "High-level view of the five registered LangGraph graphs, the FastAPI app composition, durable dispatch, state ownership, and deployment targets."
+tags: ["architecture", "langgraph", "graphs", "fastapi", "dispatch", "state"]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-01T08:16:00.848Z
+    at: 2026-09-09T12:48:00.464Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -20,43 +21,34 @@ sources:
     resource: repo://agent/desktop.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
-  - id: openwiki-source-f8665996049065d2172f68e2
-    resource: repo://agent/graphs/agent.py
-  - id: openwiki-source-73db7609f2a24f4a0ff5c32c
-    resource: repo://agent/graphs/reviewer.py
+  - id: openwiki-source-3d1c7beecd605173281a3bf6
+    resource: repo://agent/github/routes.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
+  - id: openwiki-source-142fa72edf963dfd0b9f031b
+    resource: repo://agent/linear/routes.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
-  - id: openwiki-source-3992d3a40b40bb4c12d700d9
-    resource: repo://agent/runtime/sandbox.py
+  - id: openwiki-source-6fd11c8bb15f5eb94b765440
+    resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-e0785b4f2497c26e024d92fc
+    resource: repo://agent/slack/routes.py
   - id: openwiki-source-3096620cfd0eb1bae6d9e78c
     resource: repo://agent/webapp.py
-  - id: openwiki-source-e826c6215694b90b318ced2a
-    resource: repo://agent/webhooks/github_routes.py
-  - id: openwiki-source-ba776ead8cfc9f8d9f503a9a
-    resource: repo://agent/webhooks/linear_routes.py
-  - id: openwiki-source-8b0fa19bba7af4563c224d47
-    resource: repo://agent/webhooks/slack_routes.py
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
   - id: openwiki-source-b76f79b6cfae139d1784a43a
     resource: repo://langgraph.desktop.json
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-  - id: openwiki-source-4eb06f8c7641cb7107e39ca8
-    resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-767ef8a0f66938a5c0710041
     resource: repo://ui/src/routeTree.gen.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-01T08:16:00.848Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
 ---
-
 
 # System Architecture Overview
 
@@ -128,11 +120,11 @@ The factory object is ephemeral, but the system is not stateless: LangGraph chec
 
 ## Deployment and client surfaces
 
-The cloud manifest pins Python 3.12 and LangGraph API version 0.12.6. Its checkpointer TTL uses the `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes; `.env` supplies deployment environment variables.
+The cloud manifest pins Python 3.14 and LangGraph API version 0.13.3. Its checkpointer TTL uses the `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes; `.env` supplies deployment environment variables.
 
 `langgraph.desktop.json` is intentionally narrower: it registers only the main agent graph, uses `agent.local_auth:auth` with Studio auth disabled, and disables the bundled UI. A desktop run is recognized from `configurable.source == "desktop"` and uses `LocalShellBackend` rooted in a requested project only after that path passes the `OPEN_SWE_LOCAL_PROJECTS_FILE` allowlist. Desktop artifacts are routed outside the project directory so tool-result and history files are not accidentally included in a later `git add -A`.
 
-The `ui/` application is a TanStack Router React client. Its generated route tree includes cloud and local agent sessions, agent threads, plans, schedules, skills, reviews and review styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes, and creates the stream provider with `cloud` or `local` transport accordingly. Browser calls use the dashboard API prefix; the review chat client targets the PR-scoped `/dashboard/api/reviews/{owner}/{repo}/{number}/chat` proxy.
+The `ui/` application is a TanStack Router React client. Its generated route tree includes cloud and local agent sessions, agent threads, plans, automations, skills, reviews and review styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes, and creates the stream provider with `cloud` or `local` transport accordingly. Browser calls use the dashboard API prefix; the review chat client targets the PR-scoped `/dashboard/api/reviews/{owner}/{repo}/{number}/chat` proxy.
 
 ## Operations and change guide
 

@@ -6,6 +6,8 @@ tags: [middleware, agent, reviewer, model-call, tool-call, langgraph, fallback, 
 sources:
   - id: openwiki-source-828b741451bbda4468382d9b
     resource: repo://agent/middleware/check_message_queue.py
+  - id: openwiki-source-92dfac98dd4efa19a44e0c4e
+    resource: repo://agent/middleware/model_errors.py
   - id: openwiki-source-5bbb58a2bed24dc7e0fea26d
     resource: repo://agent/middleware/model_fallback.py
   - id: openwiki-source-f996b5011c02e2c53895ada1
@@ -20,8 +22,16 @@ sources:
     resource: repo://agent/middleware/repair_orphaned_tool_calls.py
   - id: openwiki-source-69db7ced9516fc1b66a19d47
     resource: repo://agent/middleware/sandbox_circuit_breaker.py
+  - id: openwiki-source-88daca7304ce6f183f522eb6
+    resource: repo://agent/middleware/sanitize_fireworks_messages.py
+  - id: openwiki-source-a920a6e2526b58defe46bf28
+    resource: repo://agent/middleware/sanitize_openai_responses.py
+  - id: openwiki-source-efcbfa549521a4ff1af3c649
+    resource: repo://agent/middleware/sanitize_thinking_blocks.py
   - id: openwiki-source-3de68f2dbfda5bbd7f86131c
     resource: repo://agent/middleware/sanitize_tool_inputs.py
+  - id: openwiki-source-3f7d2cbbce3fa19bb9aa01f7
+    resource: repo://agent/middleware/stable_tool_order.py
   - id: openwiki-source-bcc3375e7c46eaf87e2b2f28
     resource: repo://agent/middleware/task_retry.py
   - id: openwiki-source-f1fe8d3c50a37935c727ca87
@@ -32,18 +42,18 @@ sources:
     resource: repo://agent/middleware/workflow_push_guard.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
+  - id: openwiki-source-267a662990890ab782a8bf32
+    resource: repo://agent/sandboxes/retry.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-874c1c524347231b14184f95
-    resource: repo://agent/utils/sandbox_retry.py
   - id: openwiki-source-10026b2dd7b7368bb04e27f0
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
   - id: openwiki-source-b074bf11145a0ff6206cec7b
     resource: repo://tests/sandbox/test_sandbox_retry.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-08-31T08:17:06.525Z
-generated: { by: "openwiki/0.4.2", at: "2026-08-31T08:17:06.525Z" }
+    at: 2026-09-09T12:48:00.464Z
 ---
 
 # Middleware Stack
@@ -75,13 +85,15 @@ The main agent's middleware list, outer to inner, is:
 12. `check_message_queue_before_model`, except in stop-summary mode
 13. `TimeoutWrapupMiddleware`
 14. `notify_step_limit_reached`
-15. `ModelFallbackMiddleware`, only for a distinct configured fallback
-16. `PlanModeMiddleware`
-17. `SanitizeFireworksMessagesMiddleware`
-18. `SanitizeOpenAIResponsesMiddleware`
-19. `SanitizeThinkingBlocksMiddleware`
-20. `StableToolResultOrderMiddleware`
-21. `ModelCallTimeoutMiddleware`
+15. `record_run_usage`
+16. `ModelFallbackMiddleware`, only for a distinct configured fallback
+17. `PlanModeMiddleware`
+18. `SanitizeFireworksMessagesMiddleware`
+19. `SanitizeOpenAIResponsesMiddleware`
+20. `SanitizeThinkingBlocksMiddleware`
+21. `StableToolResultOrderMiddleware`
+22. `ModelErrorMiddleware`
+23. `ModelCallTimeoutMiddleware`
 
 The factory deliberately leaves `ModelCallTimeoutMiddleware` innermost: its
 wall-clock deadline covers the provider operation and its `TimeoutError`
@@ -101,6 +113,7 @@ flowchart TD
   Provider -. "timeout raises TimeoutError" .-> Fallback
   Fallback -. "attempts exhausted" .-> Outage["Terminal outage AIMessage"]
 ```
+
 The relevant inner model-call layers show why a provider deadline reaches the
 fallback wrapper rather than silently parking the run.
 
@@ -158,10 +171,12 @@ The reviewer uses this leaner order:
 `refresh_github_proxy_before_model`, `check_message_queue_before_model`,
 `TimeoutWrapupMiddleware`, the three message sanitizers,
 `RepairOrphanedToolCallsMiddleware`, `StableToolResultOrderMiddleware`,
-`ModelCallTimeoutMiddleware`, and `settle_review_check_on_exit`.
+`ModelErrorMiddleware`, `ModelCallTimeoutMiddleware`, and `settle_review_check_on_exit`.
 
-It omits model fallback, plan mode, PR creation and workflow-push guards, and
-the `SubdirAgentsReadMiddleware`. Its repair hook scans messages before a model
+It omits model fallback, plan mode, PR creation and workflow-push guards,
+`record_run_usage`, `DynamicToolMiddleware`, `ExcludeToolsMiddleware`,
+`SubdirAgentsReadMiddleware`, `ToolRetryMiddleware`, `PullRequestCreationGuardMiddleware`,
+and `notify_step_limit_reached`. Its repair hook scans messages before a model
 call and inserts a synthetic error `ToolMessage` after a tool call without a
 matching result. That keeps an interrupted run from leaving an unmatched tool
 ID that a provider rejects forever on a subsequent invocation.
@@ -197,28 +212,58 @@ drops queued images and adds a warning instead.
 `OPEN_SWE_WRAPUP_TIMEOUT_SECONDS` (45 minutes by default).
 `notify_step_limit_reached` is an after-agent hook: when the last message bears
 the `ModelCallLimitMiddleware` limit marker, it posts a Slack explanation.
+`record_run_usage` captures LLM cost and execution time before the inner
+middleware layers execute.
 
 The PR guard prevents `execute` and `background_execute` from bypassing
 `open_pull_request` with `gh`, GitHub API, or `curl` pull-request creation
 commands, including bounded nested `bash -c` forms; it returns an error tool
-message and is absent locally. The workflow guard checks pushes that affect
-`.github/workflows`: a recorded human approval allows a rewritten safe command;
-otherwise it returns a blocked result with an approval URL.
+result instead. It installs only on non-local runs.
 
-`ToolRetryMiddleware` retries only delegated `task` calls using `task_retry_on`
-for retryable HTTP and transient transport failures, including a subagent
-`ModelCallTimeoutError`. Subagents have their own graphs and no fallback
-middleware, so that retry is their timeout escalation path. After retry
-exhaustion, `task_on_failure` returns structured `failed` data for prompt or
-context errors but re-raises other failures.
+`WorkflowPushGuardMiddleware` restricts the repository, branch, and workflow
+name for `execute` runs that push commits. It allows only pushes to the
+configured work branch and only for approved automation workflows; an attempted
+bypass is detected and turned into an error tool result without running.
 
-## Focused tests and safe changes
+The `task` tool wraps delegated-subagent invocations. `ToolRetryMiddleware`
+scoped to `task` with `task_retry_on` retries on HTTP 5xx/429 statuses and
+transient exception names (including a subagent's `ModelCallTimeoutError` since
+subagents lack fallback middleware), while `task_on_failure` returns a
+structured failed payload for prompt/context errors and re-raises otherwise.
 
-The middleware tests cover provider-timeout cancellation and fallback eligibility
-and alternation, as well as queue injection, run preparation, input and message
-sanitization, orphaned-call repair, stable result ordering, and subdirectory
-instructions. Sandbox retry tests specifically prove the safety boundary:
-pre-start gateway rejection retries, terminal `SandboxClientError` does not,
-and retries are bounded. Preserve the ordering when adding a wrapper—especially
-the innermost deadline/fallback relationship—and add a focused test when
-changing error classification or a tool short-circuit path.
+## Message and tool sanitization
+
+The three message sanitizers (`SanitizeFireworksMessagesMiddleware`,
+`SanitizeOpenAIResponsesMiddleware`, `SanitizeThinkingBlocksMiddleware`) filter
+the provider request to remove:
+- Fireworks vendor artifacts and deprecated tool-use schemas
+- OpenAI API response format overrides and incompatible tool definitions
+- Thinking blocks and reasoning tokens when not supported by the model
+
+They install unconditionally but are no-ops unless the model needs their
+transformation. They run near the innermost layer so they see and transform
+the final request before the provider call.
+
+`StableToolResultOrderMiddleware` normalizes the tool result message order
+in the state before each model call, ensuring tools return in definition order
+regardless of execution or return order. This improves consistency and prompt
+determinism.
+
+`RepairOrphanedToolCallsMiddleware` (reviewer only) scans the outgoing message
+list before a model call and inserts a synthetic error `ToolMessage` immediately
+after any `tool_call` whose ID has no corresponding `ToolMessage`. This keeps an
+interrupted run from leaving an unmatched tool ID that a provider rejects
+forever on subsequent invocation.
+
+`ModelErrorMiddleware` wraps the model call to log a full exception traceback
+and classify the failure (e.g., overloaded, access error, connection failure)
+on the thread metadata for observability, then re-raises unchanged.
+
+## Subagent isolation
+
+Subagents compile into their own graphs and receive a much leaner middleware
+stack: only message sanitizers, `ModelErrorMiddleware`, and
+`ModelCallTimeoutMiddleware`. They do not inherit the parent's fallback,
+plan mode, policy guards, or other run-preparation infrastructure. The task
+tool that invokes them uses its own `ToolRetryMiddleware` to ride out transient
+subagent timeouts.

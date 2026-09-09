@@ -3,9 +3,6 @@ type: configuration concept
 title: Models, Profiles, Team Defaults & Instructions
 description: How the agent validates and resolves model and reasoning-effort choices across team settings, profiles, and thread snapshots, then constructs provider-specific chat models. It also describes dashboard option enrichment and the scope and precedence of repository and sender instructions.
 tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-31T08:17:06.525Z
 sources:
   - id: openwiki-source-09b129ff728dd4990ea2f25e
     resource: repo://agent/dashboard/agent_instructions.py
@@ -15,8 +12,6 @@ sources:
     resource: repo://agent/dashboard/options.py
   - id: openwiki-source-d9f679c15adbf4b3f612d406
     resource: repo://agent/dashboard/profiles.py
-  - id: openwiki-source-61ace7d4952db9ddb8316aeb
-    resource: repo://agent/dashboard/routes.py
   - id: openwiki-source-23002b87792ed6949edb723b
     resource: repo://agent/dashboard/team_settings.py
   - id: openwiki-source-dc33a233b67bb1d08952543c
@@ -38,6 +33,9 @@ sources:
   - id: openwiki-source-72fb34b832807b302aeea76e
     resource: repo://tests/models/test_model_fallback_resolution.py
 generated: { by: "openwiki/0.4.2", at: "2026-08-31T08:17:06.525Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-09T12:48:00.464Z
 ---
 
 # Models, Profiles, Team Defaults & Instructions

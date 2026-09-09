@@ -3,6 +3,9 @@ type: concept
 title: Agent Tools (Curated Toolset)
 description: Map of Open SWE's curated tool exports, graph-specific and runtime-conditional tool surfaces, deferred integrations, and plan-mode safety controls.
 tags: [tools, agent, reviewer, analyzer, deepagents, integrations, plan-mode, authorization, automation]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-09T12:48:00.464Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -26,9 +29,6 @@ sources:
     resource: repo://AGENTS.md
   - id: openwiki-source-fef236c0a2029fbda76955d6
     resource: repo://tests/agent/test_plan_mode.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-31T08:17:06.525Z
 generated: { by: "openwiki/0.4.2", at: "2026-08-31T08:17:06.525Z" }
 ---
 

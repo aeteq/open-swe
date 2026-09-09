@@ -3,9 +3,6 @@ type: integration
 title: Dashboard API & Web/Desktop UI
 description: How the dashboard FastAPI surface exposes authenticated thread discovery, project grouping, pinning, and thread operations to the TanStack Start UI while preserving proxy and Electron local-execution boundaries.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -15,8 +12,6 @@ sources:
     resource: repo://agent/dashboard/agent_instructions.py
   - id: openwiki-source-5460c3972fe61bb256d07994
     resource: repo://agent/dashboard/oauth.py
-  - id: openwiki-source-acdc56addb3618ddf7d67472
-    resource: repo://agent/dashboard/review_styles.py
   - id: openwiki-source-61ace7d4952db9ddb8316aeb
     resource: repo://agent/dashboard/routes.py
   - id: openwiki-source-202e70aa1fb446ab05cc6d99
@@ -29,12 +24,10 @@ sources:
     resource: repo://agent/dashboard/thread_pins.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
+  - id: openwiki-source-31ac80d273943055d537bae8
+    resource: repo://agent/review/styles.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
-  - id: openwiki-source-2f66613e587b7c57d9be522e
-    resource: repo://desktop/README.md
   - id: openwiki-source-f94f5d5d16b6aac2f4bc309c
     resource: repo://desktop/src/backend-supervisor.cjs
   - id: openwiki-source-59fa18cc02f03adafb329bfd
@@ -51,7 +44,10 @@ sources:
     resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-09T12:48:00.464Z
 ---
 
 # Dashboard API & Web/Desktop UI
@@ -96,9 +92,9 @@ Thread **discovery is participant/admin scoped**, not a general readable-thread 
 
 Project grouping is metadata-only: `/threads/projects` collapses matching threads by case-insensitive configured repository, uses the most recent update as `updatedAt`, skips ownerless threads, and by default excludes resolved and automation work. It therefore does not fetch run data or produce thread summaries. `include_resolved` and `include_automations` widen that participant/admin-scoped discovery set.
 
-Thread **readability is separate**. Any authenticated organization member may read a thread whose source is in the surfaced-source set, enabling shared “Open in Web” links; unsurfaced threads intentionally appear as `404`. Reading is not ownership, and posting first requires readability then requires an administrator for `admin_thread` or automation threads.
+Thread **readability is separate**. Any authenticated organization member may read a thread whose source is in the surfaced-source set, enabling shared "Open in Web" links; unsurfaced threads intentionally appear as `404`. Reading is not ownership, and posting first requires readability then requires an administrator for `admin_thread` or automation threads.
 
-Pins have a third, deliberately independent path. Pin IDs are persisted in the store namespace `thread_pins/<login>`, so they are per-login rather than thread metadata. Pinning first fetches the candidate thread and requires it to be readable. Listing `/threads/pinned` fetches each saved ID independently and returns only currently readable threads, silently omitting missing, inaccessible, or failed lookups. Consequently, a pin does not bypass current read checks, and it can surface a readable teammate thread even though the main discovery list is participant-scoped. Unpin simply removes that login’s stored ID.
+Pins have a third, deliberately independent path. Pin IDs are persisted in the store namespace `thread_pins/<login>`, so they are per-login rather than thread metadata. Pinning first fetches the candidate thread and requires it to be readable. Listing `/threads/pinned` fetches each saved ID independently and returns only currently readable threads, silently omitting missing, inaccessible, or failed lookups. Consequently, a pin does not bypass current read checks, and it can surface a readable teammate thread even though the main discovery list is participant-scoped. Unpin simply removes that login's stored ID.
 
 ```mermaid
 flowchart TD
@@ -132,7 +128,7 @@ A missing dashboard thread can be created only by a `run.start` command. Creatio
 
 Repository-scoped agent instructions normalize `owner/repo`, filter lists by current repository access, and require access on direct operations. Non-empty instruction text is appended to the main agent prompt for runs targeting that repository.
 
-Review styles are also repository-access-controlled. Their analysis state is `idle`, `running`, `completed`, or `failed`; retrieval reconciles a running analysis, concurrent analysis returns `409`, and a terminal or missing analysis can resolve to completed when a saved prompt exists.
+Review styles are repository-access-controlled records with an idle/running/completed/failed analysis lifecycle; retrieval reconciles a running analysis, concurrent analysis returns `409`, and a terminal or missing analysis can resolve to completed when a saved prompt exists. These are stored and managed in `agent.review.styles`.
 
 Personal skills are virtual `SKILL.md` records isolated by GitHub login. Organization skills are shared and cursor-paginated: any session may read them, but only administrators may write them, and the store bounds their total count. Schedule listing needs a session, whereas creating, editing, triggering, or deleting workspace-scoped schedules requires administration. Creation persists the record before creating its LangGraph cron and rolls the record back with `502` if cron creation fails; an enabled update creates the replacement cron before removal of the old one. Before an execution, repository access is rechecked; access loss records an unauthorized run state instead of launching a new automation thread and durable run.
 
