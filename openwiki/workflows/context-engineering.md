@@ -5,7 +5,7 @@ description: How the agent assembles context before and during a run — AGENTS.
 tags: [context-engineering, agents-md, source-context, skills, prompt, middleware, deepagents]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
+    at: 2026-09-09T12:48:00.464Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -17,8 +17,12 @@ sources:
     resource: repo://agent/bundled_skills/html-artifacts/SKILL.md
   - id: openwiki-source-fb23e4421b72cc55be83e96d
     resource: repo://agent/dashboard/skills.py
+  - id: openwiki-source-ba064e884edcde6097165df2
+    resource: repo://agent/github/webhook.py
   - id: openwiki-source-cb4e403499865fd6b797127c
     resource: repo://agent/input_messages.py
+  - id: openwiki-source-2d78b3dc0a340eaacb9e53e2
+    resource: repo://agent/linear/webhook.py
   - id: openwiki-source-6a91255d02f2954f4233c8bb
     resource: repo://agent/middleware/subdir_agents.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
@@ -27,6 +31,8 @@ sources:
     resource: repo://agent/reviewer.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-4ffd3d31ffb2d798faaaad59
+    resource: repo://agent/slack/webhook.py
   - id: openwiki-source-db8a5812295508f44c54b439
     resource: repo://agent/source_context.py
   - id: openwiki-source-928adfe64cd7c30107b7c080
@@ -39,13 +45,7 @@ sources:
     resource: repo://agent/utils/analyzer_skills.py
   - id: openwiki-source-25a50e8385de61204afe1bcf
     resource: repo://agent/webhooks/common.py
-  - id: openwiki-source-021c9f7e0d1658b726348b52
-    resource: repo://agent/webhooks/github.py
-  - id: openwiki-source-eaf184b71081c2500012ddb3
-    resource: repo://agent/webhooks/linear.py
-  - id: openwiki-source-e8033e29419d205e5ac2fbb1
-    resource: repo://agent/webhooks/slack.py
-generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
 ---
 
 # Context Engineering: AGENTS.md, Source Context & Skills
@@ -137,12 +137,11 @@ originating channel.
 
 The provenance record is only the pointer; the actual conversation history is
 serialized into the run's input messages up front rather than left for the agent
-to fetch. The Linear webhook, for example, pulls the issue's `comments` from the
-GraphQL payload and includes the relevant tail — the comments from the
-triggering comment onward, or the recent comments filtered of the bot's own
-prior replies — as structured input messages, so the model sees the whole
-relevant issue thread from its first turn. Slack and GitHub triggers assemble
-their thread/issue histories the same way.
+to fetch. Webhooks pull originating thread/issue history from their respective
+APIs and include the relevant tail — typically from the triggering message
+onward, with the bot's own prior replies filtered out — as structured input
+messages, so the model sees the whole relevant thread/issue history from its
+first turn.
 
 ### Structured input messages
 

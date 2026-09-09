@@ -3,12 +3,13 @@ type: operations reference
 title: Configuration & Environment Variables
 description: Central reference for Open SWE's runtime configuration and environment variables across sandbox provisioning, model selection, auth/webhooks, and third-party integrations, plus the langgraph.json runtime config and admin runtime overrides.
 tags: [configuration, environment-variables, sandbox, models, auth, webhooks, integrations, operations]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-08-27T06:27:22.313Z
 sources:
+  - id: openwiki-source-328bde9e94017848bb09ba23
+    resource: repo://agent/api/app.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
+  - id: openwiki-source-b05c9910677cf23a9325276c
+    resource: repo://agent/config.py
   - id: openwiki-source-ef92164b6963a5a6100712cb
     resource: repo://agent/dashboard/admin.py
   - id: openwiki-source-b26707b64bee931c416620a7
@@ -17,24 +18,26 @@ sources:
     resource: repo://agent/dashboard/sandbox_settings.py
   - id: openwiki-source-941341430e1d08d8e7e54dfe
     resource: repo://agent/dashboard/user_credentials.py
-  - id: openwiki-source-e01f650ad19daacbf8aa5146
-    resource: repo://agent/integrations/corridor_mcp.py
-  - id: openwiki-source-654935a74cea8df94781a2a3
-    resource: repo://agent/integrations/currents_tools.py
-  - id: openwiki-source-91fc7c96eeba465eb9307d1c
-    resource: repo://agent/integrations/datadog_mcp.py
+  - id: openwiki-source-eb53b48336d1b5fc0816441a
+    resource: repo://agent/encryption.py
   - id: openwiki-source-0b53777f0ea426a90cf976b4
     resource: repo://agent/middleware/model_call_timeout.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
   - id: openwiki-source-ecd2116a1064fa0da51e5630
     resource: repo://agent/runtime/constants.py
+  - id: openwiki-source-49bfbb811c25e99235121924
+    resource: repo://agent/sandboxes/providers/registry.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-e4901f6a09c372487ff11987
+    resource: repo://agent/tool_loaders/corridor_mcp.py
+  - id: openwiki-source-252c217caee95d761fdf9d4b
+    resource: repo://agent/tool_loaders/currents.py
+  - id: openwiki-source-7b11edd9f01f467abe58409b
+    resource: repo://agent/tool_loaders/datadog_mcp.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
-  - id: openwiki-source-9393f5c0c83356ac7031b652
-    resource: repo://agent/utils/sandbox.py
   - id: openwiki-source-8010c6e64af5a375d8d3b70b
     resource: repo://docs/CUSTOMIZATION.md
   - id: openwiki-source-bb241754e70259fd67d23952
@@ -42,6 +45,9 @@ sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
 generated: { by: "openwiki/0.4.2", at: "2026-08-27T06:27:22.313Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-09T12:48:00.464Z
 ---
 
 # Configuration & Environment Variables

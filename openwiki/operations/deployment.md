@@ -3,9 +3,6 @@ type: operations-guide
 title: Local Dev, Build & Deployment
 description: Run Open SWE locally, build its backend and dashboard artifacts, and operate supported desktop, snapshot, and deployment workflows. The backend image, local manifest, and cloud manifest use explicitly documented runtime versions.
 tags: [deployment, local-development, docker, langgraph, fastapi, turborepo, desktop, operations]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -39,7 +36,10 @@ sources:
     resource: repo://ui/Dockerfile
   - id: openwiki-source-cee8c9d42a08db69733a075f
     resource: repo://ui/server/backend-proxy.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-09T12:48:00.464Z
 ---
 
 # Local Dev, Build & Deployment
@@ -88,11 +88,11 @@ Do **not** treat every manifest and image as the same LangGraph API runtime:
 
 | Context | Python | LangGraph API version source |
 |---|---:|---|
-| Local `langgraph dev` and cloud manifest | 3.12 | `langgraph.json` declares `api_version` `0.12.6`; `pyproject.toml` constrains local resolution to `>=0.12.6,<0.13`. |
-| Standalone root backend image | 3.12 | `Dockerfile` is based on `langchain/langgraph-api:0.13.2-py3.12`. |
-| Desktop manifest | 3.12 | `langgraph.desktop.json` declares `api_version` `0.12.6`. |
+| Local `langgraph dev` and cloud manifest | 3.14 | `langgraph.json` declares `api_version` `0.13.3`; `pyproject.toml` constrains local resolution to `>=0.13.3,<0.14`. |
+| Standalone root backend image | 3.14 | `Dockerfile` is based on `langchain/langgraph-api:0.13.3-py3.14`. |
+| Desktop manifest | 3.14 | `langgraph.desktop.json` declares `api_version` `0.13.3`. |
 
-The `pyproject.toml` constraint prevents uv from selecting the end-of-life `langgraph-api` 0.10.3 due to pre-release peer bounds. It aligns local development with `langgraph.json`, **not** with the root image's 0.13.2 base. Before changing graphs, checkpointer behavior, or runtime-specific behavior, test the intended deployment path; the graph and HTTP registrations are currently duplicated between `langgraph.json` and Docker `LANGSERVE_GRAPHS`/`LANGGRAPH_HTTP`.
+The `pyproject.toml` constraint prevents uv from selecting an incompatible version due to pre-release peer bounds. It aligns local development with `langgraph.json`, matching the standalone Docker base's 0.13.3 runtime. Before changing graphs, checkpointer behavior, or runtime-specific behavior, test the intended deployment path; the graph and HTTP registrations are currently duplicated between `langgraph.json` and Docker `LANGSERVE_GRAPHS`/`LANGGRAPH_HTTP`.
 
 `langgraph.desktop.json` is intentionally trimmed: it exposes only `agent`, disables the built-in UI, and uses `agent.local_auth:auth` with Studio auth disabled.
 
@@ -103,7 +103,7 @@ The Makefile wrappers keep backend checks in the uv environment:
 - `make test` or `make tests` runs verbose pytest for `TEST_FILE` (default `tests/`); a missing requested path is skipped.
 - `make integration_tests` runs `tests/integration_tests/` when present.
 - `make lint` runs `ruff check` plus formatter diff; `make format` applies Ruff formatting and fixes; `make format-check` verifies formatting.
-- `make typecheck` runs `basedpyright agent tests`.
+- `make typecheck` runs `ty check agent tests`.
 
 ## Dashboard workspace and local UI
 
@@ -135,13 +135,13 @@ The root `Dockerfile` is the production **LangGraph API server** image, not a sa
 docker build -t open-swe .
 ```
 
-It installs the repository into `langchain/langgraph-api:0.13.2-py3.12` under that image's API constraints, registers `agent.webapp:app`, the five graphs, and the same checkpointer TTL through environment variables, removes package-management tooling, and exposes port `8000`. This wiring mirrors the active cloud manifest's graphs and TTL, but the base API version differs as described above.
+It installs the repository into `langchain/langgraph-api:0.13.3-py3.14` under that image's API constraints, registers `agent.webapp:app`, the five graphs, and the same checkpointer TTL through environment variables, removes package-management tooling, and exposes port `8000`. This wiring mirrors the active cloud manifest's graphs and TTL, using the same 0.13.3 LangGraph API base.
 
 A standalone deployment needs the full application environment plus Agent Server services: `DATABASE_URI` for Postgres, `REDIS_URI` for Redis, `LANGSMITH_API_KEY` unless tracing is disabled, and `LANGGRAPH_CLOUD_LICENSE_KEY`. Publish port 8000 through ingress and set `LANGGRAPH_URL` to its public backend URL. Do not use scale-to-zero hosting: background runs require Redis/Postgres-backed workers to remain available. If built-in LangGraph API routes are publicly reachable, do not rely on `LANGGRAPH_AUTH_TYPE=noop`; put the service behind private networking, a gateway, or custom LangGraph authentication.
 
 Update GitHub, Linear, and Slack webhook targets and OAuth callbacks when the public URLs change. `DASHBOARD_API_BASE_URL` is the browser-facing dashboard API/callback origin: set it to the dashboard origin for same-origin proxying, or the backend origin for direct cross-origin calls. The GitHub callback is `<DASHBOARD_API_BASE_URL>/dashboard/api/auth/callback`.
 
-Alternatively connect the repository to LangGraph Cloud / Platform, configure the same application environment there, and use the hosted deployment URL for `LANGGRAPH_URL` and callbacks. That path uses `langgraph.json` and its 0.12.6 API declaration, rather than the standalone Docker base tag.
+Alternatively connect the repository to LangGraph Cloud / Platform, configure the same application environment there, and use the hosted deployment URL for `LANGGRAPH_URL` and callbacks. That path uses `langgraph.json` and its 0.13.3 API declaration, matching the standalone Docker base tag.
 
 ## Dashboard production topology
 

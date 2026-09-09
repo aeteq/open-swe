@@ -5,10 +5,8 @@ description: Test-layer routing and focused test inventory for Open SWE, includi
 tags: [testing, pytest, vitest, playwright, dashboard, desktop, e2e]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
+    at: 2026-09-09T12:48:00.464Z
 sources:
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -27,26 +25,18 @@ sources:
     resource: repo://tests/dashboard/test_dashboard_thread_api_activity.py
   - id: openwiki-source-654bec991273a9eb3ccdf2c1
     resource: repo://tests/dashboard/test_dashboard_thread_api.py
-  - id: openwiki-source-069ae2b497200c26ef2dc134
-    resource: repo://tests/e2e/fake_llm.py
-  - id: openwiki-source-8317f526f4e30c2659c8614e
-    resource: repo://tests/e2e/fakes.py
   - id: openwiki-source-c484c171a84d342028bf0794
     resource: repo://tests/e2e/global-setup.ts
   - id: openwiki-source-aefe409f90608437573cbad3
     resource: repo://tests/e2e/harness.py
   - id: openwiki-source-16e94b1dfd40df68fa54c87f
     resource: repo://tests/e2e/package.json
-  - id: openwiki-source-28a3fe2bdb4cd54e328962f0
-    resource: repo://tests/e2e/patches.py
   - id: openwiki-source-859f98720585f4648f0f7b2e
     resource: repo://tests/e2e/playwright.config.ts
   - id: openwiki-source-4b944ec14a3d793a6f771403
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-  - id: openwiki-source-fbac30b19a864a52310a1665
-    resource: repo://tests/e2e/tests/dashboard_pull_requests.spec.ts
   - id: openwiki-source-84b0f9cd64db5f62b58c0ae3
     resource: repo://tests/e2e/tests/dashboard.spec.ts
   - id: openwiki-source-86954185ec7b6e72d7a5a7a7
@@ -59,8 +49,6 @@ sources:
     resource: repo://tests/e2e/tests/plan_review.spec.ts
   - id: openwiki-source-85717af8eec9e8415783b73b
     resource: repo://tests/e2e/tests/slack_debounce.spec.ts
-  - id: openwiki-source-9b825352235c3d4892a6951c
-    resource: repo://tests/e2e/tests/slack_event_dedupe.spec.ts
   - id: openwiki-source-50d5bb6d0d448392edc9d1ea
     resource: repo://tests/e2e/tests/ssr.spec.ts
   - id: openwiki-source-3fc3591ebb7e0b354b4c3ae0
@@ -71,7 +59,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
 ---
 
 # Testing Guide
@@ -153,8 +141,8 @@ The dashboard command is `vitest run`. Desktop builds its main bundle and then r
 ```bash
 pnpm install --frozen-lockfile
 pnpm run test:e2e:install
-pnpm run test:e2e
-pnpm run test:e2e:desktop
+pnpm run test:e2e            # browser suite
+pnpm run test:e2e:desktop    # Electron + pinned uv dcode ACP
 ```
 
 Install Chromium before the first run. Browser Playwright uses one worker, excludes `desktop.spec.ts`, has a 90-second test timeout, and starts real `langgraph dev` with `tests/e2e/langgraph.e2e.json`. The desktop configuration selects only `desktop.spec.ts`, raises the test timeout to 180 seconds and the expectation timeout to 120 seconds, and writes separate results and reports.

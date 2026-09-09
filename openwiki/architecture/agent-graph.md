@@ -5,8 +5,10 @@ description: How Open SWE compiles the main coding-agent graph for an executable
 tags: [agent-graph, get-agent, deep-agents, langgraph, middleware, subagents, sandbox, tools]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-02T08:15:43.727Z
+    at: 2026-09-09T12:48:00.464Z
 sources:
+  - id: openwiki-source-abba304194f5a40187cffde3
+    resource: repo://agent/dashboard/options.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
   - id: openwiki-source-9103280889fa6c4d9c5bb0df
@@ -17,9 +19,11 @@ sources:
     resource: repo://agent/prompt.py
   - id: openwiki-source-81f563229cdf1ff715fdad8c
     resource: repo://agent/runtime/execution.py
+  - id: openwiki-source-6fd11c8bb15f5eb94b765440
+    resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-02T08:15:43.727Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-09T12:48:00.464Z" }
 ---
 
 # Agent Graph & get_agent Factory
@@ -76,7 +80,7 @@ This separates sender-specific authority from persistent thread configuration.
 
 The factory obtains a cached `SandboxBackendProxy` for the thread and starts it. Its reconnect callback builds a `LocalShellBackend` for desktop runs; hosted runs use `ensure_sandbox_for_thread` with the selected environment slug. That lifecycle reuses a cached backend or reconnects the stored sandbox id, refreshes proxy auth, and creates one when absent. An unreachable existing hosted sandbox is not silently replaced, because replacement loses uncommitted work; a deleted sandbox can be replaced. The factory therefore holds a reconnectable proxy, not a directly owned sandbox.
 
-Model/effort selection cascades from team defaults to dashboard profile overrides to stored thread settings, then accepts an explicit `agent_model_id`/`agent_effort` only when the model is supported and accepts that effort. That explicit pair is the only per-run input allowed to move a thread off stored settings. On hosted runs the resolved main/subagent settings and repository instructions are persisted before the deployment-wide Fable gate, so the gate is evaluated anew each run. Main, subagent, and title models use provider-specific kwargs; `_make_model_or_defer` returns a deferred error model if construction fails, surfacing provider setup failure at call time rather than failing graph construction. A fallback is installed only when its id differs from the primary id.
+Model/effort selection cascades from team defaults (via `_cached_team_default_model_pair`) to dashboard profile overrides (via `normalize_profile_overrides`) to stored thread settings, then accepts an explicit `agent_model_id`/`agent_effort` only when the model is in `SUPPORTED_MODEL_IDS` and `model_supports_effort` validates it. That explicit pair is the only per-run input allowed to move a thread off stored settings. On hosted runs the resolved main/subagent settings and repository instructions are persisted before the deployment-wide Fable gate, so the gate is evaluated anew each run. Main, subagent, and title models use provider-specific kwargs; `_make_model_or_defer` returns a deferred error model if construction fails, surfacing provider setup failure at call time rather than failing graph construction. A fallback is installed only when its id differs from the primary id.
 
 ## Prompt preparation: thread context is not participant input
 
@@ -84,7 +88,7 @@ The factory deliberately passes `system_prompt=""` to `create_deep_agent`. `Prep
 
 `SYSTEM_PROMPT_TEMPLATE` is the **main-agent, per-thread/environment** layer. Its rendered order is: working environment; dashboard context; source context; plan-mode entry guidance and optional active-plan guidance; self-awareness; default prompt/default repository; optional repository-scope restriction; repository setup and task execution; optional Corridor guidance; dependency and untrusted-comment guidance; commit/PR guidance; repository custom instructions; environment instructions; optional admin-thread environment guidance; then `shared_base_section`.
 
-`shared_base_section` ends with `render_open_swe_shared_base`, which returns the stable `OPEN_SWE_SHARED_BASE` plus download guidance only when sandbox downloads are available. For a non-admin run it is prefixed with direction to use an admin Web UI thread for managed-environment changes. For an admin run it instead includes `ADMIN_ENVIRONMENT_SECTION` before the shared base, granting the workspace setup guidance and tools. This is intentionally different from user input: the template holds thread, source, repository, and environment context—not a participant's identity or personal instructions.
+`render_open_swe_shared_base` returns the stable `OPEN_SWE_SHARED_BASE` plus conditional `SANDBOX_FILE_DOWNLOAD_GUIDANCE` when sandbox downloads are available (checked via `_sandbox_file_downloads_enabled`). For a non-admin run it is prefixed with direction to use an admin Web UI thread for managed-environment changes. For an admin run it instead includes `ADMIN_ENVIRONMENT_SECTION` before the shared base, granting the workspace setup guidance and tools. This is intentionally different from user input: the template holds thread, source, repository, and environment context—not a participant's identity or personal instructions.
 
 During hosted preparation, `construct_sender_context` produces sender identity, attribution, draft preference, workspace-admin status, participant identities, and sender-level instructions. `_sender_context_messages` appends it as a separate generated system-context message after a human input, rather than rewriting that input or embedding it in the system prompt. It identifies the latest human sender and skips an already-visible dynamic-context hash, preserving cached history and keeping sender metadata scoped to that turn. Desktop preparation only resolves the work directory and renders the desktop prompt.
 
@@ -92,31 +96,31 @@ Preparation is checkpointed by `run_prepared_for`, a fingerprint of middleware t
 
 ## Backend, skills, and tools
 
-The agent gets a `CompositeBackend` whose default is the sandbox proxy. Read-only routes overlay bundled skills, hosted organization skills from a LangGraph-store namespace, and—when a login is present—sender user skills from a user namespace. Desktop replaces hosted user skills with a read-only `StateBackend` snapshot. The ordered `skill_sources` list is passed to the parent and general-purpose subagent. On desktop, `/large_tool_results/` and `/conversation_history/` are routed to virtual per-thread filesystem directories outside the selected project so Deep Agents offloads do not appear in git status or get swept into `git add -A`.
+The agent gets a `CompositeBackend` whose default is the sandbox proxy. Read-only routes overlay bundled skills (from a `ReadOnlyBackend` wrapping a `FilesystemBackend` at `BUNDLED_SKILLS_DIR`), hosted organization skills from a LangGraph-store `ReadOnlyBackend` namespaced in the store, and—when a login is present—sender user skills from a user namespace `StoreBackend`. Desktop replaces hosted user skills with a read-only `StateBackend` snapshot. The ordered `skill_sources` list is passed to the parent and general-purpose subagent. On desktop, `/large_tool_results/` and `/conversation_history/` are routed to virtual per-thread filesystem directories outside the selected project so Deep Agents offloads do not appear in git status or get swept into `git add -A`.
 
-The static parent tool list is curated per run. It is trimmed when Slack context is unavailable, augmented for an authorized admin thread, and conditionally includes sandbox-download tools. Desktop is reduced to `http_request`, `fetch_url`, and `web_search`; stop-summary mode is reduced to Slack read/reply. `ExcludeToolsMiddleware` removes `grep` in ordinary runs and the broader stop-summary exclusion set, including mutating Deep Agent filesystem/delegation tools.
+The static parent tool list is curated per run. It is trimmed when Slack context is unavailable (via `_slack_tools_enabled`), augmented for an authorized admin thread, and conditionally includes sandbox-download tools. Desktop is reduced to `http_request`, `fetch_url`, and `web_search`; stop-summary mode is reduced to Slack read/reply. `ExcludeToolsMiddleware` removes `grep` in ordinary runs and the broader stop-summary exclusion set, including mutating Deep Agent filesystem/delegation tools.
 
-Optional integrations use `DynamicToolMiddleware`. Observability, Currents, and Notion tools are loaded during assembly as eager groups; their schemas still become callable only after `load_integration_tools` selects them. Corridor contributes a static catalog and defers its MCP load until selected. The middleware prevents direct use before selection, serializes a group's load, converts loader failures to unavailable-tool messages, and clears `loaded_integration_tools` at each run start. Reserved static and Deep Agent names prevent catalog collisions.
+Optional integrations use `DynamicToolMiddleware`. Observability, Currents, and Notion tools are loaded during assembly as eager groups (via `_eager_group`); their schemas still become callable only after `load_integration_tools` selects them. Corridor contributes a static catalog (via `CORRIDOR_TOOL_NAMES`) and defers its MCP load until selected. The middleware prevents direct use before selection, serializes a group's load, converts loader failures to unavailable-tool messages, and clears `loaded_integration_tools` at each run start. Reserved static and Deep Agent names prevent catalog collisions.
 
-## Plan mode and subagent boundaries
+## Subagents and model guards
 
-`PlanModeMiddleware` is always installed. At `before_agent` it resets state to the factory's `configurable.plan_mode is True` value, preventing a stale state value from a previous run leaking into a later one; it filters every model request, so `enter_plan_mode` restricts the next turn in the same run. `enter_plan_mode` persists planning status when it has a thread and returns a `Command` setting `plan_mode=True`. `approve_plan` first verifies active state/config/metadata and valid plan content, persists approval with `plan_mode=False`, then returns a `Command` clearing the state.
+The general-purpose subagent is always present. It reuses the Deep Agents general-purpose identity and mechanics prompt, prepends the rendered Open SWE shared base (via `render_open_swe_shared_base`), receives ordered skills, excludes background tools (`background_execute` and `background_task`), and removes parent-context-sensitive Slack and thread tools via `_is_subagent_excluded_tool`. 
 
-While active, the exclusion set removes delegation and external mutation, including automation, environment, PR, thread, sandbox, selected skill/Slack/Linear tools, and `task`. File editing remains so the agent can draft a plan outside the repository; `execute` remains available, so the read-only shell restriction is prompt discipline rather than a hard technical boundary. Removing `task` matters because the general-purpose subagent is a separately compiled graph and does not inherit parent plan filtering.
-
-The general-purpose subagent is always present. It reuses the Deep Agents general-purpose identity and mechanics prompt, prepends the rendered Open SWE shared base, receives ordered skills, excludes background tools, and removes parent-context-sensitive Slack and thread tools. A browser subagent is added only if browser tools loaded. Parent middleware does not wrap these separately compiled graphs, so every subagent receives its own `SanitizeOpenAIResponsesMiddleware` and `ModelCallTimeoutMiddleware`; the general-purpose subagent also receives dynamic-tool and exclusion middleware.
+Because subagents compile into their own graphs that parent middleware never wraps, each subagent spec carries its own model guards via `_subagent_model_middleware`: `SanitizeOpenAIResponsesMiddleware`, `ModelErrorMiddleware`, and `ModelCallTimeoutMiddleware`. The general-purpose subagent also receives dynamic-tool and exclusion middleware via `_subagent_middleware`. A browser subagent is added only if browser tools loaded.
 
 ## Middleware ordering is a control boundary
 
-The main list is ordered **outermost to innermost**:
+The main middleware list is ordered **outermost to innermost** in `create_deep_agent`:
 
 1. `PrepareAgentRunMiddleware`, then optional `DynamicToolMiddleware`.
-2. Tool-input sanitation, `ModelCallLimitMiddleware(run_limit=5000, exit_behavior="end")`, tool-error conversion, exclusion, subdirectory reads, and retry for `task` (up to two retries).
-3. Hosted PR creation guard, workflow-push guard, GitHub proxy refresh, and (except stop summaries) message-queue check.
-4. Timeout wrap-up, step-limit notification, optional fallback, and state-aware plan-mode filtering.
-5. Fireworks/OpenAI/thinking sanitizers, stable tool-result order, then innermost `ModelCallTimeoutMiddleware`.
+2. `SanitizeToolInputsMiddleware`, `ModelCallLimitMiddleware(run_limit=5000, exit_behavior="end")`, `ToolErrorMiddleware`, `ExcludeToolsMiddleware`, `SubdirAgentsReadMiddleware`, and `ToolRetryMiddleware` for `task`.
+3. Hosted `PullRequestCreationGuardMiddleware`, `WorkflowPushGuardMiddleware`, `refresh_github_proxy_before_model`, and (except stop summaries) `check_message_queue_before_model`.
+4. `TimeoutWrapupMiddleware`, `notify_step_limit_reached`, `record_run_usage`, optional `ModelFallbackMiddleware`, and state-aware `PlanModeMiddleware`.
+5. `SanitizeFireworksMessagesMiddleware`, `SanitizeOpenAIResponsesMiddleware`, `SanitizeThinkingBlocksMiddleware`, `StableToolResultOrderMiddleware`, `ModelErrorMiddleware`, then innermost `ModelCallTimeoutMiddleware`.
 
 The timeout must remain innermost: it measures the provider call and propagates out to fallback. The distinct model-call limit ends a run at 5,000 calls. `ToolErrorMiddleware` precedes task retry, so the retry behavior remains wrapped inside error conversion. `create_deep_agent` provides its built-in `PatchToolCallsMiddleware`; do not add a redundant custom orphaned-tool-call repairer.
+
+`PlanModeMiddleware` is installed unconditionally with the factory's initial `configurable.plan_mode` value. At `before_agent` it resets state to that value, preventing a stale state value from a previous run leaking into a later one; it filters every model request, so `enter_plan_mode` restricts the next turn in the same run. While active, the exclusion set removes delegation and external mutation. File editing and `execute` remain available, so the restriction is prompt discipline rather than a hard technical boundary. Removing `task` matters because the general-purpose subagent is a separately compiled graph and does not inherit parent plan filtering.
 
 ## Safe changes and focused tests
 
