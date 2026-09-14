@@ -31,8 +31,12 @@ dependencies = [
     "exa-py>=2.18.1",
     "langchain-google-genai>=4.3.5",
     "langchain-mcp-adapters>=0.3.2",
-    "stagehand>=3.23.0,<4.0.0",
     "websockets>=16.1.1",
+    "slack-sdk>=3.44.1,<4.0.0",
+    "aiohttp>=3.14.3,<4.0.0",
+    "alembic==1.20.0",
+    "sqlalchemy[asyncio]==2.0.52",
+    "asyncpg==0.31.0",
 ]
 
 [project.optional-dependencies]
@@ -71,6 +75,10 @@ packages = ["agent"]
 line-length = 100
 
 [tool.ruff.lint]
+# PLC2701 (private-name imports) is preview-only; explicit-preview-rules keeps every
+# other preview rule off.
+preview = true
+explicit-preview-rules = true
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -80,10 +88,19 @@ select = [
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
     "TID251",
+    "SLF",  # flake8-self: no cross-module access to _private names
+    "PLC2701",  # no cross-module imports of _private names
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["SLF001", "PLC2701"]
+# Siblings of one package sharing package-internal helpers. PLC2701 cannot tell
+# an intra-package import from a cross-package one; names these modules expose
+# to the rest of the codebase are public.
+"agent/dashboard/threads/*" = ["PLC2701"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "__future__.annotations".msg = "Do not use postponed annotation evaluation."
@@ -96,7 +113,7 @@ testpaths = ["tests"]
 include = ["agent", "tests"]
 
 [tool.ty.analysis]
-allowed-unresolved-imports = ["langgraph_api.metrics_datadog"]
+allowed-unresolved-imports = ["langgraph_api.metrics_datadog", "ddtrace", "ddtrace.trace"]
 
 [tool.ty.terminal]
 error-on-warning = false

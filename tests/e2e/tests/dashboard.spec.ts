@@ -39,9 +39,71 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     ).toBeVisible();
 
     // The transcript that started in Slack is here too (incl. the PR link).
+    const pullRequestLink = page
+      .getByRole("link", { name: "Add greet() helper" })
+      .first();
+    await expect(pullRequestLink).toBeVisible();
+    await pullRequestLink.hover();
     await expect(
-      page.getByRole("link", { name: "Add greet() helper" }).first(),
+      page.getByTestId("pr-hover-card-fakeorg/demo-1"),
     ).toBeVisible();
+  });
+
+  test("shows an optimistic message before the idle-thread probe completes", async ({
+    page,
+  }, testInfo) => {
+    await loginAs(page, SAME_USER);
+    await openThreadViaSlackLink(page);
+    const threadId = threadIdFromUrl(page);
+    await waitForThreadIdle(page, threadId);
+
+    let releaseProbe: () => void = () => {};
+    const probeReleased = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    let probeStarted: () => void = () => {};
+    const probeReceived = new Promise<void>((resolve) => {
+      probeStarted = resolve;
+    });
+    await page.route(
+      `**/dashboard/api/threads/${threadId}/messages`,
+      async (route) => {
+        probeStarted();
+        await probeReleased;
+        await route.continue();
+      },
+    );
+
+    const prompt = "Show this immediately while the send is accepted.";
+    await typeIntoComposer(page, prompt);
+    await probeReceived;
+
+    const optimisticMessage = page
+      .getByTestId("user-message")
+      .filter({ hasText: prompt });
+    await expect(optimisticMessage).toBeVisible();
+    await expect(optimisticMessage).toHaveAttribute(
+      "data-message-delivery-status",
+      "sending",
+    );
+    const optimisticId =
+      await optimisticMessage.getAttribute("data-message-id");
+    expect(optimisticId).toBeTruthy();
+    const screenshotPath = testInfo.outputPath("optimistic-message-send.png");
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    await testInfo.attach("optimistic-message-send", {
+      path: screenshotPath,
+      contentType: "image/png",
+    });
+
+    releaseProbe();
+    await expect(optimisticMessage).toHaveCount(1);
+    await waitForStateToContain(page, threadId, prompt);
+    await expect(optimisticMessage).toHaveCount(1);
+    await expect(optimisticMessage).toHaveAttribute(
+      "data-message-id",
+      optimisticId!,
+    );
   });
 
   test("shows a sent Slack message before the tool call that follows it", async ({

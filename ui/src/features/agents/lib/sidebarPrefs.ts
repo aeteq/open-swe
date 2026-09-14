@@ -7,7 +7,7 @@ export const SIDEBAR_PREFS_STORAGE_KEY = "open-swe.agents.sidebar-prefs"
 const STORAGE_KEY = SIDEBAR_PREFS_STORAGE_KEY
 
 const ORGANIZE_MODES = ["project", "list"] as const
-const CHAT_SORTS = ["updated"] as const
+const CHAT_SORTS = ["created", "updated"] as const
 const PINNED_SORTS = ["updated", "manual"] as const
 
 export type OrganizeMode = (typeof ORGANIZE_MODES)[number]
@@ -42,7 +42,7 @@ export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
   expandedProjectKeys: [],
   collapsedSectionKeys: [],
   organize: "project",
-  sortChats: "updated",
+  sortChats: "created",
   sortPinned: "manual",
 }
 
@@ -160,6 +160,19 @@ function setPrefs(update: (prev: SidebarPrefs) => SidebarPrefs) {
     cachedRaw = raw
   } catch {}
   notifyListeners()
+}
+
+/**
+ * False until hydration finishes, because the server render cannot read the
+ * stored preferences. Requests keyed by a preference must wait for this, or the
+ * placeholder defaults fetch a page the user never asked for.
+ */
+export function useSidebarPrefsHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false
+  )
 }
 
 export function useSidebarPrefs() {
