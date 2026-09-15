@@ -15,14 +15,13 @@ from fastapi import BackgroundTasks, HTTPException, Request
 from langgraph_sdk import get_client
 from langgraph_sdk.client import LangGraphClient
 
+from agent.analytics.usage import update_agent_pr_usage_from_webhook
 from agent.config import ENV
 from agent.dashboard.agent_overrides import (
     get_profile_default_repo,
     resolve_agent_model_id,  # noqa: F401
     resolve_login_from_email_async,
 )
-from agent.dashboard.agent_usage import update_agent_pr_usage_from_webhook
-from agent.dashboard.enabled_repos import is_review_repo_enabled
 from agent.dashboard.oauth import build_settings_url
 from agent.dashboard.options import (
     default_vision_model_pair,
@@ -38,7 +37,6 @@ from agent.dashboard.team_settings import (
     get_team_default_repo,
     get_team_settings,
 )
-from agent.dashboard.threads.summary import thread_is_private, thread_is_promptable
 from agent.dashboard.user_mappings import (
     email_for_login,  # noqa: F401
     login_for_email,  # noqa: F401
@@ -47,7 +45,6 @@ from agent.dashboard.user_mappings import (
 from agent.dashboard.user_mappings import (
     refresh_cache as refresh_user_mapping_cache,  # noqa: F401
 )
-from agent.dashboard.workflow_approval import decide_workflow_push_approval
 from agent.dispatch import dispatch_agent_run
 from agent.github.app import (
     get_github_app_installation_token,  # noqa: F401
@@ -82,6 +79,7 @@ from agent.github.token import (
 )
 from agent.linear.comments import get_recent_comments  # noqa: F401
 from agent.prompts import render_prompt
+from agent.review.enabled_repos import is_review_repo_enabled
 from agent.review.findings import (
     REVIEWER_THREAD_KIND,
     Finding,
@@ -141,6 +139,8 @@ from agent.slack.feedback import (
 )
 from agent.slack.stop import process_agent_session_stopped, process_slack_stop_reaction
 from agent.source_context import SourceContext
+from agent.threads.summary import thread_is_private, thread_is_promptable
+from agent.threads.workflow_approval import decide_workflow_push_approval
 from agent.utils.dashboard_links import dashboard_thread_url  # noqa: F401
 from agent.utils.http import DEFAULT_HTTP_TIMEOUT
 from agent.utils.json_types import ThreadLike, as_thread_dict
@@ -1412,10 +1412,17 @@ async def update_agent_thread_pr_state(payload: dict[str, Any]) -> None:
             logger.debug("Failed to update pr_state for thread %s", thread_id, exc_info=True)
             continue
         if new_state == "merged":
+            from agent.analytics.emitter import task_marked_complete
+
+            await task_marked_complete(thread_id, source="github", auto=True)
             await _record_pr_merge_feedback(thread_id, pr_url=pr_url)
             from agent.thread_feedback import schedule_pr_feedback
 
             await schedule_pr_feedback(thread_id, metadata, pr_url)
+        elif new_state == "open" and previous_state in _TERMINAL_PR_STATES:
+            from agent.analytics.emitter import task_rework
+
+            await task_rework(thread_id, source="github", scope="major", reason="pr_reopened")
 
 
 async def refresh_thread_github_token_after_401(thread_id: str, email: str) -> str | None:

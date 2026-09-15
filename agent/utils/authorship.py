@@ -44,6 +44,7 @@ class CollaboratorIdentity:
     commit_name: str
     commit_email: str
     github_login: str = ""
+    github_profile: bool = False
 
     @property
     def pr_attribution_name(self) -> str:
@@ -101,6 +102,7 @@ def _identity_from_github_token(github_token: str | None) -> CollaboratorIdentit
             commit_name=display_name,
             commit_email=commit_email,
             github_login=login,
+            github_profile=True,
         )
     except httpx2.HTTPError:
         logger.debug("Failed to resolve GitHub user identity from token", exc_info=True)
