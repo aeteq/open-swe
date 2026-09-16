@@ -171,7 +171,7 @@ def test_construct_system_prompt_shell_escapes_user_name() -> None:
     assert f"git config user.name {shlex.quote(hostile)}" in sender_context
     assert f"git config user.name {hostile}" not in sender_context
     assert (
-        "Made by [Open SWE](https://openswe.vercel.app) · openai:gpt-5.6-luna (xhigh)"
+        "Made by [Jarvis](https://openswe.vercel.app) · openai:gpt-5.6-luna (xhigh)"
     ) in sender_context
 
 
@@ -183,10 +183,10 @@ def test_add_pr_collaboration_note_replaces_legacy_footer() -> None:
         github_login="octocat",
     )
 
-    body = "## Description\nDone.\n\n_Opened collaboratively by Mona Lisa and open-swe._"
+    body = "## Description\nDone.\n\n_Opened collaboratively by Mona Lisa and jarvis-aeteq._"
 
     assert add_pr_collaboration_note(body, identity) == (
-        "## Description\nDone.\n\nMade by [Open SWE](https://openswe.vercel.app)"
+        "## Description\nDone.\n\nMade by [Jarvis](https://openswe.vercel.app)"
     )
 
 
@@ -195,11 +195,11 @@ def test_add_pr_collaboration_note_links_thread() -> None:
 
     assert add_pr_collaboration_note(
         body, thread_url="https://openswe.vercel.app/agents/abc-123"
-    ) == ("## Description\nDone.\n\nMade by [Open SWE](https://openswe.vercel.app/agents/abc-123)")
+    ) == ("## Description\nDone.\n\nMade by [Jarvis](https://openswe.vercel.app/agents/abc-123)")
 
 
 def test_add_pr_collaboration_note_skips_when_footer_present_with_other_link() -> None:
-    body = "## Description\nDone.\n\nMade by [Open SWE](https://openswe.vercel.app)"
+    body = "## Description\nDone.\n\nMade by [Jarvis](https://openswe.vercel.app)"
 
     assert (
         add_pr_collaboration_note(body, thread_url="https://openswe.vercel.app/agents/abc-123")

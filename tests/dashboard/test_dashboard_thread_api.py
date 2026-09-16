@@ -2781,8 +2781,8 @@ async def test_options_includes_fable_when_enabled() -> None:
     ):
         payload = await options_routes.options()
     assert _FABLE in [m["id"] for m in payload["models"]]
-    openai_model = next(m for m in payload["models"] if m["id"] == _VISION_MODEL)
-    assert openai_model["context_window"] == 272_000
+    vision_model = next(m for m in payload["models"] if m["id"] == _VISION_MODEL)
+    assert vision_model["context_window"] == 272000
 
 
 @pytest.mark.asyncio

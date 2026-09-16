@@ -256,7 +256,7 @@ def _access_failure_payload(
         http_status=http_status,
         reason=reason,
         likely_cause=(
-            "the Open SWE GitHub App or PR author token is not installed on, granted access "
+            "the Jarvis GitHub App or PR author token is not installed on, granted access "
             "to, or able to see this repository or one of the PR branches"
         ),
         branch_pushed=branch_pushed,
