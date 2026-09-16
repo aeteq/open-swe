@@ -1391,9 +1391,7 @@ def test_process_slack_mention_creates_thread_first_run_without_trace_reply(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1488,9 +1486,7 @@ def test_process_slack_mention_treats_direct_message_as_implicit_mention(
                     "treat_all_messages_as_mentions": True,
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1546,9 +1542,7 @@ def test_process_slack_mention_skips_trace_reply_on_followup_mention(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1601,9 +1595,7 @@ def test_process_slack_mention_unmapped_user_blocked_and_prompted(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1658,9 +1650,7 @@ def test_process_slack_mention_mapped_user_no_token_record_prompts_setup(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1711,9 +1701,7 @@ def test_process_slack_mention_mapped_user_unusable_token_prompts_revoked(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1755,9 +1743,7 @@ def test_process_slack_mention_mapped_user_with_token_runs_as_user(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
@@ -1810,9 +1796,7 @@ def test_process_slack_mention_existing_thread_adds_everyone_as_participants(
                     "bot_user_id": "UBOT",
                 }
             ),
-            webhook_common.SlackRepoResolution(
-                Repo(owner="aeteq", name="open-swe"), explicit=True
-            ),
+            webhook_common.SlackRepoResolution(Repo(owner="aeteq", name="open-swe"), explicit=True),
         )
     )
 
