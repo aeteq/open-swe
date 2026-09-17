@@ -19,6 +19,7 @@ from agent.slack.client import (
     select_slack_context_messages,
     strip_bot_mention,
 )
+from agent.slack.payloads import SlackChannelContext, SlackChannelPayload
 from agent.slack.request import SlackRequest
 from agent.source_context import SourceContext
 from agent.utils.run_usage import RunUsageSummary
@@ -59,26 +60,22 @@ class _FakeClient:
 
 
 def test_channel_context_preserves_external_sharing_status() -> None:
-    context = slack_utils.normalize_slack_channel_context(
-        "C123", {"name": "shared", "is_ext_shared": True}
-    )
+    context = SlackChannelPayload.of({"name": "shared", "is_ext_shared": True}).to_context("C123")
 
-    assert context["is_ext_shared"] is True
-    assert not slack_utils.slack_channel_allows_operations(context)
+    assert context.is_ext_shared is True
+    assert not context.allows_operations
 
 
 def test_channel_operations_fail_closed_without_external_sharing_status() -> None:
-    context = slack_utils.normalize_slack_channel_context("C123", None)
+    context = SlackChannelPayload.of(None).to_context("C123")
 
-    assert context["is_ext_shared"] is None
-    assert not slack_utils.slack_channel_allows_operations(context)
-    assert slack_utils.slack_channel_allows_operations(
-        {"is_ext_shared": False, "is_pending_ext_shared": False}
-    )
-    assert not slack_utils.slack_channel_allows_operations(
-        {"is_ext_shared": False, "is_pending_ext_shared": True}
-    )
-    assert slack_utils.slack_channel_allows_operations({"is_im": True})
+    assert context.is_ext_shared is None
+    assert not context.allows_operations
+    assert SlackChannelContext(is_ext_shared=False, is_pending_ext_shared=False).allows_operations
+    assert not SlackChannelContext(
+        is_ext_shared=False, is_pending_ext_shared=True
+    ).allows_operations
+    assert SlackChannelContext(is_im=True).allows_operations
 
 
 def test_source_context_preserves_existing_slack_permalink_on_lookup_failure(
@@ -563,9 +560,7 @@ def test_post_slack_thread_reply_adds_web_context_block(monkeypatch: pytest.Monk
         )
     )
 
-    expected_footer = (
-        "<https://app.example.com/agents/mapped-thread|Open in Web> • calculating cost"
-    )
+    expected_footer = "<https://app.example.com/agents/mapped-thread|Open in Web>"
     assert captured["text"] == f"Done {expected_footer}"
     assert captured["blocks"] == [
         {"type": "section", "text": {"type": "mrkdwn", "text": "Done"}},
@@ -613,9 +608,7 @@ def test_post_slack_thread_reply_keeps_long_messages_text_only(
     )
 
     expected_thread_id = "mapped-thread"
-    expected_footer = (
-        f"<https://app.example.com/agents/{expected_thread_id}|Open in Web> • calculating cost"
-    )
+    expected_footer = f"<https://app.example.com/agents/{expected_thread_id}|Open in Web>"
     assert captured["text"] == f"{long_text} {expected_footer}"
     assert captured["blocks"] is None
 
@@ -655,9 +648,7 @@ def test_post_slack_thread_reply_appends_web_context_block_to_blocks(
     )
 
     expected_thread_id = "mapped-thread"
-    expected_footer = (
-        f"<https://app.example.com/agents/{expected_thread_id}|Open in Web> • calculating cost"
-    )
+    expected_footer = f"<https://app.example.com/agents/{expected_thread_id}|Open in Web>"
     assert captured["text"] == f"Pick one {expected_footer}"
     posted_blocks = captured["blocks"]
     assert isinstance(posted_blocks, list)
@@ -705,22 +696,19 @@ def test_post_slack_thread_reply_keeps_usage_with_existing_web_link(
     assert str(posted_blocks).count(str(dashboard_url)) == 1
     assert posted_blocks[-1] == {
         "type": "context",
-        "elements": [{"type": "mrkdwn", "text": "model-a • calculating cost"}],
+        "block_id": "open_swe_usage_footer",
+        "elements": [{"type": "mrkdwn", "text": "model-a"}],
     }
 
 
-def test_format_slack_web_link_footer_includes_pending_cost() -> None:
+def test_format_slack_web_link_footer_omits_unavailable_cost() -> None:
     usage = RunUsageSummary(models=("model-a", "model-b"), total_tokens=12_345)
 
     footer = slack_utils.format_slack_web_link_footer("https://app.example/agents/t1", usage)
     footer_without_usage = slack_utils.format_slack_web_link_footer("https://app.example/agents/t1")
 
-    assert footer == (
-        "<https://app.example/agents/t1|Open in Web> • model-a + model-b • calculating cost"
-    )
-    assert footer_without_usage == (
-        "<https://app.example/agents/t1|Open in Web> • calculating cost"
-    )
+    assert footer == "<https://app.example/agents/t1|Open in Web> • model-a + model-b"
+    assert footer_without_usage == "<https://app.example/agents/t1|Open in Web>"
 
 
 def test_format_slack_web_link_footer_prefers_session_cost() -> None:
@@ -739,7 +727,7 @@ def test_format_slack_run_usage_shortens_model_paths() -> None:
 
     footer = slack_utils.format_slack_run_usage(usage)
 
-    assert footer == "glm-5p3-flash + openai:gpt-5.6-sol • calculating cost"
+    assert footer == "glm-5p3-flash + openai:gpt-5.6-sol"
 
 
 def test_with_slack_session_cost_preserves_blocks_and_is_idempotent() -> None:
@@ -951,9 +939,7 @@ def test_get_slack_repo_config_applies_profile_default_repo(
 
     monkeypatch.setattr(webhook_common, "get_client", lambda url: _FakeClient(threads_client))
     monkeypatch.setattr(webhook_common, "get_slack_user_info", fake_get_slack_user_info)
-    monkeypatch.setattr(
-        webhook_common, "resolve_login_from_email_async", fake_resolve_login_from_email_async
-    )
+    monkeypatch.setattr(webhook_common.User, "login_for_email", fake_resolve_login_from_email_async)
     monkeypatch.setattr(webhook_common, "get_profile_default_repo", fake_get_profile_default_repo)
 
     resolution = asyncio.run(
@@ -1107,9 +1093,8 @@ def _setup_slack_mention_fakes(
     client = _FakeLangGraphClientForProcess()
     monkeypatch.setattr(webhook_common, "get_client", lambda url: client)
     monkeypatch.setattr(slack_webhooks, "get_langgraph_client", lambda: client)
-    monkeypatch.setattr(webhook_common, "login_for_slack_id", fake_login_for_slack_id)
-    monkeypatch.setattr(webhook_common, "login_for_email", fake_login_for_email)
-    monkeypatch.setattr(webhook_common, "refresh_user_mapping_cache", fake_refresh_cache)
+    monkeypatch.setattr(webhook_common.User, "login_for_slack", fake_login_for_slack_id)
+    monkeypatch.setattr(webhook_common.User, "login_for_email", fake_login_for_email)
     monkeypatch.setattr(webhook_common, "get_valid_access_token", fake_get_valid_access_token)
     monkeypatch.setattr(webhook_common, "post_account_link_prompt", fake_post_prompt)
 
@@ -1214,7 +1199,7 @@ async def test_slack_files_reach_bound_sandbox_with_thread_environment(
 ):
     request, threads, provisioned, captured = slack_file_mention
     if private:
-        request = request.model_copy(update={"channel_context": {"is_im": True}})
+        request = request.model_copy(update={"channel_context": SlackChannelContext(is_im=True)})
     if existing:
         threads.metadata = {
             "visibility": "private" if private else "public",
@@ -1254,7 +1239,7 @@ async def test_slack_file_provisioning_requires_account_and_persisted_thread(
         )
 
     if failure == "private-persistence":
-        request = request.model_copy(update={"channel_context": {"is_im": True}})
+        request = request.model_copy(update={"channel_context": SlackChannelContext(is_im=True)})
         with pytest.raises(RuntimeError, match="authorization metadata"):
             await slack_webhooks._process_slack_mention_impl(request, None)
     else:
@@ -1592,11 +1577,8 @@ def test_process_slack_mention_unmapped_user_blocked_and_prompted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An unmapped Slack user is blocked (no run) and prompted to link."""
-    from agent.dashboard import user_mappings
-
     captured: dict[str, object] = {}
     _setup_slack_mention_fakes(monkeypatch, captured)
-    user_mappings.clear_cache()
 
     async def fake_thread_exists(thread_id: str) -> bool:
         return False
@@ -1613,8 +1595,8 @@ def test_process_slack_mention_unmapped_user_blocked_and_prompted(
         captured["prompt"] = {"user_id": user_id, "user_email": user_email, "reason": reason}
 
     monkeypatch.setattr(webhook_common, "thread_exists", fake_thread_exists)
-    monkeypatch.setattr(webhook_common, "login_for_slack_id", fake_login_for_slack_id)
-    monkeypatch.setattr(webhook_common, "login_for_email", fake_login_for_email)
+    monkeypatch.setattr(webhook_common.User, "login_for_slack", fake_login_for_slack_id)
+    monkeypatch.setattr(webhook_common.User, "login_for_email", fake_login_for_email)
     monkeypatch.setattr(webhook_common, "post_account_link_prompt", fake_post_prompt)
     monkeypatch.setattr(webhook_common, "is_bot_token_only_mode", lambda: False)
 
@@ -1667,7 +1649,7 @@ def test_process_slack_mention_mapped_user_no_token_record_prompts_setup(
         captured["prompt"] = {"reason": reason}
 
     monkeypatch.setattr(webhook_common, "thread_exists", fake_thread_exists)
-    monkeypatch.setattr(webhook_common, "login_for_slack_id", fake_login_for_slack_id)
+    monkeypatch.setattr(webhook_common.User, "login_for_slack", fake_login_for_slack_id)
     monkeypatch.setattr(webhook_common, "get_valid_access_token", fake_get_valid_access_token)
     monkeypatch.setattr(webhook_common, "has_access_token_record", fake_has_token_record)
     monkeypatch.setattr(webhook_common, "post_account_link_prompt", fake_post_prompt)
@@ -1718,7 +1700,7 @@ def test_process_slack_mention_mapped_user_unusable_token_prompts_revoked(
         captured["prompt"] = {"reason": reason}
 
     monkeypatch.setattr(webhook_common, "thread_exists", fake_thread_exists)
-    monkeypatch.setattr(webhook_common, "login_for_slack_id", fake_login_for_slack_id)
+    monkeypatch.setattr(webhook_common.User, "login_for_slack", fake_login_for_slack_id)
     monkeypatch.setattr(webhook_common, "get_valid_access_token", fake_get_valid_access_token)
     monkeypatch.setattr(webhook_common, "has_access_token_record", fake_has_token_record)
     monkeypatch.setattr(webhook_common, "post_account_link_prompt", fake_post_prompt)
@@ -1763,7 +1745,7 @@ def test_process_slack_mention_mapped_user_with_token_runs_as_user(
         owner_meta.update(kwargs)
 
     monkeypatch.setattr(webhook_common, "thread_exists", fake_thread_exists)
-    monkeypatch.setattr(webhook_common, "login_for_slack_id", fake_login_for_slack_id)
+    monkeypatch.setattr(webhook_common.User, "login_for_slack", fake_login_for_slack_id)
     monkeypatch.setattr(webhook_common, "upsert_agent_thread_metadata", fake_upsert_owner)
 
     asyncio.run(
@@ -1800,11 +1782,8 @@ def test_process_slack_mention_existing_thread_adds_everyone_as_participants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A follow-up in an existing thread credits every linked Slack participant."""
-    from agent.dashboard import user_mappings
-
     captured: dict[str, object] = {}
     _setup_slack_mention_fakes(monkeypatch, captured)
-    user_mappings.clear_cache()
 
     async def fake_thread_exists(thread_id: str) -> bool:
         return True
@@ -1815,7 +1794,7 @@ def test_process_slack_mention_existing_thread_adds_everyone_as_participants(
     threads = _FakeThreadsClient({"metadata": {}})
     client = _FakeClient(threads)
     monkeypatch.setattr(webhook_common, "thread_exists", fake_thread_exists)
-    monkeypatch.setattr(webhook_common, "login_for_slack_id", fake_login_for_slack_id)
+    monkeypatch.setattr(webhook_common.User, "login_for_slack", fake_login_for_slack_id)
     monkeypatch.setattr(webhook_common, "get_client", lambda url: client)
     monkeypatch.setattr(slack_webhooks, "get_langgraph_client", lambda: client)
 
@@ -2357,3 +2336,81 @@ def test_process_slack_mention_runs_an_edit_when_queueing_fails(
     run_create = captured["run_create"]
     assert isinstance(run_create, dict)
     assert run_create["kwargs"]["multitask_strategy"] == "enqueue"
+
+
+@pytest.mark.parametrize("linked_in_body", [False, True])
+def test_deferred_cost_updates_footer_without_placeholder(linked_in_body: bool) -> None:
+    url = "https://app.example/agents/t1"
+    body = f"Done <{url}|Open in Web>" if linked_in_body else "Done"
+    usage = RunUsageSummary(models=("model-a",), total_tokens=123)
+    blocks = slack_utils._with_slack_web_link_context_block(
+        body, [{"type": "section", "text": {"type": "mrkdwn", "text": body}}], url, usage
+    )
+    text = slack_utils.append_slack_web_link_footer(body, url, usage)
+    assert "calculating cost" not in text
+    updated_text, updated_blocks = slack_utils.with_slack_session_cost(text, blocks, 0.42)
+    assert updated_text.endswith("model-a • $0.42")
+    assert updated_blocks is not None
+    assert updated_blocks[0] == blocks[0]
+    assert updated_blocks[-1]["elements"][0]["text"].endswith("model-a • $0.42")
+    assert slack_utils.with_slack_session_cost(updated_text, updated_blocks, 0.42) == (
+        updated_text,
+        updated_blocks,
+    )
+
+
+def test_pending_cost_marks_latest_reply_until_cost_arrives() -> None:
+    url = "https://app.example/agents/t1"
+    usage = RunUsageSummary(models=("model-a",), total_tokens=123)
+    blocks = slack_utils._with_slack_web_link_context_block(
+        "Done", [{"type": "section", "text": {"type": "mrkdwn", "text": "Done"}}], url, usage
+    )
+    text = slack_utils.append_slack_web_link_footer("Done", url, usage)
+    assert "calculating cost" not in text
+
+    pending_text, pending_blocks = slack_utils.with_slack_pending_session_cost(text, blocks)
+    assert pending_text.endswith("model-a • calculating cost")
+    assert pending_blocks is not None
+    assert pending_blocks[-1]["elements"][0]["text"].endswith("model-a • calculating cost")
+
+    # Idempotent while awaiting cost, and the refresh swaps the label for the cost.
+    assert slack_utils.with_slack_pending_session_cost(pending_text, pending_blocks) == (
+        pending_text,
+        pending_blocks,
+    )
+    final_text, final_blocks = slack_utils.with_slack_session_cost(
+        pending_text, pending_blocks, 0.42
+    )
+    assert final_text.endswith("model-a • $0.42")
+    assert final_blocks is not None
+    assert final_blocks[-1]["elements"][0]["text"].endswith("model-a • $0.42")
+
+    # Messages without a web footer (e.g. interim acknowledgements) stay untouched.
+    assert slack_utils.with_slack_pending_session_cost("Working on it", None) == (
+        "Working on it",
+        None,
+    )
+
+
+@pytest.mark.parametrize("usage", [None, RunUsageSummary(models=(), total_tokens=123)])
+def test_cost_enrichment_without_model_metadata(usage: RunUsageSummary | None) -> None:
+    url = "https://app.example/agents/t1"
+    text = f"Done <{url}|Open in Web>"
+    blocks = slack_utils._with_slack_web_link_context_block(
+        text, [{"type": "section", "text": {"type": "mrkdwn", "text": text}}], url, usage
+    )
+    for pending in (False, True):
+        initial_text, initial_blocks = (
+            slack_utils.with_slack_pending_session_cost(text, blocks) if pending else (text, blocks)
+        )
+        final_text, final_blocks = slack_utils.with_slack_session_cost(
+            initial_text, initial_blocks, 0.42
+        )
+        assert final_text.endswith("$0.42")
+        assert final_blocks[-1]["elements"][0]["text"] == "$0.42"
+        assert final_blocks[0] == blocks[0]
+    cleared_text, cleared_blocks = slack_utils.with_slack_pending_session_cost(
+        initial_text, initial_blocks, clear=True
+    )
+    assert "calculating cost" not in cleared_text
+    assert "calculating cost" not in str(cleared_blocks)
