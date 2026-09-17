@@ -7,6 +7,7 @@ object (``common.X``) so tests that monkeypatch them keep working.
 from typing import Any
 
 from agent.baby_sit import handle_ci_webhook
+from agent.expedited_review.watch import handle_github_event as handle_expedited_review_event
 from agent.github.comments import GitHubAuthError
 from agent.github.pull_requests import PullRequest
 from agent.input_messages import (
@@ -474,7 +475,7 @@ async def process_github_pr_ready(payload: dict[str, Any]) -> None:
     """Auto-review a PR that has just been opened or marked ready-for-review.
 
     Drafts are gated by the PR author's ``review_draft_prs`` profile flag
-    (with the team-wide setting as a fallback).
+    (with the workspace's setting as a fallback).
     """
     pull_request = payload.get("pull_request", {})
     is_draft = bool(pull_request.get("draft"))
@@ -792,6 +793,11 @@ async def process_github_ci_event(
 ) -> None:
     """Evaluate active baby-sit watches for a signed GitHub CI event."""
     await handle_ci_webhook(payload, event_type, delivery_id=delivery_id)
+
+
+async def process_expedited_review_event(payload: dict[str, Any], event_type: str) -> None:
+    """Re-evaluate expedited approvals a signed GitHub event may have unblocked or voided."""
+    await handle_expedited_review_event(payload, event_type)
 
 
 async def process_github_pr_comment(payload: dict[str, Any], event_type: str) -> None:

@@ -111,7 +111,7 @@ Open SWE calls models through [LangChain](https://python.langchain.com/) chat mo
 
 **LangSmith LLM Gateway.** Instead of per-provider keys, route every model call through the gateway with one LangSmith key that has the `gateway:invoke` permission, set as `LANGSMITH_GATEWAY_API_KEY`. Setting that key turns the gateway on; `LANGSMITH_GATEWAY_ENABLED=true|false` forces it either way (with `true` and no gateway key, `LANGSMITH_API_KEY` is used, which on LangGraph Platform may lack the permission). `LANGSMITH_GATEWAY_BASE_URL` points at a regional or self-hosted gateway. Admins can also toggle the gateway per team in the dashboard.
 
-**Which model runs.** The deployment default is `anthropic:claude-opus-5` when only an Anthropic key is configured and `openai:gpt-5.6-sol` otherwise, at `medium` reasoning effort; override it with `LLM_MODEL_ID` (`provider:model`) and `LLM_REASONING_EFFORT` (`low`, `medium`, `high`, `max`), and name a `LLM_FALLBACK_MODEL_ID` for when the primary provider fails. Admins set a team default under **Admin → Global defaults**, and each user can pick their own model and effort under **My settings**; the supported list lives in `agent/dashboard/options.py`. Model ids and their providers are described in [CUSTOMIZATION.md](CUSTOMIZATION.md).
+**Which model runs.** The deployment default comes from the supported-model list in `agent/dashboard/options.py` (an Anthropic model when only an Anthropic key is configured, otherwise an OpenAI one); override it with `LLM_MODEL_ID` (`provider:model`) and `LLM_REASONING_EFFORT` (`low`, `medium`, `high`, `max`), and name a `LLM_FALLBACK_MODEL_ID` for when the primary provider fails. Admins set the instance default, which each workspace can override, under **Admin → Global defaults**, and each user can pick their own model and effort under **My settings**. Model ids and their providers are described in [CUSTOMIZATION.md](CUSTOMIZATION.md).
 
 **Other API keys.** `EXA_API_KEY` (from [dashboard.exa.ai](https://dashboard.exa.ai)) enables the web search tool. `REVIEWER_OUTCOMES_DATASET` names the LangSmith dataset the reviewer records finding outcomes in (default `openswe-reviewer-outcomes`).
 
@@ -140,7 +140,16 @@ Open SWE answers `@`-mentions in Slack and posts its progress there, and Slack i
         "bot_user": {
             "display_name": "Open SWE",
             "always_online": true
-        }
+        },
+        "slash_commands": [
+            {
+                "command": "/oswe",
+                "url": "https://<your-url>/webhooks/slack/commands",
+                "description": "Ask Open SWE",
+                "usage_hint": "[your request or question]",
+                "should_escape": false
+            }
+        ]
     },
     "oauth_config": {
         "redirect_urls": [
@@ -149,6 +158,7 @@ Open SWE answers `@`-mentions in Slack and posts its progress there, and Slack i
         "scopes": {
             "bot": [
                 "reactions:write",
+                "commands",
                 "app_mentions:read",
                 "channels:history",
                 "channels:read",
@@ -206,6 +216,8 @@ SLACK_BOT_USER_ID=""      # the bot's member id (open the bot's profile in Slack
 SLACK_BOT_USERNAME=""     # the bot's handle, e.g. open-swe
 ```
 
+`/oswe <request or question>` answers or carries out a request without starting a Slack thread: replies are ephemeral, visible only to whoever asked, and the immediate acknowledgement links to the thread in the web dashboard. Each person's commands in a channel share one private scratch thread, kept out of everyone's thread list; continuing it on the web makes it an ordinary thread. Substantial work belongs in a thread of its own, which Open SWE starts in the channel.
+
 Both Slack URLs must point at the Open SWE deployment, and Block Kit buttons only work with Interactivity enabled and pointed at `/webhooks/slack/interactivity`. Slack messages are routed to the thread's repository, a `repo:owner/name` token in the message, or the team default repository. Open SWE refuses Slack Connect channels (`is_ext_shared`) and fails closed when it cannot verify a channel.
 
 `files:read` lets Open SWE download non-image files attached to a message (archives, logs, CSVs) and stage them in the thread's sandbox, where the agent reads them by path. Existing installations must add the scope in **OAuth & Permissions** and reinstall the app before attachments reach the agent; without it, uploads stay invisible and only the message text is used.
@@ -249,7 +261,7 @@ On LangGraph Platform, set them under the deployment's environment variables; sa
 
 **GitHub.** GitHub-triggered conversations are public. Agent GitHub operations use the App installation identity, while PRs use the initiating commenter's OAuth. The commenter must have a linked account; an unmapped commenter is skipped with a warning in the server log. Comment `@openswe what files are in this repo?` on an issue in a repository where the App is installed. Within a few seconds you should see a 👀 reaction, a run in your LangSmith project, and a reply comment. GitHub lists every delivery and its response under the App's **Advanced** tab.
 
-**How a run picks its workspace.** A workspace owns repositories, Slack channels, MCP connections, and team settings, and carries the sandbox prompt/snapshot/scripts described above. New work is routed to a workspace in this order, first match wins: the thread it belongs to already has one; the message that opened the thread carries a `workspace:<slug>` tag (`env:<slug>` still works as an alias); the repository belongs to a workspace; the Slack channel it was posted in is bound to a workspace; the user has a default workspace set under **My settings**; otherwise it falls back to `default`. GitHub events for a repository that no workspace owns follow `OPEN_SWE_UNASSIGNED_REPO_WORKSPACE`: `default` (the default) routes them to the `default` workspace, and `ignore` drops them without creating a run. Workspace records and their repository and Slack-channel bindings live in PostgreSQL (see **Analytics storage** above), not the LangGraph Store; a workspace's MCP connections and team settings do stay in the Store, keyed by the workspace's slug.
+**How a run picks its workspace.** A workspace owns repositories, Slack channels, MCP connections, and workspace settings, and carries the sandbox prompt/snapshot/scripts described above. New work is routed to a workspace in this order, first match wins: the thread it belongs to already has one; the message that opened the thread carries a `workspace:<slug>` tag (`env:<slug>` still works as an alias); the repository belongs to a workspace; the Slack channel it was posted in is bound to a workspace; the user has a default workspace set under **My settings**; otherwise it falls back to `default`. GitHub events for a repository that no workspace owns follow `OPEN_SWE_UNASSIGNED_REPO_WORKSPACE`: `default` (the default) routes them to the `default` workspace, and `ignore` drops them without creating a run. Workspace records and their repository and Slack-channel bindings live in PostgreSQL (see **Analytics storage** above), not the LangGraph Store; a workspace's MCP connections and workspace settings do stay in the Store, keyed by the workspace's slug.
 
 ---
 
@@ -315,7 +327,7 @@ The bundled dashboard needs none of this. Read on only if the dashboard is deplo
 <details id="admin-api-credentials">
 <summary><strong>Admin API credentials (CI and scripts)</strong></summary>
 
-Admin-gated endpoints such as `PUT /dashboard/api/team-settings` and `PUT /dashboard/api/sandbox-settings` accept two credentials in place of the browser session cookie, both as `Authorization: Bearer`:
+Admin-gated endpoints such as `PUT /dashboard/api/settings` and `PUT /dashboard/api/sandbox-settings` accept two credentials in place of the browser session cookie, both as `Authorization: Bearer`:
 
 **GitHub Actions OIDC (preferred, no stored secret).** A workflow with `permissions: id-token: write` mints a short-lived token that GitHub signs and scopes to the repo, ref, and audience. Allowlist it on the deployment:
 

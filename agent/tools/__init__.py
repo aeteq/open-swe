@@ -13,6 +13,7 @@ _TOOL_MODULES = {
     "delete_automation": ".automations",
     "delete_workspace": ".workspaces",
     "enter_plan_mode": ".enter_plan_mode",
+    "expedite_pr_approval": ".expedite_pr_approval",
     "fetch_review_diff": ".fetch_review_diff",
     "fetch_url": ".fetch_url",
     "get_thread": ".threads",
@@ -31,6 +32,7 @@ _TOOL_MODULES = {
     "open_pull_request": ".open_pull_request",
     "output_iframe": ".output_iframe",
     "publish_review": ".publish_review",
+    "read_only_sql": ".read_only_sql",
     "read_repo_file": "agent.github.tools.read_repo_file",
     "read_user_settings": ".read_user_settings",
     "recreate_sandbox": ".recreate_sandbox",
@@ -43,7 +45,6 @@ _TOOL_MODULES = {
     "publish_workspace": ".workspaces",
     "save_organization_skill": ".organization_skills",
     "save_plan": ".save_plan",
-    "sandbox_reset": ".sandbox_reset",
     "save_user_instructions": ".save_user_instructions",
     "save_user_skill": ".user_skills",
     "delete_user_skill": ".user_skills",
@@ -52,6 +53,7 @@ _TOOL_MODULES = {
     "slack_add_reaction": "agent.slack.tools.add_reaction",
     "slack_attach_html": "agent.slack.tools.attach_html",
     "slack_move_thread": "agent.slack.tools.move_thread",
+    "slack_read_channel_messages": "agent.slack.tools.read_channel_messages",
     "slack_read_thread_messages": "agent.slack.tools.read_thread_messages",
     "slack_start_new_thread": "agent.slack.tools.start_new_thread",
     "slack_thread_reply": "agent.slack.tools.thread_reply",
@@ -73,6 +75,7 @@ __all__ = [
     "delete_automation",
     "delete_workspace",
     "enter_plan_mode",
+    "expedite_pr_approval",
     "fetch_review_diff",
     "fetch_url",
     "get_thread",
@@ -91,6 +94,7 @@ __all__ = [
     "open_pull_request",
     "output_iframe",
     "publish_review",
+    "read_only_sql",
     "read_repo_file",
     "read_user_settings",
     "recreate_sandbox",
@@ -103,7 +107,6 @@ __all__ = [
     "save_organization_skill",
     "delete_organization_skill",
     "save_plan",
-    "sandbox_reset",
     "save_user_instructions",
     "save_user_skill",
     "delete_user_skill",
@@ -112,6 +115,7 @@ __all__ = [
     "slack_add_reaction",
     "slack_attach_html",
     "slack_move_thread",
+    "slack_read_channel_messages",
     "slack_read_thread_messages",
     "slack_start_new_thread",
     "slack_thread_reply",
@@ -130,6 +134,7 @@ if TYPE_CHECKING:
     from agent.slack.tools.attach_html import slack_attach_html
     from agent.slack.tools.manage_code_channel import manage_code_channel
     from agent.slack.tools.move_thread import slack_move_thread
+    from agent.slack.tools.read_channel_messages import slack_read_channel_messages
     from agent.slack.tools.read_thread_messages import slack_read_thread_messages
     from agent.slack.tools.request_pr_review import request_pr_review
     from agent.slack.tools.start_new_thread import slack_start_new_thread
@@ -148,6 +153,7 @@ if TYPE_CHECKING:
     from agent.tools.create_sandbox_file_download_url import create_sandbox_file_download_url
     from agent.tools.create_sandbox_service_url import create_sandbox_service_url
     from agent.tools.enter_plan_mode import enter_plan_mode
+    from agent.tools.expedite_pr_approval import expedite_pr_approval
     from agent.tools.fetch_review_diff import fetch_review_diff
     from agent.tools.fetch_url import fetch_url
     from agent.tools.http_request import http_request
@@ -160,12 +166,12 @@ if TYPE_CHECKING:
     from agent.tools.organization_skills import delete_organization_skill, save_organization_skill
     from agent.tools.output_iframe import output_iframe
     from agent.tools.publish_review import publish_review
+    from agent.tools.read_only_sql import read_only_sql
     from agent.tools.read_user_settings import read_user_settings
     from agent.tools.recreate_sandbox import recreate_sandbox
     from agent.tools.reply_to_finding_thread import reply_to_finding_thread
     from agent.tools.report_platform_issue import report_platform_issue
     from agent.tools.resolve_finding_thread import resolve_finding_thread
-    from agent.tools.sandbox_reset import sandbox_reset
     from agent.tools.save_plan import save_plan
     from agent.tools.save_user_instructions import save_user_instructions
     from agent.tools.schedule_thread_wakeup import schedule_thread_wakeup

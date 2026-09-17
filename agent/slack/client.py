@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 SLACK_BOT_TOKEN = ENV.SLACK_BOT_TOKEN.get()
 SLACK_THREAD_MAX_MESSAGES = 500
+SLACK_CHANNEL_HISTORY_MAX_MESSAGES = 100
 SLACK_FILE_UPLOAD_MAX_BYTES = 16 * 1024 * 1024
 SLACK_CHANNEL_INFO_CACHE_TTL_SECONDS = 300
 
@@ -317,11 +318,26 @@ def _format_forwarded_slack_attachments(attachments: Any) -> str:
     return "\n".join(forwarded)
 
 
+def _slack_thread_reply_marker(message: dict[str, Any]) -> str:
+    """A pointer to the replies hanging off a channel message, when it has any."""
+    raw_thread_ts = message.get("thread_ts")
+    thread_ts = raw_thread_ts.strip() if isinstance(raw_thread_ts, str) else ""
+    reply_count = message.get("reply_count")
+    if not _SLACK_MESSAGE_TS_RE.fullmatch(thread_ts) or not isinstance(reply_count, int):
+        return ""
+    if reply_count < 1:
+        return ""
+    plural = "reply" if reply_count == 1 else "replies"
+    return f" [thread: {reply_count} {plural}, thread_ts={thread_ts}]"
+
+
 def format_slack_messages_for_prompt(
     messages: list[dict[str, Any]],
     user_names_by_id: dict[str, str] | None = None,
     bot_user_id: str = "",
     bot_username: str = "",
+    *,
+    include_thread_replies: bool = False,
 ) -> str:
     """Format Slack messages, including forwarded context, as readable prompt text."""
     if not messages:
@@ -348,7 +364,8 @@ def format_slack_messages_for_prompt(
         identifier = (
             f" [message_ts={message_ts}]" if _SLACK_MESSAGE_TS_RE.fullmatch(message_ts) else ""
         )
-        line = f"{author}{identifier}: {text}"
+        replies = _slack_thread_reply_marker(message) if include_thread_replies else ""
+        line = f"{author}{identifier}{replies}: {text}"
         if forwarded:
             line += f"\n{forwarded}"
         lines.append(line)
@@ -464,36 +481,32 @@ def _slack_thread_dashboard_url(
     return dashboard_thread_url(agent_thread_id) if agent_thread_id else None
 
 
-def _format_token_count(count: int) -> str:
-    if count >= 1_000_000:
-        return f"{count / 1_000_000:.1f}M"
-    if count >= 1_000:
-        return f"{count / 1_000:.1f}K"
-    return str(count)
-
-
 def _safe_model_label(model: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9._:/+\-]", "-", model)
     return sanitized.rsplit("/", 1)[-1][:48].strip("-")
 
 
+SLACK_COST_PENDING_LABEL = "calculating cost"
+
+
 def format_slack_run_usage(usage: RunUsageSummary | None) -> str:
     if usage is None:
-        return ""
+        return SLACK_COST_PENDING_LABEL
     labels = sorted({label for model in usage.models if (label := _safe_model_label(model))})
     model_text = " + ".join(labels[:3])
     if len(labels) > 3:
         model_text = f"{model_text} +{len(labels) - 3}"
     parts = [model_text] if model_text else []
-    if usage.session_cost_usd is not None:
-        parts.append(format_slack_session_cost(usage.session_cost_usd))
-    elif usage.total_tokens is not None:
-        parts.append(f"{_format_token_count(usage.total_tokens)} main-agent tokens")
+    parts.append(
+        format_slack_session_cost(usage.session_cost_usd)
+        if usage.session_cost_usd is not None
+        else SLACK_COST_PENDING_LABEL
+    )
     return " • ".join(parts)
 
 
 _SESSION_COST_LABEL_RE = re.compile(
-    r"(?: • )?(?:<\$0\.01|\$[0-9]+(?:\.[0-9]+)?)(?: session cost)?$"
+    rf"(?: • )?(?:<\$0\.01|\$[0-9]+(?:\.[0-9]+)?|{re.escape(SLACK_COST_PENDING_LABEL)})(?: session cost)?$"
 )
 _MAIN_AGENT_TOKEN_LABEL_RE = re.compile(r"(?: • )?[0-9]+(?:\.[0-9]+)?[KM]? main-agent tokens$")
 
@@ -539,7 +552,7 @@ def with_slack_session_cost(
             value_text = value.get("text")
             if not isinstance(value_text, str):
                 continue
-            if "main-agent tokens" in value_text:
+            if "main-agent tokens" in value_text or SLACK_COST_PENDING_LABEL in value_text:
                 candidates.append(value)
             elif SLACK_WEB_LINK_FOOTER_LABEL in value_text:
                 fallback_candidates.append(value)
@@ -664,6 +677,26 @@ async def post_slack_thread_reply_with_ts(
         thread_ts=thread_ts,
         unfurl_links=unfurl_links,
         unfurl_media=unfurl_media,
+        blocks=blocks,
+    )
+
+
+async def post_slack_ephemeral_reply(
+    channel_id: str,
+    user_id: str,
+    text: str,
+    *,
+    blocks: list[dict[str, Any]] | None = None,
+    usage: RunUsageSummary | None = None,
+    agent_thread_id: str | None = None,
+) -> bool:
+    """Answer one person in a channel, carrying the same web link a thread reply would."""
+    dashboard_url = dashboard_thread_url(agent_thread_id) if agent_thread_id else None
+    blocks = _with_slack_web_link_context_block(text, blocks, dashboard_url, usage)
+    return await post_slack_ephemeral_message(
+        channel_id,
+        user_id,
+        append_slack_web_link_footer(text, dashboard_url, usage),
         blocks=blocks,
     )
 
@@ -1372,6 +1405,69 @@ async def fetch_slack_thread_messages(channel_id: str, thread_ts: str) -> list[d
     messages.sort(key=lambda item: parse_slack_ts(item.get("ts")))
     if truncated:
         messages = messages[-SLACK_THREAD_MAX_MESSAGES:]
+    return messages
+
+
+_SLACK_NOISE_SUBTYPES = frozenset(
+    {"channel_join", "channel_leave", "channel_topic", "channel_purpose", "channel_name"}
+)
+
+
+async def slack_channel_is_public(channel_id: str) -> bool:
+    """Whether a channel is one anybody in the workspace can already read.
+
+    Channel history is fetched with the deployment's bot token, which says
+    nothing about who is asking, so only a channel with no membership to leak
+    may be read this way: not private, not a DM or group DM, and not shared with
+    another organization.
+    """
+    channel = await get_slack_channel_info(channel_id)
+    if not isinstance(channel, dict):
+        return False
+    return (
+        channel.get("is_channel") is True
+        and channel.get("is_private") is False
+        and channel.get("is_im") is not True
+        and channel.get("is_mpim") is not True
+        and channel.get("is_ext_shared") is False
+        and channel.get("is_pending_ext_shared") is False
+    )
+
+
+async def fetch_slack_channel_messages(channel_id: str, limit: int = 30) -> list[dict[str, Any]]:
+    """The most recent top-level messages in a public channel, oldest first.
+
+    Thread replies are not in channel history, so a message that has any carries
+    its `reply_count` and `thread_ts` for `slack_read_thread_messages` to follow.
+    """
+    if not SLACK_BOT_TOKEN or not channel_id:
+        return []
+    if not await slack_channel_is_public(channel_id):
+        logger.info(
+            "Refused to read history for a non-public Slack channel",
+            extra={"slack_channel": channel_id},
+        )
+        return []
+
+    capped = max(1, min(limit, SLACK_CHANNEL_HISTORY_MAX_MESSAGES))
+    async with slack_client(token=SLACK_BOT_TOKEN) as client:
+        try:
+            payload = await client.conversations_history(channel=channel_id, limit=capped)
+        except SLACK_REQUEST_ERRORS as exc:
+            logger.warning(
+                "Slack channel history fetch failed", extra={"slack_error": slack_error(exc)}
+            )
+            return []
+
+    batch = payload.get("messages", [])
+    if not isinstance(batch, list):
+        return []
+    messages = [
+        item
+        for item in batch
+        if isinstance(item, dict) and item.get("subtype") not in _SLACK_NOISE_SUBTYPES
+    ]
+    messages.sort(key=lambda item: parse_slack_ts(item.get("ts")))
     return messages
 
 
