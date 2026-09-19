@@ -1,156 +1,90 @@
 ---
 type: integration reference
-title: Observability, Browser, and MCP Integrations
-description: Optional Datadog, LangSmith, Corridor, Notion, Currents, and Stagehand integrations, including credential boundaries, authorization, loading behavior, and LangSmith LLM Gateway routing.
-tags: [integrations, observability, mcp, credentials, authorization, langsmith, browser]
+title: MCP and Tool Integrations
+description: Optional Notion MCP and workspace MCP integrations for server-side tool provisioning, plus LangSmith LLM Gateway routing for model calls.
+tags: [integrations, mcp, tools, langsmith, gateway, notion]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-19T12:20:12.895Z
 sources:
-  - id: openwiki-source-ef92164b6963a5a6100712cb
-    resource: repo://agent/dashboard/admin.py
   - id: openwiki-source-b26707b64bee931c416620a7
     resource: repo://agent/dashboard/notion_oauth.py
-  - id: openwiki-source-054ae1f93e565567e2cc7462
-    resource: repo://agent/dashboard/team_credentials.py
   - id: openwiki-source-941341430e1d08d8e7e54dfe
     resource: repo://agent/dashboard/user_credentials.py
-  - id: openwiki-source-10938886c8b24d0cdc72ad9e
-    resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-e4901f6a09c372487ff11987
-    resource: repo://agent/tool_loaders/corridor_mcp.py
-  - id: openwiki-source-252c217caee95d761fdf9d4b
-    resource: repo://agent/tool_loaders/currents.py
-  - id: openwiki-source-7b11edd9f01f467abe58409b
-    resource: repo://agent/tool_loaders/datadog_mcp.py
-  - id: openwiki-source-6de9e7b7779ea6aada343f2a
-    resource: repo://agent/tool_loaders/langsmith.py
   - id: openwiki-source-2cd7e2018ae35c5972204803
     resource: repo://agent/tool_loaders/notion_mcp.py
-  - id: openwiki-source-49907d748d9e1812d9705ce0
-    resource: repo://agent/tool_loaders/stagehand_browser.py
+  - id: openwiki-source-2d8602d5d52cd6ee177cde15
+    resource: repo://agent/tool_loaders/workspace_mcp.py
   - id: openwiki-source-f0db445078d7a8158aa93724
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
   - id: openwiki-source-7c60191e42b8e30b62935af1
     resource: repo://agent/utils/thread_participants.py
-  - id: openwiki-source-afa26f9f18a24a492620d2a2
-    resource: repo://tests/agent/test_factory_tool_loading.py
-  - id: openwiki-source-40272ff4fc53752817bc0d7b
-    resource: repo://tests/tools/test_corridor_mcp.py
-  - id: openwiki-source-0cae9f5b38531985e575f78c
-    resource: repo://tests/tools/test_currents_tools.py
-  - id: openwiki-source-56c83feb683034fa0b0af4d8
-    resource: repo://tests/tools/test_observability_tools.py
-  - id: openwiki-source-5594297dbbc1ca48fc990bce
-    resource: repo://tests/tools/test_stagehand_browser.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 ---
 
-# Observability, Browser, and MCP Integrations
+# MCP and Tool Integrations
 
-The agent offers several optional external tool surfaces: Datadog and LangSmith observability, Corridor security analysis, Notion MCP, Currents e2e investigation, and a sandbox-local Stagehand browser. It also can route supported model calls through the LangSmith LLM Gateway. None is a prerequisite for creating an agent: unavailable credentials, providers, or tool handshakes remove the optional surface rather than preventing the run.
+The agent supports several optional external integrations: workspace and user MCP sources that provision custom tools through the server process, per-user Notion MCP with participant-scoped access control, and optional model routing through the LangSmith LLM Gateway.
 
-See [Authentication and security](../concepts/auth-and-security.md) for the broader trust model, [Tools](../concepts/tools.md) for dynamic tool availability, [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) for model selection, and [Configuration](../operations/configuration.md) for environment settings.
+See [Authentication and security](../concepts/auth-and-security.md) for the broader trust model, [Tools](../concepts/tools.md) for dynamic tool availability, and [Configuration](../operations/configuration.md) for environment settings.
 
-## Execution and credential boundary
+## MCP Tool Loading
 
-Server-side integrations—Datadog, LangSmith tools, Corridor, Notion, and Currents—make hosted MCP or REST requests in the LangGraph server process. Their tokens are supplied on that server-to-provider connection; these integrations do not place their third-party credentials in the task sandbox. Stagehand is deliberately different: its browser operations are dispatched into the thread's sandbox.
+The agent loads tools from three MCP tiers in sequence: instance (configured at the deployment level), workspace, and user. When a tool exists in multiple tiers, the user-scoped version takes precedence. All sources use the `streamable_http` transport to the configured MCP server URLs.
 
-Team Datadog and LangSmith records are kept in the separate `team_credentials` Store namespace. API keys are encrypted with `agent.encryption`; status reads expose connection metadata and last four characters rather than keys. Per-user Currents, LangSmith, and Notion records live below `user_credentials/<login>` and store encrypted secrets as well. The separation from plaintext team settings ensures an ordinary settings read does not reveal team credentials.
+MCP tools load only for non-local, non-summary runs where credential scope is known, using a stale-while-revalidate TTL cache scoped to login and workspace. MCP discovery and tool building happen together with Notion tools during the parallel factory phase. A timeout or exception returns an empty tool list rather than failing the run, so unavailable MCPs gracefully degrade to only the core agent tools.
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
-  Trigger["Triggering user"] --> Gate["Per-run authorization"]
-  Gate --> Obs["Observability group"]
-  Trigger --> Personal["Participant-scoped groups"]
-  Obs --> Server["LangGraph server"]
-  Personal --> Server
-  Server --> Datadog["Datadog MCP"]
-  Server --> LangSmith["LangSmith API"]
-  Server --> Notion["Notion MCP"]
-  Server --> Currents["Currents REST API"]
-  Sandbox["Thread task sandbox"] --> Browser["Stagehand Chromium"]
+  Factory["Factory phase<br/>for agent creation"]
+  Parallel["Parallel loaders"]
+  MCPTiers["MCP tier resolution:<br/>instance → workspace → user"]
+  NotionLoad["Notion MCP discovery<br/>and wrapping"]
+  Register["Register in<br/>DynamicToolMiddleware"]
+  
+  Factory --> Parallel
+  Parallel -->|300s TTL cache| MCPTiers
+  Parallel -->|300s TTL cache| NotionLoad
+  MCPTiers --> Register
+  NotionLoad --> Register
 ```
 
-The server owns credentialed provider calls; only Stagehand browser automation is sent to the sandbox.
+## Notion MCP Integration
 
-## Observability tools
+Notion tools are backed by the hosted server at `https://mcp.notion.com/mcp` using per-user OAuth access tokens. The loader runs `load_notion_tools(login)`, which discovers the Notion MCP catalog once per login and per 300-second cache window.
 
-### Datadog
+Each tool is wrapped so its input schema includes a required `on_behalf_of` GitHub login. At call time, the wrapper validates that the named participant matches the triggering user and is a verified thread participant, then:
 
-`load_datadog_tools` obtains the team's decrypted API/application key pair and creates a `MultiServerMCPClient` using `streamable_http`. It connects to `https://mcp.<site>/api/unstable/mcp-server/mcp`, attaches `DD_API_KEY` and `DD_APPLICATION_KEY`, and requests the configured `toolsets`. `DATADOG_MCP_TOOLSETS` defaults to `core`, the query-oriented logs, metrics, traces, dashboards, monitors, incidents, hosts, services, and events set.
+1. Resolves a fresh access token for that participant
+2. Reconnects to Notion MCP with that token
+3. Builds the requested tool with the fresh connection
+4. Invokes it
 
-A Datadog connection validates and normalizes its site before storage. Only `datadoghq.com`, `us3.datadoghq.com`, `us5.datadoghq.com`, `datadoghq.eu`, `ap1.datadoghq.com`, and `ap2.datadoghq.com` are accepted, so the derived MCP host is an approved hosted-MCP site. Missing credentials or an MCP failure produces no Datadog tools.
+If the participant has no current Notion token, the tool raises an error directing them to reconnect Notion in Profile Settings. If a token refresh fails with a reauth-required error, the stored connection is removed, again triggering a reconnection prompt.
 
-### LangSmith run inspection
+Thus a catalog loaded with one person's token does not authorize calls as that person; every invocation sources fresh, participant-specific credentials. Notion tools load only when a known, logged-in user is available.
 
-The LangSmith tool surface is intentionally read-only:
+### Participant Invariant
 
-- `langsmith_get_trace` reads one run and can include child runs.
-- `langsmith_list_runs` lists a project's recent runs, clamps `limit` to 1–50, and accepts an optional LangSmith filter.
-
-Both tools resolve credentials when invoked, after resolving `on_behalf_of` to the acting participant. A connected personal LangSmith key wins; a team key is considered only when the loader created the tools with `allow_team=True`. Failures are returned as a structured `{ "success": false, "error": ... }` tool result. This is separate from the LangSmith sandbox backend.
-
-### Authorization tiers
-
-Team observability content is treated as attacker-influenceable: traces, logs, and run inputs/outputs can contain prompt injection. The server therefore evaluates observability access for every run, using the user who triggered that run, not a capability retained by the thread.
-
-The check accepts configured admins (`CONFIGURED_ADMINS`) by email or GitHub login, and the explicit email allowlist (`OBSERVABILITY_AUTHORIZED_EMAILS`). It considers configured `user_email`, a Slack triggering email, the selected GitHub login, and the email resolved for that login. The resulting tool grant is tiered:
-
-1. An explicitly authorized user receives Datadog and LangSmith with team fallback.
-2. An active member of an `ALLOWED_GITHUB_ORGS` organization receives LangSmith with team fallback.
-3. Everyone else receives LangSmith only if they have a personal connection; team fallback is disabled.
-
-The authorization decision is intentionally not cached because it relies on per-run configuration. The expensive provider/credential and organization-membership work is cached separately, so cache reuse cannot carry team access from an authorized caller to an untrusted caller.
-
-## MCP providers and participant-scoped calls
-
-### Corridor
-
-Corridor is a server-side MCP integration for `analyzePlan`. Configuration requires `CORRIDOR_API_TOKEN`; a legacy `token` or `api_key` query parameter in `CORRIDOR_MCP_URL` may supply the token and is removed before connecting. The URL is pinned to HTTPS `app.corridor.dev` at `/api/mcp`; an absent token or any other endpoint means Corridor is unconfigured, avoiding bearer-token delivery to an arbitrary host.
-
-The loader uses HTTP MCP with a 30-second connection timeout, attaches `Authorization: Bearer ...`, and filters the discovered catalog to the `analyzePlan` allowlist. When configured, the server registers Corridor as an `IntegrationGroup` whose static advertised name is `analyzePlan`; the handshake is deferred until the agent requests it rather than delaying the first model call. The prompt directs the agent to use it before substantial security-sensitive code changes, but to report an unavailable tool once and continue without retrying.
-
-### Notion
-
-Notion uses the hosted `https://mcp.notion.com/mcp` server over `streamable_http` and a per-user OAuth bearer token. `load_notion_tools(login)` uses that login only to discover the MCP catalog. It wraps each discovered definition so every user sees the same schema, augmented with required `on_behalf_of`.
-
-At invocation, the wrapper validates the participant, obtains that participant's current Notion access token, reconnects to retrieve the named MCP tool, and calls it. Notion credentials refresh expired tokens under a per-login lock; a reauthorization-required refresh removes the dead stored connection. Thus a catalog loaded using one person's token does not authorize calls as that person, and a missing current token produces a reconnect error.
-
-### Currents
-
-Currents is a server-side, read-only REST integration at `https://api.currents.dev/v1`. Its five tools list projects, retrieve a run, find a matching run, list project runs, and retrieve a spec-execution instance. Each request resolves the participant's decrypted Currents key at call time and sends it as a bearer header. The list endpoints cap page size at 50; provider errors become structured failure results.
-
-For Currents and Notion, the triggering login merely decides whether the tool group is offered: it requires a known login with that provider connected. It does not select a permanent credential for calls.
-
-### Participant invariant
-
-All participant-scoped calls use `resolve_participant`. `on_behalf_of` must be nonempty, case-insensitively match the GitHub login that triggered the current run, and be among verified thread participants. Calls cannot select a different participant's connection, and uncertainty while verifying participants is rejected rather than silently accepted.
-
-## Stagehand browser in the sandbox
-
-The five Stagehand tools—`browser_navigate`, `browser_act`, `browser_observe`, `browser_extract`, and `browser_close`—operate through the thread's sandbox backend. They can navigate sandbox-local `localhost` services. For each request, the server encodes operation, model, headless setting, and input as base64 JSON and executes the Stagehand runtime in the sandbox. It health-checks a Unix socket, starts a long-lived runtime if necessary, then returns its JSON response; sandbox execution or malformed output becomes a failure result.
-
-Browser tools are available only when `SANDBOX_TYPE` is `langsmith`, the selected Stagehand model has an `anthropic` or `openai` provider prefix, and a model API key can be sourced from `STAGEHAND_MODEL_API_KEY`, `MODEL_API_KEY`, or `ANTHROPIC_API_KEY`. `STAGEHAND_MODEL` defaults to `anthropic/claude-sonnet-4-5`; `STAGEHAND_HEADLESS` is enabled unless set to `0`, `false`, or `no`.
-
-## Loading lifecycle and failures
-
-While building an executable non-local, non-summary agent, the server concurrently loads observability and participant-scoped Currents/Notion groups. It adds browser tools under the same run restrictions. Corridor is configured into a lazy group instead. Summary-stop and local/desktop runs skip observability, Currents, Notion, browser, and Corridor integration groups.
-
-Server loaders use a stale-while-revalidate TTL cache and a loader timeout. Datadog and Corridor cache for 600 seconds; LangSmith, Currents, and Notion caches use 300 seconds, with cache keys scoped to login and LangSmith team-fallback mode where needed. An exception or timeout returns an empty list. Credential reads on the tool-loading path also deliberately fail soft when Store access fails, whereas dashboard status reads surface Store failures. The operational invariant is that optional integration loss reduces available tools, not the ability to start a run.
+`resolve_participant` enforces that `on_behalf_of` matches the user who triggered the run and is a verified thread participant. Calls cannot select a different participant's connection, and any uncertainty during participant verification is rejected rather than silently accepted.
 
 ## LangSmith LLM Gateway
 
-The LLM Gateway is not the LangSmith run-inspection toolset. It is an optional model-routing layer applied centrally by `make_model`: supported provider calls go through the gateway, which authenticates with a LangSmith key and resolves real provider secrets from workspace Provider Secrets while enforcing gateway policies and tracing calls.
+The LLM Gateway is an optional model-routing layer, separate from the LangSmith run-inspection utilities. It proxies supported provider calls through LangSmith, which authenticates with a gateway API key and resolves real provider secrets from workspace Provider Secrets while enforcing spend, PII, and secrets policies and tracing every call.
 
-A team `gateway_enabled` setting overrides the deployment default; when it is unset, `LANGSMITH_GATEWAY_ENABLED` decides, or merely setting `LANGSMITH_GATEWAY_API_KEY` enables routing by default. `LANGSMITH_GATEWAY_BASE_URL` can replace the default `https://gateway.smith.langchain.com`. The gateway-specific key is preferred over `LANGSMITH_API_KEY`; it is useful when the ordinary injected key lacks `gateway:invoke` permission.
+Gateway routing is applied centrally in `make_model` and is opt-in via configuration. A team `gateway_enabled` workspace setting overrides the deployment default; when unset, `LANGSMITH_GATEWAY_ENABLED` decides, or merely setting a dedicated `LANGSMITH_GATEWAY_API_KEY` enables routing by default.
 
-Only `openai`, `anthropic`, `baseten`, `fireworks`, and `google_genai` model prefixes have gateway paths. Unsupported providers or a missing LangSmith key log a warning and continue with direct provider routing instead of failing model construction. Gateway-routed OpenAI retains the Responses API by default; set `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES=false` only when a deployment needs Chat Completions.
+Only `openai`, `anthropic`, `baseten`, `fireworks`, and `google_genai` model prefixes have gateway paths. Unsupported providers or a missing LangSmith API key log a warning and continue with direct provider routing instead of failing model construction. Gateway-routed OpenAI retains the Responses API by default; set `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES=false` only when a deployment needs Chat Completions.
 
-## Focused verification
+The gateway-specific key (`LANGSMITH_GATEWAY_API_KEY`) is preferred over the standard LangSmith API key when both are available, since the injected `LANGSMITH_API_KEY` may lack the `gateway:invoke` permission.
 
-The relevant tests cover failure-to-empty behavior and Datadog/Notion/LangSmith wrappers in `tests/tools/test_observability_tools.py`, Corridor URL/token validation and lazy registration in `tests/tools/test_corridor_mcp.py`, Currents tool contracts in `tests/tools/test_currents_tools.py`, Stagehand sandbox dispatch and enablement in `tests/tools/test_stagehand_browser.py`, and concurrent factory loading in `tests/agent/test_factory_tool_loading.py`.
+## Tool Loading Lifecycle and Failures
+
+While building an executable non-local, non-summary agent, the server concurrently loads MCP and Notion tool groups in the factory phase. Both use a stale-while-revalidate TTL cache with a shared per-run loader timeout. An exception or timeout returns an empty list. Credential reads on the tool-loading path also deliberately fail soft when Store access fails, whereas dashboard status reads surface Store failures. The operational invariant is that optional integration loss reduces available tools, not the ability to start a run.
+
+Loaded tools are registered in a `DynamicToolMiddleware` instance, so they arrive as optional groups alongside the static core tools. Summary-stop and local/desktop runs skip integration tool loading entirely.

@@ -2,7 +2,10 @@
 type: workflow
 title: Scheduling, Background Work, and CI Monitoring
 description: How the model-free scheduler routes cron and delayed work into recurring automations, reconciliation, cost refreshes, background-task monitoring, and opt-in pull-request CI recovery.
-tags: [scheduler, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, cost-refresh]
+tags: [scheduler, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, cost-refresh, expedited-review, workspace-refresh]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-19T12:20:12.895Z
 sources:
   - id: openwiki-source-d2bd9c9ce8ccfbe9c55e6d30
     resource: repo://agent/agent_cost.py
@@ -14,24 +17,28 @@ sources:
     resource: repo://agent/bundled_skills/baby-sit/SKILL.md
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-202e70aa1fb446ab05cc6d99
-    resource: repo://agent/dashboard/schedules.py
+  - id: openwiki-source-15d5f9024a66628e9120c58e
+    resource: repo://agent/expedited_review/watch.py
   - id: openwiki-source-3d1c7beecd605173281a3bf6
     resource: repo://agent/github/routes.py
-  - id: openwiki-source-ba064e884edcde6097165df2
-    resource: repo://agent/github/webhook.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
   - id: openwiki-source-d2c2e4ba7449d086f84f8ccd
     resource: repo://agent/reconcile.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
+  - id: openwiki-source-19dd52d603eb15a9bf38885d
+    resource: repo://agent/schedules/store.py
   - id: openwiki-source-75a22f97d6fc2af5a1a279e7
     resource: repo://agent/session_cost.py
+  - id: openwiki-source-6f980597b751253679730b2f
+    resource: repo://agent/thread_feedback.py
   - id: openwiki-source-c3b12b5693b6aa5458b6b53a
     resource: repo://agent/tools/manage_baby_sit.py
   - id: openwiki-source-9a9aaf4b265831fa9c7e3bd2
     resource: repo://agent/tools/schedule_thread_wakeup.py
+  - id: openwiki-source-aebc62fe1f2d776d56ba1776
+    resource: repo://agent/workspaces/refresh.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
   - id: openwiki-source-8328043d526fe7293c1c1950
@@ -48,17 +55,14 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 ---
 
 # Scheduling, Background Work, and CI Monitoring
 
 This workflow is the system's model-free automation layer. The `scheduler` assistant receives cron ticks and delayed runs, then routes each tick to one bounded handler. It does not decide what work to perform with an LLM; handlers either maintain durable state, dispatch a deliberately new agent run, or finish their own lifecycle.
 
-The principal consumers are dashboard schedules, stale-run reconciliation, deferred cost enrichment, sandbox background-task monitoring, and the opt-in `/baby-sit` pull-request watch. For run and thread ownership, see [Threads and state](../concepts/threads-and-state.md); for user-facing follow-ups, see [Follow-up messages](follow-up-messages.md); and for PR work itself, see [PR creation](pr-creation.md).
+The principal consumers are dashboard schedules, stale-run reconciliation, deferred cost enrichment, sandbox background-task monitoring, workspace refresh automation, expedited review approvals, thread feedback prompts, and the opt-in `/baby-sit` pull-request watch. For run and thread ownership, see [Threads and state](../concepts/threads-and-state.md); for user-facing follow-ups, see [Follow-up messages](follow-up-messages.md); and for PR work itself, see [PR creation](pr-creation.md).
 
 ## Scheduler dispatch
 
@@ -72,18 +76,21 @@ flowchart TD
   Launch -->|background_tasks| Background["monitor_background_tasks"]
   Launch -->|session_cost| SessionCost["run_session_cost_refresh"]
   Launch -->|agent_cost| AgentCost["run_agent_cost_refresh"]
+  Launch -->|expedited_review| Expedited["evaluate_approval"]
+  Launch -->|thread_feedback| Feedback["run_feedback_prompt"]
+  Launch -->|workspace_refresh or environment_refresh| Workspace["run_workspace_refresh_tick"]
   Launch -->|no task| Schedule["launch_scheduled_agent_run"]
 ```
 
 Diagram: one scheduler tick selects one deterministic maintenance or dispatch handler.
 
-The recognized task values are `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, and `agent_cost`. An unrecognized or absent task is the dashboard-schedule path. The keyed branches return `missing_watch_key`, `missing_thread_id`, or `missing_schedule_id` rather than raising if their required routing key is absent. This makes malformed ticks observable no-ops instead of cron-wide failures.
+The recognized task values are `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, `agent_cost`, `expedited_review`, `thread_feedback`, `workspace_refresh` (and legacy `environment_refresh`). An unrecognized or absent task is the dashboard-schedule path. The keyed branches return `missing_watch_key`, `missing_thread_id`, or `missing_schedule_id` rather than raising if their required routing key is absent. This makes malformed ticks observable no-ops instead of cron-wide failures.
 
-A producer owns creation, tagging, and removal of its cron or delayed run. In particular, watches use `kind=baby_sit_watch`, background monitors use `kind=background_tasks`, and cost refreshes are one-shot delayed scheduler runs with `on_completion="delete"`. This ownership is important: the scheduler is a router, not a generic cron garbage collector.
+A producer owns creation, tagging, and removal of its cron or delayed run. In particular, watches use `kind=baby_sit_watch` or `kind=expedited_review_watch`, background monitors use `kind=background_tasks`, feedback uses `kind=thread_feedback`, workspace refresh uses its own kind, and cost refreshes are one-shot delayed scheduler runs with `on_completion="delete"`. This ownership is important: the scheduler is a router, not a generic cron garbage collector.
 
 ### Dashboard recurring runs
 
-`agent/dashboard/schedules.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
+`agent/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
 
 The launch path loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently.
 
@@ -96,7 +103,19 @@ Normal durable dispatch relies on the completion webhook to release a run. `reco
 Costs can lag run completion in LangSmith, so both cost mechanisms use a bounded, stateless delayed-run chain rather than a permanent poller:
 
 - **Session cost** updates the mapped Slack response footer. On a successful agent completion, the completion handler schedules a `session_cost` attempt only when it has a Slack thread, message correlation, and a `prepare_run_id`; it records scheduled run IDs in thread metadata to avoid scheduling the same run twice. A refresh verifies the mapped Slack message and waits for a fresh LangSmith aggregate. A `pending` result schedules the next delay in `(15, 30, 60, 120, 240)` seconds; an update, unavailable prerequisite, or exhausted final attempt stops the chain.
-- **Agent usage cost** writes one run's cost to the dashboard usage record. `agent_cost` uses the same five-delay budget, asks LangSmith for `run_only=True` cost, and persists it with `record_agent_run_cost`. Configuration/unavailability ends without retries where appropriate; unavailable data or persistence/lookup failure otherwise advances only until the fixed retry budget is exhausted.
+- **Agent usage cost** writes one run's cost to the dashboard usage record. `agent_cost` uses the same five-delay budget, asks LangSmith for `run_only=True` cost, and persists it with `record_agent_invocation_cost`. Configuration/unavailability ends without retries where appropriate; unavailable data or persistence/lookup failure otherwise advances only until the fixed retry budget is exhausted.
+
+### Workspace refresh automation
+
+Workspace snapshots rebuild on demand or nightly. `run_workspace_refresh_tick(slug, kind)` performs a full or update refresh: a full refresh boots from the base image and runs setup and update scripts before capture; an update refresh runs only the update script on the current snapshot. The refresh scheduler task is invoked via crons keyed to `kind=workspace_refresh_watch` or the legacy `kind=environment_refresh_watch`. The outcome (status, kind, timestamps, capped log) lands on the workspace record for the dashboard. A failed refresh leaves the previous snapshot in place.
+
+### Expedited approval evaluation
+
+Expedited review approvals advance from waiting to posted card to retired. `evaluate_approval(key)` is re-entrant and cheap when nothing changed: GitHub webhooks call it for the affected repository as events arrive; a per-approval five-minute cron is the fallback. Network reads happen unlocked; the state transition is applied under a row lock with the expected prior state as a precondition.
+
+### Thread feedback prompts
+
+User-experience feedback is delivered after five quiet minutes. `run_feedback_prompt(state)` schedules delayed attempts to show a feedback prompt on an active agent thread. The scheduler carries feedback state that tracks readiness and completion.
 
 ## Background-task monitoring
 
@@ -167,6 +186,7 @@ The agent may rerun only evidence-backed flaky GitHub Actions failures. After a 
 ## Focused verification
 
 - `tests/agent/test_baby_sit.py` covers watch cron lifecycle, per-key concurrency, failure and webhook deduplication, SHA reset, settling before success, fallback notification, retry cap, and scheduler routing.
-- `tests/github/test_baby_sit_webhook.py` checks that supported CI events reach background processing only with a valid signature. `tests/tools/test_manage_baby_sit.py` exercises configured-repository enforcement and watch startup context.
+- `tests/github/test_baby_sit_webhook.py` checks that supported CI events reach background processing only with a valid signature.
 - `tests/reviewer/test_reconcile_sweep.py` covers stale-only cancellation, pagination, malformed timestamps, and per-thread failure isolation.
-- `tests/agent/test_session_cost.py` and `tests/agent/test_agent_cost.py` verify cost correlation, persistence, bounded retries, and final exhaustion. `tests/tools/test_schedule_thread_wakeup.py` verifies delay bounds, trace/webhook wiring, budget reset semantics, and cleanup behavior.
+- `tests/agent/test_session_cost.py` and `tests/agent/test_agent_cost.py` verify cost correlation, persistence, bounded retries, and final exhaustion.
+- `tests/tools/test_schedule_thread_wakeup.py` verifies delay bounds, trace/webhook wiring, budget reset semantics, and cleanup behavior.

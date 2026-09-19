@@ -5,7 +5,7 @@ description: How Open SWE selects and operates sandbox providers, binds them saf
 tags: [sandbox, integrations, providers, langsmith, configuration, extension]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-19T12:20:12.895Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -43,7 +43,7 @@ sources:
     resource: repo://tests/sandbox/test_langsmith_sandbox_config.py
   - id: openwiki-source-6c4c3340e6bc2f86a0e54411
     resource: repo://tests/sandbox/test_local_integration.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 ---
 
 # Sandbox Provider Integration
@@ -70,6 +70,7 @@ flowchart TD
     Worker --> Backend
     Backend --> Bind["Lifecycle initializes then binds thread metadata"]
 ```
+
 Provider resolution and the point at which a successfully initialized backend becomes eligible for thread binding.
 
 The FastAPI lifespan hook calls `validate_sandbox_startup_config()` before serving. Validation is currently provider-specific only for LangSmith: configured resource and TTL values must be integers, the TTLs must be non-negative, and `SANDBOX_CREATE_EXTRA_JSON` must parse as a JSON object. Other provider credentials are checked when their factory is invoked.

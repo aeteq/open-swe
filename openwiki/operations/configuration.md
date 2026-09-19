@@ -10,12 +10,8 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-b05c9910677cf23a9325276c
     resource: repo://agent/config.py
-  - id: openwiki-source-61ace7d4952db9ddb8316aeb
-    resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-07762d55411a883aaa28e2ed
-    resource: repo://agent/dashboard/sandbox_settings.py
-  - id: openwiki-source-23002b87792ed6949edb723b
-    resource: repo://agent/dashboard/team_settings.py
+  - id: openwiki-source-0a6d03ee63c0e527ce21bf77
+    resource: repo://agent/dashboard/workspace_settings.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
   - id: openwiki-source-eb53b48336d1b5fc0816441a
@@ -30,14 +26,16 @@ sources:
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
-  - id: openwiki-source-8010c6e64af5a375d8d3b70b
-    resource: repo://docs/CUSTOMIZATION.md
+  - id: openwiki-source-264269e0953fb2ff7d19bf5c
+    resource: repo://agent/workspaces/routes.py
+  - id: openwiki-source-f22f44d91fdff3b6078dd398
+    resource: repo://agent/workspaces/sandbox_settings.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Configuration and Startup Validation
@@ -45,7 +43,7 @@ generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
 Open SWE has two configuration planes:
 
 - **Deployment configuration** is declared centrally in `agent/config.py` and normally supplied through environment variables (including the `.env` file named by `langgraph.json`). It covers connectivity, credentials, provider selection, UI URLs, and deployment defaults.
-- **Administrator settings** are instance-wide records in LangGraph Store. They change selected behavior without a redeploy, notably the default sandbox snapshot and team-wide review/model settings. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
+- **Administrator settings** are instance-wide records in LangGraph Store. They change selected behavior without a redeploy, notably the default sandbox snapshot and workspace-wide review/model settings. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
 
 This page describes ownership and failure behavior rather than listing every variable. `agent/config.py` is the complete variable catalog; [deployment](deployment.md) provides installation procedures. See [models, profiles, and instructions](../concepts/models-profiles-instructions.md), [auth and security](../concepts/auth-and-security.md), and [sandbox providers](../integrations/sandbox-providers.md) for their respective domains.
 
@@ -78,7 +76,7 @@ flowchart TD
 
 The diagram shows the boot-time checks performed by the FastAPI lifespan and cleanup on shutdown.
 
-Not every bad setting is checked at boot. The sandbox validator is provider-specific: it currently validates LangSmith resource fields and extra JSON only when `SANDBOX_TYPE=langsmith`; an unknown provider name is rejected when the registry is asked to create a sandbox. Likewise, model startup validation deliberately applies only when an explicitly configured `DASHBOARD_BASE_URL` starts with `http://localhost`; it checks the credential needed by the deployment's `LLM_MODEL_ID` (or default) and does not attempt to validate models that may later be chosen through team, profile, or thread settings.
+Not every bad setting is checked at boot. The sandbox validator is provider-specific: it currently validates LangSmith resource fields and extra JSON only when `SANDBOX_TYPE=langsmith`; an unknown provider name is rejected when the registry is asked to create a sandbox. Likewise, model startup validation deliberately applies only when an explicitly configured `DASHBOARD_BASE_URL` starts with `http://localhost`; it checks the credential needed by the deployment's `LLM_MODEL_ID` (or default) and does not attempt to validate models that may later be chosen through workspace, profile, or thread settings.
 
 `DASHBOARD_ALLOWED_ORIGINS` is separately checked while the application is built: if it contains `*`, construction raises because credentialed CORS cannot safely use a wildcard. Nonempty explicit origins enable credentialed CORS for the dashboard API.
 
@@ -88,7 +86,7 @@ Not every bad setting is checked at boot. The sandbox validator is provider-spec
 
 The registry passes `snapshot_id`, resource overrides, and arbitrary create parameters only to the LangSmith factory; other providers receive only an optional existing sandbox ID. For LangSmith, the normal base snapshot comes from `DEFAULT_SANDBOX_SNAPSHOT_ID` (otherwise the provider root snapshot), with defaults of 128 GiB filesystem, 4 vCPUs, 16 GiB memory, 7200 seconds idle TTL, and 2592000 seconds deletion-after-stop TTL. The two TTL values allow `0` to disable their expiration behavior. Malformed numeric resource values, negative TTLs, and invalid/non-object `SANDBOX_CREATE_EXTRA_JSON` fail LangSmith startup validation.
 
-`SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` let sandbox operations use another LangSmith workspace; each falls back to its normal `LANGSMITH_*` counterpart. The selected credentials apply to sandbox API operations, proxy setup, and environment snapshot work, so a configured base snapshot must exist in that workspace. `ENVIRONMENT_SNAPSHOT_PREFIX` defaults to `openswe` and separates environment snapshot names when deployments share a workspace.
+`SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` let sandbox operations use another LangSmith workspace; each falls back to its normal `LANGSMITH_*` counterpart. The selected credentials apply to sandbox API operations, proxy setup, and environment snapshot work, so a configured base snapshot must exist in that workspace. `WORKSPACE_SNAPSHOT_PREFIX` defaults to `openswe` and separates environment snapshot names when deployments share a workspace.
 
 ### Stored base snapshot precedence
 
@@ -96,13 +94,13 @@ The sandbox-settings record is one instance-wide LangGraph Store value. An admin
 
 The read used during provisioning is intentionally fail-soft: a Store exception is logged and treated as no override, allowing the environment default to keep runs working. In contrast, the dashboard read reports the stored, environment, and effective values plus whether the source is `admin`, `env`, or `unset`.
 
-## Models and team settings
+## Models and workspace settings
 
-`LLM_MODEL_ID` and `LLM_REASONING_EFFORT` establish the deployment fallback pair. Resolution accepts only catalog models allowed as defaults and validates that the effort is supported; an unsupported model or effort raises when defaults are resolved. The deployment default is used when no durable team setting supplies a valid choice. Model selection can be more specific at team, profile, thread, or run scope; changing the environment does not overwrite existing selections.
+`LLM_MODEL_ID` and `LLM_REASONING_EFFORT` establish the deployment fallback pair. Resolution accepts only catalog models allowed as defaults and validates that the effort is supported; an unsupported model or effort raises when defaults are resolved. The deployment default is used when no durable workspace setting supplies a valid choice. Model selection can be more specific at workspace, profile, thread, or run scope; changing the environment does not overwrite existing selections.
 
-The team-settings record is also a single Store record keyed `default`. It includes review toggles, organization guidelines, review trace project, default repository, transcription model, gateway toggle, Fable opt-in, and main/subagent model-and-effort pairs for agent and reviewer, plus grouping, chat, and thread title settings. Input validation rejects unsupported model/effort combinations, an effort without a model, invalid transcription identifiers, and oversized guidelines or trace-project text. Deprecated model IDs are cleared and canonical pairs are normalized. When Fable is disabled, persisted Fable defaults are replaced with safe fallback pairs.
+The workspace-settings record is also a Store record that applies to every workspace (instance record) with optional workspace-specific overrides. It includes review toggles, organization guidelines, review trace project, default repository, transcription model, gateway toggle, Fable opt-in, and main/subagent model-and-effort pairs for agent and reviewer, plus grouping, chat, and thread title settings. Input validation rejects unsupported model/effort combinations, an effort without a model, invalid transcription identifiers, and oversized guidelines or trace-project text. Deprecated model IDs are cleared and canonical pairs are normalized. When Fable is disabled, persisted Fable defaults are replaced with safe fallback pairs.
 
-Store reads for team settings are fail-soft because model selection is on the run path: unavailable or absent Store data returns hardcoded defaults. Invalid/stale model data resolves first to a supported model from the same provider where possible, then to the global fallback. Chat inherits the agent default when unset, and review grouping inherits the reviewer subagent default.
+Store reads for workspace settings are fail-soft because model selection is on the run path: unavailable or absent Store data returns hardcoded defaults. Invalid/stale model data resolves first to a supported model from the same provider where possible, then to the global fallback. Chat inherits the agent default when unset, and review grouping inherits the reviewer subagent default.
 
 `DEFAULT_LLM_MAX_TOKENS` is 64000 and is an output/completion budget, not a context-window size. `LLM_FALLBACK_MODEL_ID` can name a fallback; otherwise Anthropic and OpenAI primary models have cross-provider defaults. Fallback middleware is installed only if the fallback exists and differs from the selected primary. `make_model` caches constructed clients per running event loop and model options, and startup shutdown closes that cache.
 
@@ -110,7 +108,7 @@ Each supported direct provider request receives up to six retries; OpenAI, Anthr
 
 ### Gateway precedence
 
-LangSmith LLM Gateway routing is centrally applied by `make_model`. `LANGSMITH_GATEWAY_ENABLED` is authoritative when set; otherwise setting `LANGSMITH_GATEWAY_API_KEY` turns routing on. A team setting is tri-state: `true` or `false` overrides this deployment default, while unset inherits it. Gateway authentication prefers `LANGSMITH_GATEWAY_API_KEY` and falls back to `LANGSMITH_API_KEY`; `LANGSMITH_GATEWAY_BASE_URL` changes the gateway host and `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES` defaults to true.
+LangSmith LLM Gateway routing is centrally applied by `make_model`. `LANGSMITH_GATEWAY_ENABLED` is authoritative when set; otherwise setting `LANGSMITH_GATEWAY_API_KEY` turns routing on. A workspace setting is tri-state: `true` or `false` overrides this deployment default, while unset inherits it. Gateway authentication prefers `LANGSMITH_GATEWAY_API_KEY` and falls back to `LANGSMITH_API_KEY`; `LANGSMITH_GATEWAY_BASE_URL` changes the gateway host and `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES` defaults to true.
 
 Only OpenAI, Anthropic, Baseten, Fireworks, and Google GenAI have gateway routes. If routing is enabled but the provider is not routable, or no LangSmith key is available, the code logs a warning and calls the provider directly rather than failing the run. Direct Baseten calls are stricter: with gateway routing unavailable, `BASETEN_API_KEY` is required.
 

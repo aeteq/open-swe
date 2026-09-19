@@ -5,18 +5,12 @@ description: How an agent delivers code through GitHub branches and pull request
 tags: [pull-request, github, ci, workflow-approval, delivery]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-19T12:20:12.895Z
 sources:
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
   - id: openwiki-source-bd55a0c7231ffb3eb9e8ded0
     resource: repo://agent/dashboard/agent_overrides.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
-  - id: openwiki-source-ff7e225e6a77f19fd70076a8
-    resource: repo://agent/dashboard/workflow_approval_api.py
-  - id: openwiki-source-57243115e7bcd3ec2dd6e92e
-    resource: repo://agent/dashboard/workflow_approval.py
   - id: openwiki-source-ebb5b62f813c3a42bf86c39b
     resource: repo://agent/github/ci.py
   - id: openwiki-source-6664f6fd05037c7c782f7b09
@@ -31,11 +25,17 @@ sources:
     resource: repo://agent/server.py
   - id: openwiki-source-ed9809a543500e4a0b811342
     resource: repo://agent/slack/tools/request_pr_review.py
+  - id: openwiki-source-82825a65559de3e8581a123a
+    resource: repo://agent/threads/handlers.py
+  - id: openwiki-source-cd4be7e4548ea1ab6197c2f8
+    resource: repo://agent/threads/workflow_approval_api.py
+  - id: openwiki-source-69dcfa94efda17a95fac346a
+    resource: repo://agent/threads/workflow_approval.py
   - id: openwiki-source-d9f2a513cf28971a9676bf89
     resource: repo://agent/tools/open_pull_request.py
   - id: openwiki-source-25a50e8385de61204afe1bcf
     resource: repo://agent/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 ---
 
 # Pull Request Delivery and Approval
@@ -68,7 +68,7 @@ Before posting, preflight reads the target repository, base branch, and a same-o
 
 ### Drafts, references, and thread resolution
 
-The `draft` parameter is a request. A boolean `draft_prs` value in runtime configuration overrides it for a new PR; the profile default is `True`. An already-existing PR is returned unchanged.
+The `draft` parameter is a request. A boolean `draft_prs` value in the user's profile overrides it for a new PR; the profile default is `True`. An already-existing PR is returned unchanged.
 
 Unless the body already has `## References`, the tool can append a dashboard plan link and source links. Slack, Linear, and GitHub issue source links are included only when GitHub positively confirms that the destination repository is private. Lookup failures or uncertain visibility fail closed, preventing private conversation links from being added to a public PR.
 

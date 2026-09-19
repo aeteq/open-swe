@@ -3,9 +3,6 @@ type: tool catalog and authorization model
 title: Tool Catalog and Authorization
 description: How Open SWE exports curated tools, wires graph-specific and deferred tool surfaces, and enforces authorization and plan-mode controls. Use this page when safely adding or changing an agent capability.
 tags: [tools, agent, authorization, integrations, plan-mode, automation, reviewer]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -19,10 +16,6 @@ sources:
     resource: repo://agent/reviewer.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-e4901f6a09c372487ff11987
-    resource: repo://agent/tool_loaders/corridor_mcp.py
-  - id: openwiki-source-6de9e7b7779ea6aada343f2a
-    resource: repo://agent/tool_loaders/langsmith.py
   - id: openwiki-source-2cd7e2018ae35c5972204803
     resource: repo://agent/tool_loaders/notion_mcp.py
   - id: openwiki-source-a46a7cd7d143369055b05580
@@ -35,7 +28,10 @@ sources:
     resource: repo://agent/tools/read_user_settings.py
   - id: openwiki-source-fef236c0a2029fbda76955d6
     resource: repo://tests/agent/test_plan_mode.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Tool Catalog and Authorization
@@ -44,7 +40,7 @@ Open SWE does not treat the tools package as a universal capability grant. A too
 
 ## Catalog versus executable surface
 
-`agent.tools` is the curated export facade. `_TOOL_MODULES` maps public names to their implementation modules; access lazily imports and caches the export. Its module subclass deliberately prefers a public export over an identically named submodule that `importlib` placed on the package. Several names can share an implementation, such as the two background-task aliases and the automation operations.
+`agent.tools` is the curated export facade. `_TOOL_MODULES` maps public names to their implementation modules; access lazily imports and caches the export. Its module subclass deliberately prefers a public export over an identically named submodule that `importlib` placed on the package. Several names can share an implementation, such as the automation operations and background-task aliases.
 
 The facade includes local curated modules as well as selected GitHub, Linear, and Slack tools. Exporting a name only makes it importable: each graph factory supplies its own list to `create_deep_agent`.
 
@@ -79,14 +75,14 @@ This diagram distinguishes the import catalog from the graph-specific execution 
 
 The final list depends on trusted run context:
 
-- An `admin_thread` receives `ADMIN_TOOLS`: sandbox reset, automation management, environment management, and organization-skill mutations. The factory accepts the flag only after checking the triggering identity against the configured administrators, so metadata cannot transfer admin capability to a later participant.
+- An `admin_thread` receives `ADMIN_TOOLS`: automation management, workspace management, environment management, and organization-skill mutations. The factory accepts the flag only after checking the triggering identity against the configured administrators, so metadata cannot transfer admin capability to a later participant.
 - A desktop `local_run` receives only `http_request`, `fetch_url`, and `web_search`. A `stop_summary` run initially receives only Slack thread reading and reply. In both cases, integration groups are not collected.
 - Slack operations are removed unless trusted Slack context enables them. This filtering occurs after the mode-specific list is chosen.
 - The general-purpose subagent gets the applicable static list except `background_execute` and `background_task`; separately compiled subagent graphs do not inherit parent middleware. Dynamic integration middleware is explicitly passed to it.
 
 ## Deferred integration tools
 
-Eligible normal runs construct candidate groups for Observability, Currents, Notion, and browser tools; a configured Corridor group advertises its fixed allowlist and postpones its MCP connection. `DynamicToolMiddleware` presents one loader, `load_integration_tools`, with the catalog of group-qualified tool names rather than placing all operational schemas on the first model call.
+Eligible normal runs construct candidate groups for MCPs and Notion tools; `DynamicToolMiddleware` presents one loader, `load_integration_tools`, with the catalog of group-qualified tool names rather than placing all operational schemas on the first model call.
 
 ```mermaid
 sequenceDiagram
@@ -109,7 +105,7 @@ This is the deferred loading path: a successful loader call updates run state, s
 
 Names must be unique across groups and must not collide with the loader, built-ins, or static tools. The middleware resets `loaded_integration_tools` at the start of each run. It uses one lock and one cached resolution per group; loading failures become an empty group and a tool error instructing the model to continue. Direct integration calls before loading receive the same kind of recoverable error.
 
-Integration loading is also a credential boundary. Corridor accepts only its configured HTTPS endpoint and allowlisted tool names, puts its bearer token on the server-side MCP connection, and degrades to no tools when configuration or the service fails. Notion schemas require an `on_behalf_of` thread participant; each invocation resolves that participant and refreshes that participant's token rather than retaining one in the sandbox. LangSmith tools similarly resolve a participant credential at call time, can use team credentials only where allowed, and are read-only. Observability availability is selected only for an explicitly authorized/admin triggering identity.
+Integration loading is also a credential boundary. Notion tools are loaded only for the private thread owner; each tool invocation resolves a fresh access token from the per-user credential store rather than retaining one in sandbox state. MCPs are sourced from instance, workspace, and user tiers with later tiers replacing same-named connections. Notion and MCP loading failures degrade gracefully to empty tool groups rather than failing the run.
 
 ## Specialist surfaces
 

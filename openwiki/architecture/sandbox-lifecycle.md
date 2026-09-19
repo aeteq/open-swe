@@ -5,7 +5,7 @@ description: How a thread acquires, persists, reconnects to, and deliberately re
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-19T12:20:12.895Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -13,8 +13,6 @@ sources:
     resource: repo://agent/github/proxy.py
   - id: openwiki-source-9d5775155057d8f8c3a08e3e
     resource: repo://agent/middleware/refresh_github_proxy.py
-  - id: openwiki-source-276ab38291eb5741b4c2141c
-    resource: repo://agent/reviewer.py
   - id: openwiki-source-6fd11c8bb15f5eb94b765440
     resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-31cdc3533d50e7ed84c89652
@@ -33,17 +31,11 @@ sources:
     resource: repo://agent/sandboxes/state.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-8df2adb4d3d3b703aed3451b
-    resource: repo://tests/sandbox/test_sandbox_publish_ordering.py
   - id: openwiki-source-71e56ad3da996973b32520ab
     resource: repo://tests/sandbox/test_sandbox_recreation.py
-  - id: openwiki-source-46397d5eb777a7a1eefb168d
-    resource: repo://tests/sandbox/test_sandbox_reset.py
   - id: openwiki-source-f05d7497d4c60c3b322628eb
     resource: repo://tests/sandbox/test_sandbox_state.py
-  - id: openwiki-source-1a0d5f0c064da60b08174a51
-    resource: repo://tests/sandbox/test_stale_sandbox_creating.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 ---
 
 # Thread Sandbox Lifecycle
@@ -52,7 +44,7 @@ A normal agent thread has one durable sandbox binding: the sandbox contains its 
 
 Desktop runs are different: the agent factory supplies a `LocalShellBackend` rooted in an allowlisted project or a desktop-created worktree, rather than invoking the thread sandbox lifecycle. Desktop artifact routes put internal large-result and conversation-history files outside the project so they cannot be accidentally included in `git add -A`.
 
-Related: [Agent graph](agent-graph.md), [Middleware stack](middleware-stack.md), [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
+Related: [Agent graph](agent-graph.md), [Threads and state](../concepts/threads-and-state.md), and [Sandbox providers](../integrations/sandbox-providers.md).
 
 ## Binding and handles
 

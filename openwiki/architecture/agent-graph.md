@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled for an execut
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-19T12:20:12.895Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -35,7 +35,7 @@ sources:
     resource: repo://tests/agent/test_factory_tool_loading.py
   - id: openwiki-source-36e029ef147f9810c97b2c29
     resource: repo://tests/models/test_agent_subagent_models.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 ---
 
 # Coding Agent Assembly
@@ -54,6 +54,7 @@ flowchart TD
     Surface --> Stack["Install middleware"]
     Stack --> Ready["Configured Deep Agent"]
 ```
+
 The executable-run gate separates inexpensive graph discovery from thread-bound agent assembly.
 
 The factory sets the LangGraph recursion limit to `DEFAULT_RECURSION_LIMIT`. Full assembly requires both `configurable.thread_id` and `configurable.__is_for_execution__ is True`; otherwise it returns `create_deep_agent(system_prompt="", tools=[])`, with no supplied backend or middleware. The returned graph is bound using `bindable_config`, which removes `__pregel_*` runtime internals so a read-time runtime is not serialized into later invocations.
@@ -116,10 +117,10 @@ The only configured subagent is the Deep Agents general-purpose subagent. It rec
 
 The supplied parent list is ordered outermost to innermost:
 
-1. `PrepareAgentRunMiddleware`, then optional `DynamicToolMiddleware`.
+1. `ConversationOffloadingMiddleware`, then `PrepareAgentRunMiddleware`, then optional incident, workspace-skills, and `DynamicToolMiddleware`.
 2. Input sanitation, `ModelCallLimitMiddleware`, tool-error conversion, tool exclusion, subdirectory reads, and retry for `task`.
 3. PR/workflow guards, GitHub proxy refresh, and—outside stop summaries—message-queue checking.
-4. Timeout wrap-up, step-limit notification, usage recording, optional model fallback, and plan-mode filtering.
+4. Timeout wrap-up, step-limit notification, usage recording, optional model selection/fallback, and plan-mode filtering.
 5. Provider/thinking sanitizers, stable tool-result ordering, model-error handling, then `ModelCallTimeoutMiddleware`.
 
 The innermost timeout measures the provider call itself and can propagate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside `ToolErrorMiddleware`. `create_deep_agent` supplies its own `PatchToolCallsMiddleware`, so the factory must not add the obsolete custom orphaned-tool-call repairer.

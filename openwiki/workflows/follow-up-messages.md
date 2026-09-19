@@ -3,20 +3,13 @@ type: workflow
 title: Follow-ups, Interrupts, and Stop Control
 description: How Open SWE attaches new work to an existing thread, chooses durable run interruption or enqueueing, preserves checkpoint and sandbox context, and implements Slack and dashboard stop behavior.
 tags: [follow-up, interrupt, message-queue, durable-runs, slack, dashboard, sandbox]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
-  - id: openwiki-source-4817379f332cdbc419964b44
-    resource: repo://agent/api/health.py
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
   - id: openwiki-source-26c2c4725a171eaf524f2ad7
     resource: repo://agent/background_tasks.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
   - id: openwiki-source-cb4e403499865fd6b797127c
@@ -29,12 +22,12 @@ sources:
     resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-e0785b4f2497c26e024d92fc
-    resource: repo://agent/slack/routes.py
   - id: openwiki-source-a26c1e1c3e9e7df7de591923
     resource: repo://agent/slack/stop.py
   - id: openwiki-source-4ffd3d31ffb2d798faaaad59
     resource: repo://agent/slack/webhook.py
+  - id: openwiki-source-82825a65559de3e8581a123a
+    resource: repo://agent/threads/handlers.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
   - id: openwiki-source-0d20d315a6a4ea1d7240eab4
@@ -43,7 +36,10 @@ sources:
     resource: repo://tests/slack/test_slack_stop.py
   - id: openwiki-source-b5d2fb95f06f5e8c3f58555f
     resource: repo://tests/slack/test_slack_untagged_flag.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Follow-ups, Interrupts, and Stop Control
@@ -113,6 +109,7 @@ sequenceDiagram
     end
     Agent->>Sandbox: reuse or reconnect by thread binding
 ```
+
 The durable run strategy controls whether new work preempts the active thread run or waits behind it.
 
 ### Choosing interrupt or enqueue
@@ -125,8 +122,8 @@ message edits take a third route: the corrected content is placed in the store
 message queue; if the thread is idle, it remains there until a later run reaches
 a model call.
 
-Automation deliberately avoids preemption. `/baby-sit` terminal/failure updates
-and notifications for finished sandbox background tasks dispatch with
+Automation deliberately avoids preemption. Terminal and failure updates from
+`/baby-sit` and notifications for finished sandbox background tasks dispatch with
 `multitask_strategy="enqueue"`. This preserves the interactive run's ordering
 and lets the notification run execute afterward. See
 [Scheduling and baby-sit](scheduling-and-baby-sit.md) for the watcher behavior.
@@ -143,10 +140,10 @@ non-text image blocks when present. If the thread originated in Slack, it also
 best-effort updates the Slack trace reply to indicate the web handoff.
 
 `queue_message_for_thread` persists these records at
-`("queue", thread_id)`, key `pending_messages`, as `{"content": ...}` entries.
-It appends in FIFO order and retains the newest 100 entries, dropping the oldest
-on overflow. Store errors are logged and reported to the dashboard as a failed
-queue operation.
+`("queue", thread_id)`, key `pending_messages`. It stores messages as
+`{"content": ...}` entries in FIFO order and retains the newest 100 entries,
+dropping the oldest on overflow. Store errors are logged and reported to the
+dashboard as a failed queue operation.
 
 ```mermaid
 sequenceDiagram
@@ -165,6 +162,7 @@ sequenceDiagram
     Middleware->>Middleware: build attributed input messages
     Middleware-->>Model: append state messages
 ```
+
 The dashboard inserts a follow-up into the current run at the next before-model boundary rather than creating another run.
 
 ### Queue drain and message attribution
@@ -244,8 +242,8 @@ follow-up is present, it dispatches an empty-input agent run after cancellation;
 the before-model middleware drains that preserved queue, and metadata is updated
 to the new pending run ID. Failure to launch this continuation is surfaced as
 HTTP 502 after the cancellation has already been requested. The administrator
-variant cancels and marks interrupted without this authorization or queued
-continuation behavior.
+variant cancels and marks interrupted without authorization, read-access checks,
+or queued continuation behavior.
 
 ## Completion and operational checks
 

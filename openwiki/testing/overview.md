@@ -3,12 +3,7 @@ type: testing strategy
 title: Focused Validation Strategy
 description: Select the narrowest Python, frontend, or Playwright validation that owns an Open SWE change. This guide explains shared fakes, production-boundary coverage, and focused commands.
 tags: [testing, pytest, vitest, playwright, sandbox, webhooks, reviewer]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -21,18 +16,10 @@ sources:
     resource: repo://tests/agent/test_agent_assembly_context.py
   - id: openwiki-source-f0a6e7dc03522b2682f88655
     resource: repo://tests/conftest.py
-  - id: openwiki-source-069ae2b497200c26ef2dc134
-    resource: repo://tests/e2e/fake_llm.py
-  - id: openwiki-source-8317f526f4e30c2659c8614e
-    resource: repo://tests/e2e/fakes.py
   - id: openwiki-source-c484c171a84d342028bf0794
     resource: repo://tests/e2e/global-setup.ts
   - id: openwiki-source-aefe409f90608437573cbad3
     resource: repo://tests/e2e/harness.py
-  - id: openwiki-source-16e94b1dfd40df68fa54c87f
-    resource: repo://tests/e2e/package.json
-  - id: openwiki-source-28a3fe2bdb4cd54e328962f0
-    resource: repo://tests/e2e/patches.py
   - id: openwiki-source-859f98720585f4648f0f7b2e
     resource: repo://tests/e2e/playwright.config.ts
   - id: openwiki-source-4b944ec14a3d793a6f771403
@@ -49,11 +36,12 @@ sources:
     resource: repo://tests/sandbox/test_sandbox_state.py
   - id: openwiki-source-a9842c19fa28878dfa7fcd61
     resource: repo://tests/webhooks/test_completion_webhook.py
-  - id: openwiki-source-440ae1e215cb02721dda855c
-    resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
 generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Focused Validation Strategy

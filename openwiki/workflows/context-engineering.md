@@ -3,9 +3,6 @@ type: workflow
 title: Input Context and Prompt Construction
 description: How events from Slack, Linear, GitHub, and other surfaces become structured run input, then combine with source provenance, dynamic identities, instructions, repository conventions, and virtual skills for agent and analyzer prompts.
 tags: [context-engineering, prompts, input-messages, source-context, agents-md, skills]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -19,8 +16,6 @@ sources:
     resource: repo://agent/linear/webhook.py
   - id: openwiki-source-de97adb0acb9dec0664a44b6
     resource: repo://agent/middleware/prepare_run.py
-  - id: openwiki-source-6a91255d02f2954f4233c8bb
-    resource: repo://agent/middleware/subdir_agents.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
   - id: openwiki-source-92590907348b7bf56e1762fa
@@ -38,6 +33,9 @@ sources:
   - id: openwiki-source-25a50e8385de61204afe1bcf
     resource: repo://agent/webhooks/common.py
 generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Input Context and Prompt Construction

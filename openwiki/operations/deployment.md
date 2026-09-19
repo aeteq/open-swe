@@ -3,9 +3,6 @@ type: operations-guide
 title: Development, Deployment, and Serving
 description: Run Open SWE locally or in production, including the LangGraph runtime, bundled or separate dashboard serving, webhook exposure, and desktop boundaries. Covers Docker, mount-prefix coupling, and focused operational checks.
 tags: [deployment, local-development, docker, langgraph, dashboard, webhooks, desktop]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -51,7 +48,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Development, Deployment, and Serving
@@ -74,7 +74,7 @@ This runs `uv sync --extra dev`. The full local runtime is:
 make dev
 ```
 
-It executes `uv run langgraph dev --no-browser --port 2024`. `langgraph.json` is the serving manifest: it selects Python 3.14 and LangGraph API 0.13.3, registers all five graphs and `agent.webapp:app`, loads `.env`, and configures checkpoint deletion (a 60-minute sweep and a 43,200-minute default TTL). The project constrains locally resolved `langgraph-api` to `>=0.13.3,<0.14` so uv tests the manifest's runtime rather than resolving the end-of-life 0.10.3 release.
+It executes `uv run langgraph dev --no-browser --port 2024 --n-jobs-per-worker 10`. `langgraph.json` is the serving manifest: it selects Python 3.14 and LangGraph API 0.13.3, registers all five graphs and `agent.webapp:app`, loads `.env`, and configures checkpoint deletion (a 60-minute sweep and a 43,200-minute default TTL). The project constrains locally resolved `langgraph-api` to `>=0.13.3,<0.14` so uv tests the manifest's runtime rather than resolving the end-of-life 0.10.3 release.
 
 Build the dashboard before starting that server when the backend should serve it itself:
 
@@ -150,7 +150,7 @@ When public URLs change, update `LANGGRAPH_URL`, webhook targets, and the GitHub
 
 A separate dashboard is optional. `ui/Dockerfile`, built from the repository root with `docker build -f ui/Dockerfile .`, uses a multi-stage Node 24 build, a frozen pnpm workspace install, and runs the Nitro `.output` server as user `node` on port 8080. `DASHBOARD_API_URL` is read for each request, not baked into the image, so the same image can front different backends; the production handler fails explicitly if it is unset.
 
-The handler proxies `/dashboard/api/**` and `/webhooks/**`, preserves path and query, streams non-GET bodies, forwards separate `Set-Cookie` headers, and leaves OAuth redirects for the browser to follow. Set the backend's `DASHBOARD_BASE_URL` and `DASHBOARD_API_BASE_URL` to the frontend origin and register its callback for the same-origin proxy arrangement. Alternatively, build with `VITE_DASHBOARD_API_BASE_URL` set to the backend, keep `DASHBOARD_API_BASE_URL` on the backend, and include the frontend origin in `DASHBOARD_ALLOWED_ORIGINS`; the client then resolves the session after hydration. Never use secrets in `VITE_*` values because they are build-time browser data.
+The handler proxies `/dashboard/api/**` and `/webhooks/**`, preserves path and query, streams non-GET bodies, forwards separate `Set-Cookie` headers, and leaves OAuth redirects for the browser to follow. Set the backend's `DASHBOARD_BASE_URL` and `DASHBOARD_API_BASE_URL` to the frontend origin and register its callback for the same-origin proxy arrangement. Alternatively, build the UI with `VITE_DASHBOARD_API_BASE_URL` set to the backend, keep `DASHBOARD_API_BASE_URL` on the backend, and include the frontend origin in `DASHBOARD_ALLOWED_ORIGINS`; the client then resolves the session after hydration. Never use secrets in `VITE_*` values because they are build-time browser data.
 
 The pnpm workspace comprises `ui`, `desktop`, and `tests/e2e`. Turborepo runs package `dev`, `build`, `typecheck`, `test`, and `check` tasks; build cache inputs include `DASHBOARD_API_URL`, `VERCEL`, `E2E_HARNESS`, and `VITE_*`. Root `lint` and formatting commands run oxlint/oxfmt directly rather than as Turbo tasks.
 

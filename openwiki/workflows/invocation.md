@@ -10,10 +10,6 @@ sources:
     resource: repo://agent/api/health.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-202e70aa1fb446ab05cc6d99
-    resource: repo://agent/dashboard/schedules.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
@@ -30,16 +26,20 @@ sources:
     resource: repo://agent/linear/webhook.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
+  - id: openwiki-source-19dd52d603eb15a9bf38885d
+    resource: repo://agent/schedules/store.py
   - id: openwiki-source-e0785b4f2497c26e024d92fc
     resource: repo://agent/slack/routes.py
   - id: openwiki-source-4ffd3d31ffb2d798faaaad59
     resource: repo://agent/slack/webhook.py
   - id: openwiki-source-2df3763659a7f9d1944f28e7
     resource: repo://agent/thread_ids.py
+  - id: openwiki-source-e081118d2ce6ecdbd524a5ee
+    resource: repo://agent/threads/runs.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -70,7 +70,7 @@ sequenceDiagram
 
 This shows the shared path: integration routes acknowledge after inexpensive admission checks, while dashboard commands proxy directly after enrichment.
 
-`create_app` composes the dashboard, plan and workflow-approval routes with Linear, Slack, health/completion, and GitHub routers. It rejects a wildcard dashboard CORS origin when credentials are enabled, and its lifespan validates sandbox and local-development model configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook. 
+`create_app` composes the dashboard, plan and workflow-approval routes with Linear, Slack, health/completion, and GitHub routers. It rejects a wildcard dashboard CORS origin when credentials are enabled, and its lifespan validates sandbox and local-development model configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
 
 ## Admission and asynchronous webhook work
 
@@ -118,7 +118,7 @@ Inputs are not arbitrary prompt strings at the graph boundary. `human_input` and
 
 `dispatch_agent_run` is the single agent/reviewer dispatch contract. It refuses ambiguous calls that combine prebuilt input with raw content/identity arguments, selects the graph with `assistant_id`, and delegates to `create_durable_run`. The latter defaults to `multitask_strategy="interrupt"`, `durability="sync"`, and `stream_resumable=True`; callers such as untagged Slack follow-ups can explicitly select `enqueue`. Sync durability checkpoints each step, so an interruption or process recycle can resume from a checkpoint rather than losing the run.
 
-Every created run is marked for Protocol v2 streaming, includes the v2 stream modes and subgraphs, and receives a `prepare_run_id` in both configurable state and metadata. This preserves tools/lifecycle and nested-agent visibility for runs that the dashboard did not start, and lets a later client replay the stream.
+Every created run is marked for v3 event-streaming protocol (`__event_streaming_v2` config key), includes the v3 stream modes and subgraphs, and receives a `prepare_run_id` in both configurable state and metadata. This preserves tools/lifecycle and nested-agent visibility for runs that the dashboard did not start, and lets a later client replay the stream.
 
 When both `RUN_COMPLETE_WEBHOOK_SECRET` and an absolute non-loopback `COMPLETION_WEBHOOK_URL` are configured, dispatch attaches `/webhooks/run-complete?token=…`; otherwise it deliberately omits the webhook so an invalid local URL cannot make all run creation fail. The receiving route is fail-closed on that token. On `success`, completion can schedule a deduplicated Slack session-cost refresh. On `error` or `timeout`, it loads thread metadata, settles an unfinished reviewer check where relevant, restores a code-channel session only if no later run is live, and best-effort posts a source-appropriate failure reply to Slack, Linear, or GitHub. Failure replies are idempotent per run id (with a legacy thread-level fallback when an old payload has no run id); `interrupted` is intentionally not treated as a user-visible failure because it is the normal replacement behavior for an interrupting follow-up.
 
@@ -126,6 +126,6 @@ When both `RUN_COMPLETE_WEBHOOK_SECRET` and an absolute non-loopback `COMPLETION
 
 - Preserve raw-body verification before parsing and keep secrets fail-closed. Exercise Slack replay age, deduplication, external-channel refusal, and non-directed-message filters when changing admission.
 - Treat `agent/thread_ids.py` formulas and stored source context as compatibility surfaces. Test mapping conflicts rather than adding a heuristic that guesses a Slack thread.
-- Keep all new invocation paths on `dispatch_agent_run` or `create_durable_run`; test their durability, protocol-v2 marker, resumability, metadata correlation, and completion-webhook fallback in `tests/agent/test_dispatch.py`.
+- Keep all new invocation paths on `dispatch_agent_run` or `create_durable_run`; test their durability, protocol-v3 marker, resumability, metadata correlation, and completion-webhook fallback in `tests/agent/test_dispatch.py`.
 - Test completion statuses, source-specific replies, per-run dedupe, cost refresh, reviewer-check cleanup, and intentional silence for interrupted/wakeup runs in `tests/webhooks/test_completion_webhook.py`.
-- For dashboard changes, test lazy thread creation, attribution/config construction, content/image validation, and thread-wide cancellation/queue draining in `tests/dashboard/test_dashboard_thread_api.py`.
+- For dashboard changes, test lazy thread creation, attribution/config construction, content/image validation, and thread-wide cancellation/queue draining in `tests/threads/test_runs.py`.
