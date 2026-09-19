@@ -10,28 +10,36 @@ sources:
     resource: repo://agent/dashboard/__init__.py
   - id: openwiki-source-09b129ff728dd4990ea2f25e
     resource: repo://agent/dashboard/agent_instructions.py
+  - id: openwiki-source-68232aadafb64efa8bf106e5
+    resource: repo://agent/dashboard/deps.py
   - id: openwiki-source-5460c3972fe61bb256d07994
     resource: repo://agent/dashboard/oauth.py
   - id: openwiki-source-61ace7d4952db9ddb8316aeb
     resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-202e70aa1fb446ab05cc6d99
-    resource: repo://agent/dashboard/schedules.py
-  - id: openwiki-source-fb23e4421b72cc55be83e96d
-    resource: repo://agent/dashboard/skills.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
   - id: openwiki-source-31ac80d273943055d537bae8
     resource: repo://agent/review/styles.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
+  - id: openwiki-source-bcdbf9656d4045712d8041c3
+    resource: repo://agent/schedules/routes.py
+  - id: openwiki-source-19dd52d603eb15a9bf38885d
+    resource: repo://agent/schedules/store.py
+  - id: openwiki-source-e2d89fce1b696d4a3144e788
+    resource: repo://agent/skill_store/store.py
+  - id: openwiki-source-82825a65559de3e8581a123a
+    resource: repo://agent/threads/handlers.py
+  - id: openwiki-source-eacf03704e0535f30594d663
+    resource: repo://agent/threads/listing.py
+  - id: openwiki-source-5636b3627165596fb8bd52c9
+    resource: repo://agent/threads/routes.py
+  - id: openwiki-source-7e34667f01351599d23e4443
+    resource: repo://agent/threads/summary.py
+  - id: openwiki-source-2125456467ee589819c93414
+    resource: repo://agent/threads/terminal.py
   - id: openwiki-source-6e64b1ccdb133daeb8f4d1d4
     resource: repo://agent/utils/dashboard_ui.py
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
-  - id: openwiki-source-f94f5d5d16b6aac2f4bc309c
-    resource: repo://desktop/src/backend-supervisor.cjs
   - id: openwiki-source-62d0819e47a738ba26f898fd
     resource: repo://tests/dashboard/test_dashboard_thread_api_activity.py
   - id: openwiki-source-654bec991273a9eb3ccdf2c1
@@ -44,10 +52,10 @@ sources:
     resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
+generated: { by: "openwiki/0.4.2", at: "2026-09-19T12:20:12.895Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-19T12:20:12.895Z
 ---
 
 # Dashboard and Desktop Clients
@@ -56,9 +64,9 @@ The dashboard is the human-facing surface around the agent: a FastAPI router, a 
 
 ## Composition, serving, and mount paths
 
-`agent.api.app.create_app()` includes the dashboard router, then calls `mount_dashboard_ui(app)`. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency. `agent.dashboard` exports that router lazily with `__getattr__`; helper imports consequently do not pull in FastAPI, routes, and the feature modules unless the web app mounts the router.
+`agent/api/app.py` includes the dashboard router at `/dashboard/api` with a router-wide mutation-origin dependency, then calls `mount_dashboard_ui(app)`. `agent/dashboard/__init__.py` exports the router lazily with `__getattr__` so importing dashboard submodules does not drag in FastAPI, routes, and feature modules—only the web app that mounts the router pays that cost.
 
-When a dashboard build is available, `agent.utils.dashboard_ui` mounts immutable hashed assets at `/assets` and serves `_shell.html` for HTML navigation requests. It deliberately declines API, webhook, health, LangGraph, docs, metrics, and asset prefixes; a non-HTML request for an unknown UI route is likewise left for the underlying server to return as a 404. The shell is `no-cache` so it can reference a new asset manifest, while hashed assets can be cached for a year. With `DASHBOARD_DEV_SERVER_URL`, the backend instead reverse-proxies non-reserved traffic to Vite, preserving the backend origin and redirect responses. The catch-all is registered last; code which subsequently adds a route must call `keep_dashboard_ui_last`.
+When a dashboard build is available, `agent/utils/dashboard_ui.py` mounts immutable hashed assets at `/assets` and serves `_shell.html` for HTML navigation requests. It deliberately declines API, webhook, health, LangGraph, docs, metrics, and asset prefixes; a non-HTML request for an unknown UI route is likewise left for the underlying server to return as a 404. The shell is `no-cache` so it can reference a new asset manifest, while hashed assets can be cached for a year. With `DASHBOARD_DEV_SERVER_URL`, the backend instead reverse-proxies non-reserved traffic to Vite, preserving the backend origin and redirect responses. The catch-all is registered last; code which subsequently adds a route must call `keep_dashboard_ui_last`.
 
 `DASHBOARD_STATIC_DIR` selects an explicit build; otherwise the in-repository `ui/.output/public` build is used when present. A build served under a LangGraph mount prefix must be built with the matching `DASHBOARD_BASE_PATH`. The UI router uses Vite's `BASE_URL` as its `basepath`, so client navigation follows that mount.
 
