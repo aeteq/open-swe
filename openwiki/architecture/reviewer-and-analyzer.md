@@ -5,7 +5,7 @@ description: Architecture of the isolated reviewer and review-style analyzer gra
 tags: [reviewer, analyzer, code-review, findings, review-style, langgraph, sandbox, github]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-20T12:55:00.283Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -27,12 +27,12 @@ sources:
     resource: repo://agent/review/styles.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
-  - id: openwiki-source-9950d0e32f48b63eef01b7e2
-    resource: repo://agent/skills/continual-learning/SKILL.md
   - id: openwiki-source-f821cbba108557a41969274b
     resource: repo://agent/tools/add_finding.py
   - id: openwiki-source-c451a6086ffd6238062ba879
     resource: repo://agent/tools/publish_review.py
+  - id: openwiki-source-e5e6d929a61c7ec900b63781
+    resource: repo://agent/tools/read_finding_outcomes.py
   - id: openwiki-source-7373bada04b526afa9becd11
     resource: repo://agent/tools/save_review_style.py
   - id: openwiki-source-ff16fde3cd496fd0b8de20da

@@ -3,9 +3,6 @@ type: workflow
 title: Follow-ups, Interrupts, and Stop Control
 description: How Open SWE attaches new work to an existing thread, chooses durable run interruption or enqueueing, preserves checkpoint and sandbox context, and implements Slack and dashboard stop behavior.
 tags: [follow-up, interrupt, message-queue, durable-runs, slack, dashboard, sandbox]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
   - id: openwiki-source-4817379f332cdbc419964b44
     resource: repo://agent/api/health.py
@@ -15,8 +12,6 @@ sources:
     resource: repo://agent/background_tasks.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
   - id: openwiki-source-cb4e403499865fd6b797127c
@@ -35,6 +30,8 @@ sources:
     resource: repo://agent/slack/stop.py
   - id: openwiki-source-4ffd3d31ffb2d798faaaad59
     resource: repo://agent/slack/webhook.py
+  - id: openwiki-source-82825a65559de3e8581a123a
+    resource: repo://agent/threads/handlers.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
   - id: openwiki-source-0d20d315a6a4ea1d7240eab4
@@ -43,7 +40,10 @@ sources:
     resource: repo://tests/slack/test_slack_stop.py
   - id: openwiki-source-b5d2fb95f06f5e8c3f58555f
     resource: repo://tests/slack/test_slack_untagged_flag.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-20T12:55:00.283Z
 ---
 
 # Follow-ups, Interrupts, and Stop Control
@@ -117,13 +117,12 @@ The durable run strategy controls whether new work preempts the active thread ru
 
 ### Choosing interrupt or enqueue
 
-Explicit Slack requests are urgent: `_dispatch_or_queue_slack_run` uses
-`"interrupt"` when the bot was explicitly tagged, and `"enqueue"` for an
-untagged Slack follow-up. This lets a participant add context without normally
-displacing the current turn, while an explicit request takes precedence. Slack
-message edits take a third route: the corrected content is placed in the store
-message queue; if the thread is idle, it remains there until a later run reaches
-a model call.
+Explicit Slack requests are urgent: the webhook uses `"interrupt"` when the bot
+was explicitly tagged, and `"enqueue"` for an untagged Slack follow-up. This
+lets a participant add context without normally displacing the current turn,
+while an explicit request takes precedence. Slack message edits take a third
+route: the corrected content is placed in the store message queue; if the
+thread is idle, it remains there until a later run reaches a model call.
 
 Automation deliberately avoids preemption. `/baby-sit` terminal/failure updates
 and notifications for finished sandbox background tasks dispatch with
