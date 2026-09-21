@@ -144,8 +144,8 @@ def _format_slack_thread_section(
 
 async def _format_slack_run_links_section(thread_id: str) -> str:
     dashboard_url = common.dashboard_thread_url(thread_id)
-    trace_url = await get_langsmith_trace_url(thread_id)
-    lines = ["## Open SWE Links"]
+    trace_url = get_langsmith_trace_url(thread_id)
+    lines = ["## Jarvis Links"]
     if dashboard_url:
         lines.append(f"- Web: {dashboard_url}")
     if trace_url:

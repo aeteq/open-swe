@@ -331,7 +331,8 @@ def test_system_thread_uses_bot_for_github_source(monkeypatch: pytest.MonkeyPatc
 
     client = _FakeClient(
         post=_FakeResponse(
-            201, {"html_url": "https://x/pull/2", "number": 2, "user": {"login": "open-swe[bot]"}}
+            201,
+            {"html_url": "https://x/pull/2", "number": 2, "user": {"login": "jarvis-aeteq[bot]"}},
         )
     )
     _install_client(monkeypatch, client)

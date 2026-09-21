@@ -349,7 +349,7 @@ function TriggerReviewSection() {
   return (
     <SettingsSection
       title="Trigger a review"
-      description="Manually start an Open SWE Review run on a pull request. The repository must be enabled for review."
+      description="Manually start an Jarvis Review run on a pull request. The repository must be enabled for review."
     >
       <div className="flex flex-col gap-2 p-4">
         <div className="flex items-center gap-2">

@@ -93,7 +93,7 @@ function ReviewsPage() {
         <p className="mt-1 text-xs text-muted-foreground">
           {mine
             ? "Your open pull requests, live CI checks, and merge status."
-            : "Pull requests reviewed by Open SWE Review. Click into one for the full analysis."}
+            : "Pull requests reviewed by Jarvis Review. Click into one for the full analysis."}
         </p>
 
         <div className="mt-6 flex items-center gap-1">
