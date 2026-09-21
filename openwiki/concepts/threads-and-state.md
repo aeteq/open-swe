@@ -3,10 +3,9 @@ type: state-management concept
 title: Threads, Durable Runs, and State
 description: How Open SWE identifies durable LangGraph conversations, constructs follow-up inputs, owns thread metadata and Store records, and preserves sandbox continuity across product surfaces.
 tags: [threads, state, langgraph, durability, checkpoints, sandbox, slack, integrations]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
+  - id: openwiki-source-921ec88ab63280d28b3dddb5
+    resource: repo://agent/chat.py
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
@@ -15,8 +14,6 @@ sources:
     resource: repo://agent/github/webhook.py
   - id: openwiki-source-cb4e403499865fd6b797127c
     resource: repo://agent/input_messages.py
-  - id: openwiki-source-2d78b3dc0a340eaacb9e53e2
-    resource: repo://agent/linear/webhook.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
     resource: repo://agent/review/findings.py
   - id: openwiki-source-24b1722c4aacbce0b06350ae
@@ -43,11 +40,12 @@ sources:
     resource: repo://agent/utils/thread_participants.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-  - id: openwiki-source-25a50e8385de61204afe1bcf
-    resource: repo://agent/webhooks/common.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
 generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-20T12:55:00.283Z
 ---
 
 # Threads, Durable Runs, and State
