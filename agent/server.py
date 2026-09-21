@@ -134,6 +134,7 @@ from agent.sandboxes.lifecycle import (
     get_cached_sandbox_backend,
 )
 from agent.sandboxes.paths import resolve_sandbox_work_dir
+from agent.sandboxes.providers.langsmith import service_identity_jwks_url
 from agent.sandboxes.read_only_backend import ReadOnlyBackend
 from agent.sandboxes.state import (
     SandboxUnreachableError,
@@ -150,13 +151,13 @@ from agent.tools import (
     background_task,
     create_automation,
     create_sandbox_file_download_url,
-    create_sandbox_service_url,
     delete_automation,
     delete_organization_skill,
     delete_user_skill,
     delete_workspace,
     enter_plan_mode,
     expedite_pr_approval,
+    expose_port,
     fetch_url,
     get_thread,
     http_request,
@@ -167,7 +168,6 @@ from agent.tools import (
     manage_code_channel,
     manage_incident,
     manage_thread,
-    mark_question_answered,
     notify_automation_channel,
     open_pull_request,
     output_iframe,
@@ -195,7 +195,9 @@ from agent.tools import (
     update_automation,
     web_search,
 )
-from agent.tools.admin_gate import actor_is_admin, is_private_admin_thread
+from agent.tools.admin_gate import actor_has_admin_context, actor_is_admin, is_private_admin_surface
+from agent.tools.manage_review_approval_policy import manage_review_approval_policy
+from agent.tools.submit_review_assessment_feedback import submit_review_assessment_feedback
 from agent.utils import ttl_cache
 from agent.utils.authorship import (
     CollaboratorIdentity,
@@ -356,7 +358,7 @@ PLAN_MODE_EXCLUDED_TOOLS: frozenset[str] = frozenset(
         "task",
         "background_execute",
         "background_task",
-        "create_sandbox_service_url",
+        "expose_port",
         "http_request",
         "expedite_pr_approval",
         "manage_baby_sit",
@@ -426,6 +428,16 @@ def _subagent_middleware(
     return middleware
 
 
+def _subagent_guard_middleware(local_run: bool) -> list[AgentMiddleware[Any, Any, Any]]:
+    """Shell guards mirroring the parent stack for delegated tool calls.
+
+    Local desktop runs skip the PR-creation guard the same way the parent does.
+    """
+    if local_run:
+        return []
+    return [PullRequestCreationGuardMiddleware()]
+
+
 def _is_subagent_excluded_tool(tool: Any) -> bool:
     """Return whether a tool depends on parent-only source context."""
     name = getattr(tool, "name", None) or getattr(tool, "__name__", "")
@@ -456,6 +468,7 @@ def _general_purpose_subagent(
     offloading: ConversationOffloadingMiddleware | None = None,
     workspace_skills: WorkspaceSkillsMiddleware | None = None,
     incident_middleware: AgentMiddleware | None = None,
+    guard_middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
 ) -> SubAgent:
     subagent: SubAgent = {
         "name": GENERAL_PURPOSE_SUBAGENT["name"],
@@ -477,6 +490,7 @@ def _general_purpose_subagent(
                 *([incident_middleware] if incident_middleware else []),
                 *([workspace_skills] if workspace_skills else []),
                 *_subagent_middleware(dynamic_tools),
+                *guard_middleware,
                 *([offloading] if offloading else []),
             ],
         ),
@@ -520,7 +534,7 @@ async def _workspace_admin(config: RunnableConfig, profile_login: str | None) ->
 
 async def _admin_thread(config: RunnableConfig, profile_login: str | None) -> bool:
     """Whether this run may manage workspaces and organization skills."""
-    return await is_private_admin_thread(RunConfig.from_config(config), login=profile_login)
+    return await actor_has_admin_context(RunConfig.from_config(config), login=profile_login)
 
 
 async def _private_thread(thread_id: str | None) -> bool:
@@ -775,9 +789,7 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
         async with aphase(self._thread_id, "prepare.default_repo"):
             prompt_default_repo = await _resolve_prompt_default_repo(cfg)
         triggering_user_identity_task = asyncio.create_task(
-            asyncio.to_thread(
-                resolve_triggering_user_identity, as_json_object(self._config), github_token
-            )
+            resolve_triggering_user_identity(as_json_object(self._config), github_token)
         )
         sandbox_task = asyncio.create_task(
             get_or_create_sandbox_backend_proxy(self._thread_id).ready()
@@ -849,15 +861,26 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
                         invocation_id=cfg.invocation_id,
                         thread_id=self._thread_id,
                         github_login=self._profile_login,
-                        github_user_id=cfg.github_user_id,
+                        github_user_id=(
+                            triggering_user_identity.github_user_id
+                            if triggering_user_identity
+                            and triggering_user_identity.github_user_id is not None
+                            else cfg.github_user_id
+                        ),
                         user_email=self._user_email,
                         display_name=(
-                            triggering_user_identity.display_name
-                            if triggering_user_identity and triggering_user_identity.github_profile
+                            triggering_user_identity.analytics_display_name
+                            if triggering_user_identity
+                            and triggering_user_identity.analytics_display_name
                             else None
                         ),
-                        model_id=self._model_id,
-                        effort=self._effort,
+                        display_name_source=(
+                            triggering_user_identity.display_name_source
+                            if triggering_user_identity
+                            else None
+                        ),
+                        model_id=attribution_model_id,
+                        effort=attribution_effort,
                         source=self._source,
                         repository=cfg.repo_full_name or None,
                     )
@@ -921,7 +944,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         incident_session = await load_incident_session(config)
         cfg.slack_thread = incident_session.slack_thread
         configurable["slack_thread"] = cfg.slack_thread.dump()
-    profile_login = resolve_github_login(as_json_object(config))
+    profile_login = await resolve_github_login(as_json_object(config))
     credential_login = None
     credential_scope_known = False
     if not is_desktop_run(cfg):
@@ -1157,6 +1180,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
 
     async with aphase(thread_id, "factory.admin_thread"):
         admin_thread = await _admin_thread(config, profile_login)
+    private_admin_surface = admin_thread and is_private_admin_surface(cfg)
     if admin_thread:
         logger.info("Admin thread %s: adding workspace management tools", thread_id)
 
@@ -1186,7 +1210,6 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         )
 
     slack_tools = [
-        expedite_pr_approval,
         manage_code_channel,
         manage_incident,
         slack_add_reaction,
@@ -1213,11 +1236,10 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         manage_thread,
         manage_baby_sit,
         expedite_pr_approval,
-        mark_question_answered,
         notify_automation_channel,
         open_pull_request,
         *(
-            (output_iframe, create_sandbox_file_download_url, create_sandbox_service_url)
+            (output_iframe, create_sandbox_file_download_url, expose_port)
             if sandbox_file_downloads
             else ()
         ),
@@ -1236,8 +1258,9 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         slack_start_new_thread,
         slack_thread_reply,
         submit_thread_feedback,
+        submit_review_assessment_feedback,
         *(ADMIN_TOOLS if admin_thread else ()),
-        *((read_only_sql,) if admin_thread and source == "dashboard" else ()),
+        *((read_only_sql, manage_review_approval_policy) if private_admin_surface else ()),
     ]
     if credential_login is None:
         personal_tools = (
@@ -1257,6 +1280,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         ]
     if (
         local_run
+        or not ENV.SLACK_BOT_TOKEN.get()
         or not (await cached_workspace_settings(settings_workspace)).expedited_review_enabled
     ):
         static_tools = [tool for tool in static_tools if tool is not expedite_pr_approval]
@@ -1269,7 +1293,10 @@ async def get_agent(config: RunnableConfig) -> Pregel:
             for tool in static_tools
             if _registered_tool_name(tool) not in INCIDENT_AUTOMATIC_EXCLUDED_TOOLS
         ]
-    static_tools = apply_tool_descriptions(static_tools)
+    static_tools = apply_tool_descriptions(
+        static_tools,
+        {"expose_port": {"jwks_url": service_identity_jwks_url()}},
+    )
     if local_run:
         static_tools = apply_tool_descriptions([http_request, fetch_url, web_search])
     elif stop_summary_mode:
@@ -1349,6 +1376,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
         if tool is not background_execute
         and tool is not background_task
         and tool is not submit_thread_feedback
+        and tool is not submit_review_assessment_feedback
     ]
     title_model = _make_model_or_defer(
         title_model_id,
@@ -1376,6 +1404,7 @@ async def get_agent(config: RunnableConfig) -> Pregel:
                 incident_middleware=IncidentMiddleware(incident_session)
                 if incident_session is not None
                 else None,
+                guard_middleware=_subagent_guard_middleware(local_run),
             ),
         ],
         skills=skill_sources,
