@@ -523,9 +523,10 @@ async def test_agent_includes_recreate_sandbox_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_includes_admin_tools_only_in_private_dashboard_admin_threads(
+async def test_agent_includes_sql_only_on_private_admin_surfaces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from agent.server import ADMIN_TOOLS
     from agent.tools import read_only_sql
 
     captured = await _capture_create_deep_agent_kwargs()
@@ -547,6 +548,28 @@ async def test_agent_includes_admin_tools_only_in_private_dashboard_admin_thread
     general_purpose = next(item for item in subagents if item["name"] == "general-purpose")
     assert read_only_sql not in general_purpose["tools"]
 
+    configurable["source"] = "slack"
+    configurable["slack_thread"] = {
+        "channel_id": "D123",
+        "thread_ts": "1700000000.000100",
+        "triggering_user_id": "U123",
+        "channel_context": {"is_im": True},
+    }
+    captured = await _capture_create_deep_agent_kwargs(config)
+    tools = captured["tools"]
+    assert isinstance(tools, list)
+    assert read_only_sql in tools
+
+    assert all(tool in tools for tool in ADMIN_TOOLS)
+
+    configurable["github_login"] = "not-an-admin"
+    captured = await _capture_create_deep_agent_kwargs(config)
+    tools = captured["tools"]
+    assert isinstance(tools, list)
+    assert read_only_sql not in tools
+    assert all(tool not in tools for tool in ADMIN_TOOLS)
+
+    configurable["github_login"] = "octocat"
     configurable["source"] = "schedule"
     captured = await _capture_create_deep_agent_kwargs(config)
     tools = captured["tools"]
@@ -558,7 +581,7 @@ async def test_agent_includes_admin_tools_only_in_private_dashboard_admin_thread
 async def test_agent_includes_sandbox_file_download_url_tools() -> None:
     from agent.tools import (
         create_sandbox_file_download_url,
-        create_sandbox_service_url,
+        expose_port,
         output_iframe,
     )
 
@@ -566,7 +589,7 @@ async def test_agent_includes_sandbox_file_download_url_tools() -> None:
     tools = captured["tools"]
     assert isinstance(tools, list)
     assert create_sandbox_file_download_url in tools
-    assert create_sandbox_service_url in tools
+    assert expose_port in tools
     assert output_iframe in tools
 
 
@@ -579,7 +602,7 @@ async def test_agent_excludes_sandbox_file_downloads_for_other_providers(
     from agent.prompt import OPEN_SWE_SHARED_BASE
     from agent.tools import (
         create_sandbox_file_download_url,
-        create_sandbox_service_url,
+        expose_port,
         output_iframe,
     )
 
@@ -590,11 +613,11 @@ async def test_agent_excludes_sandbox_file_downloads_for_other_providers(
     assert isinstance(tools, list)
     assert isinstance(subagents, list)
     assert create_sandbox_file_download_url not in tools
-    assert create_sandbox_service_url not in tools
+    assert expose_port not in tools
     assert output_iframe not in tools
     general_purpose = next(item for item in subagents if item["name"] == "general-purpose")
     assert create_sandbox_file_download_url not in general_purpose["tools"]
-    assert create_sandbox_service_url not in general_purpose["tools"]
+    assert expose_port not in general_purpose["tools"]
     assert output_iframe not in general_purpose["tools"]
     assert general_purpose["system_prompt"] == (
         f"{OPEN_SWE_SHARED_BASE}\n\n{GENERAL_PURPOSE_SUBAGENT['system_prompt']}"
@@ -714,12 +737,14 @@ async def test_task_retry_wraps_inside_tool_error_middleware() -> None:
 
 
 @pytest.mark.asyncio
-async def test_general_purpose_subagent_guards_workflow_pushes() -> None:
+async def test_general_purpose_subagent_gets_shell_guards() -> None:
     captured = await _capture_create_deep_agent_kwargs()
     subagents = captured["subagents"]
     assert isinstance(subagents, list)
     gp = next(s for s in subagents if s["name"] == "general-purpose")
-    assert any(type(m).__name__ == "WorkflowPushGuardMiddleware" for m in gp["middleware"])
+    names = [type(m).__name__ for m in gp["middleware"]]
+    assert "WorkflowPushGuardMiddleware" in names
+    assert "PullRequestCreationGuardMiddleware" in names
 
 
 @pytest.mark.asyncio
@@ -764,6 +789,7 @@ async def test_general_purpose_subagent_cannot_use_slack_tools() -> None:
         "manage_thread",
         "read_user_settings",
         "submit_thread_feedback",
+        "submit_review_assessment_feedback",
     }
     assert parent_only_names <= parent_names
     assert parent_only_names.isdisjoint(subagent_names)

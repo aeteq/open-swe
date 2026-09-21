@@ -6,6 +6,7 @@ endpoints surface that state plus live PR details/diff fetched from GitHub
 with the App installation token.
 """
 
+import asyncio
 import ipaddress
 import logging
 import re
@@ -16,11 +17,13 @@ from urllib.parse import urljoin, urlparse
 
 import httpx2
 from fastapi import HTTPException, Response
+from pydantic import BaseModel, ValidationError
 
 from agent.github.app import get_github_app_installation_token
 from agent.github.checks import github_headers
 from agent.github.pull_request_diff import build_pr_diff_files
 from agent.github.webhook import trigger_pr_review_from_ref
+from agent.review.assessment_feedback import ASSESSMENTS
 from agent.review.findings import (
     REVIEWER_THREAD_KIND,
     coerce_finding,
@@ -217,6 +220,34 @@ def _finding_counts(findings: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+class ReviewCounts(BaseModel):
+    open: int
+    resolved: int
+    dismissed: int
+    bugs: int
+    flags: int
+
+
+class ReviewSummary(BaseModel):
+    """A reviewer thread's durable state, as the dashboard reads it."""
+
+    thread_id: str
+    owner: str
+    repo: str
+    full_name: str
+    number: int
+    title: str
+    url: str
+    head_ref: str
+    base_ref: str
+    author: str
+    head_sha: str
+    watch: bool
+    status: Literal["running", "error", "idle"]
+    counts: ReviewCounts
+    updated_at: str | None = None
+
+
 def _run_status(thread: ThreadLike, metadata: dict[str, Any]) -> str:
     if thread.get("status") == "busy":
         return "running"
@@ -316,6 +347,44 @@ async def list_reviews(
         scan_offset += page_size
     page = summaries[offset : offset + limit]
     return page, len(summaries) > offset + limit
+
+
+async def get_review_summaries(
+    identities: list[tuple[str, str, int]],
+) -> dict[str, ReviewSummary | None]:
+    """Read review indicators for already-authorized pull requests."""
+    client = langgraph_client()
+    semaphore = asyncio.Semaphore(4)
+
+    async def read(owner: str, repo: str, number: int) -> tuple[str, ReviewSummary | None]:
+        async with semaphore:
+            threads = await client.threads.search(
+                metadata={
+                    "kind": REVIEWER_THREAD_KIND,
+                    "pr": {"owner": owner, "name": repo, "number": number},
+                },
+                limit=1,
+                sort_by="updated_at",
+                sort_order="desc",
+            )
+            raw = _thread_review_summary(threads[0]) if threads else None
+            return f"{owner}/{repo}#{number}".lower(), _as_review_summary(raw)
+
+    return dict(await asyncio.gather(*(read(*identity) for identity in identities)))
+
+
+def _as_review_summary(raw: dict[str, Any] | None) -> ReviewSummary | None:
+    if raw is None:
+        return None
+    try:
+        return ReviewSummary.model_validate(raw)
+    except ValidationError:
+        logger.warning(
+            "Reviewer thread metadata does not describe a review summary",
+            extra={"review_thread_id": raw.get("thread_id")},
+            exc_info=True,
+        )
+        return None
 
 
 def _user_ref(value: Any) -> dict[str, Any] | None:
@@ -575,6 +644,10 @@ async def get_review(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
         finding["group"] = classify_finding(finding)
 
     diff_groups, diff_groups_stale = _serialize_diff_groups(metadata, head_sha)
+    assessment_id = metadata.get("review_assessment_id")
+    assessment = (
+        await ASSESSMENTS.get(str(assessment_id)) if isinstance(assessment_id, int) else None
+    )
 
     return {
         **summary,
@@ -583,6 +656,7 @@ async def get_review(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
         "findings": findings,
         "diff_groups": diff_groups,
         "diff_groups_stale": diff_groups_stale,
+        "assessment": assessment.model_dump() if assessment else None,
     }
 
 

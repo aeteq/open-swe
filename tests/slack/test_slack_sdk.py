@@ -7,13 +7,14 @@ from tests.support.slack_api import slack_api_server
 
 
 async def test_sdk_session_sends_messages_and_closes_on_rate_limit(monkeypatch):
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "test-token")
     with slack_api_server() as api:
         monkeypatch.setattr(http, "SLACK_API_BASE_URL", api.base_url, raising=False)
         api.respond(
             {"ok": False, "error": "ratelimited"}, status=429, headers={"Retry-After": "30"}
         )
         with pytest.raises(SlackApiError) as raised:
-            async with http.slack_client(token="test-token") as client:
+            async with http.SlackClient.bot() as client:
                 session = client.session
                 await client.chat_postMessage(channel="C1", text="Hello", thread_ts="1.0")
         assert raised.value.response.headers["Retry-After"] == "30"
@@ -27,7 +28,7 @@ async def test_sdk_session_sends_messages_and_closes_on_rate_limit(monkeypatch):
 async def test_non_object_slack_responses_are_reported_as_upstream_errors(slack_api, data):
     slack_api.respond(data)
     with pytest.raises(HTTPException) as raised:
-        async with http.slack_http_errors(), http.slack_client(token="test-token") as client:
+        async with http.slack_http_errors(), http.SlackClient.bot() as client:
             await client.users_info(user="U1")
     assert raised.value.status_code == 502
 
@@ -74,10 +75,8 @@ _PUBLIC_CHANNEL = {
 
 
 async def test_read_channel_tool_marks_threads_and_skips_joins(slack_api):
-    from agent.slack.client import clear_slack_channel_info_cache
     from agent.slack.tools.read_channel_messages import slack_read_channel_messages
 
-    clear_slack_channel_info_cache()
     slack_api.respond(_PUBLIC_CHANNEL)
     slack_api.respond(
         {
@@ -108,10 +107,8 @@ async def test_read_channel_tool_marks_threads_and_skips_joins(slack_api):
 
 
 async def test_read_channel_tool_refuses_a_private_channel(slack_api):
-    from agent.slack.client import clear_slack_channel_info_cache
     from agent.slack.tools.read_channel_messages import slack_read_channel_messages
 
-    clear_slack_channel_info_cache()
     slack_api.respond({"ok": True, "channel": {"id": "C1", "is_channel": True, "is_private": True}})
     result = await slack_read_channel_messages("C1")
 
@@ -180,7 +177,7 @@ async def test_malformed_response_preserves_rate_limit_metadata(
 ):
     slack_api.respond(data, status=status, headers=headers)
     with pytest.raises(HTTPException) as raised:
-        async with http.slack_http_errors(), http.slack_client(token="test-token") as client:
+        async with http.slack_http_errors(), http.SlackClient.bot() as client:
             await client.users_info(user="U1")
     assert raised.value.status_code == expected
     if expected == 429:
