@@ -38,8 +38,6 @@ sources:
     resource: repo://agent/github/token_auth.py
   - id: openwiki-source-44138fc28bbb6b76c90cb1cf
     resource: repo://agent/github/token.py
-  - id: openwiki-source-142fa72edf963dfd0b9f031b
-    resource: repo://agent/linear/routes.py
   - id: openwiki-source-9d5775155057d8f8c3a08e3e
     resource: repo://agent/middleware/refresh_github_proxy.py
   - id: openwiki-source-2dedcea02c5aa03c54d81c32
@@ -50,6 +48,8 @@ sources:
     resource: repo://agent/slack/oauth.py
   - id: openwiki-source-9bef6ead94fcf55bf6db8787
     resource: repo://agent/tools/admin_gate.py
+  - id: openwiki-source-25a50e8385de61204afe1bcf
+    resource: repo://agent/webhooks/common.py
   - id: openwiki-source-570f630f7053812ac62c55ef
     resource: repo://tests/auth/test_auth_sources.py
   - id: openwiki-source-3a1539e01daa921ba15e9617
@@ -59,7 +59,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries

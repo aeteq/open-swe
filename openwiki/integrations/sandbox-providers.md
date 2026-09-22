@@ -38,10 +38,10 @@ sources:
     resource: repo://tests/sandbox/test_langsmith_sandbox_config.py
   - id: openwiki-source-6c4c3340e6bc2f86a0e54411
     resource: repo://tests/sandbox/test_local_integration.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Sandbox Provider Integration
@@ -68,9 +68,10 @@ flowchart TD
     Worker --> Backend
     Backend --> Bind["Lifecycle initializes then binds thread metadata"]
 ```
+
 Provider resolution and the point at which a successfully initialized backend becomes eligible for thread binding.
 
-The FastAPI lifespan hook calls `validate_sandbox_startup_config()` before serving. Validation is currently provider-specific only for LangSmith: configured resource and TTL values must be integers, the TTLs must be non-negative, and `SANDBOX_CREATE_EXTRA_JSON` must parse as a JSON object. Other provider credentials are checked when their factory is invoked.
+The FastAPI lifespan hook calls `validate_sandbox_startup_config()` before serving. Validation is currently provider-specific only for LangSmith: configured resource and TTL values must be integers, the TTLs must be non-negative, and `SANDBOX_CREATE_EXTRA_JSON` must parse as a JSON object. For optional provider extras (daytona, modal, runloop, e2b), startup eagerly loads the factory so a missing dependency fails at boot rather than on first sandbox creation. Other provider credentials are checked when their factory is invoked.
 
 ## Thread binding and failure semantics
 

@@ -43,7 +43,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Follow-ups, Interrupts, and Stop Control
