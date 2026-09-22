@@ -10,8 +10,6 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
-  - id: openwiki-source-ba064e884edcde6097165df2
-    resource: repo://agent/github/webhook.py
   - id: openwiki-source-cb4e403499865fd6b797127c
     resource: repo://agent/input_messages.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
@@ -45,7 +43,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Threads, Durable Runs, and State

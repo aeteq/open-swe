@@ -24,10 +24,10 @@ sources:
     resource: repo://agent/tool_loaders/notion_mcp.py
   - id: openwiki-source-7c60191e42b8e30b62935af1
     resource: repo://agent/utils/thread_participants.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # MCP and Integration Architecture
@@ -118,7 +118,7 @@ While assembling a non-local, non-summary agent, the server concurrently loads:
 - **MCP tools** from instance, workspace, and user tiers using `_mcp_tools_for`.
 - **Notion tools** for the triggering login using `_notion_tools_for`, only if the run has a known credential scope.
 
-Summary-stop, local/desktop, and plan-mode runs skip optional tool loading. Both loaders are wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers each tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load a group by name and begin using its tools.
+Summary-stop and local/desktop runs skip optional tool loading. Both loaders are wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers each tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load a group by name and begin using its tools.
 
 The operational invariant is that optional tool loss reduces available tools, not the ability to start or complete a run. If all MCPs are unavailable, the agent continues without them. If Notion is unavailable, the run has no Notion tools but is not blocked.
 

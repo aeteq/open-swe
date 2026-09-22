@@ -28,10 +28,10 @@ sources:
     resource: repo://agent/utils/model.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Models, Profiles, and Instructions
@@ -106,7 +106,7 @@ Prompt authority is explicit:
 
 1. A repository `AGENTS.md`, if present, overrides prompt defaults with the same authority as the system prompt.
 2. Repository-specific custom instructions are mandatory but yield to `AGENTS.md`.
-3. Environment instructions yield to repository instructions and `AGENTS.md`.
+3. Workspace-level instructions yield to repository instructions and `AGENTS.md`.
 4. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.

@@ -5,10 +5,8 @@ description: Comprehensive test infrastructure, focused validation strategies, a
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-20T12:55:00.283Z
+    at: 2026-09-22T13:11:45.998Z
 sources:
-  - id: openwiki-source-8037e2358a2c4f9b2c722a11
-    resource: repo://AGENTS.md
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -47,7 +45,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -201,49 +199,25 @@ pnpm run test:e2e:desktop
 
 The desktop configuration selects only `desktop.spec.ts`, raises timeouts to 180 seconds, uses a separate output directory, and disables automatic Playwright media recording because the spec explicitly records an Electron trace.
 
-### E2E artifacts and diagnostics
+### Artifacts and replay
 
-Browser runs retain screenshots on failure and retain trace (DOM-snapshot timeline + network + console) and video only on failed attempts locally or on the first retry in CI. Set `E2E_ARTIFACTS=1` to capture both unconditionally for debugging a spec that passes but does the wrong thing:
+Recording costs real time on every spec, so browser tests keep a **trace** (DOM-snapshot timeline + network + console + source) and **video** only for failed attempts locally and on first retry in CI; screenshots capture all failures. Set `E2E_ARTIFACTS=1` to record trace and video unconditionally for every attempt, saved under `test-results/` and `playwright-report/`:
 
 ```bash
-E2E_ARTIFACTS=1 pnpm exec playwright test tests/full_flow.spec.ts
-pnpm exec playwright show-report
-pnpm exec playwright show-trace test-results/<test>/trace.zip
-SLOW_MO=700 pnpm exec playwright test --headed
+pnpm exec playwright show-report                       # browse runs with Trace tab
+pnpm exec playwright show-trace test-results/<test>/trace.zip   # open trace directly
 ```
 
-Artifacts are written below `test-results/` and `playwright-report/`. In CI, sharded browser runs and the desktop run each upload their own artifact archive; download one and replay it with `pnpm exec playwright show-report <dir>` or drag a `trace.zip` to <https://trace.playwright.dev>.
+In CI the browser shards upload separate `playwright-report-*` artifacts; download, extract, and run `pnpm exec playwright show-report <dir>` (or drag a `trace.zip` to <https://trace.playwright.dev>) to replay any run.
 
-## Test command summary
+The E2E backend requires PostgreSQL: export `POSTGRES_URI` or run a throwaway `docker run -d -p 5433:5432 -e POSTGRES_PASSWORD=postgres postgres:16` with `POSTGRES_URI=postgresql://postgres:postgres@localhost:5433/postgres` before running tests or `langgraph dev`.
 
-| Target | Command | Notes |
-| --- | --- | --- |
-| Python unit suite | `make test TEST_FILE=tests/agent/` | Pytest auto mode; use pytest directly for node ids |
-| Python linting | `make lint` | Ruff check + format diff; independent gate |
-| Python formatting | `make format` | Apply Ruff fixes in place |
-| Python typecheck | `make typecheck` | ty check agent tests |
-| Dashboard unit tests | `pnpm --filter open-swe-dashboard run test` | Vitest |
-| Desktop unit tests | `pnpm --dir desktop run test` | Node --test after build |
-| All workspace tests | `pnpm test` | Turbo delegates to each workspace; slow |
-| Browser E2E | `pnpm run test:e2e` | Real dashboard + langgraph dev; serial, warm server |
-| Desktop E2E | `pnpm run test:e2e:desktop` | Electron against shared fakes |
-| E2E setup | `pnpm run test:e2e:install` | Install Chromium; must run before first E2E |
-| E2E single spec | `pnpm exec playwright test tests/full_flow.spec.ts` | Fast iteration against warm server |
+## Focused validation philosophy
 
-## Design principles
+Follow the AGENTS.md testing discipline:
 
-1. **Validate at the lowest layer that owns the contract.** If your change touches only agent assembly, test `test_agent_assembly_context.py`, not E2E. If it touches middleware, test the middleware contract in isolation. Escalate to Playwright only when the contract crosses the real webhook, authenticated dashboard, local git/sandbox, or Electron boundary.
+> Never run the full test suite locally; run only tests related to the change.
+>
+> Add tests only when they meaningfully protect observable behavior. Do not add change-detector tests that merely restate constants, mappings, prompt text, source structure, or incidental interactions such as internal call order. Refactors that preserve behavior should not require mechanical test updates; rewrite or remove tests that do. Cover meaningful edge cases and keep tests deterministic.
 
-2. **Use fakes, not live SaaS.** The E2E harness fakes GitHub and Slack HTTP boundaries, seeding deterministic state that mock UIs render and assertions observe. This makes runs reproducible, offline, and fast while still driving real agent, graph, and tool code.
-
-3. **Keep isolation simple.** Autouse fixtures reset process-global state (TTL cache, sandbox registries, workspaces) between tests. Fake fixtures (fake_store, slack_api) replace external boundaries without changing subject code. This keeps tests independent and readable.
-
-4. **Never test prompts directly.** Instead test rendered output, configuration precedence, tool composition, or behavioral results. The assembly tests lock in that `get_agent` hands a sandbox `backend` to `create_deep_agent` and that middleware composition is correct—not that the prompt includes a specific word.
-
-5. **Record production behavior, not implementation details.** Write tests that would fail if the observable contract changed (behavior, API shape, error handling, system boundary) but pass if internal implementation changes. This keeps the test suite stable as code refactors.
-
-## Related pages
-
-- [Agent graph](/openwiki/architecture/agent-graph.md)
-- [Middleware stack](/openwiki/architecture/middleware-stack.md)
-- [Quickstart](/openwiki/quickstart.md)
+The test suite prioritizes determinism, coverage of actual observable behavior and system contracts, and resistance to incidental implementation details. When in doubt, skip the test if it merely documents stale design or would require updating after a mechanical refactor.
