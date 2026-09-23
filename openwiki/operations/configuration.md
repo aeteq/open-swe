@@ -10,16 +10,14 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-b05c9910677cf23a9325276c
     resource: repo://agent/config.py
-  - id: openwiki-source-61ace7d4952db9ddb8316aeb
-    resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-07762d55411a883aaa28e2ed
-    resource: repo://agent/dashboard/sandbox_settings.py
-  - id: openwiki-source-23002b87792ed6949edb723b
-    resource: repo://agent/dashboard/team_settings.py
+  - id: openwiki-source-0a6d03ee63c0e527ce21bf77
+    resource: repo://agent/dashboard/workspace_settings.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
   - id: openwiki-source-eb53b48336d1b5fc0816441a
     resource: repo://agent/encryption.py
+  - id: openwiki-source-6fd11c8bb15f5eb94b765440
+    resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-2dedcea02c5aa03c54d81c32
     resource: repo://agent/sandboxes/providers/langsmith.py
   - id: openwiki-source-49bfbb811c25e99235121924
@@ -30,14 +28,14 @@ sources:
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
-  - id: openwiki-source-8010c6e64af5a375d8d3b70b
-    resource: repo://docs/CUSTOMIZATION.md
+  - id: openwiki-source-8b2e0e45c6159bcb1b873246
+    resource: repo://agent/workspaces/store.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Configuration and Startup Validation
@@ -45,7 +43,7 @@ generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
 Open SWE has two configuration planes:
 
 - **Deployment configuration** is declared centrally in `agent/config.py` and normally supplied through environment variables (including the `.env` file named by `langgraph.json`). It covers connectivity, credentials, provider selection, UI URLs, and deployment defaults.
-- **Administrator settings** are instance-wide records in LangGraph Store. They change selected behavior without a redeploy, notably the default sandbox snapshot and team-wide review/model settings. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
+- **Administrator settings** are instance-wide records in LangGraph Store. They change selected behavior without a redeploy, notably team-wide review/model settings. Workspace-level settings (base snapshot, custom resource sizing) are stored per-workspace. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
 
 This page describes ownership and failure behavior rather than listing every variable. `agent/config.py` is the complete variable catalog; [deployment](deployment.md) provides installation procedures. See [models, profiles, and instructions](../concepts/models-profiles-instructions.md), [auth and security](../concepts/auth-and-security.md), and [sandbox providers](../integrations/sandbox-providers.md) for their respective domains.
 
@@ -82,25 +80,21 @@ Not every bad setting is checked at boot. The sandbox validator is provider-spec
 
 `DASHBOARD_ALLOWED_ORIGINS` is separately checked while the application is built: if it contains `*`, construction raises because credentialed CORS cannot safely use a wildcard. Nonempty explicit origins enable credentialed CORS for the dashboard API.
 
-## Sandboxes: provider, snapshot, and runtime override
+## Sandboxes: provider, resources, and workspace snapshots
 
 `SANDBOX_TYPE` defaults to `langsmith`. The lazy provider registry maps `langsmith`, `daytona`, `modal`, `runloop`, `e2b`, and `local` to provider factories. An unsupported value raises `ValueError` and lists the supported values. The local provider executes on the host and has no isolation, so it is for local development rather than untrusted work.
 
-The registry passes `snapshot_id`, resource overrides, and arbitrary create parameters only to the LangSmith factory; other providers receive only an optional existing sandbox ID. For LangSmith, the normal base snapshot comes from `DEFAULT_SANDBOX_SNAPSHOT_ID` (otherwise the provider root snapshot), with defaults of 128 GiB filesystem, 4 vCPUs, 16 GiB memory, 7200 seconds idle TTL, and 2592000 seconds deletion-after-stop TTL. The two TTL values allow `0` to disable their expiration behavior. Malformed numeric resource values, negative TTLs, and invalid/non-object `SANDBOX_CREATE_EXTRA_JSON` fail LangSmith startup validation.
+For LangSmith sandboxes, resource defaults are 128 GiB filesystem (`DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES`), 4 vCPUs (`DEFAULT_SANDBOX_VCPUS`), 16 GiB memory (`DEFAULT_SANDBOX_MEM_BYTES`), 7200 seconds idle TTL (`DEFAULT_SANDBOX_IDLE_TTL_SECONDS`; 0 disables), and 2592000 seconds deletion-after-stop (`DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS`; 0 disables). These are deployment defaults applied when a workspace does not specify custom values. Malformed numeric resource values, negative TTLs, and invalid/non-object `SANDBOX_CREATE_EXTRA_JSON` fail LangSmith startup validation.
 
-`SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` let sandbox operations use another LangSmith workspace; each falls back to its normal `LANGSMITH_*` counterpart. The selected credentials apply to sandbox API operations, proxy setup, and environment snapshot work, so a configured base snapshot must exist in that workspace. `ENVIRONMENT_SNAPSHOT_PREFIX` defaults to `openswe` and separates environment snapshot names when deployments share a workspace.
+Each workspace can specify a `base_snapshot_id` (an opaque provider-scoped identifier), custom resource overrides (`mem_bytes`, `vcpus`, `fs_capacity_bytes`), and arbitrary provider create-body parameters (`create_params`). When a workspace has captured a snapshot, new sandboxes boot from the captured snapshot instead. The registry passes snapshot_id, resource overrides, and create parameters only to the LangSmith factory; other providers receive only an optional existing sandbox ID.
 
-### Stored base snapshot precedence
-
-The sandbox-settings record is one instance-wide LangGraph Store value. An administrator can read or update it at `GET`/`PUT /dashboard/api/sandbox-settings`; the route accepts a dashboard admin or configured admin token identity. The stored `base_snapshot_id` is trimmed opaque text, capped at 512 characters, and its update records time and updater. A stored value wins over `DEFAULT_SANDBOX_SNAPSHOT_ID`; clearing it restores the environment default. An already-ready captured environment remains a higher-level selection than this base snapshot.
-
-The read used during provisioning is intentionally fail-soft: a Store exception is logged and treated as no override, allowing the environment default to keep runs working. In contrast, the dashboard read reports the stored, environment, and effective values plus whether the source is `admin`, `env`, or `unset`.
+`WORKSPACE_SNAPSHOT_PREFIX` (default `openswe` via legacy alias `ENVIRONMENT_SNAPSHOT_PREFIX`) separates environment snapshot names when deployments share a LangSmith workspace. Credential fallback works as follows: `SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` let sandbox operations use another LangSmith workspace; each falls back to its normal `LANGSMITH_*` counterpart. The selected credentials apply to sandbox API operations, proxy setup, and environment snapshot work, so a configured base snapshot must exist in that workspace.
 
 ## Models and team settings
 
 `LLM_MODEL_ID` and `LLM_REASONING_EFFORT` establish the deployment fallback pair. Resolution accepts only catalog models allowed as defaults and validates that the effort is supported; an unsupported model or effort raises when defaults are resolved. The deployment default is used when no durable team setting supplies a valid choice. Model selection can be more specific at team, profile, thread, or run scope; changing the environment does not overwrite existing selections.
 
-The team-settings record is also a single Store record keyed `default`. It includes review toggles, organization guidelines, review trace project, default repository, transcription model, gateway toggle, Fable opt-in, and main/subagent model-and-effort pairs for agent and reviewer, plus grouping, chat, and thread title settings. Input validation rejects unsupported model/effort combinations, an effort without a model, invalid transcription identifiers, and oversized guidelines or trace-project text. Deprecated model IDs are cleared and canonical pairs are normalized. When Fable is disabled, persisted Fable defaults are replaced with safe fallback pairs.
+The team-settings record is a single instance-wide Store record keyed `default`. It includes review toggles, organization guidelines, review trace project, default repository, transcription model, gateway toggle, Fable opt-in, and main/subagent model-and-effort pairs for agent and reviewer, plus grouping, chat, and thread title settings. Input validation rejects unsupported model/effort combinations, an effort without a model, invalid transcription identifiers, and oversized guidelines or trace-project text. Deprecated model IDs are cleared and canonical pairs are normalized. When Fable is disabled, persisted Fable defaults are replaced with safe fallback pairs.
 
 Store reads for team settings are fail-soft because model selection is on the run path: unavailable or absent Store data returns hardcoded defaults. Invalid/stale model data resolves first to a supported model from the same provider where possible, then to the global fallback. Chat inherits the agent default when unset, and review grouping inherits the reviewer subagent default.
 
@@ -127,12 +121,12 @@ Run-completion replies require both a secret and a usable delivery URL. `RUN_COM
 ## Operating guidance
 
 1. Declare new environment variables in `agent/config.py`, including whether they are secret and any alias/deprecation relationship; consume them through `ENV` rather than a new direct environment read.
-2. Treat environment values as deployment defaults and credentials. Use the dashboard's persisted settings only for the explicitly supported instance-wide choices, and account for their fail-soft Store reads when designing changes.
+2. Treat environment values as deployment defaults and credentials. Use the dashboard's persisted settings only for the explicitly supported instance-wide choices (team settings) and workspace-level choices (base snapshot, custom sizing), and account for their fail-soft Store reads when designing changes.
 3. Before rollout, exercise lifespan startup with the selected sandbox and model configuration. In local development, set an explicit `http://localhost...` `DASHBOARD_BASE_URL` to activate model-key validation.
 4. Configure `COMPLETION_WEBHOOK_URL` as the public HTTPS `.../webhooks/run-complete` URL together with `RUN_COMPLETE_WEBHOOK_SECRET` if completion/failure replies are required.
 5. Rotate `TOKEN_ENCRYPTION_KEY` by prepending a new valid key while retaining old keys, then remove old keys only after stored tokens have been re-encrypted or retired.
 
-Focused tests should cover the registry's blank/alias/typed-value behavior, invalid LangSmith numeric and JSON settings during lifespan startup, sandbox override precedence and Store failure fallback, model-pair normalization/inheritance, gateway precedence, and the completion webhook's missing-secret and non-public-URL cases.
+Focused tests should cover the registry's blank/alias/typed-value behavior, invalid LangSmith numeric and JSON settings during lifespan startup, workspace snapshot defaults and Store failure fallback, model-pair normalization/inheritance, gateway precedence, and the completion webhook's missing-secret and non-public-URL cases.
 
 ## See also
 

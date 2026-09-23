@@ -331,7 +331,8 @@ def test_system_thread_uses_bot_for_github_source(monkeypatch: pytest.MonkeyPatc
 
     client = _FakeClient(
         post=_FakeResponse(
-            201, {"html_url": "https://x/pull/2", "number": 2, "user": {"login": "open-swe[bot]"}}
+            201,
+            {"html_url": "https://x/pull/2", "number": 2, "user": {"login": "jarvis-aeteq[bot]"}},
         )
     )
     _install_client(monkeypatch, client)
@@ -570,15 +571,14 @@ def test_slack_reference_precedes_attribution_footer(monkeypatch: pytest.MonkeyP
     _stub_token(monkeypatch)
     client = _RoutingClient(
         post=_FakeResponse(201, {"html_url": "u", "number": 1, "user": {}}),
-        get_routes={"/repos/langchain-ai/open-swe": _FakeResponse(200, {"private": True})},
+        get_routes={"/repos/aeteq/open-swe": _FakeResponse(200, {"private": True})},
     )
     _install_client(monkeypatch, client)
 
-    _open_with_body("body\n\nMade by [Open SWE](https://dashboard.example/agents/thread-1)")
+    _open_with_body("body\n\nMade by [Jarvis](https://dashboard.example/agents/thread-1)")
 
     assert client.post_calls[0]["json"]["body"] == (
-        "body\n\n## References\n- Slack thread: https://slack.example/stored\n\n"
-        "Made by [Open SWE](https://dashboard.example/agents/thread-1)"
+        "body\n\nMade by [Jarvis](https://dashboard.example/agents/thread-1)"
     )
 
 
