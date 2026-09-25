@@ -1,0 +1,1 @@
+Post a comment on the Notion task that started this run. Use it for essential questions, meaningful progress, plan-review links, and the final outcome; do not narrate routine steps. `text` is plain text; `[label](https://…)` links stay clickable. Replies arrive as new messages in this thread.

@@ -10,12 +10,25 @@ interface ReplyCardProps {
 }
 
 function headerLabel(
-  isLinear: boolean,
+  toolKind: ToolExecutionChunk["toolKind"],
   status: ToolExecutionChunk["status"]
 ): string {
   const pending = status === "in_progress" || status === "pending"
-  if (isLinear) return pending ? "Commenting on Linear…" : "Commented on Linear"
+  if (toolKind === "linear")
+    return pending ? "Commenting on Linear…" : "Commented on Linear"
+  if (toolKind === "notion")
+    return pending ? "Commenting on Notion…" : "Commented on Notion"
   return pending ? "Replying in Slack…" : "Replied in Slack"
+}
+
+function replyBody(chunk: ToolExecutionChunk): string {
+  const value =
+    chunk.toolKind === "linear"
+      ? chunk.input?.comment_body
+      : chunk.toolKind === "notion"
+        ? chunk.input?.text
+        : chunk.input?.message
+  return typeof value === "string" ? value : ""
 }
 
 type SlackTextObject = { type?: string; text?: string }
@@ -112,11 +125,9 @@ function renderSlackBlocks(blocks: Array<SlackBlock>): ReactNode {
 }
 
 export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
-  const isLinear = chunk.toolKind === "linear"
-  const body =
-    ((isLinear ? chunk.input?.comment_body : chunk.input?.message) as string) ||
-    ""
-  const blocks = !isLinear
+  const isMarkdown = chunk.toolKind === "linear" || chunk.toolKind === "notion"
+  const body = replyBody(chunk)
+  const blocks = !isMarkdown
     ? isSlackBlockArray(chunk.input?.blocks)
       ? chunk.input.blocks
       : blocksFromOptions(body, chunk.input?.options)
@@ -126,12 +137,12 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
     <div className="my-1">
       <div className="flex items-center gap-1.5 py-1 text-[12px] text-muted-foreground">
         <MessageCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span>{headerLabel(isLinear, chunk.status)}</span>
+        <span>{headerLabel(chunk.toolKind, chunk.status)}</span>
       </div>
       {body && (
         <div className="overflow-hidden rounded-xl border border-border/60 bg-muted/40">
           <div className="max-h-[250px] overflow-auto px-3 py-2 text-[14px] text-foreground">
-            {isLinear ? (
+            {isMarkdown ? (
               <Markdown content={body} />
             ) : blocks ? (
               renderSlackBlocks(blocks)

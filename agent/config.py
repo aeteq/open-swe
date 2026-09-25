@@ -283,6 +283,44 @@ ENV.var(
 ENV.var("SLACK_APP_ID", "Slack app id (A...) whose event deliveries Incidents accepts.")
 ENV.var("LINEAR_WEBHOOK_SECRET", "HMAC secret for Linear webhook deliveries.", secret=True)
 
+# --- Notion tasks ----------------------------------------------------------------------------
+ENV.var("NOTION_API_KEY", "Notion internal integration token for task webhooks.", secret=True)
+ENV.var(
+    "NOTION_WEBHOOK_SECRET",
+    "Verification token of the Notion webhook subscription, used to verify deliveries.",
+    secret=True,
+)
+ENV.var(
+    "NOTION_AGENT_USER_IDS",
+    "Comma-separated Notion user ids whose assignment to a task starts Open SWE.",
+)
+ENV.var(
+    "NOTION_TASKS_DATA_SOURCE_ID",
+    "Comma-separated Notion data source ids of the task databases Open SWE works from.",
+)
+ENV.var(
+    "NOTION_DOCUMENTS_DATA_SOURCE_ID",
+    "Notion data source id of the design documents linked from tasks.",
+)
+ENV.var("NOTION_ASSIGNEE_PROPERTY", "People property that assigns a task.", default="Assignee")
+ENV.var("NOTION_REPO_PROPERTY", "Property naming a task's repository.", default="Repository")
+ENV.var("NOTION_STATUS_PROPERTY", "Status property of a task.", default="Status")
+ENV.var("NOTION_PR_PROPERTY", "URL property receiving a task's PR.", default="Pull Request URL")
+ENV.var(
+    "NOTION_STARTABLE_STATUSES",
+    "Comma-separated task statuses from which Open SWE may start work.",
+    default="Not started,In progress",
+)
+ENV.var("NOTION_STATUS_IN_PROGRESS", "Task status once work starts.", default="In progress")
+ENV.var("NOTION_STATUS_IN_REVIEW", "Task status once a PR is open.", default="In review")
+ENV.var("NOTION_DESIGN_PROPERTY", "Relation from a task to its design documents.", default="Design")
+ENV.var("NOTION_DESIGN_STATUS_PROPERTY", "Status property of a design document.", default="Status")
+ENV.var(
+    "NOTION_DESIGN_APPROVED_STATUS",
+    "Design document status that lets linked tasks start.",
+    default="Approved",
+)
+
 # --- Dashboard ------------------------------------------------------------------------------
 ENV.var(
     "DASHBOARD_BASE_URL",

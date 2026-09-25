@@ -70,6 +70,15 @@ class LinearIssueRef(BaseModel):
     url: str = ""
 
 
+class NotionPageRef(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = ""
+    identifier: str = ""
+    url: str = ""
+    title: str = ""
+
+
 class GitHubIssueRef(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -82,6 +91,7 @@ class SourceContext(BaseModel):
 
     slack_thread: SlackThreadRef | None = None
     linear_issue: LinearIssueRef | None = None
+    notion_page: NotionPageRef | None = None
     github_issue: GitHubIssueRef | None = None
     pr_number: int | None = None
 

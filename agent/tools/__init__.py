@@ -7,6 +7,7 @@ _TOOL_MODULES = {
     "approve_plan": ".approve_plan",
     "background_execute": ".background_execute",
     "background_task": ".background_task",
+    "comment_on_notion_task": ".comment_on_notion_task",
     "create_automation": ".automations",
     "create_sandbox_file_download_url": ".create_sandbox_file_download_url",
     "delete_automation": ".automations",
@@ -72,6 +73,7 @@ __all__ = [
     "approve_plan",
     "background_execute",
     "background_task",
+    "comment_on_notion_task",
     "create_automation",
     "create_sandbox_file_download_url",
     "delete_automation",
@@ -158,6 +160,7 @@ if TYPE_CHECKING:
     )
     from agent.tools.background_execute import background_execute
     from agent.tools.background_task import background_task
+    from agent.tools.comment_on_notion_task import comment_on_notion_task
     from agent.tools.create_sandbox_file_download_url import create_sandbox_file_download_url
     from agent.tools.enter_plan_mode import enter_plan_mode
     from agent.tools.expedite_pr_approval import expedite_pr_approval

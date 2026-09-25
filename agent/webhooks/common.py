@@ -539,7 +539,7 @@ async def upsert_agent_thread_metadata(
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     category = "interactive"
     if source_context is not None:
-        if source_context.github_issue or source_context.linear_issue:
+        if source_context.github_issue or source_context.linear_issue or source_context.notion_page:
             category = "issue"
         elif source_context.pr_number:
             category = "pull_request"
@@ -980,6 +980,17 @@ def verify_linear_signature(body: bytes, signature: str, secret: str) -> bool:
 
     expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
+    return hmac.compare_digest(expected, signature)
+
+
+def verify_notion_signature(body: bytes, signature: str, secret: str) -> bool:
+    """Verify an ``X-Notion-Signature`` header (``sha256=<hex HMAC of the body>``)."""
+    if not secret:
+        logger.warning("NOTION_WEBHOOK_SECRET is not configured — rejecting webhook request")
+        return False
+    if not signature:
+        return False
+    expected = "sha256=" + hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 

@@ -20,7 +20,7 @@ import {
   IoLogoGithub,
   IoLogoSlack,
 } from "react-icons/io5"
-import { SiLinear } from "react-icons/si"
+import { SiLinear, SiNotion } from "react-icons/si"
 import { useEffect, useRef, useState } from "react"
 import type { ComponentType, SVGProps } from "react"
 
@@ -45,6 +45,7 @@ const SOURCE_META: Record<AgentSource, { icon: Icon; label: string }> = {
   github: { icon: IoLogoGithub, label: "Triggered from GitHub" },
   slack: { icon: IoLogoSlack, label: "Triggered from Slack" },
   linear: { icon: SiLinear, label: "Triggered from Linear" },
+  notion: { icon: SiNotion, label: "Triggered from Notion" },
   schedule: { icon: CalendarBlankIcon, label: "Triggered from a schedule" },
 }
 

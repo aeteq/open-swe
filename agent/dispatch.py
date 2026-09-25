@@ -69,7 +69,7 @@ V3_RUN_STREAM_MODES: tuple[str, ...] = (
 def _dispatch_input(content: ContentBlocks, source: str, configurable: dict[str, Any]) -> RunInput:
     surface: Surface = (
         source
-        if source in {"slack", "linear", "github", "web", "desktop", "eval"}
+        if source in {"slack", "linear", "notion", "github", "web", "desktop", "eval"}
         else "automation"
     )  # type: ignore[assignment]
     people: list[PersonIdentity] = []
@@ -117,9 +117,9 @@ def _dispatch_input(content: ContentBlocks, source: str, configurable: dict[str,
         if email:
             person["email"] = email
         people.append(person)
-    if not sender_id and surface == "linear" and email:
-        sender_id = f"linear:{email.lower()}"
-        people.append({"id": sender_id, "platform": "linear", "email": email})
+    if not sender_id and surface in ("linear", "notion") and email:
+        sender_id = f"{surface}:{email.lower()}"
+        people.append({"id": sender_id, "platform": surface, "email": email})
     kind = "human" if sender_id else "system"
     if not sender_id:
         sender_id = f"system:{source.replace('_', '-')}"

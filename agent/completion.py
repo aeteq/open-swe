@@ -25,6 +25,7 @@ from agent.github.app import get_github_app_installation_token
 from agent.github.comments import post_github_comment
 from agent.invocation import resolve_invocation_id, with_invocation_id
 from agent.linear.notifications import post_linear_notification
+from agent.notion.notifications import post_notion_comment
 from agent.review.findings import REVIEWER_THREAD_KIND
 from agent.review.publish import settle_review_check_run
 from agent.session_cost import schedule_session_cost_refresh
@@ -204,6 +205,13 @@ async def _post_failure_reply(
         if ctx.linear_issue and ctx.linear_issue.id:
             return await post_linear_notification(
                 ctx.linear_issue.id, _failure_text(status, reason_code=reason_code)
+            )
+        return False
+
+    if source == "notion":
+        if ctx.notion_page and ctx.notion_page.id:
+            return await post_notion_comment(
+                ctx.notion_page.id, _failure_text(status, reason_code=reason_code)
             )
         return False
 
