@@ -345,7 +345,7 @@ export function ModelDefaultsSection({
           settings={settings}
           models={models}
           label="Agent routing: performance"
-          description="Model used for complex reasoning and plan-mode turns."
+          description="Model used for complex reasoning."
           modelField="default_agent_routing_performance_model"
           effortField="default_agent_routing_performance_reasoning_effort"
         />
@@ -372,19 +372,6 @@ export function ModelDefaultsSection({
           description="Model used by delegated reviewer tasks."
           modelField="default_reviewer_subagent_model"
           effortField="default_reviewer_subagent_reasoning_effort"
-        />
-        <ModelRow
-          settings={settings}
-          models={models}
-          label="Open SWE Review Diff Grouping"
-          description={`Model used for the review's 'AI sorted' view that groups changed files into a logical walkthrough. ${
-            scoped
-              ? "Unset here it follows the instance setting, and only falls back to the Reviewer subagent default when the instance leaves it unset too."
-              : "Falls back to the Reviewer subagent default when unset."
-          }`}
-          modelField="default_grouping_model"
-          effortField="default_grouping_reasoning_effort"
-          inheritLabel="Reviewer subagent default"
         />
         <ModelRow
           settings={settings}

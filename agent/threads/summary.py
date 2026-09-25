@@ -37,6 +37,7 @@ _SURFACED_SOURCES: tuple[str, ...] = (
     "linear",
     "notion",
     "schedule",
+    "api",
 )
 # PR lifecycle states surfaced to the UI for a thread's associated pull request.
 _PR_STATES: frozenset[str] = frozenset({"draft", "open", "merged", "closed"})
@@ -170,7 +171,7 @@ def repo_config_from_metadata(metadata: Mapping[str, Any]) -> dict[str, str]:
     return {}
 
 
-def _run_status_to_agent_status(thread_status: str | None, run_status: str | None) -> str:
+def run_status_to_agent_status(thread_status: str | None, run_status: str | None) -> str:
     # "interrupted" wins over a still-``busy`` thread: cancellation is async, so a
     # just-cancelled thread reports busy for a moment and would otherwise look
     # like it is still running. Callers refresh the newest run's real status
@@ -360,7 +361,7 @@ async def _thread_summary(
     run_status = latest_run_status or (
         metadata_run_status if isinstance(metadata_run_status, str) else None
     )
-    status = _run_status_to_agent_status(thread_status, run_status)
+    status = run_status_to_agent_status(thread_status, run_status)
 
     pr_number = metadata.get("pr_number")
     pr_url = metadata.get("pr_url")
@@ -388,7 +389,6 @@ async def _thread_summary(
         "branch": metadata.get("branch_name") or metadata.get("base_branch") or "main",
         "model": model,
         "effort": effort,
-        "planMode": metadata.get("plan_mode") is True,
         "modelSelection": (
             metadata.get("model_selection")
             if metadata.get("model_selection") in {"auto", "explicit"}
@@ -478,24 +478,33 @@ async def _thread_summary(
     return summary
 
 
+def _status_of(run: Any) -> str | None:
+    raw = run.get("status") if isinstance(run, dict) else getattr(run, "status", None)
+    return raw.lower() if isinstance(raw, str) else None
+
+
 async def _latest_run_info(client: Any, thread_id: str) -> tuple[str | None, str | None]:
     try:
         runs = await client.runs.list(thread_id, limit=1)
+        # Follow-ups queued behind the live run are newer than it, and so is one
+        # withdrawn from the queue; the live run is still the one that says what
+        # the thread is doing. LangGraph also marks the thread idle when that
+        # withdrawal cancels a pending run, so this is the only busy signal left.
+        if runs and _status_of(runs[0]) in {"pending", "interrupted"}:
+            runs = await client.runs.list(thread_id, status="running", limit=1) or runs
     except Exception:  # noqa: BLE001
         logger.debug("Could not fetch latest run for thread %s", thread_id, exc_info=True)
         return None, None
     if not runs:
         return None, None
     run = runs[0]
-    raw_status = run.get("status") if isinstance(run, dict) else getattr(run, "status", None)
     raw_id = (
         (run.get("run_id") or run.get("id"))
         if isinstance(run, dict)
         else (getattr(run, "run_id", None) or getattr(run, "id", None))
     )
-    status = raw_status.lower() if isinstance(raw_status, str) else None
     run_id = raw_id if isinstance(raw_id, str) and raw_id else None
-    return status, run_id
+    return _status_of(run), run_id
 
 
 async def _refresh_latest_run_metadata(

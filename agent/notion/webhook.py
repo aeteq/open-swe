@@ -16,12 +16,10 @@ from langgraph_sdk import get_client
 from pydantic import JsonValue
 
 from agent.input_messages import (
-    PersonIdentity,
     RunInput,
     RunMessage,
     SystemIdentity,
     human_input,
-    person_introduction,
     system_input,
     system_introduction,
 )
@@ -266,13 +264,8 @@ async def _configurable(
     return configurable, workspace
 
 
-def _person_identity(user: NotionUser) -> PersonIdentity:
-    person: PersonIdentity = {"id": f"notion:{normalize_notion_id(user.id)}", "platform": "notion"}
-    if user.name:
-        person["display_name"] = user.name
-    if user.email:
-        person["email"] = user.email
-    return person
+def _sender_id(user: NotionUser) -> str:
+    return f"notion:{normalize_notion_id(user.id)}"
 
 
 async def _related_titles(client: NotionClient, page_ids: list[str]) -> list[str]:
@@ -574,13 +567,12 @@ async def _handle_comment(
         {"owner": str(repo["owner"]), "name": str(repo["name"])},
         requester,
     )
-    person = _person_identity(author)
+    # The comment's author triggers this run, and the run describes its sender itself.
     messages: list[RunMessage] = [
-        person_introduction(person),
         human_input(
             text,
             {
-                "sender_id": person["id"],
+                "sender_id": _sender_id(author),
                 "surface": "notion",
                 "kind": "human",
                 "data": {"comment_id": comment.id},

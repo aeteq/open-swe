@@ -15,6 +15,7 @@ import {
 test.describe("thread pull requests", () => {
   test("keeps pull requests from multiple repositories above the composer", async ({
     page,
+    request,
   }) => {
     await loginAs(page, SAME_USER);
     await openMultiRepoPrThreadViaSlackLink(page);
@@ -43,6 +44,15 @@ test.describe("thread pull requests", () => {
     await expect(hoverCard).toBeVisible();
     await expect(hoverCard).toContainText("anotherorg/companion #2");
     await expect(hoverCard).toContainText("Add companion integration");
+    const companion = (
+      (await (await request.get("/mock/github/data")).json()) as Array<{
+        repo: string;
+        number: number;
+        author: string;
+      }>
+    ).find((pr) => pr.repo === "anotherorg/companion" && pr.number === 2);
+    expect(companion?.author).toBeTruthy();
+    await expect(hoverCard).toContainText(companion!.author);
     await expect(hoverCard).toContainText("main");
     await expect(hoverCard).toContainText("add-integration");
     await expect(hoverCard).toContainText("1 file");

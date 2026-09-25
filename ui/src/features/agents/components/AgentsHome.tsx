@@ -95,7 +95,6 @@ export function AgentsHome({
     setSelection(next)
     persistModelSelection(next, session.data?.login ?? "")
   }
-  const [planMode, setPlanMode] = useState(false)
   const cloudEnabled = Boolean(session.data)
   const preferences = useQuery({
     queryKey: ["myPreferences"],
@@ -528,8 +527,8 @@ export function AgentsHome({
       modelConfigurable(activeSelection)
     if (repo) configurable.repo = repo
     if (repoOverride === null) configurable.repo_explicitly_none = true
-    configurable.visibility = visibility
-    if (planMode) configurable.plan_mode = true
+    configurable.thread_type =
+      visibility === "private" ? "private" : "workspace"
     if (selectedWorkspace) configurable.workspace = selectedWorkspace
 
     const handleCloudSubmitError = (error: unknown) => {
@@ -678,8 +677,6 @@ export function AgentsHome({
               selectedLocalRef?.worktreePath ? "Worktree" : undefined
             }
             onLocalWorkspaceModeChange={selectLocalWorkspaceMode}
-            planMode={planMode}
-            onPlanModeChange={runTarget === "cloud" ? setPlanMode : undefined}
             workspaceOptions={workspaces}
             selectedWorkspace={selectedWorkspace}
             onWorkspaceChange={

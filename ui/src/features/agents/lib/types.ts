@@ -213,6 +213,7 @@ export interface Message {
   structuredSenderKind?: "person" | "system"
   structuredSenderName?: string
   structuredSenderNote?: string
+  structuredSenderIsBot?: boolean
   structuredSurface?: string
   /** Id of the user message that opened this agent run and keys its diff artifact. */
   turnKey?: string
@@ -262,12 +263,22 @@ export interface AgentSchedule {
 export interface QueuedThreadMessage {
   id: string
   content: string
-  images?: Array<ImageChunk>
+  images?: Array<AnyImageChunk>
   createdAt: number
+  /** The server has not acknowledged it yet, so it cannot be sent now or cancelled. */
+  pending?: boolean
+  /** False when someone else sent it: only its sender may send it now or cancel it. */
+  mine?: boolean
 }
 
-export interface PendingThreadMessage extends QueuedThreadMessage {
+export interface PendingThreadMessage extends Omit<
+  QueuedThreadMessage,
+  "images" | "pending" | "mine"
+> {
+  images?: Array<ImageChunk>
   status: "sending" | "failed"
+  /** Sent to queue behind the live run, so it renders as a queued row. */
+  queued?: boolean
   /** Why delivery failed, e.g. `503 Service Unavailable`. */
   error?: string
 }
@@ -409,7 +420,6 @@ export interface AgentThread {
   model: string
   effort?: string | null
   modelSelection?: "auto" | "explicit" | null
-  planMode?: boolean
   planStatus?: string | null
   adminThread?: boolean
   source?: AgentSource
@@ -433,7 +443,6 @@ export interface AgentThread {
   codeChannelUrl?: string | null
   sandboxId?: string | null
   messages: Array<Message>
-  queuedMessages?: Array<QueuedThreadMessage>
   pendingMessages?: Array<PendingThreadMessage>
   pr?: AgentPullRequestSummary
   pullRequests?: Array<AgentPullRequest>
