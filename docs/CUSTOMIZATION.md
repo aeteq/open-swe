@@ -522,6 +522,25 @@ Both Slack and Linear support specifying a target repo directly in the message o
 
 Linear comments use the triggering user's dashboard default repository, then the workspace default repository. Users can override either on a per-comment basis by including `repo:owner/name` in their `@openswe` comment.
 
+### Customizing Notion tasks
+
+The Notion trigger (`agent/notion/`) reads task properties by name. Override the defaults when your database uses different names or status options:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NOTION_ASSIGNEE_PROPERTY` | `Assignee` | People property; assigning a `NOTION_AGENT_USER_IDS` member starts work |
+| `NOTION_REPO_PROPERTY` | `Repository` | Select, text, or URL naming `owner/name`, `name`, or a GitHub URL |
+| `NOTION_STATUS_PROPERTY` | `Status` | Status or select property of the task |
+| `NOTION_STARTABLE_STATUSES` | `Not started,In progress` | Statuses from which work may start; others are left alone |
+| `NOTION_STATUS_IN_PROGRESS` | `In progress` | Set when work starts |
+| `NOTION_STATUS_IN_REVIEW` | `In review` | Set when the PR opens |
+| `NOTION_PR_PROPERTY` | `Pull Request URL` | URL property receiving the PR link |
+| `NOTION_DESIGN_PROPERTY` | `Design` | Relation to design documents that gate the task |
+| `NOTION_DESIGN_STATUS_PROPERTY` | `Status` | Status property of a design document |
+| `NOTION_DESIGN_APPROVED_STATUS` | `Approved` | Design status that lets linked tasks start |
+
+A missing property or status option is logged and that write is skipped; the run still starts.
+
 ### Customizing Slack routing
 
 Slack repo resolution (`get_slack_repo_config` in `agent/webapp.py`) checks, in order:

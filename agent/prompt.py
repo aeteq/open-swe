@@ -57,6 +57,8 @@ def _render_source_guidance(source: str, slack_context: bool, slack_ask: bool = 
         name = "slack-ask" if slack_ask else "slack"
     elif source == "linear":
         name = "linear"
+    elif source == "notion":
+        name = "notion"
     elif source == "github":
         name = "github"
     elif source == "schedule":

@@ -11,6 +11,7 @@ from agent.github.app import get_github_app_installation_token
 from agent.github.comments import post_github_comment
 from agent.github.thread_token import get_github_token
 from agent.linear.notifications import post_linear_notification
+from agent.notion.notifications import post_notion_comment
 from agent.run_config import RunConfig
 from agent.slack.client import (
     LANGGRAPH_URL,
@@ -134,6 +135,10 @@ async def post_sandbox_unreachable_notification(
 
     if cfg.linear_issue and cfg.linear_issue.id:
         await post_linear_notification(cfg.linear_issue.id, message)
+        return
+
+    if cfg.notion_page and cfg.notion_page.id:
+        await post_notion_comment(cfg.notion_page.id, message)
         return
 
     github_target = _get_github_target(cfg)

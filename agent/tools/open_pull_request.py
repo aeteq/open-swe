@@ -20,6 +20,7 @@ from agent.github.app import get_github_app_installation_token
 from agent.github.comments import derive_pr_state
 from agent.github.pull_requests import PullRequest, ThreadLink
 from agent.github.token import GitHubUserAuthRequired
+from agent.notion.notifications import record_pull_request
 from agent.run_config import RunConfig
 from agent.slack.client import (
     get_active_slack_thread,
@@ -866,6 +867,13 @@ async def _build_source_reference_lines(cfg: RunConfig) -> list[str]:
             lines.append(f"- Linear ticket: [{identifier or url}]({url})")
         elif identifier:
             lines.append(f"- Linear ticket: {identifier}")
+    elif cfg.source == "notion" and cfg.notion_page:
+        page = cfg.notion_page
+        label = page.identifier or page.title or page.url
+        if page.url:
+            lines.append(f"- Notion task: [{label}]({page.url})")
+        elif label:
+            lines.append(f"- Notion task: {label}")
     elif cfg.source in ("github", "github_issue") and cfg.github_issue:
         url, number = cfg.github_issue.url, cfg.github_issue.number
         if url:
@@ -1119,7 +1127,7 @@ async def open_pull_request(
     author: str = "",
 ) -> dict[str, Any]:
     """Implement the `open_pull_request` tool."""
-    return await _open_pull_request(
+    result = await _open_pull_request(
         owner=owner,
         repo=repo,
         head=head,
@@ -1130,6 +1138,18 @@ async def open_pull_request(
         resolves_thread=resolves_thread,
         author=author or None,
     )
+    await _record_on_notion_task(result)
+    return result
+
+
+async def _record_on_notion_task(result: dict[str, Any]) -> None:
+    pr_url = result.get("url")
+    if not result.get("success") or not isinstance(pr_url, str) or not pr_url:
+        return
+    cfg = _configurable()
+    if cfg.source != "notion" or cfg.notion_page is None or not cfg.notion_page.id:
+        return
+    await record_pull_request(cfg.notion_page.id, pr_url, announce=result.get("created") is True)
 
 
 def _ref_name(pr: dict[str, Any], side: str) -> str:

@@ -165,6 +165,7 @@ from agent.tool_loaders.notion_mcp import load_notion_tools
 from agent.tools import (
     background_execute,
     background_task,
+    comment_on_notion_task,
     configure_repository,
     create_automation,
     create_sandbox_file_download_url,
@@ -546,6 +547,7 @@ def _is_subagent_excluded_tool(name: str) -> bool:
     return name.startswith("slack_") or name in {
         "background_execute",
         "background_task",
+        "comment_on_notion_task",
         "submit_thread_feedback",
         "submit_review_assessment_feedback",
         "get_thread",
@@ -729,6 +731,10 @@ def _slack_tools_enabled(cfg: RunConfig) -> bool:
     if _slack_ask_mode(cfg):
         return bool(cfg.slack_thread.channel_id.strip())
     return bool(cfg.slack_thread.channel_id.strip() and cfg.slack_thread.thread_ts.strip())
+
+
+def _notion_task_run(cfg: RunConfig) -> bool:
+    return cfg.source == "notion" and cfg.notion_page is not None and bool(cfg.notion_page.id)
 
 
 def _initial_reply_surface(cfg: RunConfig) -> ReplySurface:
@@ -1413,6 +1419,7 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         recreate_sandbox,
         report_platform_issue,
         schedule_thread_wakeup,
+        *((comment_on_notion_task,) if _notion_task_run(cfg) else ()),
         manage_code_channel,
         manage_incident,
         slack_add_reaction,

@@ -260,6 +260,7 @@ async def _identity_from_config(config: dict[str, Any]) -> CollaboratorIdentity 
     configurable = config.get("configurable", {})
     slack_thread = configurable.get("slack_thread", {})
     linear_issue = configurable.get("linear_issue", {})
+    notion_page = configurable.get("notion_page", {})
 
     github_login = _normalize_text(configurable.get("github_login"))
     if not github_login:
@@ -268,6 +269,7 @@ async def _identity_from_config(config: dict[str, Any]) -> CollaboratorIdentity 
     display_name = (
         _normalize_text(slack_thread.get("triggering_user_name"))
         or _normalize_text(linear_issue.get("triggering_user_name"))
+        or _normalize_text(notion_page.get("triggering_user_name"))
         or _normalize_text(configurable.get("user_email")).split("@", 1)[0]
     )
     github_user_id = configurable.get("github_user_id")
