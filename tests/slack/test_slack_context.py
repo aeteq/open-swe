@@ -1077,9 +1077,7 @@ def _setup_slack_mention_fakes(
         threads = _FakeThreadsClientForProcess()
 
     monkeypatch.setenv("DASHBOARD_BASE_URL", "https://app.example.com")
-    monkeypatch.setattr(
-        slack_webhooks, "get_langsmith_trace_url", lambda thread_id: "https://smith/x"
-    )
+    monkeypatch.setattr(slack_webhooks, "get_langsmith_trace_url", _fake_trace_url)
     monkeypatch.setattr(webhook_common, "SLACK_BOT_USERNAME", "jarvis-aeteq")
     monkeypatch.setattr(webhook_common, "get_slack_user_info", fake_get_slack_user_info)
     monkeypatch.setattr(

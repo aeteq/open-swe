@@ -591,7 +591,15 @@ def test_slack_reference_precedes_attribution_footer(monkeypatch: pytest.MonkeyP
 
 
 def test_footer_names_the_model_that_opened_the_pr(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_config(monkeypatch, {"source": "dashboard", "thread_id": "thread-1"})
+    _set_config(
+        monkeypatch,
+        {
+            "source": "dashboard",
+            "thread_id": "thread-1",
+            "resolved_agent_model_id": "openai:gpt-5.6-luna",
+            "resolved_agent_effort": "xhigh",
+        },
+    )
     monkeypatch.setattr(opr, "private_credential_login", AsyncMock(return_value="test-owner"))
     monkeypatch.setattr(opr, "_resolve_pr_author_token", lambda *_a, **_k: _coro(("tok", "user")))
     client = _RoutingClient(
@@ -613,7 +621,7 @@ def test_footer_names_the_model_that_opened_the_pr(monkeypatch: pytest.MonkeyPat
     _open_with_body("body")
 
     sent_body = client.post_calls[0]["json"]["body"]
-    assert sent_body.count("Made by [Open SWE]") == 1
+    assert sent_body.count("Made by [Jarvis]") == 1
     assert sent_body.endswith(" · openai:gpt-5.6-luna (xhigh)")
 
 

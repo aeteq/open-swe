@@ -177,7 +177,7 @@ def test_add_pr_collaboration_note_replaces_legacy_footer() -> None:
         github_login="octocat",
     )
 
-    body = "## Description\nDone.\n\n_Opened collaboratively by Mona Lisa and jarvis-aeteq._"
+    body = "## Description\nDone.\n\n_Opened collaboratively by Mona Lisa and open-swe._"
 
     assert add_pr_collaboration_note(body, identity) == (
         "## Description\nDone.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe)"
@@ -211,8 +211,7 @@ def test_add_pr_collaboration_note_names_the_model() -> None:
     assert add_pr_collaboration_note(
         "Done.", model_id="openai:gpt-5.6-luna", reasoning_effort="xhigh"
     ) == (
-        "Done.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe)"
-        " · openai:gpt-5.6-luna (xhigh)"
+        "Done.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe) · openai:gpt-5.6-luna (xhigh)"
     )
 
 
