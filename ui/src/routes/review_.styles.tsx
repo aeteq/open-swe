@@ -27,7 +27,7 @@ function ReviewStylesPage() {
       user={session.data}
       title="Review Style Prompts"
       description="Customize repository review style and approval policy. Run analysis to learn a style guide from past PR feedback."
-      backTo={{ to: "/review", label: "Back to Open SWE Review" }}
+      backTo={{ to: "/review", label: "Back to Jarvis Review" }}
     >
       <div className="rounded-lg border border-border bg-card">
         <ReviewStylesPanel />

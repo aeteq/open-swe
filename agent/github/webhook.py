@@ -660,8 +660,8 @@ async def process_github_push_event(payload: dict[str, Any]) -> None:
     if metadata is None or metadata.get("kind") != common.REVIEWER_THREAD_KIND:
         common.logger.info(
             "Push to %s/%s#%s ignored: no reviewer thread for this PR. "
-            "Trigger a first review (Slack `@open-swe review <url>` or request "
-            "open-swe[bot] as a GitHub reviewer) to start watching.",
+            "Trigger a first review (Slack `@jarvis-aeteq review <url>` or request "
+            "jarvis-aeteq[bot] as a GitHub reviewer) to start watching.",
             repo_config["owner"],
             repo_config["name"],
             pr_number,
@@ -831,10 +831,10 @@ async def process_github_ci_event(
 
 
 async def process_github_pr_comment(payload: dict[str, Any], event_type: str) -> None:
-    """Process a GitHub PR comment that tagged @open-swe.
+    """Process a GitHub PR comment that tagged @jarvis-aeteq.
 
     Retrieves the existing thread token, reacts with 👀, fetches all comments
-    since the last @open-swe tag, then creates or queues a new run.
+    since the last @jarvis-aeteq tag, then creates or queues a new run.
 
     Args:
         payload: The parsed GitHub webhook payload.
@@ -984,7 +984,7 @@ async def process_github_pr_comment(payload: dict[str, Any], event_type: str) ->
             authorized_login=github_login if common.thread_is_private(thread_metadata) else None,
         )
     if not comments:
-        common.logger.info("No comments found since last @open-swe tag for PR %s", pr_number)
+        common.logger.info("No comments found since last @jarvis-aeteq tag for PR %s", pr_number)
         return
 
     trusted = await _trusted_authors(github_login, comments=comments)
@@ -1035,7 +1035,7 @@ async def process_github_review_finding_reply(payload: dict[str, Any]) -> None:
 
     sender = payload.get("sender", {})
     sender_login = sender.get("login") if isinstance(sender, dict) else None
-    if sender_login == "open-swe[bot]":
+    if sender_login == "jarvis-aeteq[bot]":
         return
 
     repo = payload.get("repository", {})
@@ -1156,7 +1156,7 @@ async def process_github_review_finding_reply(payload: dict[str, Any]) -> None:
 
 
 async def process_github_issue(payload: dict[str, Any], event_type: str) -> None:
-    """Process a GitHub issue or issue comment that tagged @open-swe."""
+    """Process a GitHub issue or issue comment that tagged @jarvis-aeteq."""
     issue = payload.get("issue", {})
     repo = payload.get("repository", {})
     repo_config = {

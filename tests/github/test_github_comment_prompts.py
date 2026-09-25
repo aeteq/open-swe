@@ -177,10 +177,10 @@ def test_add_pr_collaboration_note_replaces_legacy_footer() -> None:
         github_login="octocat",
     )
 
-    body = "## Description\nDone.\n\n_Opened collaboratively by Mona Lisa and open-swe._"
+    body = "## Description\nDone.\n\n_Opened collaboratively by Mona Lisa and jarvis-aeteq._"
 
     assert add_pr_collaboration_note(body, identity) == (
-        "## Description\nDone.\n\nMade by [Open SWE](https://github.com/langchain-ai/open-swe)"
+        "## Description\nDone.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe)"
     )
 
 
@@ -190,19 +190,19 @@ def test_add_pr_collaboration_note_links_thread() -> None:
     assert add_pr_collaboration_note(
         body, thread_url="https://openswe.vercel.app/agents/abc-123"
     ) == (
-        "## Description\nDone.\n\nMade by [Open SWE](https://github.com/langchain-ai/open-swe)"
+        "## Description\nDone.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe)"
         " · [view thread](https://openswe.vercel.app/agents/abc-123)"
     )
 
 
 def test_add_pr_collaboration_note_replaces_an_existing_footer() -> None:
     """The footer is platform-owned: the agent's own line gives way to the canonical one."""
-    body = "## Description\nDone.\n\nMade by [Open SWE](https://openswe.vercel.app)"
+    body = "## Description\nDone.\n\nMade by [Jarvis](https://openswe.vercel.app)"
 
     assert add_pr_collaboration_note(
         body, thread_url="https://openswe.vercel.app/agents/abc-123"
     ) == (
-        "## Description\nDone.\n\nMade by [Open SWE](https://github.com/langchain-ai/open-swe)"
+        "## Description\nDone.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe)"
         " · [view thread](https://openswe.vercel.app/agents/abc-123)"
     )
 
@@ -211,7 +211,7 @@ def test_add_pr_collaboration_note_names_the_model() -> None:
     assert add_pr_collaboration_note(
         "Done.", model_id="openai:gpt-5.6-luna", reasoning_effort="xhigh"
     ) == (
-        "Done.\n\nMade by [Open SWE](https://github.com/langchain-ai/open-swe)"
+        "Done.\n\nMade by [Jarvis](https://github.com/aeteq/open-swe)"
         " · openai:gpt-5.6-luna (xhigh)"
     )
 
