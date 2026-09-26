@@ -3,6 +3,9 @@ type: contributor guide
 title: Open SWE Codebase Guide
 description: Start here to set up Open SWE, choose the entrypoint and owner for a safe change, and run focused validation. Links route contributors to the detailed architecture, workflow, integration, operations, and testing guides.
 tags: [open-swe, contributor-guide, development, langgraph, testing]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-26T12:44:40.906Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -16,8 +19,6 @@ sources:
     resource: repo://agent/scheduler.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
-  - id: openwiki-source-3096620cfd0eb1bae6d9e78c
-    resource: repo://agent/webapp.py
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
@@ -30,16 +31,9 @@ sources:
     resource: repo://pyproject.toml
   - id: openwiki-source-f0a6e7dc03522b2682f88655
     resource: repo://tests/conftest.py
-  - id: openwiki-source-859f98720585f4648f0f7b2e
-    resource: repo://tests/e2e/playwright.config.ts
-  - id: openwiki-source-4b944ec14a3d793a6f771403
-    resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 ---
 
 # Open SWE Codebase Guide
@@ -72,6 +66,7 @@ Python is async-first: implement the async path. Add a synchronous method only w
 | `agent.graphs.agent:traced_agent` | Main coding graph (`agent/server.py`) | Agent assembly, tools, skills, models, prompts, middleware, and coding sandbox preparation. |
 | `agent.graphs.reviewer:traced_reviewer_agent` | Reviewer graph (`agent/reviewer.py`) | Diff-grounded findings, review publication, reviewer sandbox behavior, and reviewer middleware. |
 | `agent.graphs.analyzer:traced_analyzer` | Style analyzer (`agent/analyzer.py`) | Repository review-style analysis and learned guidance. |
+| `agent.graphs.review_scout:traced_review_scout` | Review scout (`agent/review_scout/graph.py`) | Automated review triggering and scouting behavior. |
 | `agent.graphs.chat:traced_chat_agent` | PR chat (`agent/chat.py`) | Dashboard "chat with this PR," virtual PR files, and read-only repository access. |
 | `agent.graphs.scheduler:get_scheduler` | Scheduler (`agent/scheduler.py`) | Cron routing, scheduled work, stale-run repair, CI watches, background tasks, and cost refreshes. |
 | `agent.webapp:app` | FastAPI composition (`agent/api/app.py`) | Dashboard APIs/UI mount, health, plan/approval APIs, CORS, and webhook ingress. |

@@ -3,9 +3,6 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Comprehensive test infrastructure, focused validation strategies, and end-to-end flows for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
 sources:
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
@@ -45,7 +42,10 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-26T12:44:40.906Z
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -201,23 +201,6 @@ The desktop configuration selects only `desktop.spec.ts`, raises timeouts to 180
 
 ### Artifacts and replay
 
-Recording costs real time on every spec, so browser tests keep a **trace** (DOM-snapshot timeline + network + console + source) and **video** only for failed attempts locally and on first retry in CI; screenshots capture all failures. Set `E2E_ARTIFACTS=1` to record trace and video unconditionally for every attempt, saved under `test-results/` and `playwright-report/`:
+Recording costs real time on every spec, so browser tests keep a **trace** (DOM snapshots, network, console, source), **video**, and **screenshots on failure** only by default. Set `E2E_ARTIFACTS=1` to record everything under `test-results/` and `playwright-report/`, which is what you want when debugging a spec that passes but does the wrong thing.
 
-```bash
-pnpm exec playwright show-report                       # browse runs with Trace tab
-pnpm exec playwright show-trace test-results/<test>/trace.zip   # open trace directly
-```
-
-In CI the browser shards upload separate `playwright-report-*` artifacts; download, extract, and run `pnpm exec playwright show-report <dir>` (or drag a `trace.zip` to <https://trace.playwright.dev>) to replay any run.
-
-The E2E backend requires PostgreSQL: export `POSTGRES_URI` or run a throwaway `docker run -d -p 5433:5432 -e POSTGRES_PASSWORD=postgres postgres:16` with `POSTGRES_URI=postgresql://postgres:postgres@localhost:5433/postgres` before running tests or `langgraph dev`.
-
-## Focused validation philosophy
-
-Follow the AGENTS.md testing discipline:
-
-> Never run the full test suite locally; run only tests related to the change.
->
-> Add tests only when they meaningfully protect observable behavior. Do not add change-detector tests that merely restate constants, mappings, prompt text, source structure, or incidental interactions such as internal call order. Refactors that preserve behavior should not require mechanical test updates; rewrite or remove tests that do. Cover meaningful edge cases and keep tests deterministic.
-
-The test suite prioritizes determinism, coverage of actual observable behavior and system contracts, and resistance to incidental implementation details. When in doubt, skip the test if it merely documents stale design or would require updating after a mechanical refactor.
+In CI, the first retry retains trace and video for the failed attempt. Locally, they're kept only on failure (or explicitly via `E2E_ARTIFACTS=1`). Replay with `pnpm exec playwright show-trace test-results/<trace-file>.zip`.

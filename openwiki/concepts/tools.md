@@ -2,7 +2,7 @@
 type: tool catalog and authorization model
 title: Tool Catalog and Authorization
 description: How Open SWE exports curated tools, wires graph-specific and deferred tool surfaces, and enforces authorization and plan-mode controls. Use this page when safely adding or changing an agent capability.
-tags: [tools, agent, authorization, integrations, plan-mode, automation, reviewer]
+tags: [tools, agent, authorization, integrations, dynamics, automation, reviewer]
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -10,8 +10,8 @@ sources:
     resource: repo://agent/chat.py
   - id: openwiki-source-9103280889fa6c4d9c5bb0df
     resource: repo://agent/middleware/dynamic_tools.py
-  - id: openwiki-source-f26d060fb4408e89b50964a5
-    resource: repo://agent/middleware/plan_mode.py
+  - id: openwiki-source-a173dfbb2b1cf20f148d65ef
+    resource: repo://agent/middleware/exclude_tools.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
@@ -26,12 +26,10 @@ sources:
     resource: repo://agent/tools/automations.py
   - id: openwiki-source-dcf576fc340e5f1a2bc3f5f4
     resource: repo://agent/tools/read_user_settings.py
-  - id: openwiki-source-fef236c0a2029fbda76955d6
-    resource: repo://tests/agent/test_plan_mode.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-26T12:44:40.906Z
 ---
 
 # Tool Catalog and Authorization
@@ -71,11 +69,11 @@ This diagram distinguishes the import catalog from the graph-specific execution 
 
 ## Main coding agent assembly
 
-`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (approve_plan, enter_plan_mode, save_plan); background execution (background_execute, background_task); user instructions and skills; Linear; dashboard thread operations (list_threads, get_thread, manage_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management; PR creation (open_pull_request) and review request (request_pr_review); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); platform-issue reporting; and Slack tools. Signed sandbox download/service helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them.
+`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (`http_request`, `fetch_url`, `web_search`); plan lifecycle (`approve_plan`, `enter_plan_mode`, `save_plan`); background execution (`background_execute`, `background_task`); user instructions and skills; Linear; dashboard thread operations (`list_threads`, `get_thread`, `manage_thread`); notifications (`notify_automation_channel`, `submit_thread_feedback`, `submit_review_assessment_feedback`); baby-sit management; PR creation (`open_pull_request`) and review request (`request_pr_review`); sandbox recovery (`recreate_sandbox`); scheduling (`schedule_thread_wakeup`); safe user-settings lookup (`read_user_settings`); platform-issue reporting; and Slack tools. Signed sandbox download/service helpers (`output_iframe`, `create_sandbox_file_download_url`, `expose_port`) are included only when the run configuration enables them.
 
 The final list depends on trusted run context:
 
-- An `admin_thread` receives `ADMIN_TOOLS`: automation management (create_automation, update_automation, delete_automation, trigger_automation, list_automations), workspace management (list_workspaces, publish_workspace, refresh_workspace_start, delete_workspace), and organization-skill mutations (save_organization_skill, delete_organization_skill). The factory accepts the flag only after checking the triggering identity against the configured administrators, so metadata cannot transfer admin capability to a later participant.
+- An `admin_thread` receives `ADMIN_TOOLS`: automation management (`create_automation`, `update_automation`, `delete_automation`, `trigger_automation`, `list_automations`), workspace management (`list_workspaces`, `publish_workspace`, `refresh_workspace_start`, `delete_workspace`, `configure_repository`), and organization-skill mutations (`save_organization_skill`, `delete_organization_skill`). The factory accepts the flag only after checking the triggering identity against the configured administrators, so metadata cannot transfer admin capability to a later participant.
 - A desktop `local_run` receives only `http_request`, `fetch_url`, and `web_search`. A `stop_summary` run initially receives only Slack thread reading and reply. In both cases, integration groups are not collected.
 - Slack operations are removed unless trusted Slack context enables them. This filtering occurs after the mode-specific list is chosen.
 - The general-purpose subagent gets the applicable static list except `background_execute` and `background_task`; separately compiled subagent graphs do not inherit parent middleware. Dynamic integration middleware is explicitly passed to it.
@@ -116,7 +114,7 @@ Integration loading is also a credential boundary. Notion schemas require an `on
 | Analyzer | Only `save_review_style_prompt` and `read_finding_outcomes`, supporting repository review-style guidance. |
 | PR chat | `read_repo_file`, `search_repo_code`, `list_review_findings`, `web_search`, and `fetch_url`, with a read-only virtual-file surface. |
 
-PR chat intentionally has no sandbox. It excludes shell and write built-ins (execute, write_file, edit_file, delete), and its delegated subagent allowlists only `read_file`, `ls`, `glob`, and `grep`. The chat preparation middleware acquires a repository-scoped GitHub App installation token for the GitHub-backed read tools; PR overview, diff, and findings are supplied as virtual `/pr/` files by the review-chat API.
+PR chat intentionally has no sandbox. It excludes shell and write built-ins (`execute`, `write_file`, `edit_file`, `delete`), and its delegated subagent allowlists only `read_file`, `ls`, `glob`, and `grep`. The chat preparation middleware acquires a repository-scoped GitHub App installation token for the GitHub-backed read tools; PR overview, diff, and findings are supplied as virtual `/pr/` files by the review-chat API.
 
 ## Tool-side authorization and safe responses
 
@@ -126,11 +124,11 @@ Automation operations repeat their authorization with `require_admin`, which che
 
 This pattern is required for tools with sensitive side effects: validate trusted runtime identity and resource scope inside the tool, do not rely on model arguments or thread metadata, and turn anticipated operational failures into actionable tool results.
 
-## Plan mode is stateful tool gating
+## Tool exclusion and graph access control
 
-Plan mode is a deliberately partial safety control, not simply a different prompt. `PlanModeMiddleware` is installed on every main graph and resets `plan_mode` to the run's configured initial value before execution; this prevents a persisted state from a previous run from silently affecting a later one. It recalculates the tool list on every model call, so an in-run `enter_plan_mode` command takes effect on the next turn.
+The main agent wires `ExcludeToolsMiddleware` to filter built-in and curated tools from the model without rebuilding the entire graph. This middleware runs after tool-injecting middleware (Deep Agents' `FilesystemMiddleware`, subagent `SubAgentMiddleware`) so it can remove middleware-injected tools too.
 
-When active, `PLAN_MODE_EXCLUDED_TOOLS` removes side-effecting external and administrative tools: delegation (task), background execution (background_execute, background_task), browser interaction (expose_port), mutable HTTP requests (http_request), baby-sit and thread mutation (manage_baby_sit, manage_thread), PR actions (open_pull_request, request_pr_review), sandbox reset/recreation (recreate_sandbox), user skills (save_user_skill, delete_user_skill), mutable Linear actions, Slack moves/new threads (slack_move_thread, slack_start_new_thread), environment mutation, automation mutation (create_automation, update_automation, trigger_automation, delete_automation), expedite_pr_approval, and workspace mutations (publish_workspace, refresh_workspace_start, delete_workspace). Read-only thread lookup (list_threads, get_thread), plan approval (approve_plan), and `read_file`, `write_file`, `edit_file`, and `execute` remain available. The latter filesystem and shell capabilities are constrained by planning instructions to plan artifacts outside cloned repositories, rather than being technically prevented from changing files; `task` is excluded precisely because its independent subagent would bypass the parent gate.
+Access control is mode-specific. `DEEP_AGENT_EXCLUDED_TOOLS` hides only `grep`. `STOP_SUMMARY_EXCLUDED_TOOLS` additionally removes write and shell capabilities (`delete`, `edit_file`, `execute`, `task`, `write_file`) for incomplete work contexts. `SLACK_ASK_EXCLUDED_TOOLS` removes thread-mutation and incident-scoped tools. When incidents run in automatic mode, `INCIDENT_AUTOMATIC_EXCLUDED_TOOLS` removes mutation capabilities the incident policy forbids. `DM_EXCLUDED_TOOLS` removes `slack_add_reaction` from direct-message contexts.
 
 ## Safely extending a tool
 
@@ -138,7 +136,7 @@ When active, `PLAN_MODE_EXCLUDED_TOOLS` removes side-effecting external and admi
 2. Wire it only into the graph(s) that need it. Decide whether desktop, stop-summary, Slack, admin-thread, or subagent filtering applies.
 3. Reserve the name against Deep Agents built-ins and static/dynamic integration names. For expensive or credentialed integrations, use an `IntegrationGroup` and make loading failure recoverable.
 4. Put authorization and scope checks at the tool boundary; derive actor and resource identity from trusted runtime context where possible. Keep secrets server-side and return redacted status/error data.
-5. Add focused behavior tests: catalog/graph composition and mode filtering, authorization denial, credential/scope handling, success and failure results, and plan-mode exclusion for each new mutation. Run only the relevant pytest target, as repository guidance requires.
+5. Add focused behavior tests: catalog/graph composition and mode filtering, authorization denial, credential/scope handling, success and failure results, and exclusion patterns for each new mutation. Run only the relevant pytest target, as repository guidance requires.
 
 ## Related pages
 

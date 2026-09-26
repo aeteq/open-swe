@@ -5,7 +5,7 @@ description: The dashboard's FastAPI API, React/TanStack Start serving and proxy
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-26T12:44:40.906Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -21,6 +21,8 @@ sources:
     resource: repo://agent/dashboard/routes.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
+  - id: openwiki-source-10938886c8b24d0cdc72ad9e
+    resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
   - id: openwiki-source-82825a65559de3e8581a123a
@@ -35,13 +37,17 @@ sources:
     resource: repo://agent/utils/dashboard_ui.py
   - id: openwiki-source-f94f5d5d16b6aac2f4bc309c
     resource: repo://desktop/src/backend-supervisor.cjs
+  - id: openwiki-source-62d0819e47a738ba26f898fd
+    resource: repo://tests/dashboard/test_dashboard_thread_api_activity.py
+  - id: openwiki-source-654bec991273a9eb3ccdf2c1
+    resource: repo://tests/dashboard/test_dashboard_thread_api.py
   - id: openwiki-source-cee8c9d42a08db69733a075f
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-3b0d59e2570cb537382d8c12
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 ---
 
 # Dashboard and Desktop Clients
@@ -124,7 +130,7 @@ The experimental Electron package bundles the compiled UI at `open-swe://app`. I
 
 `BackendSupervisor` starts the local graph lazily and shares the in-progress readiness promise. It reserves a `127.0.0.1` port, creates a random bearer token, verifies required project/worktree paths, and starts `uv run langgraph dev` with `langgraph.desktop.json` in development or the bundled Python runtime/configuration when packaged. It passes the token, project allowlist, worktree directory, and an out-of-project artifact location to the child. Startup polls the authenticated loopback root for up to 60 seconds and includes retained child logs in failures. The stable renderer configuration is `{ apiUrl: "/local-graph", graphId: "agent" }`; the proxy strips renderer cookies, injects the bearer token, and does not expose the actual port. Shutdown clears supervisor state, sends `SIGTERM`, and escalates to `SIGKILL` after five seconds.
 
-A `source == "desktop"` run selects `LocalShellBackend`, not a cloud sandbox. `local_project_path` must resolve to an existing allowlisted project directory or a desktop-managed worktree. The local factory uses local model defaults and state-backed user skills, disables cloud sandbox file downloads, and routes `large_tool_results` and conversation history into sanitized per-thread artifact directories outside the project. This preserves the graph protocol while limiting filesystem authority to the selected project and preventing agent scratch files from appearing in its working tree.
+A `source == "desktop"` run selects `LocalShellBackend`, not a cloud sandbox. `local_project_path` must resolve to an existing allowlisted project directory or a desktop-managed worktree. The local factory uses local model defaults, disables cloud sandbox file downloads, exposes state-backed user skills rather than organization skills, and routes `large_tool_results` and conversation history into sanitized per-thread artifact directories outside the project. This preserves the graph protocol while limiting filesystem authority to the selected project and preventing agent scratch files from appearing in its working tree.
 
 ## Focused verification
 

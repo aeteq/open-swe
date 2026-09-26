@@ -1,10 +1,11 @@
 ---
-type: "Reference"
-title: "Context and Prompt Engineering"
-openwiki_generated: true
+type: workflow
+title: Prompt and Context Assembly
+description: How input messages, source context, and prompts are built deterministically from events, assembled into model inputs, and prepared with proper instruction precedence.
+tags: [context, prompts, input-messages, instruction-precedence, agents-md, dynamic-context]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-26T12:44:40.906Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -18,12 +19,6 @@ sources:
     resource: repo://agent/middleware/subdir_agents.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
-  - id: openwiki-source-831a61cf0d244a1110b88ee7
-    resource: repo://agent/resources/prompts/system/repo-instructions.md
-  - id: openwiki-source-b9f79efedc04e7c2fba97ee5
-    resource: repo://agent/resources/prompts/system/repository-setup.md
-  - id: openwiki-source-35789ab14ab6159e9aedc976
-    resource: repo://agent/resources/prompts/system/user-instructions.md
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
   - id: openwiki-source-db8a5812295508f44c54b439
@@ -32,13 +27,12 @@ sources:
     resource: repo://agent/utils/agents_md.py
   - id: openwiki-source-ff16fde3cd496fd0b8de20da
     resource: repo://agent/utils/analyzer_skills.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 ---
 
+# Prompt and Context Assembly
 
-# Context and Prompt Engineering
-
-Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
+Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `create_durable_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
 
 ```mermaid
 sequenceDiagram
@@ -62,9 +56,9 @@ This shows the separation between event normalization at dispatch and run-specif
 
 ## Normalized input transcript
 
-`agent/input_messages.py` is the serialization boundary for application-owned input. A human or system message is represented as an `<input-message>` envelope with a namespaced sender, surface, kind, optional channel, structured `<data>`, and escaped content. It supports multimodal block lists by enveloping text blocks while preserving non-text blocks. Entity introductions appear first as content-addressed `<dynamic-context>` messages for people, channels, and systems. Channel `topic` and `purpose` are explicitly marked `trust="untrusted"`; they are context, not trusted instructions.
+`agent/input_messages.py` is the serialization boundary for application-owned input. A human or system message is represented as an `<input-message>` envelope with a namespaced sender, surface, kind, optional channel, structured `<data>`, and escaped content. It supports multimodal block lists by enveloping text blocks while preserving non-text blocks. Entity introductions appear first as content-addressed `<dynamic-context>` messages for people, channels, and systems. Channel `topic` and `purpose` are explicitly marked as untrusted; they are context, not trusted instructions.
 
-The generic dispatcher derives identities when an adapter has not supplied a complete input: Slack uses the triggering-user and channel information in `RunConfig`; GitHub login or Linear email supplies a person identity; otherwise the event is attributed to a synthetic system identity. Adapters can instead pass a deliberately ordered prebuilt transcript, which is necessary when history contains several participants or system/bot messages.
+The generic dispatcher derives identities when an adapter has not supplied a complete input. For Slack, it uses the triggering-user and channel information in `RunConfig`; for GitHub or Linear, a GitHub login or Linear email supplies a person identity; otherwise the event is attributed to a synthetic system identity. Adapters can instead pass a deliberately ordered prebuilt transcript, which is necessary when history contains several participants or system/bot messages.
 
 ### Surface-specific history
 
@@ -74,13 +68,13 @@ The generic dispatcher derives identities when an adapter has not supplied a com
 
 ### Dynamic context across turns
 
-An introduction includes a SHA-256 hash of canonical XML. `build_input_messages` suppresses identities already supplied to that construction, while thread metadata records injected hashes across invocations. The visible-message check accounts for deepagents summarization: only contexts at or after the summarization cutoff count as visible, allowing a forgotten identity to be introduced again. Parsing helpers also validate sender/entity identifiers and safely ignore malformed XML rather than treating it as authoritative context.
+An introduction includes a SHA-256 hash of its canonical XML representation. `visible_dynamic_context_hashes` identifies contexts still visible to the model and suppresses reintroduction of hashes already present. This accounts for deepagents summarization: when summarization replaces earlier messages with a summary, contexts at or after the cutoff remain visible, while those before it are gone from the prompt even though they persist in state. Only hashes in the visible range count as introduced, allowing a forgotten identity to be reintroduced when the model encounters a message from that sender again. Parsing helpers validate sender/entity identifiers and safely ignore malformed XML rather than treating it as authoritative context.
 
 ## Provenance is persistent metadata, not the transcript
 
 `SourceContext` records the durable routing origin: a Slack thread, Linear issue, GitHub issue, and/or PR number. Webhook/adapters upsert it under `source_context` in LangGraph thread metadata; the first nonempty origin is preserved when later messages arrive, and the same record is carried by baby-sit watches. This is a pointer used for communication and lifecycle behavior, whereas the normalized `RunInput` carries what the model should see now.
 
-The type is intentionally tolerant of distributed writers. All context models allow unknown fields and `dump()` uses `exclude_unset=True`, preserving unrecognized data through a read-enrich-write cycle instead of inventing defaults. `parse()` accepts only mappings and returns an empty context—with a warning on validation failure—rather than failing a run on malformed historical metadata.
+The type is intentionally tolerant of distributed writers. All `SourceContext` models allow unknown extra fields via `extra="allow"` and `dump()` uses `exclude_unset=True`, preserving unrecognized data through a read-enrich-write cycle instead of inventing defaults. `parse()` accepts only mappings, returns an empty context with a warning on validation failure, and never raises—rather than failing a run on malformed historical metadata.
 
 ## Prompt preparation and instruction ordering
 

@@ -48,10 +48,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-26T12:44:40.906Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -120,7 +120,7 @@ A fired cron row remains in LangGraph even after `end_time`. Before scheduling, 
 
 ### Durable watch ownership
 
-A `BabySitWatch` is stored under the lower-cased `owner/repo#pr_number` key in `baby_sit_watches`. It binds a PR's head SHA/ref, GitHub App installation, originating agent thread, selected run configuration, and `SourceContext`; its durable fields also hold retries, check-set settling, failure-dispatch keys, webhook deliveries, alerts, evaluation errors, and cron ID.
+A `BabySitWatch` is stored under the lower-cased `owner/repo#pr_number` key in `baby_sit_watches`. It binds a PR's head SHA/ref, GitHub App installation, originating agent thread, selected run configuration, and `SourceContext`; its durable fields also hold retries, failure-dispatch keys, webhook deliveries, alerts, evaluation errors, and cron ID.
 
 Only one active originating thread may watch a PR. Starting from another thread is rejected. Restarting the same PR on the same head retains retry and dedupe state; a different head starts that state over. Start saves the watch then ensures one `*/10 * * * *` UTC scheduler cron, reusing a matching cron and deleting duplicates. For a new watch, a cron-creation failure rolls back its row and any partial cron. Stopping normally removes its cron and row; if cron deletion fails, the row is retained but marked inactive so it cannot evaluate again.
 
@@ -150,13 +150,13 @@ Diagram: immediate signed CI events and the polling fallback converge on one ser
 
 The GitHub route verifies `X-Hub-Signature-256` before accepting a request. CI events (`check_run`, `check_suite`, `workflow_run`, and `status`) are processed in the background. `handle_ci_webhook` ignores non-failing payloads, selects active watches in the repository whose stored SHA or branch matches, updates a supplied installation ID, and records a delivery ID before evaluating; repeated deliveries do not cause a second evaluation.
 
-The ten-minute cron is the deterministic fallback for lost or delayed webhooks. `evaluate_watch` obtains a five-minute per-watch lock implemented as a short-lived LangGraph thread. A concurrent trigger returns `busy`; otherwise it fetches the PR and current check/status sets. Pending, settling, and duplicate states return without dispatching an agent run, so unchanged cron polling consumes no model tokens.
+The ten-minute cron is the deterministic fallback for lost or delayed webhooks. `evaluate_watch` obtains a five-minute per-watch lock implemented as a short-lived LangGraph thread. A concurrent trigger returns `busy`; otherwise it fetches the PR and current check/status sets. Pending, duplicate states, and unchanged states return without dispatching an agent run, so unchanged cron polling consumes no model tokens.
 
 ### Evaluation, dispatch, and terminal results
 
-Evaluation first stops a closed or merged PR. A head-SHA change resets retries, settling, failure-dispatch keys, and alert keys. The aggregate is `failure` when a completed failing check or failing/error commit status exists; `pending` while checks are incomplete or absent; `blocked` for completed, non-successful states that are not rerunnable failures; and `success` only for a nonempty all-successful/neutral/skipped set.
+Evaluation first stops a closed or merged PR. A head-SHA change resets retries, failure-dispatch keys, and alert keys. The aggregate is `failure` when a completed failing check or failing/error commit status exists; `pending` while checks are incomplete or absent; `blocked` for completed, non-successful states that are not rerunnable failures; and `success` only for a nonempty all-successful/neutral/skipped set.
 
-A success is deliberately not immediate: the exact check-set fingerprint must remain unchanged for 10 minutes before the watch reports completion. This avoids declaring green while CI is still adding checks. A new failing state is deduplicated by a SHA-and-retry-count fingerprint. If not already dispatched, the service resumes the originating thread with `/baby-sit --continue`, an explicit warning that failures and fetched logs are untrusted, and instructions to verify the head and complete check set before confidence-gated diagnosis. If dispatch itself fails, the fingerprint is removed so a future trigger can retry.
+A new failing state is deduplicated by a SHA-and-retry-count fingerprint. If not already dispatched, the service resumes the originating thread with `/baby-sit --continue`, an explicit warning that failures and fetched logs are untrusted, and instructions to verify the head and complete check set before confidence-gated diagnosis. If dispatch itself fails, the fingerprint is removed so a future trigger can retry.
 
 The agent may rerun only evidence-backed flaky GitHub Actions failures. After a successful rerun it calls `manage_baby_sit(action="record_retry")`; the service checks ownership, head SHA, and a three-retry-per-head cap, then increments durable state. It posts the flaky-CI alert only once per head/check/safe GitHub URL. Deterministic, ambiguous, external-provider, and permission failures should instead stop the watch and report a blocker.
 
@@ -168,7 +168,7 @@ The agent may rerun only evidence-backed flaky GitHub Actions failures. After a 
 
 ## Focused verification
 
-- `tests/agent/test_baby_sit.py` covers watch cron lifecycle, per-key concurrency, failure and webhook deduplication, SHA reset, settling before success, fallback notification, retry cap, and scheduler routing.
+- `tests/agent/test_baby_sit.py` covers watch cron lifecycle, per-key concurrency, failure and webhook deduplication, SHA reset, and scheduler routing.
 - `tests/github/test_baby_sit_webhook.py` checks that supported CI events reach background processing only with a valid signature. `tests/tools/test_manage_baby_sit.py` exercises configured-repository enforcement and watch startup context.
 - `tests/reviewer/test_reconcile_sweep.py` covers stale-only cancellation, pagination, malformed timestamps, and per-thread failure isolation.
 - `tests/agent/test_session_cost.py` and `tests/agent/test_agent_cost.py` verify cost correlation, persistence, bounded retries, and final exhaustion. `tests/tools/test_schedule_thread_wakeup.py` verifies delay bounds, trace/webhook wiring, budget reset semantics, and cleanup behavior.

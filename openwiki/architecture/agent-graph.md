@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled for an execut
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-26T12:44:40.906Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -13,8 +13,6 @@ sources:
     resource: repo://agent/graphs/agent.py
   - id: openwiki-source-9103280889fa6c4d9c5bb0df
     resource: repo://agent/middleware/dynamic_tools.py
-  - id: openwiki-source-f26d060fb4408e89b50964a5
-    resource: repo://agent/middleware/plan_mode.py
   - id: openwiki-source-de97adb0acb9dec0664a44b6
     resource: repo://agent/middleware/prepare_run.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
@@ -35,7 +33,7 @@ sources:
     resource: repo://tests/agent/test_factory_tool_loading.py
   - id: openwiki-source-36e029ef147f9810c97b2c29
     resource: repo://tests/models/test_agent_subagent_models.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 ---
 
 # Coding Agent Assembly
@@ -103,15 +101,15 @@ The ordered `skill_sources` list is supplied to both the parent and the general-
 
 The parent gets a curated static tool list. Slack tools require trusted Slack or schedule source context with a channel and thread timestamp. Authorized admin threads add environment, organization-skill, sandbox-reset, and automation controls. Sandbox download/service URL tools require the LangSmith sandbox provider and are omitted for desktop and stop-summary runs. Desktop is restricted to `http_request`, `fetch_url`, and `web_search`; stop-summary mode is restricted to Slack read and reply.
 
-`ExcludeToolsMiddleware` removes Deep Agents' `grep` in normal runs. In stop-summary mode it also removes mutating filesystem and delegation tools. Plan mode applies a distinct filter that removes delegation and external mutation—including `task`, browser actions, HTTP requests, PR/thread/sandbox operations, and selected Slack, Linear, skill, environment, and automation tools. File editing and `execute` remain available, so the plan-mode shell read-only expectation is prompt-enforced rather than a hard execution boundary.
+`ExcludeToolsMiddleware` removes Deep Agents' `grep` in normal runs. In stop-summary mode it also removes mutating filesystem and delegation tools. Plan mode, when active via `enter_plan_mode` during a run, applies a distinct filter that removes delegation and external mutation—including `task`, browser actions, HTTP requests, PR/thread/sandbox operations, and selected Slack, Linear, skill, environment, and automation tools. File editing and `execute` remain available, so the plan-mode shell read-only expectation is prompt-enforced rather than a hard execution boundary.
 
 Integration schemas are exposed through `DynamicToolMiddleware`, not appended directly to the static list. MCP tools (Corridor) are eagerly loaded during factory assembly with their names eagerly available (with loader failures and timeouts yielding no tools); their schemas become usable only after `load_integration_tools`. The middleware resets selected integration tools at run start, prevents direct calls before selection, serializes construction per group, and reserves static/Deep Agent names to reject collisions.
 
-## Plan mode and subagent boundary
-
-`PlanModeMiddleware` is installed for every graph. At run start it resets `plan_mode` in state to the factory's `configurable.plan_mode is True` value, preventing stale state from a prior run leaking forward. It filters every model request, so `enter_plan_mode` can restrict the very next turn in the same run. Excluding `task` is essential: the general-purpose subagent compiles as an independent graph and does not inherit the parent's plan-mode filter.
+## Subagent boundary and independent compilation
 
 The only configured subagent is the Deep Agents general-purpose subagent. It receives the Open SWE shared base plus Deep Agents task mechanics, the same ordered skills, static tools excluding background execution/tasks and parent-context-sensitive Slack/thread/user-settings tools, and a description requiring Slack communication to be relayed through the parent. Because it compiles independently, parent middleware does not wrap it. It therefore receives its own dynamic-tool and exclusion middleware, workflow-push guard, OpenAI response sanitization, model-error handling, and model-call timeout.
+
+Plan-mode tool exclusion is critical to the subagent boundary: the general-purpose subagent does not inherit the parent's runtime plan-mode filter, so excluding `task` (and other delegation tools) prevents the parent's `enter_plan_mode` command from being bypassed by delegating to an independently compiled subagent that would not see the restriction.
 
 ## Middleware order is behavior
 
@@ -120,7 +118,7 @@ The supplied parent list is ordered outermost to innermost:
 1. Conversation offloading, `PrepareAgentRunMiddleware`, incident and workspace skills, then optional `DynamicToolMiddleware`.
 2. Input sanitation, image validation, `ModelCallLimitMiddleware`, tool-error conversion, tool exclusion, subdirectory reads, and retry for `task`.
 3. PR/workflow guards, GitHub proxy refresh, and—outside stop summaries—message-queue checking.
-4. Timeout wrap-up, step-limit notification, usage recording, optional model selection routing, optional model fallback, and plan-mode filtering.
+4. Timeout wrap-up, step-limit notification, usage recording, optional model selection routing, optional model fallback, and tool-exclusion filtering based on current state.
 5. Provider/thinking sanitizers, stable tool-result ordering, model-error handling, then `ModelCallTimeoutMiddleware`.
 
 The innermost timeout measures the provider call itself and can propagate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside `ToolErrorMiddleware`. `create_deep_agent` supplies its own `PatchToolCallsMiddleware`, so the factory must not add the obsolete custom orphaned-tool-call repairer.
