@@ -3,6 +3,9 @@ type: architecture
 title: Review and Style Analysis Graphs
 description: Architecture of the isolated reviewer and review-style analyzer graphs, including repository preparation, durable finding reconciliation and publication, per-repository style persistence, and continual analysis scheduling.
 tags: [reviewer, analyzer, code-review, findings, review-style, langgraph, sandbox, github]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-26T12:44:40.906Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -10,8 +13,6 @@ sources:
     resource: repo://agent/review/analyzer_cron.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
     resource: repo://agent/review/findings.py
-  - id: openwiki-source-70a93c845bc5a2d41669d55f
-    resource: repo://agent/review/groups.py
   - id: openwiki-source-33d4d2e6efc682b86ebf1624
     resource: repo://agent/review/publish.py
   - id: openwiki-source-290b6c9567021d70bc012c7c
@@ -40,10 +41,7 @@ sources:
     resource: repo://tests/reviewer/test_factory_config_isolation.py
   - id: openwiki-source-c2a2305421bcb0df9ae61668
     resource: repo://tests/reviewer/test_reviewer_findings.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-26T12:44:40.906Z" }
 ---
 
 # Review and Style Analysis Graphs
@@ -73,7 +71,7 @@ It permits one `reviewer` subagent. The parent assigns a disjoint file partition
 
 The middleware computes the review range and its unified diff, including delta-only re-review ranges, then derives the changed `(file, side, line)` set. It puts `diff_text` and `diff_line_set` in run state. This lets `add_finding` reject invalid anchors at creation time rather than waiting for GitHub to reject a batch.
 
-In parallel, preparation fetches PR title and body, existing GitHub review threads, saved repository style, organization guidelines, root and scoped `AGENTS.md`/`CLAUDE.md` from the base SHA, an API standards skill, and optional author trace context. Existing threads are reconciled before their prompt block is rendered. Once the diff is available, scoped instructions are selected for changed files. The rendered prompt then selects first-review, re-review, or finding-reply guidance. Diff grouping is started as a background best-effort task and never blocks the review.
+In parallel, preparation fetches PR title and body, existing GitHub review threads, saved repository style, organization guidelines, root and scoped `AGENTS.md`/`CLAUDE.md` from the base SHA, an API standards skill, and optional author trace context. Existing threads are reconciled before their prompt block is rendered. Once the diff is available, scoped instructions are selected for changed files. The rendered prompt then selects first-review, re-review, or finding-reply guidance.
 
 ```mermaid
 flowchart TD
@@ -163,4 +161,4 @@ The cron itself is threadless, but its configurable explicitly provides the dete
 
 ## Focused tests
 
-The reviewer suite covers config isolation, diff and tool validation (including LEFT-side anchors), durable finding behavior, publishing and marker rendering, reconciliation, background diff groups, trace context, trigger/watch behavior, and review API/chat paths. In particular, `test_factory_config_isolation.py` protects the reviewer config-copy invariant; `test_reviewer_tools.py` exercises validation and persistence decisions; `test_reviewer_reconcile.py` covers marker backfill and terminal-thread rules; and `test_reviewer_publish.py` covers rendered markers and suggestions. `tests/analyzer/test_analyzer_cron.py` verifies cron creation, idempotence, removal, seeded continual skill files, explicit thread configuration, and the deterministic schedule window.
+The reviewer suite covers config isolation, diff and tool validation (including LEFT-side anchors), durable finding behavior, publishing and marker rendering, reconciliation, trace context, trigger/watch behavior, and review API/chat paths. In particular, `test_factory_config_isolation.py` protects the reviewer config-copy invariant; `test_reviewer_tools.py` exercises validation and persistence decisions; `test_reviewer_reconcile.py` covers marker backfill and terminal-thread rules; and `test_reviewer_publish.py` covers rendered markers and suggestions. `tests/analyzer/test_analyzer_cron.py` verifies cron creation, idempotence, removal, seeded continual skill files, explicit thread configuration, and the deterministic schedule window.

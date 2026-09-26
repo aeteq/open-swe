@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:d69d6a46beaa3feae6105e0fb8fccb494322fbf805ea027687ece570833e3ebc",
+  "pageVersion": "sha256:af69f33069cc9aaaab857f1cef533ca670c4c25a671e498d7756cf0a00028c0f",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
-      "statement": "Open SWE's backend is a LangGraph application that serves multiple graphs (agent, reviewer, analyzer, chat, scheduler) together with a FastAPI app (agent.webapp:app), all wired through langgraph.json which also declares the checkpointer TTL policy and .env env file.",
+      "statement": "Open SWE's backend is a LangGraph application that serves five graphs (agent, reviewer, analyzer, review-scout, chat, scheduler) together with a FastAPI app (agent.webapp:app), all wired through langgraph.json which also declares the checkpointer TTL policy and .env env file.",
       "evidence": [
         {
-          "resource": "repo://langgraph.json#L3-L22",
-          "version": "repo-lines-v1:sha256:8ddd46a280aaa9d3ceb804862c7f9cf755169e84895facb158b9cf77e3a8835f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4NGI1YTBmZTIxNDJkZTQ4MjAxY2I0OTkwNTQwNWU1ZGE3NzYzMjhjNTAyY2RjZmE2ZGM1NTNkZWQxYzhiMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkY2Q3M2ZjN2M3ZDAxMWRlMzZlNzA1ZjMwMTM4ZTkyOTY0YWE2NjE4OTVlYjViZjIwMTBiODM3ZDU5YzA1NGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhZDA4YWJkNTFiOGYyMDE0NDhiNDcwN2JkYmM2MjVjMjI0NDcyZTg1MmJlYjAzOGViNmNhYTA2NGNjMjE0OTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMzNzQzNjVkMjYwYjAyYjNmMWE1ZmIzOTk0YTlhZDU3OTgzNzY1MDkwZjAxNmRmMDM5YTVjNjExMWY2YWM5OTEifQ"
+          "resource": "repo://langgraph.json#L3-L23",
+          "version": "repo-lines-v1:sha256:5a1bac984343188d55dc823b28cb0fa91d3e4afe8a6d41b8e701dd1ce8a1ba79:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4NGI1YTBmZTIxNDJkZTQ4MjAxY2I0OTkwNTQwNWU1ZGE3NzYzMjhjNTAyY2RjZmE2ZGM1NTNkZWQxYzhiMDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkY2Q3M2ZjN2M3ZDAxMWRlMzZlNzA1ZjMwMTM4ZTkyOTY0YWE2NjE4OTVlYjViZjIwMTBiODM3ZDU5YzA1NGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRhZDA4YWJkNTFiOGYyMDE0NDhiNDcwN2JkYmM2MjVjMjI0NDcyZTg1MmJlYjAzOGViNmNhYTA2NGNjMjE0OTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMzNzQzNjVkMjYwYjAyYjNmMWE1ZmIzOTk0YTlhZDU3OTgzNzY1MDkwZjAxNmRmMDM5YTVjNjExMWY2YWM5OTEifQ"
         }
       ]
     },
@@ -17,12 +17,12 @@
       "statement": "make dev runs `uv run langgraph dev --no-browser --port 2024 --n-jobs-per-worker 10`, serving all graphs plus the FastAPI app on http://localhost:2024 so that both the /webhooks/* and /dashboard/api/* endpoints are available from one process.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L27-L27",
-          "version": "repo-lines-v1:sha256:42bc21fa51c67d36f85ef9ac452c98a06a135c83dfa77d8ed8bb181a6f335749:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDJiYzIxZmE1MWM2N2QzNmY4NWVmOWFjNDUyYzk4YTA2YTEzNWM4M2RmYTc3ZDhlZDhiYjE4MWE2ZjMzNTc0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDJiYzIxZmE1MWM2N2QzNmY4NWVmOWFjNDUyYzk4YTA2YTEzNWM4M2RmYTc3ZDhlZDhiYjE4MWE2ZjMzNTc0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjFlZmI2NDNmZmE0N2Y1MDA4Y2E2MDE5NWU5Y2Q1MmMzNDU0NWUzNGYxZDU4ZmY1MDIzNzQyZWM3NjBkNGZkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDgxODUzYzA3NzFmMDRlNTQ5NjE1ZDdkOTJjNjFmYmZlZDNlOGRmYTUxMGY0MDAwYTFlYjRkNmUyZmMwNWIxNCJ9"
+          "resource": "repo://Makefile#L20-L20",
+          "version": "repo-lines-v1:sha256:42bc21fa51c67d36f85ef9ac452c98a06a135c83dfa77d8ed8bb181a6f335749:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDJiYzIxZmE1MWM2N2QzNmY4NWVmOWFjNDUyYzk4YTA2YTEzNWM4M2RmYTc3ZDhlZDhiYjE4MWE2ZjMzNTc0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDJiYzIxZmE1MWM2N2QzNmY4NWVmOWFjNDUyYzk4YTA2YTEzNWM4M2RmYTc3ZDhlZDhiYjE4MWE2ZjMzNTc0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjFlZmI2NDNmZmE0N2Y1MDA4Y2E2MDE5NWU5Y2Q1MmMzNDU0NWUzNGYxZDU4ZmY1MDIzNzQyZWM3NjBkNGZkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWIxZjI1NmEwNTBjZTE2MmQ2NjgyM2ZiNmRlMmY5YjNiOGYwZDY0OWQ3N2NlMWZkZTgxYmQwYTFkMDczMjUzMSJ9"
         },
         {
           "resource": "repo://docs/DEVELOPMENT.md#L95-L127",
-          "version": "repo-lines-v1:sha256:82b965de46487239fd5b847c677de1b7df73162c6ebfb212627b6ee0632f8971:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMWYxZTY2OGRjMDczZjIyZWRkMDI4YWI3ZDViMTlmODUwNjNhNjJkYmM4NjIzODUxNzg3MmRhNjQ1ZjMyMzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNlN2RkM2RkNDMwZjQ1ZDE3NWU4N2Q3NmIyYTMzZDhlOTFmMTI0MWJkOTA4NjI4MzlmNGI0MGM3ZTNlNWNiZmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYTJmNzJjMWFkYzQ0NDdhMWI4YWQxN2FhMTU2NDgwN2EyYjVkMzIwZGM3MDIxNTNiZGNlNTBlYjYwYzU2OGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmMzg5OWNkYWM2Y2YzYWFmODE3M2QwNzEzMGY5ZjBlYzgxZWRlYjNjZmFlMWFmODkzZDE2NmRiMTU3M2Q3OWIifQ"
+          "version": "repo-lines-v1:sha256:f26aa1a28cda12d01c115ffb4bc8067affba8d2548d74aa1ac88f63dad7ab78e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2NDA1MmE4MjcyMzlkZmI2MGRlNGZhYTk4ZWM1NWIxMDI0MDgzMGE3MWVhZDQ3ZGZkNWM1ZmQ5N2Y5MDE5ZTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyNzY2NDRjZTc0MWJmMmFmYTkzZGM4NDMyYTUxMzMwYmViYmNjZTIyYWU0M2FiYmNjZDMzZTA3ZmE4OTEzYjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExZjc5Yzc3ZTA5ODg3MjhiZjY3MDlmOTIwMmVmNzEwOGZiZjMxMmNhYjg2ZDNmMTMzOTNiOTk4NjdmMWU2OTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmZjJlMTE5OWVlMTYwYTA1ODg2NTE4NGNkY2VjZWEyNmM0NDUyZDkyNGI1ZWRmZDJlNDI5OWVhYTlhYjY1NzEifQ"
         }
       ]
     },
@@ -31,12 +31,12 @@
       "statement": "make run runs `uvicorn agent.webapp:app --reload --port 8000` and serves the FastAPI app without the LangGraph runtime, which is insufficient for dashboard features that create LangGraph runs; full local dev therefore requires make dev on :2024.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L64-L65",
+          "resource": "repo://Makefile#L54-L55",
           "version": "repo-lines-v1:sha256:bf1b8b419382bba1cb6f267b08cabe3bffc79b383a660fe71731c85cfddb6657:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDNhOGJhOTMzNzhkMGVlMTg4NTljOTcwMGQ4YzI4ZjdmNTcwYTljMmMxOGFlYjk5ZDBkYjE4OThjOTFlMjUwYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjhhMzJhYjMzZDNkYWM5YTU3Y2I3NTY5YTExNDU4MDg1ZTA0ZjcxYTRmNzYwMTM1N2NjMDgzM2I1NzIxZDc2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmE2YTM0ODBkYTI0ZmUxYWE2MzY1Y2ZlMGYxY2ZlZjUzYmM2M2I0YmZhYTE0YWFjYzljM2EzYzVhMDMyOGIzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjIxOGZmMWM1NWRiZGJhMmY5NDM5NDg1OWFkYmU0OTBkZjVhODdkY2Q2NDY0YjAxMTkyNjkzM2U2ZGVlM2FhYSJ9"
         },
         {
           "resource": "repo://docs/DEVELOPMENT.md#L125-L125",
-          "version": "repo-lines-v1:sha256:2276644ce741bf2afa93dc8432a51330bebbcce22ae43abbccd33e07fa8913b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI3NjY0NGNlNzQxYmYyYWZhOTNkYzg0MzJhNTEzMzBiZWJiY2NlMjJhZTQzYWJiY2NkMzNlMDdmYTg5MTNiOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI3NjY0NGNlNzQxYmYyYWZhOTNkYzg0MzJhNTEzMzBiZWJiY2NlMjJhZTQzYWJiY2NkMzNlMDdmYTg5MTNiOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDM5YWYzNWM2YTM5Y2JhOWMzMDNkY2M2ODA0MTliOTZlM2VmODdmMjRjZWUyMDAyNTgxNzVmYmQyYTZiZDY2NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmZmMmUxMTk5ZWUxNjBhMDU4ODY1MTg0Y2RjZWNlYTI2YzQ0NTJkOTI0YjVlZGZkMmU0Mjk5ZWFhOWFiNjU3MSJ9"
+          "version": "repo-lines-v1:sha256:5fd105e22865c9caddf3fa775b4431096db41988f5df596138b962c216999c19:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWZkMTA1ZTIyODY1YzljYWRkZjNmYTc3NWI0NDMxMDk2ZGI0MTk4OGY1ZGY1OTYxMzhiOTYyYzIxNjk5OWMxOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWZkMTA1ZTIyODY1YzljYWRkZjNmYTc3NWI0NDMxMDk2ZGI0MTk4OGY1ZGY1OTYxMzhiOTYyYzIxNjk5OWMxOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGE3YzViMjI2ZGFlYjczZTY0YzQyZjBmNDM2NjY3Zjk1MDk5NTJjYWMwYzlmZTZmMjQwYTVhNTE1MDZiY2E4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzBhOTIxYjE2MGFkMTk4ZTc1MzQ3N2I3NmM1YmQwOWRhZmIyYmJmNTMxNmIxZWYwYTJhZjllYmNkNTQxMjk0NCJ9"
         }
       ]
     },
@@ -45,30 +45,30 @@
       "statement": "make install installs backend dependencies including dev extras via `uv sync --extra dev`, and the Makefile exposes uv-run wrappers for pytest (test/integration_tests), ruff (lint/format/format-check), and ty (typecheck) over the repository or agent and tests.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L82-L83",
-          "version": "repo-lines-v1:sha256:4acc6a762f11eefc5086577d8339b55c7b8337df97164ffad72a7acd6aae3220:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzZjNTgwMTljOTcwZTNiMTczMmFlNjZjOTAwODU2NDM4MjQ2OTUzZjEyY2JhMjlkNjE5YjAwNTcyZmZmMjQ1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZhYmIyYTMxZDhjZDE1OTA2ZjBkZDhlZmMzZDFmYjVhZjRlZGY4ZTZlZTY5YzQ2ZjAyMmIwNGRmN2NiYjQxZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFmNzc1NjM2MTQ0YzU5YTlkMmMwOTM2Zjg3NzRkZWEzY2I5NTgxZmFiMzY5MjdhZjFlMTAyYzQyODgwZTY0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzI1ODRlMTQxZWJjNGI0ZDM5NWM2NDFjNjQyMDZmZGRkNzEyM2VlZWRkNGUzYjcyOWQyNzM1MTE5MGJmNzJhYiJ9"
+          "resource": "repo://Makefile#L101-L113",
+          "version": "repo-lines-v1:sha256:bfeb21921dd8e17fd4e7af3d08cf0212655368631d123c259e28e25c5921498e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMDk1ZDI5MjU2MTViZDUzOTBmOTRiNjQ1MzYzY2I0ODE1YzJjOTU2YWZmNDdlNWFjYTFkODg1MTg3YjIwODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyN2JmMzZhZWI3ZDg5OTMzNDU5YjJjMjc1NDY1OGI0ZWNlNzkxYmU3NmYxZjI0MGY3MGY5ZGMxNjA1MTE2MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1N2JiMGE2ZmMxMGMxZTU1YjQ0MDVkZDc2NzlkMDVkZTgxNTJmZGM4YTY5NWUzMDdlZTM4OGYxNDU2ZTllZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhYWI5YzQ3MzQ2NGI2ZGQ3YThmMzBlMTNlYzYzMzlkNzk5MWFmNDNkNjc5NTZlM2NiYmQ4NTE4NjA5ZjJhZWEifQ"
         },
         {
-          "resource": "repo://Makefile#L91-L123",
-          "version": "repo-lines-v1:sha256:0cea741a7f06304553c08d194e4bbd135d0502310ac701c9b6a3c2be21ee4288:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5YjMwY2U5M2Y4ZDJlZTZkNjQ3ZWIzYTdkYWI0NDY0YjVkOWI3OWRhMTkyOGRhNjA2ODA0NzNkMmNmNGU2ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyN2JmMzZhZWI3ZDg5OTMzNDU5YjJjMjc1NDY1OGI0ZWNlNzkxYmU3NmYxZjI0MGY3MGY5ZGMxNjA1MTE2MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhZTA3MTBiZmMwNDgwZTY1ZTBhYjIxNWE3MzE2OWIxYjhmNGI3NDRjYmVhNjZlYTNhYmM4ZDIwOTA1NjRjNjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhYWI5YzQ3MzQ2NGI2ZGQ3YThmMzBlMTNlYzYzMzlkNzk5MWFmNDNkNjc5NTZlM2NiYmQ4NTE4NjA5ZjJhZWEifQ"
+          "resource": "repo://Makefile#L72-L73",
+          "version": "repo-lines-v1:sha256:4acc6a762f11eefc5086577d8339b55c7b8337df97164ffad72a7acd6aae3220:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzZjNTgwMTljOTcwZTNiMTczMmFlNjZjOTAwODU2NDM4MjQ2OTUzZjEyY2JhMjlkNjE5YjAwNTcyZmZmMjQ1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZhYmIyYTMxZDhjZDE1OTA2ZjBkZDhlZmMzZDFmYjVhZjRlZGY4ZTZlZTY5YzQ2ZjAyMmIwNGRmN2NiYjQxZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFmNzc1NjM2MTQ0YzU5YTlkMmMwOTM2Zjg3NzRkZWEzY2I5NTgxZmFiMzY5MjdhZjFlMTAyYzQyODgwZTY0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzI1ODRlMTQxZWJjNGI0ZDM5NWM2NDFjNjQyMDZmZGRkNzEyM2VlZWRkNGUzYjcyOWQyNzM1MTE5MGJmNzJhYiJ9"
         }
       ]
     },
     {
       "id": "claim_7c0acef30b314001ba9760696f5b0434",
-      "statement": "The local dev server's langgraph-api version is constrained to >=0.13.3,<0.14 in pyproject.toml to match langgraph.json's 0.13.3 manifest and avoid uv resolving the end-of-life 0.10.3 runtime; this local/cloud-manifest runtime matches the standalone Docker image's 0.13.3 base.",
+      "statement": "The local dev server's langgraph-api is constrained to >=0.15.0rc1,<0.16 in pyproject.toml's constraint-dependencies to match langgraph.json's >~=0.15.0rc1 api_version, while the standalone Docker image pins langchain/langgraph-api:0.13.3-py3.14 independently.",
       "evidence": [
         {
           "resource": "repo://Dockerfile#L1-L1",
           "version": "repo-lines-v1:sha256:100c52ef6ec9787e73ae795c3e42a5d20a3bf5c15b75a2e7340a13800b45df3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTAwYzUyZWY2ZWM5Nzg3ZTczYWU3OTVjM2U0MmE1ZDIwYTNiZjVjMTViNzVhMmU3MzQwYTEzODAwYjQ1ZGYzYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTAwYzUyZWY2ZWM5Nzg3ZTczYWU3OTVjM2U0MmE1ZDIwYTNiZjVjMTViNzVhMmU3MzQwYTEzODAwYjQ1ZGYzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmMyYjY4MjIzZWQwZmJlN2I0MTQyNDYwMGZmZmI2ZTFkYmFlYjFhODNjNGU5M2E1MmNmNTZmOWQ5NDM5MzhhNyJ9"
         },
         {
-          "resource": "repo://langgraph.json#L3-L4",
-          "version": "repo-lines-v1:sha256:d73ad84386717026b884bba0f40276cedffe8b19ee8b2a62075ea91ba0d8db22:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTg0YjVhMGZlMjE0MmRlNDgyMDFjYjQ5OTA1NDA1ZTVkYTc3NjMyOGM1MDJjZGNmYTZkYzU1M2RlZDFjOGIwNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWRlOWQ2MGE0OTkwZTcyYjZjMjI1ZTExNDRhZDllMjVhMjliMzkwODFjYTBjYWY0NThmYjY3NzljNGJiNGRkMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjIsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGFkMDhhYmQ1MWI4ZjIwMTQ0OGI0NzA3YmRiYzYyNWMyMjQ0NzJlODUyYmViMDM4ZWI2Y2FhMDY0Y2MyMTQ5NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTNiMTVlMDgyMTRkMmEwZmI0NjRmMmI3NDJjYzdlY2VjZjgzNGYxZjc4MGFmOTY0MGE1YzIyODU0YmUzMDBhMCJ9"
+          "resource": "repo://langgraph.json#L4-L4",
+          "version": "repo-lines-v1:sha256:63c67d3b4b336557f4d88a3034ca3810a2e4fd4748129d81db8e9c93a3adc24c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjNjNjdkM2I0YjMzNjU1N2Y0ZDg4YTMwMzRjYTM4MTBhMmU0ZmQ0NzQ4MTI5ZDgxZGI4ZTljOTNhM2FkYzI0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjNjNjdkM2I0YjMzNjU1N2Y0ZDg4YTMwMzRjYTM4MTBhMmU0ZmQ0NzQ4MTI5ZDgxZGI4ZTljOTNhM2FkYzI0YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjQwMTBkM2FiOGY4M2U1YjBmYWY1ZGZhZTc0OGY2MzQ0ZjFlOTgyN2MyYjMyMmVlYWViOWQxYzg5ODM0YzRkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTNiMTVlMDgyMTRkMmEwZmI0NjRmMmI3NDJjYzdlY2VjZjgzNGYxZjc4MGFmOTY0MGE1YzIyODU0YmUzMDBhMCJ9"
         },
         {
-          "resource": "repo://pyproject.toml#L63-L63",
-          "version": "repo-lines-v1:sha256:609ae2082a24cb04fae7925387ed7dcda22446de3b38eed59e2a13933241705a:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjA5YWUyMDgyYTI0Y2IwNGZhZTc5MjUzODdlZDdkY2RhMjI0NDZkZTNiMzhlZWQ1OWUyYTEzOTMzMjQxNzA1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjA5YWUyMDgyYTI0Y2IwNGZhZTc5MjUzODdlZDdkY2RhMjI0NDZkZTNiMzhlZWQ1OWUyYTEzOTMzMjQxNzA1YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZGFiN2NhNDU0ZjNjMTM0YjNkN2VhNmIxZDcyMzExMzRkYzk5NzJhODEwOWMyMmRmZThlYTVhNzkyMmQxZmU4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjkwNWJkZWQwNjQ0MDE5ODI4NDkwYjFkNTZjOTA2YTQ4YTk4YzIwM2JlMTY5MDNiNGZmNTIwMmI5NTRmYjZhZSJ9"
+          "resource": "repo://pyproject.toml#L75-L78",
+          "version": "repo-lines-v1:sha256:e2a7f32f8d86c1ac632f31edc44349f3bda091426c74378c54cfe1904525a554:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjg2MmU0MmI1ZDAyY2I5OTUwM2I2MGVmNWY4MzNiNTc0MTA1YzkxYWUzMTFmNmM3NTZlODcyYzk5ZDIzNTYwYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjk0MTZlMDlmNzhiYTMxNmMwMzI1NjgyMTNiODU1ZWU3NTZlNDE1NjVkOTE4ZjA5NTE5YzgxZmQ2MjBmNDA2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjRkYzE1OTM1MjlhYzlkM2VkOTg2ZmQ2NTI5MmVhODkwMTdiYmNmZWRkMGVkZjE5Nzg3OTAzYjU2ZjFiZjI0ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjkwNWJkZWQwNjQ0MDE5ODI4NDkwYjFkNTZjOTA2YTQ4YTk4YzIwM2JlMTY5MDNiNGZmNTIwMmI5NTRmYjZhZSJ9"
         }
       ]
     },
@@ -77,8 +77,8 @@
       "statement": "langgraph.desktop.json is a separate trimmed deployment manifest for the desktop build that exposes only the agent graph, disables the built-in UI, and configures a local auth handler (agent.local_auth:auth) with Studio auth disabled.",
       "evidence": [
         {
-          "resource": "repo://langgraph.desktop.json#L5-L14",
-          "version": "repo-lines-v1:sha256:7b07fb80ecaca4b8c3770263efdd96d18935227e90357f7c168b8200a3b573de:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MzAyNjQ2NDg1Mjc3NmNhZDJkMjc5YzE2MDMwYTNiMmM1N2I4M2MxMTIwNTkyZTZhZjgxYjY5YjY4NGJhYTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkNWNkMmZiNGYzZGY4ODQ1MTUyNTViMzk1MjNmMmY4YjU0NzJiZWVhOWY1NjZmZmNhMjA0ZGI4MDI1NjEwNDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxYzIyNWJkM2IxMmI5ZGQ2NDJiMjBkYzY1NWQwOTI2NDcwNmFjZWQ4NDAwZjc0YjI4YjNhOTJkOTUxYTRkYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE1NDE5ZGMzMzFkZDhkZjA5ZWY4YzQ0Yzk1OWZiZThlNDliZjAzM2Y1Mzk0MDM3YmUyYzc4MmNlYzNmMDU2NTgifQ"
+          "resource": "repo://langgraph.desktop.json#L5-L20",
+          "version": "repo-lines-v1:sha256:8d62709c11623d1f1f1bac13f98263eae78ada789216c3d0fe2d4daf2a37d9bc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MzAyNjQ2NDg1Mjc3NmNhZDJkMjc5YzE2MDMwYTNiMmM1N2I4M2MxMTIwNTkyZTZhZjgxYjY5YjY4NGJhYTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxYzIyNWJkM2IxMmI5ZGQ2NDJiMjBkYzY1NWQwOTI2NDcwNmFjZWQ4NDAwZjc0YjI4YjNhOTJkOTUxYTRkYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         }
       ]
     },
@@ -91,8 +91,8 @@
           "version": "repo-lines-v1:sha256:fb2d7e73b4c2e7a812bd702aaff5341c14436f200e347874e1aec7426c0192c9:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWRiMDc2ZWI4MGFkZTE5ZmVhM2UwYTQzMTk4NmI2NTVmNWZhNTllZDYyNjdlMTA3ZDY4OGI2MWMzZjQyMTc5NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFlN2JkODFiMDA5ZmViMDQ1MzYzNmVmNmRjZTk1YzA5N2M3YjRjNTM2MjNlNDZmNjI3ODkxNTMzYWIzOGRlMCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWQ3YjRmZmVjNGE3ZTUzMmE4YWMwZGVlYTVhYzQ4ZTRkOWZkZjE3YjY1NjVjOWFmMTA0ZjQyZDIyNTJhMDUyYyJ9"
         },
         {
-          "resource": "repo://turbo.json#L3-L32",
-          "version": "repo-lines-v1:sha256:5d77caee886fe5e6344cb0145a3a476d0484a5b2f4e1c8af062d45a3e2d19155:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2ZTIzYjQ5ZWQ3ODBkMzgwMzk3YWVhNzllM2NkZTgwZmU5NGM4YzU3YmZmODc1MjJjODMxNjM4MDhmN2M3OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE5ZTY2NzYyMmMzODgxNjBiNzI3YmZkMGUwY2FkMzZkOWZhMDVmMjVhOGQ1OWQ5NzMyMDhkMTYxZTUyMjRhMTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxOGYyMTg4NDQwNmQ5ZDcxYzcyYzMzZTU5ZDU5YjY5NDkzOTQxNzljYjJhNDg1Yjc4OTkwMzFjYTAzOGMxYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlMGY3MjkzZDE1NmE2ZDEyNTI4ZGIxMjkzMzc5ZTUyYTVmODM2NzA0NDI5N2IyMjgyYjk3ZmYyYzg2MDQzOGQifQ"
+          "resource": "repo://turbo.json#L3-L35",
+          "version": "repo-lines-v1:sha256:34612f51aaccd3f2536cbdf8cc3b94d470cf9e89bccf4acec890feca383f5f9e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk2ZTIzYjQ5ZWQ3ODBkMzgwMzk3YWVhNzllM2NkZTgwZmU5NGM4YzU3YmZmODc1MjJjODMxNjM4MDhmN2M3OTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3ZTU3ODhkNWQ5ZDczZDI0YTgxZGJjMGE1YTc0YmZhODJjOWMzYjNhZjk5ZTUyYWY3OTZlOTBiNDY4YThhM2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxOGYyMTg4NDQwNmQ5ZDcxYzcyYzMzZTU5ZDU5YjY5NDkzOTQxNzljYjJhNDg1Yjc4OTkwMzFjYTAzOGMxYjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
         }
       ]
     },
@@ -101,16 +101,16 @@
       "statement": "make web runs `turbo run dev --filter=open-swe-dashboard`, starting the dashboard Vite dev server on http://localhost:3000, which proxies backend paths to DASHBOARD_API_URL (defaulting to http://localhost:2024) so no ui/.env is needed.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L44-L45",
+          "resource": "repo://Makefile#L34-L35",
           "version": "repo-lines-v1:sha256:1265a49f032ca9fcc2578037c1b1ad9f6bc265a6f0f98aab87cecc3cb0bd0d53:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTNlMGEzMTA5ZTc0NjEyNjFmNjQxY2EyZjMxNGY2YTRhODY3ODMzMmMzZWEzOWUyNWQ2MDJjMWJmNmVmMTIyZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGU0ZWZlNTQ5NjliMzZmZTliZTNiNDliZGUzMzNmZjljNjRhZjdmN2E3NGY4OGFjZTYzMjExN2IyNzlmYzljNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTFlZWY5NDI3MjkzNWNiYjBhYzBhYTBhOTliZjJiOWIxMTFlOGUxMGViY2ZiNmMyNzcxODNkNGQ5ZGZkNDIwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjNkNjQ1NGQ2NGQ0ODUxNDBhMDA0Mzg5MzQ4NDFmMmQ0MGY5MDdmYTZiMDk4NzA4YTNkZGJhMzBhY2NjODgxZiJ9"
         },
         {
           "resource": "repo://package.json#L6-L6",
-          "version": "repo-lines-v1:sha256:1800685c84cd431d67808f63f0da4909e2a506c742b1774aee5eeacc0f33a22c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgwMDY4NWM4NGNkNDMxZDY3ODA4ZjYzZjBkYTQ5MDllMmE1MDZjNzQyYjE3NzRhZWU1ZWVhY2MwZjMzYTIyYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgwMDY4NWM4NGNkNDMxZDY3ODA4ZjYzZjBkYTQ5MDllMmE1MDZjNzQyYjE3NzRhZWU1ZWVhY2MwZjMzYTIyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzJmODc5NTZiZmI0NWM3NjI2YzFmYmFlNzMyYzE4MDljODk1OTQwMjhhM2M3NjI3ZGM2M2FiMGE2YzMyMTVmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDk3NjFmN2I3NzA5ODg5YWFlNjU3ZDFiNWIyNzdmY2JjYTViOTk5ZWZjMTc2MDBlNGYzNTFhZmY0NDRiNGE3NSJ9"
+          "version": "repo-lines-v1:sha256:1800685c84cd431d67808f63f0da4909e2a506c742b1774aee5eeacc0f33a22c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgwMDY4NWM4NGNkNDMxZDY3ODA4ZjYzZjBkYTQ5MDllMmE1MDZjNzQyYjE3NzRhZWU1ZWVhY2MwZjMzYTIyYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgwMDY4NWM4NGNkNDMxZDY3ODA4ZjYzZjBkYTQ5MDllMmE1MDZjNzQyYjE3NzRhZWU1ZWVhY2MwZjMzYTIyYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzJmODc5NTZiZmI0NWM3NjI2YzFmYmFlNzMyYzE4MDljODk1OTQwMjhhM2M3NjI3ZGM2M2FiMGE2YzMyMTVmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzkyMmJjN2FjOWQwYjY5OTJlOTMxMDQ3MTU3NzE1MmM5ZTdkM2I2ZDQzODg0OGRhZmZmNDA3MDQ0NjVkOTlhZSJ9"
         },
         {
-          "resource": "repo://ui/vite.config.ts#L144-L156",
-          "version": "repo-lines-v1:sha256:d6e130912d11b59b3bc95833b2fe231fad8bcf38db4d7424f17ed8fd4918d333:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMTk0MjMwNWRkMGI1MTM3NzFiNzVjNGMxOTIxZDg3NTVmM2I3OGIzMTJkMzBlYjBhZmM1NjJjNjg0ODYxOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkYzc1ZmJiZmIyOTAxMDMxNjY0MGI3NGY0YTlkZWUxODY1OWRkY2JhODg2Yzg0NGE2MTBlYTMxZmQzOWE3NTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
+          "resource": "repo://ui/vite.config.ts#L148-L158",
+          "version": "repo-lines-v1:sha256:315baea1d1fb5b5f853e184bef184e3c1b7310d335ebc25c85fb7cddf5df2826:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZDMyOTVkMmE0YzNkY2YxZTJiZmI5ZjQzOWY0MDI3ZDQyZGRmYzI4YWVhOTBhMmZjNTJmNzViNzZjZTZlMzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4NDZmNzIyNThkMzE4MDcxY2Y1NWE1NTU3Y2MwZjEzN2JlMzQ1ZDczMzFlYWUxOThlODFmY2M2ODJjNzIwMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
         }
       ]
     },
@@ -120,11 +120,11 @@
       "evidence": [
         {
           "resource": "repo://docs/DEVELOPMENT.md#L140-L140",
-          "version": "repo-lines-v1:sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODUzMTEyODgzYTkyZDcxNDAxNjg2ODExMWZjNDc2ZDBhZmI3ZGNmNjJmZDk2MzBhOTRmYTMzOWU5MDI2MDExNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDczYTgxY2E1OTlhZDUzODI1NDYzYTMyN2QxZGU3OTI5ZWY1MzA5MGE3NWI0M2E4ZjJjNzZmZmExN2ZmYmFmYiJ9"
+          "version": "repo-lines-v1:sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDU4ZGNmMGRiOWQ0Y2I1M2MzNmE2YTg0MDUwYmUwMTY4NTRlZGVmYTkxNDIxZDgzMzY2NzgyYzA1OWY3YjRjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTQ1YTAzYjQwY2UxNGJkNDZiMjZmN2E2M2JjZDkzNWI4ZDgxZDUwNGZmMmNiNWRhZjgxNWVlMTYyMDliMTczYyJ9"
         },
         {
-          "resource": "repo://package.json#L5-L19",
-          "version": "repo-lines-v1:sha256:d1aa32576c984fe2ca9d4da1f3b512d13cc681a9297efdc8f0ad6143bdcfc5a0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0ODMzZDU5NDljMDNhNDBjYTk1MjQ5MTYxMGE2NjU5NjQ0YjNhYTQ2NjM2MmY3OTkwMjBkYmYxOTgxNTQ3ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2N2I1YzdmOGI2ZTdkYWNhODhjZjMzMjBkNTJiZTQ1MGM4MzQ4MGVlZDJhYzk1OTRhMmYxYThmMGI2NmNiOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0OTlkNDA4ZmNkMzdlZDQxNTVkODEwMjQ3ODhjYWRlNTcyYzA5YjZlYzVkYjhhYTY0YWJmZTQ3ZDE0ZTg5ZjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwYzYwNzFmN2VjYjhkZTJhMDU5Y2YzZWQyNTQxYTJhMzU5MDQxZWRjODBhMGI0MDA1ZGNmODY2YmMwMzA0YTIifQ"
+          "resource": "repo://package.json#L12-L21",
+          "version": "repo-lines-v1:sha256:d0106ec859048a0e737bb83961f72b0b00c250790ad711c77ee3abc5620c6d93:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4MmI3MGU4NzU1NzVmNzRjMGIyYWU3YmZkNjI4NzMyOGM2NTk3OWQ1MTJhOTdmMzg4NTEzYTY5ODQxOWJhYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2N2I1YzdmOGI2ZTdkYWNhODhjZjMzMjBkNTJiZTQ1MGM4MzQ4MGVlZDJhYzk1OTRhMmYxYThmMGI2NmNiOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzZDc4YTk0ZWViMjgyZDE4NzJiNDE1ZGMyMzM4NzhkN2NiNjY5ZmNiZmJlZTMwZjQ4NmY4YjYyMzk4YzMwMjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwYzYwNzFmN2VjYjhkZTJhMDU5Y2YzZWQyNTQxYTJhMzU5MDQxZWRjODBhMGI0MDA1ZGNmODY2YmMwMzA0YTIifQ"
         }
       ]
     },
@@ -133,7 +133,7 @@
       "statement": "Turborepo's build task caches .output/**, .vercel/output/**, and build/**, and treats DASHBOARD_API_URL, VERCEL, E2E_HARNESS, and any VITE_* variable as cache-affecting build inputs so changing them invalidates cached builds.",
       "evidence": [
         {
-          "resource": "repo://turbo.json#L16-L27",
+          "resource": "repo://turbo.json#L16-L28",
           "version": "repo-lines-v1:sha256:3bf8e1328efe9052975b8b7a38febe0ee45925f1e06a1674f195808b562dce69:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllY2VlOTlmN2ExZTVlMGNkYzllODNiYTZlNWE4MGUwM2FiNDQ3ZWZiNjRkYmQ4ZTk0YWIwYTk0OTg5YTAyYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0MjIzOWIxYmQ4MmI4NWVkNTBjMThhYmU2YjhlOTk3ODc1NWRhYzZmZDgwNDA5MjRjOGE4ODBjNTJmMDY1ZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1MWUzYmI5M2FjYThiNDc3OWZkZWJmOTk5MjEzZjI4ODE0M2MzNWRjNzFjOTFmZjU1NWU5MzcyZTQ1MDQ5ZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUzOWE1MDRiMmE2N2JjZmEyOWU3NWEyNDBlN2M3MTJiZmU2NmE0ODJkODQzYTYwN2RjMDdlNjRmZjU0NGI5NjIifQ"
         }
       ]
@@ -143,16 +143,16 @@
       "statement": "The experimental Electron desktop app bundles the compiled dashboard UI and a local backend, connects cloud features to a selected backend, and supports local-agent work through a private loopback LangGraph server; packaged builds ask for and store a backend URL rather than defaulting to a hosted deployment.",
       "evidence": [
         {
-          "resource": "repo://desktop/README.md#L3-L13",
-          "version": "repo-lines-v1:sha256:b80c47e157ffd90a2c3f1f1d6acd2942a75232f064784cbec722c9074f333de7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiYjFhNzIzNzg2YjU0Y2I5MTQ1ODI3NzQ4OTVkMzg3MTViZDg1ODQzOTYxODNiYzkwYTc2ZTdjNjVlZTY2NTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3Nzc2ZjFlMTE3OTJkNzk3NDU4YTQ3YjQwMjBkYzQ4ZGUyZjFhMTJmNzQ1ZjlhMzViYWM2NGNkNjNmODI3ZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjoyLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc5YjE0OGZmMjE3MmJlNTNmODc1MjE4YzI1NGY0YWM1ODUwODc3MjlhZmU0MDAyMTk1YTg3MDA2ZWQ2YmZmNDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxODhkMmU3Nzc5ODY2YjBhY2I0ZTVkMTNmZDhhNWI1NmU2N2Y1OTE1NTc1ZTBhOTAwNGMzYTM2ZTgxNTEyZTkifQ"
+          "resource": "repo://desktop/README.md#L1-L13",
+          "version": "repo-lines-v1:sha256:8684dfb69d0be04785e81cebf8e20c1f3a73caa98906d9707f1f9a61f5f469bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2MzAyZTg5YWMxNzUyM2E0M2QyY2I1ZGJjZGI4MTcyMjUxMzZiMGFiNmIxODA0MGNmNjQyNWQwMzU5MDdiODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3Nzc2ZjFlMTE3OTJkNzk3NDU4YTQ3YjQwMjBkYzQ4ZGUyZjFhMTJmNzQ1ZjlhMzViYWM2NGNkNjNmODI3ZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxODhkMmU3Nzc5ODY2YjBhY2I0ZTVkMTNmZDhhNWI1NmU2N2Y1OTE1NTc1ZTBhOTAwNGMzYTM2ZTgxNTEyZTkifQ"
         },
         {
-          "resource": "repo://desktop/README.md#L30-L48",
+          "resource": "repo://desktop/README.md#L31-L50",
           "version": "repo-lines-v1:sha256:55e088ef03237f546c7f5e0d3ecb31bbb4dd4d2e128e260eab95573b97acdd27:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhYjI0ZTc3MGFiNDQ4MzM1YTU5NjQ5NDkwMDRlY2I4YTQ2NmViNDYxNjVlNzQwN2Q0OTgzNjBjMWM3MzQzOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwYzkxZDE0YmRlM2JlMGViZDA5YmY5YzcyMTdiZThmYzc5NjFlZWFiYTNhM2NiMWFmODA1NDIyYmIwNDlmOGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJmODIyNzcyMDM1ODI1ZGI2ZmQ3MTc2MzVmYWNiOTU5NWY3YTYwOTI1Mzg5MTg0OWNjNjViOWY5ZWJiM2IzMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyYjUwMjY0YTExMmM3MjY3OTRhYzQyNDEwNmI0YTIxMzBiZDUwYTFhY2EzOTVkOWU5ZjhkMTFiMTllNzVkZTMifQ"
         },
         {
-          "resource": "repo://desktop/package.json#L43-L73",
-          "version": "repo-lines-v1:sha256:f6fb3b27d01f4f5b0f0c245b9686bbd692c2e66865057b696ac4b8d53a96d55d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1Zjg2NjNlMTQ4N2UzMDhhMTAwMWVkZjY1MWMzMzY4ODY4ZTVkMDJkZjc0ZTdmY2Q4NDY4ZWI0NGQxM2M4N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNjJmNjBkODU5MGE1NzljZjQ2ZjhkNjczNzhjNGM1NzJiOTYyY2VjY2RiOTBjN2E1ZjdiNDJiOTYwNzgyYTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2YmIzOTE4MmU1NjA5OWVmNTc4ODhlMDc0NGRhMDQyOTRhMTQ0OGViODg5ZTYwNWZkNDAxYjU0NzVjZGMyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZlY2JlMzFkM2NhNWNkZjFlODY2MTM3NDQ1M2U3ZjJiNDc2OTE4ZmMwZjk2NTE4NDQwZWY4MjBiNDQ4MjA0NjcifQ"
+          "resource": "repo://desktop/package.json#L43-L78",
+          "version": "repo-lines-v1:sha256:82b85ced1835d150c717b7b499c73807c911731eddf79a274e381b98e2a2243d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1Zjg2NjNlMTQ4N2UzMDhhMTAwMWVkZjY1MWMzMzY4ODY4ZTVkMDJkZjc0ZTdmY2Q4NDY4ZWI0NGQxM2M4N2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2M2Q1MzVjZTM4MDYzZDZiNGM1MWQ4YzM4NmE3ZjliM2U1ODBhMTRhMTBjMDdiMTk4ZGZhZjE5YzkzYTNiZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2YmIzOTE4MmU1NjA5OWVmNTc4ODhlMDc0NGRhMDQyOTRhMTQ0OGViODg5ZTYwNWZkNDAxYjU0NzVjZGMyNDIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUyMjhmMWUwNTEzZjg4N2U0OGEyOThjYTkzMWZmNDRlZWQ0YzhjMmJhZDBlYzMyODEyNzdkOGZhM2JkOTdiMWMifQ"
         }
       ]
     },
@@ -161,7 +161,7 @@
       "statement": "make install-desktop installs or updates Open SWE Desktop on macOS by refusing to run with a dirty working tree, fast-forwarding to main, then invoking scripts/install_desktop.sh, whereas make install-checkout runs that script against the current checkout without touching git state.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L73-L80",
+          "resource": "repo://Makefile#L63-L70",
           "version": "repo-lines-v1:sha256:fedcdb99295af4ba3ba0187a912cb1259607550416516ea220ebb86bf58f52ae:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzAwMTE5MmViYTUzMzFmZGQyODE5OWQ1MGVmNDA3NTQyZDhjMmFmZTMzYWYwOTdlZjU2YzU5YTA3OWU3OTM3NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzYxMTM2NzhmN2ZjNjI2ZmMxNGQzMmUzODAwNGRkMTgyNDM2YzkyMWY5YjQ1Yzc5MTU1OTRlNTA2NGNhNDdkZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWI1ZjU2MGZhNzJjZDIzNGFlMDE1NTEwMDEzOGY0NGJhMzE1OThhOWI1ODEyNjZjMWIwNDQyMDcxYzcwNjgxMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjdhYjlkNjEyNzMwYjA1NTU0OTYyZWZkNzQzNDNlNGQ0MzFjZmJhYWRmMDdjNjIyM2VhNzcxODdhYWY1ZjNlMyJ9"
         }
       ]
@@ -171,8 +171,8 @@
       "statement": "scripts/install_desktop.sh is macOS-only, verifies node, ditto, uv, and a pnpm/corepack launcher are present, packs the desktop app, and atomically swaps it into /Applications (or ~/Applications when /Applications is not writable).",
       "evidence": [
         {
-          "resource": "repo://scripts/install_desktop.sh#L1-L60",
-          "version": "repo-lines-v1:sha256:9852410a3eede97d8f0b71d7189fb421856c9472dd9ebaeb413ab318013cdf65:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkOTVmYzA0YTgwYzk1MmY0OWNlNDE4ODYyN2M1M2IwZmJlOGM0NDA0MWI5NTJkNTkyYWNkMWRlOTk4NjE0NjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmMGVhOWZlODg0NTg0ZTA1MzFiMzg0ZThhNzZlYzQ2MDIxMzY0ZDg0MDU4MDIyMWViNzBiMmIxYzZkZmNjNTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjNDRhYTdiNjA1NmNkOTZlNzk5YmEyMDdmMjlmZGJlMWU4NDBiNDIzYzViYWIxYzlkMTBmZWUzNzg1MWEzY2UifQ"
+          "resource": "repo://scripts/install_desktop.sh#L1-L61",
+          "version": "repo-lines-v1:sha256:0e74d29b212b9f116f9220a07aa88868869644452d22fb2a67dcf5053ebb2746:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFkOTVmYzA0YTgwYzk1MmY0OWNlNDE4ODYyN2M1M2IwZmJlOGM0NDA0MWI5NTJkNTkyYWNkMWRlOTk4NjE0NjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNDRhYTdiNjA1NmNkOTZlNzk5YmEyMDdmMjlmZGJlMWU4NDBiNDIzYzViYWIxYzlkMTBmZWUzNzg1MWEzY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -188,7 +188,7 @@
     },
     {
       "id": "claim_14ff348c01614028a95b8353f76f7d72",
-      "statement": "scripts/purge_wakeup_crons.py is a one-time backfill that deletes expired one-shot thread_wakeup crons from a deployment, resolving the deployment URL from --url/LANGGRAPH_URL/LANGGRAPH_URL_PROD and the API key from LANGGRAPH_API_KEY/LANGSMITH_API_KEY/LANGSMITH_API_KEY_PROD.",
+      "statement": "scripts/purge_wakeup_crons.py is a one-time backfill that deletes expired one-shot thread_wakeup crons from a deployment, resolving the deployment URL from --url/LANGGRAPH_URL and the API key from LANGGRAPH_API_KEY/LANGSMITH_API_KEY.",
       "evidence": [
         {
           "resource": "repo://scripts/purge_wakeup_crons.py#L1-L13",
@@ -202,11 +202,11 @@
     },
     {
       "id": "claim_eadc4b3dcf5e4752bf245ed137ea5a67",
-      "statement": "The root Dockerfile builds the standalone production LangGraph API server image (not the sandbox image) from langchain/langgraph-api:0.13.3-py3.14, installing the repository with uv and baking the five graph registrations, HTTP app (agent.webapp:app), and checkpointer TTL into LANGSERVE_GRAPHS, LANGGRAPH_HTTP, and LANGGRAPH_CHECKPOINTER; it exposes port 8000.",
+      "statement": "The root Dockerfile builds the standalone production LangGraph API server image from langchain/langgraph-api:0.13.3-py3.14, installing the repository with uv and baking the six graph registrations, HTTP app (agent.webapp:app), and checkpointer TTL into LANGSERVE_GRAPHS, LANGGRAPH_HTTP, and LANGGRAPH_CHECKPOINTER; it exposes port 8000.",
       "evidence": [
         {
           "resource": "repo://Dockerfile#L1-L24",
-          "version": "repo-lines-v1:sha256:b4555d0bb05391013c3039de6ddfc807b4ce110fd9487326fc335194e8ecd5cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGM1MmVmNmVjOTc4N2U3M2FlNzk1YzNlNDJhNWQyMGEzYmY1YzE1Yjc1YTJlNzM0MGExMzgwMGI0NWRmM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:1bb35f091bf66e67181cdded4529bc990812fe18f2ebdb77e287874d25f78814:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGM1MmVmNmVjOTc4N2U3M2FlNzk1YzNlNDJhNWQyMGEzYmY1YzE1Yjc1YTJlNzM0MGExMzgwMGI0NWRmM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -240,15 +240,15 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md#L314-L321",
-          "version": "repo-lines-v1:sha256:cce14d8500e51bcfd7a22d5f9aaa5dc273fbf4ec884c519ee1181d0539ed7078:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDVkYjZlYjI5MGY0MTYxMWQzODgzM2ZmNWE3YzEyYTljMDRmZjIzNGRhNWNjZjFlY2E5ZTUxNzEzNDE2OTY1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjg3ZTViOTQ4MWVmZDg4NDYwZTRiMGZkZDdjMzA1ZjUxZGQyMzBkNzI1MzZmZDk5YTRiZTk1MzkxMTllYjI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2M4ZWQ0OTRlYTNkMWU4MTgzMzRhNTUzYmE1Y2UxMWU0MGI1YjgyNWY5ZGMwNGM3ZjAzZWFhNTRkZThjZTJmZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTE4MDMxODUzMWQ5ZjgyNzAxMGFiNTQ2OTFhNTA2MDc0YTcyY2M0OWEwYWI4ZGUzNTdiNTMxNGNiYWQ4MDYzYiJ9"
+          "version": "repo-lines-v1:sha256:6aa00394e905780533b5e498ee4c8a5ef696bd0e045cd81ab95b923e2fddc481:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmRhNTViZGU1Yjc1NDg3MmNhYjJlNWI3ZjkxZDIwNTM2NGJlYTk5OGI4OWUzY2FjYTQ1NWQ0NDA5ZmY4NjQyYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDhjZmMzYzE1YWM3NmRhOTFkN2RiMmY5YTE4NmNlMTQ3NWY5N2Y3MWE1ZDM2OTBhNzVlMGExODc3OGJiMjUyMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTZkYjYzM2U3MDk3NmExNjM1MGNkMTllNzk1NGI2ZThmZjNkZDljNjg0OWY5OTBmNDViMzE1MjA0NzUzOWQ4NyJ9"
         },
         {
-          "resource": "repo://ui/vite.config.ts#L144-L156",
-          "version": "repo-lines-v1:sha256:d6e130912d11b59b3bc95833b2fe231fad8bcf38db4d7424f17ed8fd4918d333:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMTk0MjMwNWRkMGI1MTM3NzFiNzVjNGMxOTIxZDg3NTVmM2I3OGIzMTJkMzBlYjBhZmM1NjJjNjg0ODYxOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkYzc1ZmJiZmIyOTAxMDMxNjY0MGI3NGY0YTlkZWUxODY1OWRkY2JhODg2Yzg0NGE2MTBlYTMxZmQzOWE3NTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
+          "resource": "repo://ui/vite.config.ts#L148-L158",
+          "version": "repo-lines-v1:sha256:315baea1d1fb5b5f853e184bef184e3c1b7310d335ebc25c85fb7cddf5df2826:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZDMyOTVkMmE0YzNkY2YxZTJiZmI5ZjQzOWY0MDI3ZDQyZGRmYzI4YWVhOTBhMmZjNTJmNzViNzZjZTZlMzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4NDZmNzIyNThkMzE4MDcxY2Y1NWE1NTU3Y2MwZjEzN2JlMzQ1ZDczMzFlYWUxOThlODFmY2M2ODJjNzIwMGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
         },
         {
-          "resource": "repo://ui/vite.config.ts#L173-L216",
-          "version": "repo-lines-v1:sha256:be9d303c9138282d6f885ab1a723279aba0e2d53977e88f77b3a3fb42dcd3d3e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMzVlZjVmODcwOTYwM2RiNmZmM2ZiNGUyYTQzZGYzN2I3OGZkMDQwNjQ5N2FiYTA2ZDhlYmQxYjVlMDE0NzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY1MDY0MmEwMDQyNTBkMzhhYWQwNGVjYjE3ZTE5MDJhMTRlY2QwOTg1Mzg2ZmQ2NzI3ZjE5ZjM1YTkyNDVlMDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjMDI5ZDZmNDk2NTdlMTMxNDliNzk2YmZkMzg5ODA4YWYxYTNiNWVhOWRkMGNhNTEzMjgzMDhmOGUzNDg1MzUifQ"
+          "resource": "repo://ui/vite.config.ts#L181-L218",
+          "version": "repo-lines-v1:sha256:c40c6d2900665d98b795bf1896a19a0ce5e28ceb8070263c88703db1341d6432:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBhMjI4YWZhYzFhMzA2Mzc4NzdlZTgzMjEwYzhkYmZiMWQ4Mzc4MzkwNjhiYjYxNWQ1MGUwMzM2MTUxY2YxMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0MjkyYWU2YWE4NTlkMDYxNDk5ZmFiN2U2ZGM2NjQxZjFhODQwNDk1NWUyYTIxNTAxMzE4MzM0YWM3ZmM0ZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNjMDI5ZDZmNDk2NTdlMTMxNDliNzk2YmZkMzg5ODA4YWYxYTNiNWVhOWRkMGNhNTEzMjgzMDhmOGUzNDg1MzUifQ"
         }
       ]
     },
@@ -285,8 +285,8 @@
       "statement": "The FastAPI app rejects a wildcard DASHBOARD_ALLOWED_ORIGINS configuration because credentials are enabled, and applies the configured origins to credentialed CORS with dashboard, plan, workflow, webhook, and health routers installed.",
       "evidence": [
         {
-          "resource": "repo://agent/api/app.py#L77-L100",
-          "version": "repo-lines-v1:sha256:c63fe914b8540f2f2df54986de73ff9256317c5fbe9bb9da56547501c724490f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmOWY1NzEzNzJlYzUzOWEwZjU0ZWEwZGYzNTgxNzNmOWI0NGNlNDA1YjcxZWExY2U2NjU4ZjI3YmFkZDcwOTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU1ODFiMGMyZjIwNzZlMGFiMzQ2N2M2ZDMyNDQ3ZTU4NDRkZGY4NmUxNmZlZjE4YzliNGQ3YTE5YmU0MWZhZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNkZjdmNzJjZDBkYmU0MTAxMTI2MmI5Y2FiYTAyY2RjN2NlNDc0ODY2MGY4MDkxM2I1MjVjNTBiMWY5OTE0YjYifQ"
+          "resource": "repo://agent/api/app.py#L99-L110",
+          "version": "repo-lines-v1:sha256:45fb28817af99bb6f4b7e1e51a1c4a73da37135b03c2061a613aec84accf3fcc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYWUzOWUxODhkMjhjODcxNzBkN2VkN2JmYmI3MDAyYjk2MDViZWFjZjQ5MGVlYTFmOTIxNTAzNzE1YjYxYzEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlMjFhY2JlMjVlZWM2NjcyN2UxMDgwODJhYWY4MGRlYTMzYWM2Njc5Y2Y5ODViMGEwOWNkYTU3ZTcyZjE2OGQifQ"
         }
       ]
     },
@@ -313,20 +313,20 @@
       "statement": "Dashboard asset and client-router paths must be built with DASHBOARD_BASE_PATH equal to a LangGraph http.mount_prefix; the platform manifest derives that build value from its mount prefix, while local builds require it to be supplied.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L57-L62",
+          "resource": "repo://Makefile#L47-L52",
           "version": "repo-lines-v1:sha256:6ce7dab6984a1d482c967ae69f178087ab314075fedb1ee5c1ccfc430f57040d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODE3NDI4MDA5MzIwZDdjNzQyMTgyZDAxOWIwYzAzMjM5NGNjNjdlNGRjZDE0ZmE0MGVjYmU3NGVmNDdjN2FjYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2IyMzUxYjM3ODJmMTkzN2IwZjhhMWI2NjRjNWFiZTFjZTJhZTU4MWQ2NDY4OTFjMmJkMDBiY2JhYWVmZWE1YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjczODUzMDE3YTIzMDVkMTAxYTgwNTUwMDU4ZmI1ZWE1NGZjYzA5OWRkZTM1YjNlMjAzMzcxNzM5ODFkM2VjMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDQ4NjBmMGU2NWU4NTZmMGQ4Yjc1YjM3OWNkZThiOTQ2YzhmMWE3YjdhOWJiMWMwZTBlY2ZjZTQyNmU0ZmFjYiJ9"
         },
         {
           "resource": "repo://docs/INSTALLATION.md#L321-L321",
-          "version": "repo-lines-v1:sha256:b87e5b9481efd88460e4b0fdd7c305f51dd230d72536fd99a4be9539119eb24d:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjg3ZTViOTQ4MWVmZDg4NDYwZTRiMGZkZDdjMzA1ZjUxZGQyMzBkNzI1MzZmZDk5YTRiZTk1MzkxMTllYjI0ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjg3ZTViOTQ4MWVmZDg4NDYwZTRiMGZkZDdjMzA1ZjUxZGQyMzBkNzI1MzZmZDk5YTRiZTk1MzkxMTllYjI0ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYThhMTdiYWMyMDU4YjNmOTVjMmVmNzQxOWVlMTA5OTJhYTkyZTVlZWQwYWZmZTQ0Mjk3NzEyYTZkODY0YzVkZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTE4MDMxODUzMWQ5ZjgyNzAxMGFiNTQ2OTFhNTA2MDc0YTcyY2M0OWEwYWI4ZGUzNTdiNTMxNGNiYWQ4MDYzYiJ9"
+          "version": "repo-lines-v1:sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWE5N2M1OWI3N2QxYjA5NzY2YmI3ZDg5ZWUzNWE0NDU0M2Y5Yjk1YzdmNDJmNWYzNWFiOTU3OTgxMzdmOGNkNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTZkYjYzM2U3MDk3NmExNjM1MGNkMTllNzk1NGI2ZThmZjNkZDljNjg0OWY5OTBmNDViMzE1MjA0NzUzOWQ4NyJ9"
         },
         {
-          "resource": "repo://langgraph.json#L23-L31",
-          "version": "repo-lines-v1:sha256:da0556532474e9c483d65f76922f6b5ae7a509dbb7a346c9361230ad42404797:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzY0NTNkNjNhZWRkNjZkYzg0YTI2ZjRiZDhiMTI3NzQyOTRkN2JmZGE5YzU3MjBlZmFiM2U0OWY0OTdjZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNjBjMzAyMGY1ZTVlNjNmMzk3N2VkYTZmNzhmZTI0Y2E1ZmJjYjgyNDc5MmI2Yjc1ZmI4ZDMwODM4MjZmZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MDlkYTkwNTc4NzMyYzVhYWFmYTVlNDFkZTgzMzE5ZDU2ODhlYmFlMDk0ZWIxMzRjMDBiNjkyNTc1MTA2ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3ZjY5OTZlM2IxNWRmYjQzODYzMDAxYzcyZDNhNTM5ZGU3MGUzOGUyYTllZDIwZGU1OTExMDRhODI4NjRmNjYifQ"
+          "resource": "repo://langgraph.json#L24-L39",
+          "version": "repo-lines-v1:sha256:420993ce4ff92238740bfa7763cc6f995152e12ebab766060e5559e5565a4872:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzY0NTNkNjNhZWRkNjZkYzg0YTI2ZjRiZDhiMTI3NzQyOTRkN2JmZGE5YzU3MjBlZmFiM2U0OWY0OTdjZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNjBjMzAyMGY1ZTVlNjNmMzk3N2VkYTZmNzhmZTI0Y2E1ZmJjYjgyNDc5MmI2Yjc1ZmI4ZDMwODM4MjZmZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MDlkYTkwNTc4NzMyYzVhYWFmYTVlNDFkZTgzMzE5ZDU2ODhlYmFlMDk0ZWIxMzRjMDBiNjkyNTc1MTA2ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3ZjY5OTZlM2IxNWRmYjQzODYzMDAxYzcyZDNhNTM5ZGU3MGUzOGUyYTllZDIwZGU1OTExMDRhODI4NjRmNjYifQ"
         },
         {
           "resource": "repo://ui/vite.config.ts#L233-L245",
-          "version": "repo-lines-v1:sha256:c3464720fd274ea119ff5ca126e8bc197f3f83c20e1fff1b3c8e9c2475ea571b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0YWE2OTBmNzVkOTE3ZDgxYzhhMDM2Y2U4YWViMzczNjRiMDQxY2YxZGQ5ZWEzNzAwNjAxYWYwZGZkMTc3ZDciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyYmExNTljNTkwMjFjMGM2YzE0NjU3ZWI4NDMxYWE4MzBhZWY5M2EyODkyYmYwNzJmNzc1YzI2NDA1ZjgyMzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkxMjhhOTAzYzBiZGQ3MzYyOWVlMWY3ODQ0YTg2MmExOGRjZTU5Y2RkOWJmMDY0YzA0ODljNzc4ZWIxNjcyYjEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczMzYyZDBhOGFhYjdmOGEzYzdjMzI5MzIwNTU5YWNkOWVmNzdhNTFlYzJkMjY0OTc3MjUyMWRlZWM1NzE0YTAifQ"
+          "version": "repo-lines-v1:sha256:56f94b0c8977db91f0dae94f03eaa7ccb5175651cfa0d046c9dba93ef3f84c38:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZjYTc0MGU4MjY0YWMzMWIyZGVhMGFhZWQwNDg5Yjc1MmY2MGExMWNjY2E2ZjI1OTVlMWU1NmNhNTIwNjk4ZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk2NGFlNDc5NWJjMjBhMTBkMTlmODdmOTQ4ZjUwNTNiMDkxMzY2ZmQxNzY1MWI2ZWM2YzUwYTUzY2Y5MGFjMDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjliYWI4ZjI2NWNlMDE4YmE4YjdkNjhjMjZiMGZhMTNjYjVkY2Y5YzE5YzU4ZDExMDhmZjc3ZjU2MzA5N2YwOTAifQ"
         }
       ]
     },
@@ -335,8 +335,8 @@
       "statement": "make tunnel requires NGROK_DOMAIN and exposes local port 2024 through an ngrok policy that returns 404 for every path outside /webhooks/*, protecting unauthenticated LangGraph development routes from public exposure.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L47-L55",
-          "version": "repo-lines-v1:sha256:ee25f9c3b4c69bff750e377214fd43d1c2cffb04c7b6acda098e571071c43898:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGIxNzdhMDJjYTNkMTU2YmY2Yjk0YmZjMTQ5NWViNDRlOGVkMjVlNWEyNjI0ZmQwMTI5NjRmZGE2OGM5Njk3NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjMyZWI5MzdlYzIwNTBjMjRhMjQxYmRlMTdiY2VlNjJiMTZiZGJmMGMxZTgwYjBiM2I4YjY1MmJjMWMyMmU5OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTE1MmE3Y2ZlNDQ5NzExNjYzNDgxZDA2Zjk4Y2RjMTNkYWUxMjdkODkzNWI3ZjUyN2U3ZWJiNWE5NjE2ZjJmZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTgxOTRkMTAwNTc5MzJhNjljYWU1ZDBiOTIyMDA0MWQzYzJiNmY0YWJhOGY4ODc0NDQxMGFmZmYxOWQ5MGNiMSJ9"
+          "resource": "repo://Makefile#L42-L45",
+          "version": "repo-lines-v1:sha256:2d290be69d423cee54a879a4859407474f49bf72ce95470e5c50a0ab76a580f8:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWUxMTc1YmI1OTg4MjUzNDViMWM5ODkyOGQ5YmRjNTRjMWE3Mzc2MWU4M2M2MjFjNmMzNjg5Mzk0NmY2YzI5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjMyZWI5MzdlYzIwNTBjMjRhMjQxYmRlMTdiY2VlNjJiMTZiZGJmMGMxZTgwYjBiM2I4YjY1MmJjMWMyMmU5OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTU0ZDE1ZmMyY2JlMmQzNDVhNTE3ZWZkZDc5ZWM3MzA0YzM0MTAwMGNhZWJjNDM0ZGJkMDlhZjM0OTU1YjU3YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTgxOTRkMTAwNTc5MzJhNjljYWU1ZDBiOTIyMDA0MWQzYzJiNmY0YWJhOGY4ODc0NDQxMGFmZmYxOWQ5MGNiMSJ9"
         },
         {
           "resource": "repo://docs/DEVELOPMENT.md#L32-L47",
@@ -350,19 +350,19 @@
     },
     {
       "id": "claim_272a5027a9e146e6bc5404ba5d86ee78",
-      "statement": "The root Docker image does not itself build the dashboard; standalone Docker serving needs a prebuilt dashboard in the repository or DASHBOARD_STATIC_DIR, whereas the platform manifest performs a best-effort dashboard build and continues backend deployment if it fails.",
+      "statement": "The platform manifest performs a best-effort dashboard build and continues backend deployment if it fails; standalone Docker serving needs a prebuilt dashboard in the repository or DASHBOARD_STATIC_DIR.",
       "evidence": [
         {
           "resource": "repo://Dockerfile#L1-L24",
-          "version": "repo-lines-v1:sha256:b4555d0bb05391013c3039de6ddfc807b4ce110fd9487326fc335194e8ecd5cc:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGM1MmVmNmVjOTc4N2U3M2FlNzk1YzNlNDJhNWQyMGEzYmY1YzE1Yjc1YTJlNzM0MGExMzgwMGI0NWRmM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:1bb35f091bf66e67181cdded4529bc990812fe18f2ebdb77e287874d25f78814:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGM1MmVmNmVjOTc4N2U3M2FlNzk1YzNlNDJhNWQyMGEzYmY1YzE1Yjc1YTJlNzM0MGExMzgwMGI0NWRmM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://docs/INSTALLATION.md#L21-L26",
           "version": "repo-lines-v1:sha256:7b9d1d2d39a425fc72781cfc6719409129cf9523dce122490c1eccef9f3acaa6:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWE4YWRlMDEzMDg3NmNjZWYzZTkzOWVlNDQ2ZTY1MjNkYmE5YjE2NGRmZGMxZGFjNTc4NzEyNGZkNjNjYzc3YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzk3ZjkxMWM1MzZmYWE5YzliNmI3ZTZkYjYwZTJhMWE4YmM1NmMwMDlhNzcwYTA4NzE1MWE1Y2U5NjgyYzYwMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzk2MTViNDA0NTg4N2U5MjNmNzk5Y2I5Zjg4Y2RmYmQxMGJjYjQ3NzI5YzI4ZDg1ZjQ1OWJjYTExNzI0YjEzYiJ9"
         },
         {
-          "resource": "repo://langgraph.json#L23-L31",
-          "version": "repo-lines-v1:sha256:da0556532474e9c483d65f76922f6b5ae7a509dbb7a346c9361230ad42404797:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzY0NTNkNjNhZWRkNjZkYzg0YTI2ZjRiZDhiMTI3NzQyOTRkN2JmZGE5YzU3MjBlZmFiM2U0OWY0OTdjZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNjBjMzAyMGY1ZTVlNjNmMzk3N2VkYTZmNzhmZTI0Y2E1ZmJjYjgyNDc5MmI2Yjc1ZmI4ZDMwODM4MjZmZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MDlkYTkwNTc4NzMyYzVhYWFmYTVlNDFkZTgzMzE5ZDU2ODhlYmFlMDk0ZWIxMzRjMDBiNjkyNTc1MTA2ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3ZjY5OTZlM2IxNWRmYjQzODYzMDAxYzcyZDNhNTM5ZGU3MGUzOGUyYTllZDIwZGU1OTExMDRhODI4NjRmNjYifQ"
+          "resource": "repo://langgraph.json#L24-L39",
+          "version": "repo-lines-v1:sha256:420993ce4ff92238740bfa7763cc6f995152e12ebab766060e5559e5565a4872:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzY0NTNkNjNhZWRkNjZkYzg0YTI2ZjRiZDhiMTI3NzQyOTRkN2JmZGE5YzU3MjBlZmFiM2U0OWY0OTdjZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkNjBjMzAyMGY1ZTVlNjNmMzk3N2VkYTZmNzhmZTI0Y2E1ZmJjYjgyNDc5MmI2Yjc1ZmI4ZDMwODM4MjZmZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MDlkYTkwNTc4NzMyYzVhYWFmYTVlNDFkZTgzMzE5ZDU2ODhlYmFlMDk0ZWIxMzRjMDBiNjkyNTc1MTA2ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoyLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3ZjY5OTZlM2IxNWRmYjQzODYzMDAxYzcyZDNhNTM5ZGU3MGUzOGUyYTllZDIwZGU1OTExMDRhODI4NjRmNjYifQ"
         }
       ]
     },
@@ -379,6 +379,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-22T13:11:45.998Z"
+    "at": "2026-09-26T12:44:40.906Z"
   }
 }
