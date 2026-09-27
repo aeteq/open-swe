@@ -41,11 +41,24 @@ class TextContent(_NotionModel):
     link: TextLink | None = None
 
 
+class Mention(_NotionModel):
+    type: str = ""
+    user: NotionUser | None = None
+
+
 class RichText(_NotionModel):
     type: str = "text"
     plain_text: str = ""
     href: str | None = None
     text: TextContent | None = None
+    mention: Mention | None = None
+
+    @property
+    def mentioned_user_id(self) -> str | None:
+        mention = self.mention
+        if self.type != "mention" or mention is None or mention.type != "user":
+            return None
+        return mention.user.id if mention.user else None
 
 
 class SelectOption(_NotionModel):
@@ -115,6 +128,13 @@ class NotionComment(_NotionModel):
     created_by: NotionUser | None = None
     created_time: str = ""
     rich_text: list[RichText] = Field(default_factory=list)
+
+    def mentions(self, user_ids: frozenset[str]) -> bool:
+        return any(
+            (user_id := item.mentioned_user_id) is not None
+            and normalize_notion_id(user_id) in user_ids
+            for item in self.rich_text
+        )
 
 
 class FileRef(_NotionModel):

@@ -209,6 +209,13 @@ class FakeNotion:
             return httpx2.Response(
                 200, json={"results": self.blocks.get(parts[1], []), "has_more": False}
             )
+        if parts[0] == "comments" and method == "GET" and len(parts) == 2:
+            wanted = normalize_notion_id(parts[1])
+            for items in self.comments.values():
+                for item in items:
+                    if normalize_notion_id(str(item["id"])) == wanted:
+                        return httpx2.Response(200, json=item)
+            return httpx2.Response(404, json={"code": "object_not_found", "message": "no"})
         if parts[0] == "comments" and method == "GET":
             block_id = parse_qs(request.url.query.decode())["block_id"][0]
             return httpx2.Response(
@@ -253,12 +260,31 @@ def paragraph(text: str, *, block_id: str = "b", has_children: bool = False) -> 
     }
 
 
-def comment(comment_id: str, text: str, *, author: str = ALICE) -> Json:
+def comment(
+    comment_id: str,
+    text: str,
+    *,
+    author: str = ALICE,
+    page_id: str = "",
+    discussion_id: str = "d1",
+    mentions: str | None = None,
+) -> Json:
+    rich_text: list[JsonValue] = []
+    if mentions:
+        rich_text.append(
+            {
+                "type": "mention",
+                "plain_text": "@Jarvis ",
+                "mention": {"type": "user", "user": {"object": "user", "id": mentions}},
+            }
+        )
+    rich_text.append({"type": "text", "plain_text": text})
     return {
         "object": "comment",
         "id": comment_id,
-        "discussion_id": "d1",
+        "discussion_id": discussion_id,
+        "parent": {"type": "page_id", "page_id": page_id} if page_id else {},
         "created_by": {"object": "user", "id": author},
         "created_time": "2026-09-25T10:00:00.000Z",
-        "rich_text": [{"type": "text", "plain_text": text}],
+        "rich_text": rich_text,
     }

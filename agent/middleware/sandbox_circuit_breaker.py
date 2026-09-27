@@ -138,7 +138,9 @@ async def post_sandbox_unreachable_notification(
         return
 
     if cfg.notion_page and cfg.notion_page.id:
-        await post_notion_comment(cfg.notion_page.id, message)
+        await post_notion_comment(
+            cfg.notion_page.id, message, discussion_id=cfg.notion_page.discussion_id
+        )
         return
 
     github_target = _get_github_target(cfg)

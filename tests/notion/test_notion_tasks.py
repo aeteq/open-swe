@@ -9,7 +9,7 @@ from pydantic import JsonValue
 from agent.notion import notifications
 from agent.notion import webhook as service
 from agent.notion.models import WebhookEvent
-from agent.thread_ids import notion_page_thread_id
+from agent.thread_ids import notion_discussion_thread_id, notion_page_thread_id
 from tests.conftest import FakeStore
 from tests.notion.fakes import (
     ALICE,
@@ -464,3 +464,114 @@ async def test_the_agent_member_s_own_comment_is_not_forwarded(harness: Harness)
     await service.handle_notion_event(_event("comment.created", "c-1", page_id=TASK))
 
     assert harness.dispatched == []
+
+
+PLAIN_PAGE = "4444dddd-0000-0000-0000-000000000001"
+
+
+def _plain_page() -> dict[str, JsonValue]:
+    return {
+        "object": "page",
+        "id": PLAIN_PAGE,
+        "url": "https://www.notion.so/runbook",
+        "in_trash": False,
+        "parent": {"type": "page_id", "page_id": "5555eeee-0000-0000-0000-000000000001"},
+        "properties": {
+            "title": {
+                "id": "title",
+                "type": "title",
+                "title": [{"type": "text", "plain_text": "Release runbook"}],
+            }
+        },
+    }
+
+
+def _configurable_of(run: dict[str, object]) -> dict[str, object]:
+    configurable = run["configurable"]
+    assert isinstance(configurable, dict)
+    return configurable
+
+
+async def test_mention_starts_a_question_in_its_discussion(harness: Harness) -> None:
+    harness.notion.add(_plain_page())
+    harness.notion.blocks[PLAIN_PAGE] = [paragraph("Step 1: tag the release.")]
+    harness.notion.comments[PLAIN_PAGE.replace("-", "")] = [
+        comment(
+            "c-9", "how do we roll back?", page_id=PLAIN_PAGE, discussion_id="d9", mentions=JARVIS
+        )
+    ]
+
+    await service.handle_notion_event(_event("comment.created", "c-9", page_id=PLAIN_PAGE))
+
+    [run] = harness.dispatched
+    assert run["thread_id"] == notion_discussion_thread_id("d9")
+    configurable = _configurable_of(run)
+    assert "repo" not in configurable
+    assert configurable["repo_explicitly_none"] is True
+    notion_page = configurable["notion_page"]
+    assert isinstance(notion_page, dict)
+    assert (notion_page["kind"], notion_page["discussion_id"]) == ("mention", "d9")
+    prompts = "\n".join(harness.prompts())
+    assert "Release runbook" in prompts
+    assert "Step 1: tag the release." in prompts
+    assert "how do we roll back?" in prompts
+    assert harness.notion.property_writes() == []
+
+
+async def test_mention_on_a_task_page_uses_its_repository_without_starting_the_task(
+    harness: Harness,
+) -> None:
+    harness.notion.add(task_page(TASK))
+    harness.notion.comments[TASK.replace("-", "")] = [
+        comment("c-9", "is this blocked?", page_id=TASK, discussion_id="d9", mentions=JARVIS)
+    ]
+
+    await service.handle_notion_event(_event("comment.created", "c-9", page_id=TASK))
+
+    [run] = harness.dispatched
+    assert run["thread_id"] != notion_page_thread_id(TASK)
+    assert _configurable_of(run)["repo"] == {"owner": "aeteq", "name": "sportsbook"}
+    assert harness.notion.property_writes() == []
+
+
+async def test_follow_up_in_a_question_discussion_is_forwarded_without_a_mention(
+    harness: Harness,
+) -> None:
+    harness.notion.add(_plain_page())
+    harness.existing_threads.add(notion_discussion_thread_id("d9"))
+    harness.notion.comments[PLAIN_PAGE.replace("-", "")] = [
+        comment("c-10", "and for hotfixes?", page_id=PLAIN_PAGE, discussion_id="d9")
+    ]
+
+    await service.handle_notion_event(_event("comment.created", "c-10", page_id=PLAIN_PAGE))
+
+    [run] = harness.dispatched
+    assert run["thread_id"] == notion_discussion_thread_id("d9")
+    assert any("and for hotfixes?" in text for text in harness.prompts())
+
+
+async def test_comment_on_a_worked_task_replies_in_its_discussion(harness: Harness) -> None:
+    harness.notion.add(task_page(TASK, status="In progress"))
+    harness.existing_threads.add(notion_page_thread_id(TASK))
+    harness.notion.comments[TASK.replace("-", "")] = [
+        comment("c-11", "use semver", page_id=TASK, discussion_id="d11", mentions=JARVIS)
+    ]
+
+    await service.handle_notion_event(_event("comment.created", "c-11", page_id=TASK))
+
+    [run] = harness.dispatched
+    assert run["thread_id"] == notion_page_thread_id(TASK)
+    notion_page = _configurable_of(run)["notion_page"]
+    assert isinstance(notion_page, dict)
+    assert notion_page["discussion_id"] == "d11"
+    assert "kind" not in notion_page
+
+
+async def test_reply_goes_into_the_discussion(harness: Harness) -> None:
+    await notifications.post_notion_comment(
+        PLAIN_PAGE, "Roll back with `make rollback`.", discussion_id="d9"
+    )
+
+    [(_, _, body)] = harness.notion.writes
+    assert body["discussion_id"] == "d9"
+    assert "parent" not in body

@@ -213,7 +213,9 @@ async def _post_failure_reply(
     if source == "notion":
         if ctx.notion_page and ctx.notion_page.id:
             return await post_notion_comment(
-                ctx.notion_page.id, _failure_text(status, reason_code=reason_code)
+                ctx.notion_page.id,
+                _failure_text(status, reason_code=reason_code),
+                discussion_id=ctx.notion_page.discussion_id,
             )
         return False
 

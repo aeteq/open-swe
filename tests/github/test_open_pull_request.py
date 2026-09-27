@@ -873,6 +873,7 @@ def test_appends_notion_reference_for_private_repo(monkeypatch: pytest.MonkeyPat
         ("notion", {"success": True, "created": False, "url": "https://gh/pr/1"}, [False]),
         ("notion", {"success": False, "error": "nope"}, []),
         ("slack", {"success": True, "created": True, "url": "https://gh/pr/1"}, []),
+        ("mention", {"success": True, "created": True, "url": "https://gh/pr/1"}, []),
     ],
 )
 def test_opened_pr_is_recorded_on_the_notion_task(
@@ -881,7 +882,10 @@ def test_opened_pr_is_recorded_on_the_notion_task(
     result: dict[str, Any],
     expected: list[bool],
 ) -> None:
-    _set_config(monkeypatch, {"source": source, "notion_page": {"id": "p1"}})
+    page: dict[str, str] = {"id": "p1"}
+    if source == "mention":
+        source, page["kind"] = "notion", "mention"
+    _set_config(monkeypatch, {"source": source, "notion_page": page})
     monkeypatch.setattr(opr, "_open_pull_request", AsyncMock(return_value=result))
     recorded: list[bool] = []
 

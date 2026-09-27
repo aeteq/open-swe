@@ -226,11 +226,18 @@ class NotionClient:
             await self._write("PATCH", f"/pages/{page_id}", {"properties": properties})
         )
 
-    async def create_comment(self, page_id: str, markdown: str) -> NotionComment:
-        body: JsonObject = {
-            "parent": {"page_id": page_id},
-            "rich_text": markdown_to_rich_text(markdown),
-        }
+    async def get_comment(self, comment_id: str) -> NotionComment:
+        return NotionComment.model_validate(await self._read("GET", f"/comments/{comment_id}"))
+
+    async def create_comment(
+        self, page_id: str, markdown: str, *, discussion_id: str | None = None
+    ) -> NotionComment:
+        """Comment on the page, or reply in ``discussion_id`` when given."""
+        body: JsonObject = {"rich_text": markdown_to_rich_text(markdown)}
+        if discussion_id:
+            body["discussion_id"] = discussion_id
+        else:
+            body["parent"] = {"page_id": page_id}
         if self._as_user:
             body["display_name"] = {"type": "user"}
         return NotionComment.model_validate(await self._write("POST", "/comments", body))

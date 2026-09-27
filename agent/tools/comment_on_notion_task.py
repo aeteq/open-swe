@@ -28,6 +28,6 @@ async def comment_on_notion_task(text: str) -> CommentResult:
             "success": False,
             "error": f"Comment must be at most {_MAX_COMMENT_CHARS} characters",
         }
-    if not await post_notion_comment(page.id, body):
+    if not await post_notion_comment(page.id, body, discussion_id=page.discussion_id):
         return {"success": False, "error": "Notion did not accept the comment"}
     return {"success": True}

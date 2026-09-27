@@ -1147,9 +1147,11 @@ async def _record_on_notion_task(result: dict[str, Any], *, opened: bool) -> Non
     if not result.get("success") or not isinstance(pr_url, str) or not pr_url:
         return
     cfg = _configurable()
-    if cfg.source != "notion" or cfg.notion_page is None or not cfg.notion_page.id:
+    page = cfg.notion_page
+    # A question asked in a comment is not the page's task; its PR stays off the task.
+    if cfg.source != "notion" or page is None or not page.id or page.is_mention:
         return
-    await record_pull_request(cfg.notion_page.id, pr_url, opened=opened)
+    await record_pull_request(page.id, pr_url, opened=opened)
 
 
 def _ref_name(pr: dict[str, Any], side: str) -> str:

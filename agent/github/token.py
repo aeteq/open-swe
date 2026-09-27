@@ -266,8 +266,9 @@ async def leave_failure_comment(
                 cfg.notion_page.id,
                 warning(
                     "Open SWE couldn't resolve your GitHub account for this run. Sign in "
-                    "with GitHub in your Open SWE settings, then assign the task again."
+                    "with GitHub in your Open SWE settings, then try again."
                 ),
+                discussion_id=cfg.notion_page.discussion_id,
             )
         return
     if source == "slack":

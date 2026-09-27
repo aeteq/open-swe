@@ -44,7 +44,7 @@ from agent.notion.properties import (
 from agent.notion.settings import NotionSettings, normalize_notion_id, notion_settings
 from agent.prompts import render_prompt
 from agent.source_context import NotionPageRef, SourceContext
-from agent.thread_ids import notion_page_thread_id
+from agent.thread_ids import notion_discussion_thread_id, notion_page_thread_id
 from agent.users import User
 from agent.webhooks import common
 
@@ -220,8 +220,10 @@ async def evaluate_task(
     return TaskResult(outcome, "started")
 
 
-def _page_ref(page: NotionPage, requester: Requester) -> dict[str, str]:
-    return {
+def _page_ref(
+    page: NotionPage, requester: Requester, *, kind: str = "", discussion_id: str = ""
+) -> dict[str, str]:
+    ref = {
         "id": page.id,
         "identifier": page_identifier(page),
         "url": page.url,
@@ -229,25 +231,34 @@ def _page_ref(page: NotionPage, requester: Requester) -> dict[str, str]:
         "data_source_id": page.parent.data_source_id or "",
         "triggering_user_name": requester.name or "",
     }
+    if kind:
+        ref["kind"] = kind
+    if discussion_id:
+        ref["discussion_id"] = discussion_id
+    return ref
 
 
 async def _configurable(
     thread_id: str,
     notion_page: dict[str, str],
-    repo: dict[str, str],
+    repo: dict[str, str] | None,
     requester: Requester,
 ) -> tuple[dict[str, object], str]:
     workspace = await common.get_thread_workspace(
         thread_id
     ) or await common.workspace_for_repo_config(repo)
     configurable: dict[str, object] = {
-        "repo": repo,
         "notion_page": notion_page,
         "user_email": requester.email,
         "source": "notion",
         "workspace": workspace,
         "environment": workspace,
     }
+    if repo:
+        configurable["repo"] = repo
+    else:
+        # A question asked on a page that names no repository runs without one.
+        configurable["repo_explicitly_none"] = True
     if requester.github_login:
         configurable["github_login"] = requester.github_login
     await common.upsert_agent_thread_metadata(
@@ -531,59 +542,179 @@ async def _handle_design_page(
     return results
 
 
+def _history_line(comment: NotionComment, author_name: str) -> str:
+    return f"- **{author_name}**: {_comment_text(comment)}"
+
+
+async def _discussion_history(
+    client: NotionClient,
+    comment: NotionComment,
+    page_id: str,
+    settings: NotionSettings,
+) -> str:
+    """Earlier comments in the discussion the question was asked in."""
+    block_id = comment.parent.block_id or comment.parent.page_id or page_id
+    try:
+        comments = await client.list_comments(block_id)
+    except NOTION_ERRORS as exc:
+        logger.warning(
+            "Could not read Notion discussion",
+            extra={"notion_page_id": page_id, "error_type": type(exc).__name__},
+        )
+        return ""
+    earlier = [
+        item
+        for item in comments
+        if item.discussion_id == comment.discussion_id
+        and normalize_notion_id(item.id) != normalize_notion_id(comment.id)
+        and _comment_text(item)
+    ][-_MAX_CONTEXT_COMMENTS:]
+    authors: dict[str, NotionUser | None] = {}
+    lines: list[str] = []
+    for item in earlier:
+        author_id = item.created_by.id if item.created_by else ""
+        if author_id and author_id not in authors:
+            authors[author_id] = await _person(client, author_id)
+        author = authors.get(author_id)
+        own = settings.is_agent_user(author_id) or (author is not None and author.is_bot)
+        name = "You" if own else (author.name if author else None) or "User"
+        lines.append(_history_line(item, name))
+    return "\n".join(["", "## Discussion so far:", *lines]) if lines else ""
+
+
+def _comment_message(comment: NotionComment, author: NotionUser) -> RunMessage:
+    # The comment's author triggers this run, and the run describes its sender itself.
+    return human_input(
+        _comment_text(comment),
+        {
+            "sender_id": _sender_id(author),
+            "surface": "notion",
+            "kind": "human",
+            "data": {"comment_id": comment.id, "discussion_id": comment.discussion_id},
+        },
+    )
+
+
+def _thread_repo(metadata: dict[str, object]) -> dict[str, str] | None:
+    repo = metadata.get("repo")
+    if isinstance(repo, dict) and repo.get("owner") and repo.get("name"):
+        return {"owner": str(repo["owner"]), "name": str(repo["name"])}
+    return None
+
+
+async def _forward_comment(
+    client: NotionClient,
+    thread_id: str,
+    metadata: dict[str, object],
+    page_id: str,
+    comment: NotionComment,
+    author: NotionUser,
+    *,
+    kind: str,
+) -> TaskResult:
+    page = await client.get_page(page_id)
+    requester = await _requester(client, author.id)
+    configurable, _ = await _configurable(
+        thread_id,
+        _page_ref(page, requester, kind=kind, discussion_id=comment.discussion_id),
+        _thread_repo(metadata),
+        requester,
+    )
+    await _dispatch(thread_id, configurable, [_comment_message(comment, author)])
+    return TaskResult("followed_up", "comment forwarded")
+
+
+async def _start_question(
+    client: NotionClient,
+    page_id: str,
+    comment: NotionComment,
+    author: NotionUser,
+    settings: NotionSettings,
+) -> TaskResult:
+    """Start a run answering a comment that mentions the agent, in its own thread."""
+    page = await client.get_page(page_id)
+    requester = await _requester(client, author.id)
+    repo = await _resolve_repo(page, settings, requester)
+    if repo and not common.is_repo_allowed(repo):
+        logger.info(
+            "Notion question's repository is not allowed; answering without one",
+            extra={"notion_page_id": page.id},
+        )
+        repo = None
+    thread_id = notion_discussion_thread_id(comment.discussion_id)
+    notion_page = _page_ref(page, requester, kind="mention", discussion_id=comment.discussion_id)
+    body = await render_page_body(client, page.id)
+    property_lines = await _property_lines(client, page, [], settings)
+    prompt = render_prompt(
+        "runs/notion-mention.md",
+        title=notion_page["title"] or "Untitled page",
+        page_url_line=f"## Page URL: {page.url}\n\n" if page.url else "",
+        repository_line=f"## Repository: {repo['owner']}/{repo['name']}\n\n" if repo else "",
+        properties="## Properties:\n" + "\n".join(property_lines) + "\n\n"
+        if property_lines
+        else "",
+        body=body.markdown or "(empty page)",
+        discussion=await _discussion_history(client, comment, page.id, settings),
+    )
+    configurable, _ = await _configurable(thread_id, notion_page, repo, requester)
+    messages: list[RunMessage] = [
+        system_introduction(_SYSTEM),
+        system_input(
+            prompt,
+            {
+                "sender_id": _SYSTEM["id"],
+                "surface": "notion",
+                "kind": "system",
+                "data": {"page": {"id": page.id, "url": page.url, "title": notion_page["title"]}},
+            },
+        ),
+        _comment_message(comment, author),
+    ]
+    await _dispatch(thread_id, configurable, messages)
+    return TaskResult("dispatched", "question started")
+
+
 async def _handle_comment(
     client: NotionClient, event: WebhookEvent, settings: NotionSettings
 ) -> TaskResult:
+    """Route a new comment: into the page's task thread, its discussion's thread, or a new
+    question when it mentions the agent."""
+    comment = await client.get_comment(event.entity.id)
     parent = event.data.parent
-    page_id = event.data.page_id or (parent.id if parent and parent.type == "page" else None)
-    if not page_id:
-        return TaskResult("ignored", "comment not on a page")
-    thread_id = notion_page_thread_id(page_id)
-    metadata = await common.get_thread_metadata_safe(thread_id)
-    if metadata is None:
-        return TaskResult("ignored", "no thread for page")
-    comment = next(
-        (
-            item
-            for item in await client.list_comments(page_id)
-            if normalize_notion_id(item.id) == normalize_notion_id(event.entity.id)
-        ),
-        None,
+    page_id = (
+        event.data.page_id
+        or comment.parent.page_id
+        or (parent.id if parent and parent.type == "page" else None)
     )
-    if comment is None or comment.created_by is None:
-        return TaskResult("ignored", "comment not found")
+    if not page_id or comment.created_by is None:
+        return TaskResult("ignored", "comment not on a page")
     author = await _person(client, comment.created_by.id)
     if author is None or author.is_bot or settings.is_agent_user(author.id):
         return TaskResult("ignored", "comment is the agent's own or its author is unknown")
-    text = _comment_text(comment)
-    if not text:
+    if not _comment_text(comment):
         return TaskResult("ignored", "empty comment")
-    repo = metadata.get("repo")
-    if not isinstance(repo, dict) or not repo.get("owner") or not repo.get("name"):
-        return TaskResult("ignored", "thread has no repository")
 
-    page = await client.get_page(page_id)
-    requester = await _requester(client, comment.created_by.id)
-    configurable, _ = await _configurable(
-        thread_id,
-        _page_ref(page, requester),
-        {"owner": str(repo["owner"]), "name": str(repo["name"])},
-        requester,
-    )
-    # The comment's author triggers this run, and the run describes its sender itself.
-    messages: list[RunMessage] = [
-        human_input(
-            text,
-            {
-                "sender_id": _sender_id(author),
-                "surface": "notion",
-                "kind": "human",
-                "data": {"comment_id": comment.id},
-            },
-        ),
-    ]
-    await _dispatch(thread_id, configurable, messages)
-    return TaskResult("followed_up", "comment forwarded")
+    task_thread = notion_page_thread_id(page_id)
+    task_metadata = await common.get_thread_metadata_safe(task_thread)
+    if task_metadata is not None:
+        return await _forward_comment(
+            client, task_thread, task_metadata, page_id, comment, author, kind=""
+        )
+    discussion_thread = notion_discussion_thread_id(comment.discussion_id)
+    discussion_metadata = await common.get_thread_metadata_safe(discussion_thread)
+    if discussion_metadata is not None:
+        return await _forward_comment(
+            client,
+            discussion_thread,
+            discussion_metadata,
+            page_id,
+            comment,
+            author,
+            kind="mention",
+        )
+    if comment.discussion_id and comment.mentions(settings.agent_user_ids):
+        return await _start_question(client, page_id, comment, author, settings)
+    return TaskResult("ignored", "comment neither mentions the agent nor continues a thread")
 
 
 async def handle_notion_event(event: WebhookEvent) -> None:

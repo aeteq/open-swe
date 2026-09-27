@@ -379,6 +379,8 @@ Open SWE starts work when a task in a Notion task database is assigned to a dedi
 
 A task without a Repository falls back to the assigner's dashboard default repository, then the workspace default repository.
 
+**Questions by mention.** Mention the agent member in a comment on any page the integration can access, for example `@Jarvis how do we roll back a release?`, and it answers in that comment's discussion. Later replies in the discussion continue the same conversation without another mention. It works from the page's content and uses the page's Repository when the page is a task, otherwise the commenter's or the workspace's default repository, or no repository at all. A question never changes a task's status. Comment events only arrive for pages shared with the integration, so share the teamspaces or pages where people should be able to ask.
+
 **Verify:** create a task with **Repository** set, assign it to the agent member, and watch its status move to **In progress** and a Notion thread appear in the dashboard.
 
 </details>

@@ -17,10 +17,11 @@ from agent.notion.settings import NotionSettings, notion_settings
 logger = logging.getLogger(__name__)
 
 
-async def post_notion_comment(page_id: str, body: str) -> bool:
+async def post_notion_comment(page_id: str, body: str, *, discussion_id: str = "") -> bool:
+    """Comment on the page, or reply in ``discussion_id`` when the run started from one."""
     try:
         async with notion_writer() as client:
-            await client.create_comment(page_id, body)
+            await client.create_comment(page_id, body, discussion_id=discussion_id or None)
     except NOTION_ERRORS as exc:
         logger.warning(
             "Notion comment not delivered",
