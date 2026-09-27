@@ -97,7 +97,8 @@ def repo_config(page: NotionPage, name: str, default_owner: str) -> dict[str, st
     value = text_value(page, name).strip()
     if not value:
         return None
-    text = value if "github.com" in value or value.startswith("repo") else f"repo:{value}"
+    already_marked = "github.com" in value or value.startswith(("repo:", "repo "))
+    text = value if already_marked else f"repo:{value}"
     return extract_repo_from_text(text, default_owner=default_owner or None)
 
 

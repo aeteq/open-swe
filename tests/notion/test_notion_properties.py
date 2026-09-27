@@ -26,6 +26,9 @@ def _page(**overrides: JsonValue) -> NotionPage:
     [
         ({"type": "select", "select": {"name": "aeteq/sportsbook"}}, ("aeteq", "sportsbook")),
         ({"type": "select", "select": {"name": "sportsbook"}}, ("aeteq", "sportsbook")),
+        ({"type": "select", "select": {"name": "reporting-api"}}, ("aeteq", "reporting-api")),
+        ({"type": "select", "select": {"name": "repo-tools"}}, ("aeteq", "repo-tools")),
+        ({"type": "select", "select": {"name": "repo:aeteq/infra"}}, ("aeteq", "infra")),
         (
             {"type": "rich_text", "rich_text": [{"plain_text": "aeteq/open-swe"}]},
             ("aeteq", "open-swe"),
