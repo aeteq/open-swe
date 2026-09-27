@@ -1138,18 +1138,18 @@ async def open_pull_request(
         resolves_thread=resolves_thread,
         author=author or None,
     )
-    await _record_on_notion_task(result)
+    await _record_on_notion_task(result, opened=result.get("created") is True)
     return result
 
 
-async def _record_on_notion_task(result: dict[str, Any]) -> None:
+async def _record_on_notion_task(result: dict[str, Any], *, opened: bool) -> None:
     pr_url = result.get("url")
     if not result.get("success") or not isinstance(pr_url, str) or not pr_url:
         return
     cfg = _configurable()
     if cfg.source != "notion" or cfg.notion_page is None or not cfg.notion_page.id:
         return
-    await record_pull_request(cfg.notion_page.id, pr_url, announce=result.get("created") is True)
+    await record_pull_request(cfg.notion_page.id, pr_url, opened=opened)
 
 
 def _ref_name(pr: dict[str, Any], side: str) -> str:
@@ -1187,4 +1187,6 @@ async def link_pull_request(pr_url: str, resolves_thread: bool = False) -> dict[
             resolves_thread=resolves_thread,
             record_opening=False,
         )
-    return {"success": True, "url": pr.get("html_url"), "number": ref.number}
+    result: dict[str, Any] = {"success": True, "url": pr.get("html_url"), "number": ref.number}
+    await _record_on_notion_task(result, opened=False)
+    return result

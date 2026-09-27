@@ -71,8 +71,11 @@ async def set_task_status(page: NotionPage, status: str, settings: NotionSetting
     return await update_task_properties(page, patch or {})
 
 
-async def record_pull_request(page_id: str, pr_url: str, *, announce: bool) -> None:
-    """Link the PR on the task, move it to review, and (for a new PR) say so in a comment."""
+async def record_pull_request(page_id: str, pr_url: str, *, opened: bool) -> None:
+    """Link the PR on the task, move it to review, and say so when the task's PR changes.
+
+    ``opened`` says whether this run created the PR or linked an existing one.
+    """
     settings = notion_settings()
     try:
         async with notion_client() as client:
@@ -84,6 +87,8 @@ async def record_pull_request(page_id: str, pr_url: str, *, announce: bool) -> N
         )
         return
 
+    prop = page.properties.get(settings.pr_property)
+    already_recorded = prop is not None and prop.url == pr_url
     properties: dict[str, JsonValue] = dict(url_patch(page, settings.pr_property, pr_url) or {})
     # A task someone already moved past review keeps its status.
     if status_name(page, settings.status_property) in settings.startable_statuses:
@@ -94,5 +99,6 @@ async def record_pull_request(page_id: str, pr_url: str, *, announce: bool) -> N
             or {}
         )
     await update_task_properties(page, properties)
-    if announce:
-        await post_notion_comment(page_id, f"✅ Pull request opened: {pr_url}")
+    if not already_recorded:
+        verb = "opened" if opened else "linked"
+        await post_notion_comment(page_id, f"✅ Pull request {verb}: {pr_url}")

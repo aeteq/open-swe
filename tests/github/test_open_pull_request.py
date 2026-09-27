@@ -885,13 +885,37 @@ def test_opened_pr_is_recorded_on_the_notion_task(
     monkeypatch.setattr(opr, "_open_pull_request", AsyncMock(return_value=result))
     recorded: list[bool] = []
 
-    async def record(page_id: str, pr_url: str, *, announce: bool) -> None:
+    async def record(page_id: str, pr_url: str, *, opened: bool) -> None:
         assert (page_id, pr_url) == ("p1", "https://gh/pr/1")
-        recorded.append(announce)
+        recorded.append(opened)
 
     monkeypatch.setattr(opr, "record_pull_request", record)
 
     assert asyncio.run(opr.open_pull_request("o", "r", "h", "main", "t", "b")) == result
+    assert recorded == expected
+
+
+@pytest.mark.parametrize(("source", "expected"), [("notion", [False]), ("slack", [])])
+def test_linked_pr_is_recorded_on_the_notion_task(
+    monkeypatch: pytest.MonkeyPatch, source: str, expected: list[bool]
+) -> None:
+    _set_config(monkeypatch, {"source": source, "notion_page": {"id": "p1"}})
+    _stub_token(monkeypatch)
+    _install_client(monkeypatch, _FakeClient(post=_FakeResponse(201)))
+    pr_url = "https://github.com/langchain-ai/open-swe/pull/7"
+    monkeypatch.setattr(opr, "_fetch_pr_details", AsyncMock(return_value={"html_url": pr_url}))
+    monkeypatch.setattr(opr, "_record_pr_telemetry", AsyncMock())
+    recorded: list[bool] = []
+
+    async def record(page_id: str, url: str, *, opened: bool) -> None:
+        assert (page_id, url) == ("p1", pr_url)
+        recorded.append(opened)
+
+    monkeypatch.setattr(opr, "record_pull_request", record)
+
+    result = asyncio.run(opr.link_pull_request(pr_url))
+
+    assert result == {"success": True, "url": pr_url, "number": 7}
     assert recorded == expected
 
 

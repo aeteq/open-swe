@@ -370,7 +370,7 @@ async def test_record_pull_request_links_the_pr_and_moves_to_review(harness: Har
     harness.notion.add(task_page(TASK, status="In progress"))
 
     await notifications.record_pull_request(
-        TASK, "https://github.com/aeteq/sportsbook/pull/30", announce=True
+        TASK, "https://github.com/aeteq/sportsbook/pull/30", opened=True
     )
 
     [properties] = harness.notion.property_writes()
@@ -383,17 +383,31 @@ async def test_record_pull_request_links_the_pr_and_moves_to_review(harness: Har
     ]
 
 
-async def test_record_pull_request_keeps_a_done_status_and_is_quiet_for_existing_prs(
+async def test_linked_pr_is_announced_as_linked_and_keeps_a_done_status(
     harness: Harness,
 ) -> None:
     harness.notion.add(task_page(TASK, status="Done"))
 
     await notifications.record_pull_request(
-        TASK, "https://github.com/aeteq/sportsbook/pull/30", announce=False
+        TASK, "https://github.com/aeteq/sportsbook/pull/30", opened=False
     )
 
     [properties] = harness.notion.property_writes()
     assert "Status" not in properties
+    assert harness.notion.comment_writes() == [
+        "✅ Pull request linked: https://github.com/aeteq/sportsbook/pull/30"
+    ]
+
+
+async def test_recording_the_task_s_current_pr_again_is_quiet(harness: Harness) -> None:
+    page = task_page(TASK, status="In review")
+    page["properties"]["Pull Request URL"]["url"] = "https://github.com/aeteq/sportsbook/pull/30"  # type: ignore[index]
+    harness.notion.add(page)
+
+    await notifications.record_pull_request(
+        TASK, "https://github.com/aeteq/sportsbook/pull/30", opened=True
+    )
+
     assert harness.notion.comment_writes() == []
 
 
@@ -401,6 +415,6 @@ async def test_notion_outage_does_not_raise_from_write_back(harness: Harness) ->
     harness.notion.add(task_page(TASK, status="In progress"))
     harness.notion.fail_writes = True
 
-    await notifications.record_pull_request(TASK, "https://github.com/a/b/pull/1", announce=True)
+    await notifications.record_pull_request(TASK, "https://github.com/a/b/pull/1", opened=True)
 
     assert await notifications.post_notion_comment(TASK, "hi") is False
