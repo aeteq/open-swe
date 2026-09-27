@@ -58,8 +58,8 @@ async def notion_webhook(request: Request, background_tasks: BackgroundTasks) ->
 
     if event.type not in HANDLED_EVENT_TYPES:
         return {"status": "ignored", "reason": f"Event type {event.type} is not handled"}
-    if event.authored_by_bots_only:
-        return {"status": "ignored", "reason": "Event authored by an integration"}
+    if event.authored_by_agent(notion_settings().agent_user_ids):
+        return {"status": "ignored", "reason": "Event authored by the agent"}
 
     background_tasks.add_task(service.handle_notion_event, event)
     return {"status": "accepted"}

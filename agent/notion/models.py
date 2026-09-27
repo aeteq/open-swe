@@ -6,6 +6,8 @@ page must not fail to parse because of a property type this module never uses.
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent.notion.settings import normalize_notion_id
+
 
 class _NotionModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -216,9 +218,16 @@ class WebhookEvent(_NotionModel):
     authors: list[WebhookAuthor] = Field(default_factory=list)
     data: WebhookEventData = Field(default_factory=WebhookEventData)
 
-    @property
-    def authored_by_bots_only(self) -> bool:
-        return bool(self.authors) and all(author.type == "bot" for author in self.authors)
+    def authored_by_agent(self, agent_user_ids: frozenset[str]) -> bool:
+        """Whether only integrations or the agent's own member caused this event.
+
+        Writes made with the agent's personal access token are authored by its
+        member (or the token's bot), so they are the agent's own too.
+        """
+        return bool(self.authors) and all(
+            author.type == "bot" or normalize_notion_id(author.id) in agent_user_ids
+            for author in self.authors
+        )
 
     @property
     def person_author_id(self) -> str | None:

@@ -84,8 +84,12 @@ def markdown_to_rich_text(markdown: str) -> list[JsonValue]:
 
 
 class NotionClient:
-    def __init__(self, token: str, http: httpx2.AsyncClient | None = None) -> None:
+    def __init__(
+        self, token: str, http: httpx2.AsyncClient | None = None, *, as_user: bool = False
+    ) -> None:
         self._token = token
+        # A personal access token acts as its owner; say so on comments too.
+        self._as_user = as_user
         self._http = http or httpx2.AsyncClient(timeout=DEFAULT_HTTP_TIMEOUT)
         self._owns_http = http is None
 
@@ -223,17 +227,28 @@ class NotionClient:
         )
 
     async def create_comment(self, page_id: str, markdown: str) -> NotionComment:
-        return NotionComment.model_validate(
-            await self._write(
-                "POST",
-                "/comments",
-                {"parent": {"page_id": page_id}, "rich_text": markdown_to_rich_text(markdown)},
-            )
-        )
+        body: JsonObject = {
+            "parent": {"page_id": page_id},
+            "rich_text": markdown_to_rich_text(markdown),
+        }
+        if self._as_user:
+            body["display_name"] = {"type": "user"}
+        return NotionComment.model_validate(await self._write("POST", "/comments", body))
 
 
 def notion_client() -> NotionClient:
+    """Reads, as the integration that receives the webhooks."""
     token = notion_settings().api_key
     if not token:
         raise NotionNotConfiguredError("NOTION_API_KEY is not configured")
     return NotionClient(token)
+
+
+def notion_writer() -> NotionClient:
+    """Writes, as the agent's Notion member when its personal access token is set."""
+    settings = notion_settings()
+    if settings.agent_api_key:
+        return NotionClient(settings.agent_api_key, as_user=True)
+    if not settings.api_key:
+        raise NotionNotConfiguredError("NOTION_API_KEY is not configured")
+    return NotionClient(settings.api_key)

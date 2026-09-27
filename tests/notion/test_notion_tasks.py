@@ -62,8 +62,8 @@ def harness(monkeypatch: pytest.MonkeyPatch, fake_store: FakeStore) -> Harness:
     monkeypatch.setenv("NOTION_AGENT_USER_IDS", JARVIS)
     monkeypatch.setenv("NOTION_TASKS_DATA_SOURCE_ID", TASKS_DS)
     monkeypatch.setenv("NOTION_DOCUMENTS_DATA_SOURCE_ID", DOCS_DS)
-    monkeypatch.setattr(service, "notion_client", notion.client)
-    monkeypatch.setattr(notifications, "notion_client", notion.client)
+    monkeypatch.delenv("NOTION_AGENT_API_KEY", raising=False)
+    notion.install(monkeypatch)
 
     async def dispatch(thread_id, content, configurable, *, source, input=None, metadata=None):
         h.dispatched.append(
@@ -418,3 +418,49 @@ async def test_notion_outage_does_not_raise_from_write_back(harness: Harness) ->
     await notifications.record_pull_request(TASK, "https://github.com/a/b/pull/1", opened=True)
 
     assert await notifications.post_notion_comment(TASK, "hi") is False
+
+
+async def test_writes_use_the_agent_token_and_appear_as_the_agent(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOTION_AGENT_API_KEY", "jarvis-pat")
+    harness.notion.add(task_page(TASK, status="In progress"))
+
+    await notifications.record_pull_request(
+        TASK, "https://github.com/aeteq/sportsbook/pull/30", opened=True
+    )
+
+    assert set(harness.notion.write_tokens) == {"jarvis-pat"}
+    [comment_body] = [
+        body for method, path, body in harness.notion.writes if path == "/v1/comments"
+    ]
+    assert comment_body["display_name"] == {"type": "user"}
+
+
+async def test_without_an_agent_token_writes_use_the_integration(harness: Harness) -> None:
+    harness.notion.add(task_page(TASK))
+
+    await notifications.post_notion_comment(TASK, "hello")
+
+    assert harness.notion.write_tokens == ["secret"]
+    [(_, _, body)] = harness.notion.writes
+    assert "display_name" not in body
+
+
+async def test_the_agent_member_s_own_comment_is_not_forwarded(harness: Harness) -> None:
+    harness.notion.users[JARVIS] = {
+        "object": "user",
+        "id": JARVIS,
+        "type": "person",
+        "name": "Jarvis",
+        "person": {"email": "jarvis@aeteq.com"},
+    }
+    harness.notion.add(task_page(TASK, status="In progress"))
+    harness.existing_threads.add(notion_page_thread_id(TASK))
+    harness.notion.comments[TASK.replace("-", "")] = [
+        comment("c-1", "Which footer should show it?", author=JARVIS)
+    ]
+
+    await service.handle_notion_event(_event("comment.created", "c-1", page_id=TASK))
+
+    assert harness.dispatched == []

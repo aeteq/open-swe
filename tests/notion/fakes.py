@@ -5,8 +5,10 @@ from dataclasses import dataclass, field
 from urllib.parse import parse_qs
 
 import httpx2
+import pytest
 from pydantic import JsonValue
 
+from agent.notion import client as client_module
 from agent.notion.client import NotionClient
 from agent.notion.settings import normalize_notion_id
 
@@ -105,6 +107,7 @@ class FakeNotion:
     comments: dict[str, list[Json]] = field(default_factory=dict)
     users: dict[str, Json] = field(default_factory=dict)
     writes: list[tuple[str, str, Json]] = field(default_factory=list)
+    write_tokens: list[str] = field(default_factory=list)
     fail_writes: bool = False
 
     def __post_init__(self) -> None:
@@ -174,6 +177,7 @@ class FakeNotion:
         body: Json = json.loads(request.content) if request.content else {}
         if method in ("PATCH", "POST") and not path.endswith("/query"):
             self.writes.append((method, path, body))
+            self.write_tokens.append(request.headers["Authorization"].removeprefix("Bearer "))
             if self.fail_writes:
                 return httpx2.Response(502, json={"code": "bad_gateway", "message": "down"})
         parts = path.removeprefix("/v1/").split("/")
@@ -227,6 +231,16 @@ class FakeNotion:
         return NotionClient(
             "secret", http=httpx2.AsyncClient(transport=httpx2.MockTransport(self.handler))
         )
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Route every client the real factories build to this fake."""
+        real_client = httpx2.AsyncClient
+        handler = self.handler
+
+        def fake_client(**kwargs: object) -> httpx2.AsyncClient:
+            return real_client(transport=httpx2.MockTransport(handler))
+
+        monkeypatch.setattr(client_module.httpx2, "AsyncClient", fake_client)
 
 
 def paragraph(text: str, *, block_id: str = "b", has_children: bool = False) -> Json:

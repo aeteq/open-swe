@@ -32,13 +32,18 @@ def client() -> TestClient:
     return TestClient(app)
 
 
-def _event(*, author_type: str = "person", event_type: str = "page.properties_updated") -> bytes:
+def _event(
+    *,
+    author_type: str = "person",
+    event_type: str = "page.properties_updated",
+    author_id: str = "user-1",
+) -> bytes:
     return json.dumps(
         {
             "id": "evt-1",
             "type": event_type,
             "entity": {"id": "page-1", "type": "page"},
-            "authors": [{"id": "user-1", "type": author_type}],
+            "authors": [{"id": author_id, "type": author_type}],
             "data": {"updated_properties": ["%40JSP"]},
         }
     ).encode()
@@ -125,6 +130,19 @@ def test_integration_authored_and_unhandled_events_are_ignored(
 ) -> None:
     monkeypatch.setenv("NOTION_WEBHOOK_SECRET", SECRET)
     body = _event(author_type=author_type, event_type=event_type)
+
+    status, payload = _post(client, body, _sign(body))
+
+    assert (status, payload["status"]) == (200, "ignored")
+    assert handled == []
+
+
+def test_events_authored_by_the_agent_member_are_ignored(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, handled: list[WebhookEvent]
+) -> None:
+    monkeypatch.setenv("NOTION_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("NOTION_AGENT_USER_IDS", "3e6d872b-594c-8176-bb78-000243d8cbe3")
+    body = _event(author_id="3e6d872b594c8176bb78000243d8cbe3")
 
     status, payload = _post(client, body, _sign(body))
 

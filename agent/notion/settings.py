@@ -21,6 +21,7 @@ def _name_set(raw: str) -> frozenset[str]:
 @dataclass(frozen=True)
 class NotionSettings:
     api_key: str
+    agent_api_key: str
     webhook_secret: str
     agent_user_ids: frozenset[str]
     task_data_source_ids: frozenset[str]
@@ -39,6 +40,10 @@ class NotionSettings:
     def is_agent_user(self, user_id: str) -> bool:
         return normalize_notion_id(user_id) in self.agent_user_ids
 
+    @property
+    def writes_as_agent(self) -> bool:
+        return bool(self.agent_api_key)
+
     def is_task_data_source(self, data_source_id: str | None) -> bool:
         return bool(data_source_id) and (
             normalize_notion_id(data_source_id or "") in self.task_data_source_ids
@@ -53,6 +58,7 @@ class NotionSettings:
 def notion_settings() -> NotionSettings:
     return NotionSettings(
         api_key=ENV.NOTION_API_KEY.get(),
+        agent_api_key=ENV.NOTION_AGENT_API_KEY.get(),
         webhook_secret=ENV.NOTION_WEBHOOK_SECRET.get(),
         agent_user_ids=_id_set(ENV.NOTION_AGENT_USER_IDS.get()),
         task_data_source_ids=_id_set(ENV.NOTION_TASKS_DATA_SOURCE_ID.get()),

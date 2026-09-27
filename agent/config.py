@@ -294,6 +294,12 @@ ENV.var("LINEAR_WEBHOOK_SECRET", "HMAC secret for Linear webhook deliveries.", s
 # --- Notion tasks ----------------------------------------------------------------------------
 ENV.var("NOTION_API_KEY", "Notion internal integration token for task webhooks.", secret=True)
 ENV.var(
+    "NOTION_AGENT_API_KEY",
+    "Personal access token of the agent's Notion member; comments and task updates are "
+    "written with it so they appear as that member. Defaults to NOTION_API_KEY.",
+    secret=True,
+)
+ENV.var(
     "NOTION_WEBHOOK_SECRET",
     "Verification token of the Notion webhook subscription, used to verify deliveries.",
     secret=True,

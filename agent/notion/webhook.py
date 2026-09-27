@@ -318,7 +318,9 @@ def _comment_text(comment: NotionComment) -> str:
     return plain_text(comment.rich_text)
 
 
-async def _context_comments(client: NotionClient, page: NotionPage) -> str:
+async def _context_comments(
+    client: NotionClient, page: NotionPage, settings: NotionSettings
+) -> str:
     try:
         comments = await client.list_comments(page.id)
     except NOTION_ERRORS as exc:
@@ -328,6 +330,7 @@ async def _context_comments(client: NotionClient, page: NotionPage) -> str:
         )
         return ""
     # Comment authors are partial users; only the full user says whether it is a bot.
+    # The agent's own comments (as the integration or as its member) are not input.
     authors: dict[str, NotionUser | None] = {}
     lines: list[str] = []
     for comment in comments[-_MAX_CONTEXT_COMMENTS:]:
@@ -338,7 +341,7 @@ async def _context_comments(client: NotionClient, page: NotionPage) -> str:
         if author_id not in authors:
             authors[author_id] = await _person(client, author_id)
         author = authors[author_id]
-        if author is not None and author.is_bot:
+        if settings.is_agent_user(author_id) or (author is not None and author.is_bot):
             continue
         lines.append(f"- **{(author.name if author else None) or 'User'}**: {text}")
     return "\n".join(["", "## Comments:", *lines]) if lines else ""
@@ -375,7 +378,7 @@ async def process_notion_task(
     notion_page = _page_ref(page, requester)
     body = await render_page_body(client, page.id)
     property_lines = await _property_lines(client, page, designs, settings)
-    comments = await _context_comments(client, page)
+    comments = await _context_comments(client, page, settings)
 
     prompt = render_prompt(
         "runs/notion-task.md",
@@ -550,8 +553,8 @@ async def _handle_comment(
     if comment is None or comment.created_by is None:
         return TaskResult("ignored", "comment not found")
     author = await _person(client, comment.created_by.id)
-    if author is None or author.is_bot:
-        return TaskResult("ignored", "comment author unknown or a bot")
+    if author is None or author.is_bot or settings.is_agent_user(author.id):
+        return TaskResult("ignored", "comment is the agent's own or its author is unknown")
     text = _comment_text(comment)
     if not text:
         return TaskResult("ignored", "empty comment")

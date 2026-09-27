@@ -9,7 +9,7 @@ import logging
 
 from pydantic import JsonValue
 
-from agent.notion.client import NOTION_ERRORS, notion_client
+from agent.notion.client import NOTION_ERRORS, notion_client, notion_writer
 from agent.notion.models import NotionDataSource, NotionPage
 from agent.notion.properties import status_name, status_patch, url_patch
 from agent.notion.settings import NotionSettings, notion_settings
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def post_notion_comment(page_id: str, body: str) -> bool:
     try:
-        async with notion_client() as client:
+        async with notion_writer() as client:
             await client.create_comment(page_id, body)
     except NOTION_ERRORS as exc:
         logger.warning(
@@ -49,7 +49,7 @@ async def update_task_properties(page: NotionPage, properties: dict[str, JsonVal
     if not properties:
         return False
     try:
-        async with notion_client() as client:
+        async with notion_writer() as client:
             await client.update_page_properties(page.id, properties)
     except NOTION_ERRORS as exc:
         logger.warning(
