@@ -624,7 +624,7 @@ def test_footer_names_the_model_that_opened_the_pr(
     _open_with_body("body")
 
     sent_body = client.post_calls[0]["json"]["body"]
-    assert sent_body.count("Made by [Open SWE]") == 1
+    assert sent_body.count("Made by [Jarvis]") == 1
     assert sent_body.endswith(" · openai:gpt-5.6-luna (xhigh)")
 
 
