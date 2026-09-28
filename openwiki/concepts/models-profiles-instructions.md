@@ -12,32 +12,26 @@ sources:
     resource: repo://agent/dashboard/options.py
   - id: openwiki-source-d9f679c15adbf4b3f612d406
     resource: repo://agent/dashboard/profiles.py
-  - id: openwiki-source-61ace7d4952db9ddb8316aeb
-    resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-23002b87792ed6949edb723b
-    resource: repo://agent/dashboard/team_settings.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-9bf84d0c3d7e3b3001405497
     resource: repo://agent/dashboard/user_instructions.py
+  - id: openwiki-source-0a6d03ee63c0e527ce21bf77
+    resource: repo://agent/dashboard/workspace_settings.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-e081118d2ce6ecdbd524a5ee
+    resource: repo://agent/threads/runs.py
   - id: openwiki-source-f0db445078d7a8158aa93724
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-  - id: openwiki-source-654bec991273a9eb3ccdf2c1
-    resource: repo://tests/dashboard/test_dashboard_thread_api.py
-  - id: openwiki-source-72fb34b832807b302aeea76e
-    resource: repo://tests/models/test_model_fallback_resolution.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Models, Profiles, and Instructions
@@ -63,7 +57,7 @@ All team default resolvers use a valid saved pair first, then same-provider reco
 
 ## Precedence, roles, and thread lifecycle
 
-Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]`. Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
+Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]`. (Note: the instance record is sometimes called "team settings" for historical reasons—the pre-workspaces architecture had no separate workspace records.) Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
 
 Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, and PR/CI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
 
@@ -112,7 +106,7 @@ Prompt authority is explicit:
 
 1. A repository `AGENTS.md`, if present, overrides prompt defaults with the same authority as the system prompt.
 2. Repository-specific custom instructions are mandatory but yield to `AGENTS.md`.
-3. Environment instructions yield to repository instructions and `AGENTS.md`.
+3. Workspace-level instructions yield to repository instructions and `AGENTS.md`.
 4. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.

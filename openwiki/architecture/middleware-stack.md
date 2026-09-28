@@ -3,9 +3,6 @@ type: architecture-component
 title: Middleware and Failure Boundaries
 description: Ordering-sensitive middleware around the coding agent and reviewer model and tool loops. Explains preparation, policy, retries, deadlines, completion hooks, and how failures become safe user-visible outcomes.
 tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
 sources:
   - id: openwiki-source-828b741451bbda4468382d9b
     resource: repo://agent/middleware/check_message_queue.py
@@ -19,8 +16,6 @@ sources:
     resource: repo://agent/middleware/notify_step_limit.py
   - id: openwiki-source-f26d060fb4408e89b50964a5
     resource: repo://agent/middleware/plan_mode.py
-  - id: openwiki-source-3d6d2704e3f7fa58a6207393
-    resource: repo://agent/middleware/pr_creation_guard.py
   - id: openwiki-source-de97adb0acb9dec0664a44b6
     resource: repo://agent/middleware/prepare_run.py
   - id: openwiki-source-739850fbbfceb2f1f047ce4e
@@ -29,8 +24,6 @@ sources:
     resource: repo://agent/middleware/refresh_github_proxy.py
   - id: openwiki-source-68ed7096f2c698e329abb45c
     resource: repo://agent/middleware/repair_orphaned_tool_calls.py
-  - id: openwiki-source-69db7ced9516fc1b66a19d47
-    resource: repo://agent/middleware/sandbox_circuit_breaker.py
   - id: openwiki-source-3de68f2dbfda5bbd7f86131c
     resource: repo://agent/middleware/sanitize_tool_inputs.py
   - id: openwiki-source-626b1e5ad4f4c7d45dbc8f12
@@ -53,7 +46,10 @@ sources:
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
   - id: openwiki-source-b074bf11145a0ff6206cec7b
     resource: repo://tests/sandbox/test_sandbox_retry.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Middleware and Failure Boundaries
@@ -64,29 +60,34 @@ generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
 
 The coding-agent chain is outer to inner:
 
-1. `PrepareAgentRunMiddleware`
-2. `DynamicToolMiddleware`, only if it has integration groups
-3. `SanitizeToolInputsMiddleware`
-4. `ModelCallLimitMiddleware`
-5. `ToolErrorMiddleware`
-6. `ExcludeToolsMiddleware`
-7. `SubdirAgentsReadMiddleware`
-8. `ToolRetryMiddleware` for `task`
-9. `PullRequestCreationGuardMiddleware`, except for local/desktop runs
-10. `WorkflowPushGuardMiddleware`
-11. `refresh_github_proxy_before_model`
-12. `check_message_queue_before_model`, except in stop-summary mode
-13. `TimeoutWrapupMiddleware`
-14. `notify_step_limit_reached`
-15. `record_run_usage`
-16. `ModelFallbackMiddleware`, only when a different fallback model resolves
-17. `PlanModeMiddleware`
-18. `SanitizeFireworksMessagesMiddleware`
-19. `SanitizeOpenAIResponsesMiddleware`
-20. `SanitizeThinkingBlocksMiddleware`
-21. `StableToolResultOrderMiddleware`
-22. `ModelErrorMiddleware`
-23. `ModelCallTimeoutMiddleware`
+1. `ConversationOffloadingMiddleware`
+2. `PrepareAgentRunMiddleware`
+3. `IncidentMiddleware`, only if an incident session is present
+4. `WorkspaceSkillsMiddleware`, only if configured (non-local, org admins)
+5. `DynamicToolMiddleware`, only if it has integration groups
+6. `SanitizeToolInputsMiddleware`
+7. `ValidateImageReadsMiddleware`
+8. `ModelCallLimitMiddleware`
+9. `ToolErrorMiddleware`
+10. `ExcludeToolsMiddleware`
+11. `SubdirAgentsReadMiddleware`
+12. `ToolRetryMiddleware` for `task`
+13. `PullRequestCreationGuardMiddleware`, except for local/desktop runs
+14. `WorkflowPushGuardMiddleware`
+15. `refresh_github_proxy_before_model`
+16. `check_message_queue_before_model`, except in stop-summary mode
+17. `TimeoutWrapupMiddleware`
+18. `notify_step_limit_reached`
+19. `record_run_usage`
+20. `ModelSelectionMiddleware`, only if adaptive model routing is enabled
+21. `ModelFallbackMiddleware`, only when a different fallback model resolves
+22. `PlanModeMiddleware`
+23. `SanitizeFireworksMessagesMiddleware`
+24. `SanitizeOpenAIResponsesMiddleware`
+25. `SanitizeThinkingBlocksMiddleware`
+26. `StableToolResultOrderMiddleware`
+27. `ModelErrorMiddleware`
+28. `ModelCallTimeoutMiddleware`
 
 The last three layers form the critical model-failure boundary. Provider-specific message cleanup and stable tool-result ordering prepare a valid provider request. `ModelCallTimeoutMiddleware` is innermost, so its wall-clock deadline includes the provider operation itself. It converts a stalled call to `ModelCallTimeoutError`, which is a `TimeoutError`; that exception first passes through `ModelErrorMiddleware` for classification and thread metadata, then reaches the optional fallback wrapper. Thus a hang becomes either a retried request or a controlled, visible end to the run rather than a silent parked invocation.
 
@@ -143,7 +144,7 @@ Tool failures have a separate safety boundary:
 
 The reviewer uses a deliberately smaller chain: `PrepareReviewerRunMiddleware`, `SanitizeToolInputsMiddleware`, `ModelCallLimitMiddleware`, `ToolErrorMiddleware`, `refresh_github_proxy_before_model`, `check_message_queue_before_model`, `TimeoutWrapupMiddleware`, the three provider message sanitizers, `RepairOrphanedToolCallsMiddleware`, `StableToolResultOrderMiddleware`, `ModelErrorMiddleware`, `ModelCallTimeoutMiddleware`, and `settle_review_check_on_exit`.
 
-It omits dynamic tools, tool exclusion, subdirectory instructions, task retry, PR/workflow guards, plan mode, run-usage recording, and model fallback. `RepairOrphanedToolCallsMiddleware` prevents an interrupted review from being permanently rejected by a provider: before a later model call, it inserts synthetic error `ToolMessage` results for tool-call IDs that have no result.
+It omits conversation offloading, incident, workspace skills, dynamic tools, tool exclusion, subdirectory instructions, task retry, PR/workflow guards, plan mode, run-usage recording, model selection, and model fallback. `RepairOrphanedToolCallsMiddleware` prevents an interrupted review from being permanently rejected by a provider: before a later model call, it inserts synthetic error `ToolMessage` results for tool-call IDs that have no result.
 
 Reviewer sandbox setup opts into replacement because its checkout is re-derived for each run and a persistent PR thread should not be bricked by a dead sandbox. A failed replacement remains `SandboxUnreachableError` and is notified safely. `settle_review_check_on_exit` closes a tracked but unpublished GitHub review check as **neutral**, rather than falsely marking the PR's code as failed. If `publish_review` recorded a pending completion result whose PATCH failed transiently, the hook retries that real conclusion instead.
 

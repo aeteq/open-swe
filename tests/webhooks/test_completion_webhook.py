@@ -129,7 +129,7 @@ async def test_reviewer_error_settles_tracked_check(monkeypatch: pytest.MonkeyPa
         conclusion="neutral",
         title="Review did not complete",
         summary=(
-            "The Open SWE review run ended without publishing a review. "
+            "The Jarvis review run ended without publishing a review. "
             "Re-trigger the review by pushing a commit or re-requesting it."
         ),
     )

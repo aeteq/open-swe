@@ -14,8 +14,6 @@ sources:
     resource: repo://agent/bundled_skills/baby-sit/SKILL.md
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-202e70aa1fb446ab05cc6d99
-    resource: repo://agent/dashboard/schedules.py
   - id: openwiki-source-3d1c7beecd605173281a3bf6
     resource: repo://agent/github/routes.py
   - id: openwiki-source-ba064e884edcde6097165df2
@@ -26,6 +24,8 @@ sources:
     resource: repo://agent/reconcile.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
+  - id: openwiki-source-19dd52d603eb15a9bf38885d
+    resource: repo://agent/schedules/store.py
   - id: openwiki-source-75a22f97d6fc2af5a1a279e7
     resource: repo://agent/session_cost.py
   - id: openwiki-source-c3b12b5693b6aa5458b6b53a
@@ -48,10 +48,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-22T13:11:45.998Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -62,9 +62,10 @@ The principal consumers are dashboard schedules, stale-run reconciliation, defer
 
 ## Scheduler dispatch
 
-`agent/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler:
+`agent/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler deterministically:
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
   Tick["Cron or delayed run"] --> Launch["scheduler launch"]
   Launch -->|reconcile| Reconcile["reconcile_stale_runs"]
@@ -72,18 +73,19 @@ flowchart TD
   Launch -->|background_tasks| Background["monitor_background_tasks"]
   Launch -->|session_cost| SessionCost["run_session_cost_refresh"]
   Launch -->|agent_cost| AgentCost["run_agent_cost_refresh"]
+  Launch -->|other tasks| Other["workspace_refresh,<br/>expedited_review,<br/>thread_feedback"]
   Launch -->|no task| Schedule["launch_scheduled_agent_run"]
 ```
 
 Diagram: one scheduler tick selects one deterministic maintenance or dispatch handler.
 
-The recognized task values are `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, and `agent_cost`. An unrecognized or absent task is the dashboard-schedule path. The keyed branches return `missing_watch_key`, `missing_thread_id`, or `missing_schedule_id` rather than raising if their required routing key is absent. This makes malformed ticks observable no-ops instead of cron-wide failures.
+The recognized task values route to their handlers: `reconcile` → `reconcile_stale_runs`, `baby_sit` → `evaluate_watch`, `background_tasks` → `monitor_background_tasks`, `session_cost` → `run_session_cost_refresh`, `agent_cost` → `run_agent_cost_refresh`. Additional tasks like workspace refresh, expedited review, and thread feedback are also routed. An unrecognized or absent task is the dashboard-schedule path that falls through to `launch_scheduled_agent_run(schedule_id)`. The keyed branches return `missing_watch_key`, `missing_thread_id`, or `missing_schedule_id` rather than raising if their required routing key is absent. This makes malformed ticks observable no-ops instead of cron-wide failures.
 
 A producer owns creation, tagging, and removal of its cron or delayed run. In particular, watches use `kind=baby_sit_watch`, background monitors use `kind=background_tasks`, and cost refreshes are one-shot delayed scheduler runs with `on_completion="delete"`. This ownership is important: the scheduler is a router, not a generic cron garbage collector.
 
 ### Dashboard recurring runs
 
-`agent/dashboard/schedules.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
+`agent/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
 
 The launch path loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently.
 
