@@ -100,20 +100,28 @@ def test_events_are_rejected_until_a_secret_is_configured(
     assert handled == []
 
 
-def test_verification_handshake_is_acknowledged_once(
-    monkeypatch: pytest.MonkeyPatch, client: TestClient, handled: list[WebhookEvent]
+def test_verification_token_is_shown_in_the_log_message_until_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    handled: list[WebhookEvent],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.delenv("NOTION_WEBHOOK_SECRET", raising=False)
     body = json.dumps({"verification_token": SECRET}).encode()
 
-    assert _post(client, body, None) == (
-        200,
-        {"status": "ok", "message": "Verification token received"},
-    )
+    with caplog.at_level("WARNING", logger=routes.logger.name):
+        assert _post(client, body, None) == (
+            200,
+            {"status": "ok", "message": "Verification token received"},
+        )
+    assert any(SECRET in record.getMessage() for record in caplog.records)
 
+    caplog.clear()
     monkeypatch.setenv("NOTION_WEBHOOK_SECRET", SECRET)
-    status, payload = _post(client, body, None)
+    with caplog.at_level("WARNING", logger=routes.logger.name):
+        status, payload = _post(client, body, None)
     assert (status, payload["status"]) == (200, "ignored")
+    assert not any(SECRET in record.getMessage() for record in caplog.records)
     assert handled == []
 
 
