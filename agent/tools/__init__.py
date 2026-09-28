@@ -35,7 +35,7 @@ _TOOL_MODULES = {
     "read_only_sql": ".read_only_sql",
     "read_repo_file": "agent.github.tools.read_repo_file",
     "read_user_settings": ".read_user_settings",
-    "record_guidance": ".record_guidance",
+    "record_human_input": ".record_human_input",
     "recreate_sandbox": ".recreate_sandbox",
     "refresh_workspace_start": ".workspaces",
     "configure_repository": ".workspaces",
@@ -53,6 +53,7 @@ _TOOL_MODULES = {
     "delete_user_skill": ".user_skills",
     "schedule_thread_wakeup": ".schedule_thread_wakeup",
     "search_repo_code": "agent.github.tools.search_repo_code",
+    "start_thread": ".threads",
     "slack_add_reaction": "agent.slack.tools.add_reaction",
     "slack_attach_html": "agent.slack.tools.attach_html",
     "slack_list_channels": "agent.slack.tools.channels",
@@ -103,7 +104,7 @@ __all__ = [
     "read_only_sql",
     "read_repo_file",
     "read_user_settings",
-    "record_guidance",
+    "record_human_input",
     "recreate_sandbox",
     "refresh_workspace_start",
     "configure_repository",
@@ -121,6 +122,7 @@ __all__ = [
     "delete_user_skill",
     "schedule_thread_wakeup",
     "search_repo_code",
+    "start_thread",
     "slack_add_reaction",
     "slack_attach_html",
     "slack_list_channels",
@@ -181,7 +183,7 @@ if TYPE_CHECKING:
     from agent.tools.publish_review import publish_review
     from agent.tools.read_only_sql import read_only_sql
     from agent.tools.read_user_settings import read_user_settings
-    from agent.tools.record_guidance import record_guidance
+    from agent.tools.record_human_input import record_human_input
     from agent.tools.recreate_sandbox import recreate_sandbox
     from agent.tools.reply_to_finding_thread import reply_to_finding_thread
     from agent.tools.report_platform_issue import report_platform_issue
@@ -191,7 +193,7 @@ if TYPE_CHECKING:
     from agent.tools.save_user_settings import save_user_settings
     from agent.tools.schedule_thread_wakeup import schedule_thread_wakeup
     from agent.tools.submit_thread_feedback import submit_thread_feedback
-    from agent.tools.threads import get_thread, list_threads, manage_thread
+    from agent.tools.threads import get_thread, list_threads, manage_thread, start_thread
     from agent.tools.update_finding import update_finding
     from agent.tools.user_skills import delete_user_skill, save_user_skill
     from agent.tools.web_search import web_search

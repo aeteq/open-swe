@@ -9,6 +9,7 @@ is what makes deepagents auto-wire `FilesystemMiddleware` tool-result eviction a
 
 import asyncio
 import json
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,6 +18,7 @@ import langgraph_sdk
 import pytest
 from deepagents.backends.composite import CompositeBackend
 from deepagents.backends.state import StateBackend
+from langchain_core.language_models import BaseChatModel
 from langgraph.graph.state import RunnableConfig
 
 from agent.dashboard.workspace_settings import WorkspaceSettings
@@ -112,6 +114,7 @@ async def _capture_create_deep_agent_kwargs(
     thread_settings: dict[str, object] | None = None,
     workspace_settings: WorkspaceSettings | None = None,
     private_thread: bool = False,
+    make_model: Callable[..., BaseChatModel] | None = None,
 ) -> dict[str, object]:
     captured: dict[str, object] = {}
     make_model_calls: list[tuple[str, dict[str, object]]] = []
@@ -122,9 +125,9 @@ async def _capture_create_deep_agent_kwargs(
         captured.update(kwargs)
         return _DummyAgent()
 
-    def fake_make_model(model_id: str, **kwargs: object) -> MagicMock:
+    def fake_make_model(model_id: str, **kwargs: object) -> MagicMock | BaseChatModel:
         make_model_calls.append((model_id, kwargs))
-        return MagicMock()
+        return MagicMock() if make_model is None else make_model(model_id, **kwargs)
 
     SANDBOX_BACKENDS.pop(thread_id, None)
     with (
@@ -829,6 +832,39 @@ async def test_slack_source_context_includes_slack_tools(source: str) -> None:
         "slack_start_new_thread",
         "slack_reply",
     } <= tool_names
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("channel_context", "thread_ts", "expected"),
+    [
+        ({"is_im": True}, "0", True),
+        ({"is_im": True}, "1700000000.000100", False),
+        (None, "1700000000.000100", False),
+    ],
+)
+async def test_start_thread_is_offered_only_in_concierge_dms(
+    channel_context: dict[str, bool] | None, thread_ts: str, expected: bool
+) -> None:
+    config = _base_config()
+    configurable = config.get("configurable")
+    assert isinstance(configurable, dict)
+    configurable.update(
+        {
+            "source": "slack",
+            "slack_thread": {
+                "channel_id": "D123",
+                "thread_ts": thread_ts,
+                "channel_context": channel_context,
+            },
+        }
+    )
+
+    captured = await _capture_create_deep_agent_kwargs(config)
+    tools = captured["tools"]
+    assert isinstance(tools, list)
+
+    assert ("start_thread" in {_registered_tool_name(tool) for tool in tools}) is expected
 
 
 @pytest.mark.asyncio

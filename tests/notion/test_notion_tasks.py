@@ -65,7 +65,9 @@ def harness(monkeypatch: pytest.MonkeyPatch, fake_store: FakeStore) -> Harness:
     monkeypatch.delenv("NOTION_AGENT_API_KEY", raising=False)
     notion.install(monkeypatch)
 
-    async def dispatch(thread_id, content, configurable, *, source, input=None, metadata=None):
+    async def dispatch(
+        thread_id, content, configurable, *, source, thread_title=None, input=None, metadata=None
+    ):
         h.dispatched.append(
             {"thread_id": thread_id, "configurable": configurable, "source": source, "input": input}
         )

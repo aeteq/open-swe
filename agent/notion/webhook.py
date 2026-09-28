@@ -42,7 +42,7 @@ from agent.notion.properties import (
     text_value,
 )
 from agent.notion.settings import NotionSettings, normalize_notion_id, notion_settings
-from agent.prompts import render_prompt
+from agent.prompts import prompt
 from agent.source_context import NotionPageRef, SourceContext
 from agent.thread_ids import notion_discussion_thread_id, notion_page_thread_id
 from agent.users import User
@@ -391,17 +391,15 @@ async def process_notion_task(
     property_lines = await _property_lines(client, page, designs, settings)
     comments = await _context_comments(client, page, settings)
 
-    prompt = render_prompt(
-        "runs/notion-task.md",
+    task_prompt = prompt(
+        "runs/notion-task",
         repository=f"{repo['owner']}/{repo['name']}",
         title=notion_page["title"] or "Untitled task",
-        triggered_by_line=f"## Triggered by: {requester.name}\n\n" if requester.name else "",
+        triggered_by=requester.name or "",
         identifier=notion_page["identifier"] or "(no ID)",
         page_id=page.id,
-        task_url_line=f"## Notion Task URL: {page.url}\n\n" if page.url else "",
-        properties="## Properties:\n" + "\n".join(property_lines) + "\n\n"
-        if property_lines
-        else "",
+        task_url=page.url,
+        properties=property_lines,
         body=body.markdown or "No description",
         comments=comments,
     )
@@ -412,9 +410,9 @@ async def process_notion_task(
         configurable["agent_model_id"], configurable["agent_effort"] = model_override
 
     content: str | list[dict[str, object]] = (
-        [cast(dict[str, object], create_text_block(prompt)), *image_blocks]
+        [cast(dict[str, object], create_text_block(task_prompt)), *image_blocks]
         if image_blocks
-        else prompt
+        else task_prompt
     )
     messages: list[RunMessage] = [
         system_introduction(_SYSTEM),
@@ -450,8 +448,8 @@ async def _dispatch_design_follow_up(
     thread_id = notion_page_thread_id(page.id)
     notion_page = _page_ref(page, requester)
     configurable, _ = await _configurable(thread_id, notion_page, repo, requester)
-    prompt = render_prompt(
-        "runs/notion-design-approved.md",
+    follow_up = prompt(
+        "runs/notion-design-approved",
         design=design.markdown_link(),
         identifier=notion_page["identifier"] or notion_page["title"] or "this task",
         approved_status=settings.design_approved_status,
@@ -459,7 +457,7 @@ async def _dispatch_design_follow_up(
     messages: list[RunMessage] = [
         system_introduction(_SYSTEM),
         system_input(
-            prompt,
+            follow_up,
             {
                 "sender_id": _SYSTEM["id"],
                 "surface": "notion",
@@ -481,6 +479,7 @@ async def _dispatch(
         None,
         configurable,
         source="notion",
+        thread_title=None,
         input=run_input,
         metadata=common.AGENT_VERSION_METADATA,
     )
@@ -645,14 +644,12 @@ async def _start_question(
     notion_page = _page_ref(page, requester, kind="mention", discussion_id=comment.discussion_id)
     body = await render_page_body(client, page.id)
     property_lines = await _property_lines(client, page, [], settings)
-    prompt = render_prompt(
-        "runs/notion-mention.md",
+    question_prompt = prompt(
+        "runs/notion-mention",
         title=notion_page["title"] or "Untitled page",
-        page_url_line=f"## Page URL: {page.url}\n\n" if page.url else "",
-        repository_line=f"## Repository: {repo['owner']}/{repo['name']}\n\n" if repo else "",
-        properties="## Properties:\n" + "\n".join(property_lines) + "\n\n"
-        if property_lines
-        else "",
+        page_url=page.url,
+        repository=f"{repo['owner']}/{repo['name']}" if repo else "",
+        properties=property_lines,
         body=body.markdown or "(empty page)",
         discussion=await _discussion_history(client, comment, page.id, settings),
     )
@@ -660,7 +657,7 @@ async def _start_question(
     messages: list[RunMessage] = [
         system_introduction(_SYSTEM),
         system_input(
-            prompt,
+            question_prompt,
             {
                 "sender_id": _SYSTEM["id"],
                 "surface": "notion",

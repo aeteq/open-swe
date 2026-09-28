@@ -1,1 +1,0 @@
-The design document $design linked to Notion task $identifier is now $approved_status, and every design linked to the task is approved. Re-read the approved design, then continue implementing the task. If work is already in progress, reconcile it with the approved design before continuing.
