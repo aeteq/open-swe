@@ -7,7 +7,7 @@ import {
   GitPullRequestIcon,
 } from "@phosphor-icons/react"
 import { IoLogoGithub, IoLogoSlack } from "react-icons/io5"
-import { SiLinear } from "react-icons/si"
+import { SiLinear, SiNotion } from "react-icons/si"
 import type { ComponentType, SVGProps } from "react"
 
 import type { AgentSource, AgentThread } from "@/features/agents/lib/types"
@@ -20,6 +20,7 @@ const SOURCE_META: Record<AgentSource, { icon: SourceIcon; label: string }> = {
   github: { icon: IoLogoGithub, label: "GitHub" },
   slack: { icon: IoLogoSlack, label: "Slack" },
   linear: { icon: SiLinear, label: "Linear" },
+  notion: { icon: SiNotion, label: "Notion" },
   schedule: { icon: CalendarBlankIcon, label: "Schedule" },
 }
 

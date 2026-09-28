@@ -903,6 +903,85 @@ def test_appends_linear_reference_for_private_repo(monkeypatch: pytest.MonkeyPat
     assert "- Linear ticket: [AB-12](https://linear.app/x/AB-12)" in sent_body
 
 
+def test_appends_notion_reference_for_private_repo(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_config(
+        monkeypatch,
+        {
+            "source": "notion",
+            "notion_page": {"id": "p1", "identifier": "DIG-78", "url": "https://notion.so/p1"},
+        },
+    )
+    _stub_token(monkeypatch)
+
+    client = _RoutingClient(
+        post=_FakeResponse(201, {"html_url": "u", "number": 1, "user": {}}),
+        get_routes={"/repos/langchain-ai/open-swe": _FakeResponse(200, {"private": True})},
+    )
+    _install_client(monkeypatch, client)
+
+    _open_with_body("body")
+
+    sent_body = client.post_calls[0]["json"]["body"]
+    assert "- Notion task: [DIG-78](https://notion.so/p1)" in sent_body
+
+
+@pytest.mark.parametrize(
+    ("source", "result", "expected"),
+    [
+        ("notion", {"success": True, "created": True, "url": "https://gh/pr/1"}, [True]),
+        ("notion", {"success": True, "created": False, "url": "https://gh/pr/1"}, [False]),
+        ("notion", {"success": False, "error": "nope"}, []),
+        ("slack", {"success": True, "created": True, "url": "https://gh/pr/1"}, []),
+        ("mention", {"success": True, "created": True, "url": "https://gh/pr/1"}, []),
+    ],
+)
+def test_opened_pr_is_recorded_on_the_notion_task(
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    result: dict[str, Any],
+    expected: list[bool],
+) -> None:
+    page: dict[str, str] = {"id": "p1"}
+    if source == "mention":
+        source, page["kind"] = "notion", "mention"
+    _set_config(monkeypatch, {"source": source, "notion_page": page})
+    monkeypatch.setattr(opr, "_open_pull_request", AsyncMock(return_value=result))
+    recorded: list[bool] = []
+
+    async def record(page_id: str, pr_url: str, *, opened: bool) -> None:
+        assert (page_id, pr_url) == ("p1", "https://gh/pr/1")
+        recorded.append(opened)
+
+    monkeypatch.setattr(opr, "record_pull_request", record)
+
+    assert asyncio.run(opr.open_pull_request("o", "r", "h", "main", "t", "b")) == result
+    assert recorded == expected
+
+
+@pytest.mark.parametrize(("source", "expected"), [("notion", [False]), ("slack", [])])
+def test_linked_pr_is_recorded_on_the_notion_task(
+    monkeypatch: pytest.MonkeyPatch, source: str, expected: list[bool]
+) -> None:
+    _set_config(monkeypatch, {"source": source, "notion_page": {"id": "p1"}})
+    _stub_token(monkeypatch)
+    _install_client(monkeypatch, _FakeClient(post=_FakeResponse(201)))
+    pr_url = "https://github.com/langchain-ai/open-swe/pull/7"
+    monkeypatch.setattr(opr, "_fetch_pr_details", AsyncMock(return_value={"html_url": pr_url}))
+    monkeypatch.setattr(opr, "_record_pr_telemetry", AsyncMock())
+    recorded: list[bool] = []
+
+    async def record(page_id: str, url: str, *, opened: bool) -> None:
+        assert (page_id, url) == ("p1", pr_url)
+        recorded.append(opened)
+
+    monkeypatch.setattr(opr, "record_pull_request", record)
+
+    result = asyncio.run(opr.link_pull_request(pr_url))
+
+    assert result == {"success": True, "url": pr_url, "number": 7}
+    assert recorded == expected
+
+
 def test_appends_github_issue_reference_for_private_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_config(
         monkeypatch,
