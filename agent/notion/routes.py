@@ -37,11 +37,12 @@ async def notion_webhook(request: Request, background_tasks: BackgroundTasks) ->
             logger.warning("Ignoring Notion verification request: secret already configured")
             return {"status": "ignored", "reason": "Already verified"}
         # Notion shows no token in its UI; the admin reads it from here once and
-        # sets it as NOTION_WEBHOOK_SECRET.
+        # sets it as NOTION_WEBHOOK_SECRET. It is in the message, not `extra`, because
+        # log viewers such as LangSmith's show only the message.
         logger.warning(
-            "Notion webhook verification token received; set it as NOTION_WEBHOOK_SECRET and "
-            "paste it into the Notion subscription to verify",
-            extra={"notion_verification_token": payload["verification_token"]},
+            "Notion webhook verification token received: %s — set it as "
+            "NOTION_WEBHOOK_SECRET and paste it into the Notion subscription to verify",
+            payload["verification_token"],
         )
         return {"status": "ok", "message": "Verification token received"}
 
