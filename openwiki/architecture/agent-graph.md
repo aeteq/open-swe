@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled for an execut
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -13,8 +13,6 @@ sources:
     resource: repo://agent/graphs/agent.py
   - id: openwiki-source-9103280889fa6c4d9c5bb0df
     resource: repo://agent/middleware/dynamic_tools.py
-  - id: openwiki-source-f26d060fb4408e89b50964a5
-    resource: repo://agent/middleware/plan_mode.py
   - id: openwiki-source-de97adb0acb9dec0664a44b6
     resource: repo://agent/middleware/prepare_run.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
@@ -35,7 +33,7 @@ sources:
     resource: repo://tests/agent/test_factory_tool_loading.py
   - id: openwiki-source-36e029ef147f9810c97b2c29
     resource: repo://tests/models/test_agent_subagent_models.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 ---
 
 # Coding Agent Assembly
@@ -107,9 +105,7 @@ The parent gets a curated static tool list. Slack tools require trusted Slack or
 
 Integration schemas are exposed through `DynamicToolMiddleware`, not appended directly to the static list. MCP tools (Corridor) are eagerly loaded during factory assembly with their names eagerly available (with loader failures and timeouts yielding no tools); their schemas become usable only after `load_integration_tools`. The middleware resets selected integration tools at run start, prevents direct calls before selection, serializes construction per group, and reserves static/Deep Agent names to reject collisions.
 
-## Plan mode and subagent boundary
-
-`PlanModeMiddleware` is installed for every graph. At run start it resets `plan_mode` in state to the factory's `configurable.plan_mode is True` value, preventing stale state from a prior run leaking forward. It filters every model request, so `enter_plan_mode` can restrict the very next turn in the same run. Excluding `task` is essential: the general-purpose subagent compiles as an independent graph and does not inherit the parent's plan-mode filter.
+## Subagent boundary
 
 The only configured subagent is the Deep Agents general-purpose subagent. It receives the Open SWE shared base plus Deep Agents task mechanics, the same ordered skills, static tools excluding background execution/tasks and parent-context-sensitive Slack/thread/user-settings tools, and a description requiring Slack communication to be relayed through the parent. Because it compiles independently, parent middleware does not wrap it. It therefore receives its own dynamic-tool and exclusion middleware, workflow-push guard, OpenAI response sanitization, model-error handling, and model-call timeout.
 
@@ -120,7 +116,7 @@ The supplied parent list is ordered outermost to innermost:
 1. Conversation offloading, `PrepareAgentRunMiddleware`, incident and workspace skills, then optional `DynamicToolMiddleware`.
 2. Input sanitation, image validation, `ModelCallLimitMiddleware`, tool-error conversion, tool exclusion, subdirectory reads, and retry for `task`.
 3. PR/workflow guards, GitHub proxy refresh, and—outside stop summaries—message-queue checking.
-4. Timeout wrap-up, step-limit notification, usage recording, optional model selection routing, optional model fallback, and plan-mode filtering.
+4. Timeout wrap-up, step-limit notification, usage recording, optional model selection routing, optional model fallback, and dynamic-tool addition.
 5. Provider/thinking sanitizers, stable tool-result ordering, model-error handling, then `ModelCallTimeoutMiddleware`.
 
 The innermost timeout measures the provider call itself and can propagate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside `ToolErrorMiddleware`. `create_deep_agent` supplies its own `PatchToolCallsMiddleware`, so the factory must not add the obsolete custom orphaned-tool-call repairer.

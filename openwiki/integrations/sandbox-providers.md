@@ -8,8 +8,6 @@ sources:
     resource: repo://agent/api/app.py
   - id: openwiki-source-b05c9910677cf23a9325276c
     resource: repo://agent/config.py
-  - id: openwiki-source-276ab38291eb5741b4c2141c
-    resource: repo://agent/reviewer.py
   - id: openwiki-source-6fd11c8bb15f5eb94b765440
     resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-92118671e3d396d6804d8f9c
@@ -41,7 +39,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Sandbox Provider Integration

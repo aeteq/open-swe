@@ -32,10 +32,10 @@ sources:
     resource: repo://agent/workspaces/store.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Configuration and Startup Validation
@@ -55,11 +55,11 @@ The canonical name takes precedence over aliases. Deprecated aliases are central
 
 ### Deployment topology
 
-`langgraph.json` registers five graphs (`agent`, `reviewer`, `analyzer`, `chat`, and `scheduler`) and mounts `agent.webapp:app` as the platform HTTP application for dashboard and webhook routes. Its checkpointer uses delete-based TTL cleanup: a 60-minute sweep and a default TTL of 43200 minutes (30 days). The file names `.env` as its environment file.
+`langgraph.json` registers six graphs (`agent`, `reviewer`, `analyzer`, `review-scout`, `chat`, and `scheduler`) and mounts `agent.webapp:app` as the platform HTTP application for dashboard and webhook routes. Its checkpointer uses delete-based TTL cleanup: a 60-minute sweep and a default TTL of 43200 minutes (30 days). The file names `.env` as its environment file.
 
 ## Startup lifecycle and failures
 
-The FastAPI composition entrypoint is `agent.api.app:create_app`. It pins the process to a single event loop before queue work is constructed and again in lifespan startup. The lifespan then validates the active sandbox configuration and local-development model credentials. It yields only if both succeed; on shutdown it closes all cached model clients.
+The FastAPI composition entrypoint is `agent.api.app:create_app`. It pins the process to a single event loop before queue work is constructed and again in lifespan startup. The lifespan then validates the active sandbox configuration and local-development model credentials. It yields only if both succeed; on shutdown it closes the database connection and stops background workers.
 
 ```mermaid
 flowchart TD
@@ -71,7 +71,7 @@ flowchart TD
     CheckModel --> Serve["Serve routes and runs"]
     CheckSandbox --> Stop["Raise and abort startup"]
     CheckModel --> Stop
-    Serve --> Close["Close cached model clients"]
+    Serve --> Close["Close database and stop workers"]
 ```
 
 The diagram shows the boot-time checks performed by the FastAPI lifespan and cleanup on shutdown.
@@ -88,7 +88,7 @@ For LangSmith sandboxes, resource defaults are 128 GiB filesystem (`DEFAULT_SAND
 
 Each workspace can specify a `base_snapshot_id` (an opaque provider-scoped identifier), custom resource overrides (`mem_bytes`, `vcpus`, `fs_capacity_bytes`), and arbitrary provider create-body parameters (`create_params`). When a workspace has captured a snapshot, new sandboxes boot from the captured snapshot instead. The registry passes snapshot_id, resource overrides, and create parameters only to the LangSmith factory; other providers receive only an optional existing sandbox ID.
 
-`WORKSPACE_SNAPSHOT_PREFIX` (default `openswe` via legacy alias `ENVIRONMENT_SNAPSHOT_PREFIX`) separates environment snapshot names when deployments share a LangSmith workspace. Credential fallback works as follows: `SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` let sandbox operations use another LangSmith workspace; each falls back to its normal `LANGSMITH_*` counterpart. The selected credentials apply to sandbox API operations, proxy setup, and environment snapshot work, so a configured base snapshot must exist in that workspace.
+`WORKSPACE_SNAPSHOT_PREFIX` (default `openswe` via legacy alias `ENVIRONMENT_SNAPSHOT_PREFIX`) separates environment snapshot names when deployments share a LangSmith workspace. Sandbox operations use the main `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` unless workspace-specific overrides are present. This allows a single workspace to use multiple LangSmith tenants for sandboxes by setting `SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT`, which sandbox API operations, proxy setup, and environment snapshot work will prefer; credentials fall back to their standard counterparts when the sandbox-specific ones are absent.
 
 ## Models and team settings
 
@@ -98,7 +98,7 @@ The team-settings record is a single instance-wide Store record keyed `default`.
 
 Store reads for team settings are fail-soft because model selection is on the run path: unavailable or absent Store data returns hardcoded defaults. Invalid/stale model data resolves first to a supported model from the same provider where possible, then to the global fallback. Chat inherits the agent default when unset, and review grouping inherits the reviewer subagent default.
 
-`DEFAULT_LLM_MAX_TOKENS` is 64000 and is an output/completion budget, not a context-window size. `LLM_FALLBACK_MODEL_ID` can name a fallback; otherwise Anthropic and OpenAI primary models have cross-provider defaults. Fallback middleware is installed only if the fallback exists and differs from the selected primary. `make_model` caches constructed clients per running event loop and model options, and startup shutdown closes that cache.
+`DEFAULT_LLM_MAX_TOKENS` is 64000 and is an output/completion budget, not a context-window size. `LLM_FALLBACK_MODEL_ID` can name a fallback; otherwise Anthropic and OpenAI primary models have cross-provider defaults. Fallback middleware is installed only if the fallback exists and differs from the selected primary. `make_model` caches constructed clients per running event loop and model options.
 
 Each supported direct provider request receives up to six retries; OpenAI, Anthropic, Baseten, Google GenAI, and Fireworks also receive a 600-second default request timeout. These bounds complement the agent's separate model-call deadline and run recursion limits described in [models, profiles, and instructions](../concepts/models-profiles-instructions.md).
 
