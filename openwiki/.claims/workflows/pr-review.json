@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:1bf439e9a2ac9156ee3f793cd44a3bde25616abc20e143448d0bfe598825e0a0",
+  "pageVersion": "sha256:7b2957fd8f002afbacecde7a744a0747b665e27433d2a1e7c94b2174b1598f8c",
   "claims": [
     {
       "id": "claim_f75cd879d07b45f29d210694a643b7cf",
       "statement": "GitHub webhook deliveries land on a single signed endpoint (POST /webhooks/github) that verifies the X-Hub-Signature-256 HMAC, ignores unsupported event types, and dispatches accepted handlers as FastAPI background tasks.",
       "evidence": [
         {
-          "resource": "repo://agent/github/routes.py#L24-L50",
-          "version": "repo-lines-v1:sha256:9c3e61eac9e41939be659fbc1111862d4dc28011b6625efa11dba01b101422d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOGQxYjkwZTExOWQ1ZDVhMDEzMWFjMzhiOWQ4M2Y5ZWUzNmY2OTFkMmJmMGY0NzM5MjAwN2ZiOWVhOTI3ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4NzJjYWRiZWM1NjBlODE4NWNkODRjZDAyZmM4ZDIyZDhlNDk4NGY1MDc0Njg1NzM0ZTg1MGI4YjRlOGEzYTgifQ"
+          "resource": "repo://agent/github/routes.py#L24-L60",
+          "version": "repo-lines-v1:sha256:c2f6faf0d1dc26a9ad5a04692974daa8d5baad6a640042bb6b3dd255db32ee8e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOGQxYjkwZTExOWQ1ZDVhMDEzMWFjMzhiOWQ4M2Y5ZWUzNmY2OTFkMmJmMGY0NzM5MjAwN2ZiOWVhOTI3ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlOGI4YjZiNmRlMDkxY2YyYzM4YzFiMzA2ZjI4MDBiMTY0NDM1NmI2M2JkZDVmNDUyY2VkMmYyM2ZhYjE1NjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEzMDFkYTU1Yjc2NmJjZDgzMWYyZDQ3NWFhNTA4OGQ0YTQzZjI0YTNiZGI2NGMzZmY4ZjI2ZDI4MmFkYmFjZWQifQ"
         }
       ]
     },
@@ -17,8 +17,8 @@
       "statement": "Auto-review on PR opened/ready_for_review is scheduled only when the repository is opted into automatic review (via is_review_repo_enabled), delegating to is_review_repo_enabled which fails soft — an unreachable enabled-repos store reads as 'not opted in' and skips the review rather than erroring the webhook.",
       "evidence": [
         {
-          "resource": "repo://agent/github/routes.py#L118-L132",
-          "version": "repo-lines-v1:sha256:1ce8f5b428b835763a91c4016b39028e3341f19695f016b717e48d70e5e2edf4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1NTJlNjk4ODdmZmYxZWQ2NjEwMGZkMGJhNzM1NDI0YjVkYjRiNzQ1YWQ1NTlhOTg3ZmM0MmQ2Mzc1NzI2YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZGFiYmYxYzE2Njk4ZTY0NzNhMDcwODM2NzVhYjA2OWZhMzRhZWMyY2Y4MjFlOWYzM2Q3NTczYWE4MjM4YTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmYTk1MzkyNDNiNDk3ZDlmMDMzMGVlODk2YzM5ZmJlZTM2ZDUyYzYyMzg2ZGUzZjgwZTRhMDcxMWM2NDI0Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4NWVkZmI3YWMyMzUxMTIyNjE5N2E4MmEwYTE0M2U0Y2U2NzI5YTUwYzdiYTc1MGNkNDU1NjFmYzE5MGM2OTkifQ"
+          "resource": "repo://agent/github/webhook.py#L510-L535",
+          "version": "repo-lines-v1:sha256:01400761194ba5174a3badfc5b2d4824ab14b894e25393fc97c4afc41c324b79:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczZGJmN2ZjODViM2E4NzgwYzBkYjQyZmNhMDNkYjBlMDA0YTBlYmVlZTljNzMzNDFhNTRjZTg2MmUzOWU0Y2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwNmM0Yzk1NDgwZmQ3YmFjOWMzZDZhYmRiMjZiNzgzN2JmNGM0MTYyZTU3MmU1OGE0OGVhZmQ0MzhmYjA2N2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3NjFkYTI4MzEwZjdmZThmZjNjMDEzNjkxODQxYTEwMTdjOWY1NDM3ZjEyNzY2N2M0ODQyMGVmMGY0ZjExN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjZTlkNjZlODIxODcxODVkNWIyZDk2ZGE1ZjFlM2ZiNjBkNGJhNWM2ODczZTEzMjQyNjFhNGU5OTI1NDllNGEifQ"
         },
         {
           "resource": "repo://agent/review/enabled_repos.py#L44-L63",
@@ -31,8 +31,8 @@
       "statement": "process_github_pr_ready skips auto-reviewing a draft PR unless the PR author's review_draft_prs profile flag (falling back to the team-wide default) enables draft reviews.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L474-L499",
-          "version": "repo-lines-v1:sha256:01400761194ba5174a3badfc5b2d4824ab14b894e25393fc97c4afc41c324b79:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczZGJmN2ZjODViM2E4NzgwYzBkYjQyZmNhMDNkYjBlMDA0YTBlYmVlZTljNzMzNDFhNTRjZTg2MmUzOWU0Y2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwNmM0Yzk1NDgwZmQ3YmFjOWMzZDZhYmRiMjZiNzgzN2JmNGM0MTYyZTU3MmU1OGE0OGVhZmQ0MzhmYjA2N2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3NjFkYTI4MzEwZjdmZThmZjNjMDEzNjkxODQxYTEwMTdjOWY1NDM3ZjEyNzY2N2M0ODQyMGVmMGY0ZjExN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyZGUyNDdhMDhhMWFlZTAyOTE5YTU4NTUyY2YwMGVkNmVmOGVkNWQ4YzE5MWJiZjA2MjY2MzY4NmRkYTgxMDUifQ"
+          "resource": "repo://agent/github/webhook.py#L510-L535",
+          "version": "repo-lines-v1:sha256:01400761194ba5174a3badfc5b2d4824ab14b894e25393fc97c4afc41c324b79:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczZGJmN2ZjODViM2E4NzgwYzBkYjQyZmNhMDNkYjBlMDA0YTBlYmVlZTljNzMzNDFhNTRjZTg2MmUzOWU0Y2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEwNmM0Yzk1NDgwZmQ3YmFjOWMzZDZhYmRiMjZiNzgzN2JmNGM0MTYyZTU3MmU1OGE0OGVhZmQ0MzhmYjA2N2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3NjFkYTI4MzEwZjdmZThmZjNjMDEzNjkxODQxYTEwMTdjOWY1NDM3ZjEyNzY2N2M0ODQyMGVmMGY0ZjExN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJjZTlkNjZlODIxODcxODVkNWIyZDk2ZGE1ZjFlM2ZiNjBkNGJhNWM2ODczZTEzMjQyNjFhNGU5OTI1NDllNGEifQ"
         }
       ]
     },
@@ -41,8 +41,8 @@
       "statement": "An explicit review request enters through trigger_pr_review_from_ref, which fetches PR metadata to resolve base/head SHAs, sets reviewer thread metadata with watch=True, posts a review-started comment, and dispatches a reviewer run; request_pr_review is the agent tool that parses a PR URL and invokes it.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L231-L346",
-          "version": "repo-lines-v1:sha256:cadffd2825ac5d6a6cad7cfd47da7543ce277da0dadf5494665fd73330ef0e97:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmZWU0OTA4Mjk3NzQ3ZDJmNDU1OTE5MjQ5ZjUwM2NkMWU4MWRlMTdhMzExMjg0OWNiNjgwZDM0ZmM0NzFmNmFjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZjFjZmI2NTg1N2UyOTI5MGNkMmU5MWNiYTY3MDllZTI3NWRlODEzODJiOTMyMTMzNjhlNTZhYTRlMjM4YTZjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIwMjJiMmQ1MjY5NGU0NzFlYWQ1OTkxYmI3NjhjMjYxYWU2NmZhMWZjOWIzOTUzNWIxYjc0ZmZhYWZlYmQwYzc0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmM2ZmYTQ3N2EzOWNjNDc5ZWIzOTcxODVmNGRiNTNhOWFkZTllN2M2YjNmZDBhOWVmYTM5NjdkZDRlMTViNjNlIn0"
+          "resource": "repo://agent/github/webhook.py#L254-L365",
+          "version": "repo-lines-v1:sha256:9451b2e0d2b7214660e30be9d17bd5186f8b68a475b469f4a7c0844107650dbf:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2OGFiMmFhZTFiZTAyNmExYWI0OTkwYWQwYWQzOGY5NTc5ZTlkNGE4M2U1ODE1MDQ2N2U0MzdjM2VhMjJlM2RhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlNTI1YmZlMGJhOGY2YjM2MTRmNTBmYzkwMTNmNTAxMTM4NjkzOWRmM2VlMTE4OGNiNWRhYTI5YjhiOTQyMWM5IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0ZmJkMDA5MzE0YmMyNzA4NDE2NzM0YTAyYWU1ZmYzOWExZTQ4YTA1MGJlOTFmNDNiMmZhYTkyMDAyYzYyYmZjIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MzMzMjg3MzA0MmIzYzIyZjRiZmI0MmFiZDY5NDNkYjNkNWMzN2Q1YTc2OGFhMmE0ZWU4YzY5OGZjMWI3NTlmIn0"
         }
       ]
     },
@@ -61,36 +61,36 @@
       "statement": "Reviewer runs are dispatched with assistant_id='reviewer', which maps to the reviewer graph (agent.graphs.reviewer:traced_reviewer_agent), and the dispatched run id is stored on reviewer thread metadata via _store_current_reviewer_run_id.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L335-L346",
-          "version": "repo-lines-v1:sha256:a8b50b0ed4c3804f0a6e2552022128495689407b55ccd7d650f0f40f54e8128f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNzM2NjRiZGQ1Y2MxMzY1YjE5YmRmZDM0NDZhYjAyZGQ3YTBjZmZlYTZmNTdhYzQwNzBiODBkYTgyZTcyMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMWNmYjY1ODU3ZTI5MjkwY2QyZTkxY2JhNjcwOWVlMjc1ZGU4MTM4MmI5MzIxMzM2OGU1NmFhNGUyMzhhNmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkZTg4ODU3ZmFlYTM0YzdjMzQ3ODg4OGRlMGI4YzU2NGRhMTljMTZmNjQyMzc0OGE4M2I4Y2ZmY2YwNTk1YjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYzZmZhNDc3YTM5Y2M0NzllYjM5NzE4NWY0ZGI1M2E5YWRlOWU3YzZiM2ZkMGE5ZWZhMzk2N2RkNGUxNWI2M2UifQ"
+          "resource": "repo://agent/github/webhook.py#L495-L506",
+          "version": "repo-lines-v1:sha256:52dfaf18f27fba4fe0036db5e6b4ca4c103af4bc1a0078b273240e5a30e1353a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNzM2NjRiZGQ1Y2MxMzY1YjE5YmRmZDM0NDZhYjAyZGQ3YTBjZmZlYTZmNTdhYzQwNzBiODBkYTgyZTcyMGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkOWI5OGE4MDc1ZWVhZDNlNmEwNDkzMjhkZmM4NmNkMGRiNmQwZDRkY2IwN2U5MDAwZmRjMWVmM2JjYTlkODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNhNzk2ZDc1NjlkZjRkYjYzOTZhMmFhNjFiZmU5NTY4MmExODlhNmZkMzY3OTY0MjQzZDM1NjcxMDFkY2EzNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ3NjFkYTI4MzEwZjdmZThmZjNjMDEzNjkxODQxYTEwMTdjOWY1NDM3ZjEyNzY2N2M0ODQyMGVmMGY0ZjExN2IifQ"
         },
         {
           "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:5f2daf3f9c8b691fd173bce8f7612b6e959e059ed2262162ebfe399c5843aa7d"
+          "version": "repo-file-v1:sha256:d391730acff73cd2cf765a7efd1e064bc7cef378eb2a5b0f9a19043367ac4bee"
         }
       ]
     },
     {
       "id": "claim_f48695824c724f459bfda1a0959aa75e",
-      "statement": "A PR has a single evolving findings list persisted on the reviewer thread's metadata (under 'findings', keyed by kind == 'reviewer'), chosen because thread metadata survives sandbox eviction and is queryable cross-thread via the LangGraph SDK.",
+      "statement": "Findings live in PostgreSQL under the pull request they were raised on (owned by FindingState/FindingRow models); legacy findings before migration to PostgreSQL still exist in thread metadata and are copied over on first access, marked by a pull_request_finding_state row.",
       "evidence": [
         {
-          "resource": "repo://agent/review/findings.py#L1-L11",
-          "version": "repo-lines-v1:sha256:a276700c08431d699f78e91e32d6c8e133e5940191a84b4b257f809612ebbeb6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZTU1MWFiZjJjMjJiZWRiYTdmOWM5ZDNhYmM0ZWNmMTJkZjMwM2FkNmZiZDJkYzM4ZWZlM2RmMzE0MzFjZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1MTVmZmU4ODA0Nzg0ZjAyY2ZiNjhkMGUyM2ZhMTAxMDgxNjA2MDNiY2RjYmUxYjE2ZmExOGQ4MzgyMTFhMDQifQ"
+          "resource": "repo://agent/review/findings.py#L1-L14",
+          "version": "repo-lines-v1:sha256:9e4e22f8eb23c172abe3cfb98bd5291e46f07ea1ee00f3dfb5230273c31fe7bb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZTU1MWFiZjJjMjJiZWRiYTdmOWM5ZDNhYmM0ZWNmMTJkZjMwM2FkNmZiZDJkYzM4ZWZlM2RmMzE0MzFjZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1MzhkMjliZjU5MWM2ZGM5NGVjMGZmZTc1ZWFmZTFhM2MwMDhlMzZkYjhiNmU4NDIwMzdmZDc0NTNlODAyNTAifQ"
         },
         {
-          "resource": "repo://agent/review/findings.py#L477-L480",
-          "version": "repo-lines-v1:sha256:c92660ad0bcf5613ed8a308baed65a272f5b77c7d1f2e046579bb37274f246a5:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTZmMTBkMDZiZjdiYzI0ZGY4MjBiMTA0YjU0OWZlZGFlODE2OWQ4MTFiNmQ0ZTU5OWQ0MDczZWE4YzlmYWY5ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTVjMDM0YWMyZmYyMTY5MmRiNTlkMTY0Y2UxZjdjMGMzZTY1Y2U2NTk3MTZhYmIwYzhjMTlkYjFhZjBlZmM0ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWZjMWIzOTRmMTlhNGY3NDIzOWM3NDExZDhhMWFlZDZlNjUzMjc2MDBiODY0N2M1MjZiNjJlNzdkOGQ4ZDJhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODgxMzM1NmI1NjIyMWExOWUwNDg2MzM2MWI4YTA2OGI4NDc3MDI3ODM2NjcyMjJkMmI1NzBiYzE2MTJkOTVjNSJ9"
+          "resource": "repo://agent/review/findings.py#L549-L623",
+          "version": "repo-lines-v1:sha256:f11dcdf8fc24bc5d942ad5ca6eb9fd2e80c1d149ece7792167298392be2a665f:eyJzZWxlY3RlZExpbmVDb3VudCI6NzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyMThmNzlhZDY0ODI5ZGFhZjgzMjMxZDgxMDhmYWJkMTQ1MjlhNjBjOGJiOGZhYTRkM2NlMmJhNDA1Mzk0MjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NmIxOTk3MzU1MDdlYmU5NjlhNTJjMDFjMjQ2NTJkYWM4MzM4YzhhOTg4NTRkOTYwMGNlNzYyNzAwOTQ3NTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyOGNmMmYxMzg5NTAzMTFmMzVkYWQ5MjllOTRhMWJmZGRlZmFjYjFkZTVmM2Y3N2UwZWMxY2RjMjExZDc5ODYifQ"
         }
       ]
     },
     {
       "id": "claim_5f840e3acfcc4c91bd31a8f9ff5ba716",
-      "statement": "Persisted finding records are normalized on every read by coerce_finding, which folds legacy flat-singular GitHub-identity fields and a nested 'surface' record into the canonical comment/thread id lists plus surface_state so the rest of the codebase never sees the legacy shape.",
+      "statement": "Persisted finding records are normalized on every read by _normalize_publication_identity, which folds legacy flat-singular GitHub-identity fields and a nested 'surface' record into the canonical comment/thread id lists plus surface_state so the rest of the codebase never sees the legacy shape.",
       "evidence": [
         {
-          "resource": "repo://agent/review/findings.py#L356-L421",
-          "version": "repo-lines-v1:sha256:b0624d753996da527fbf8630867850e35e1e676d9dcf041a08d4a1e3b9e881e3:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MTJiOWRkOTQzMjcwMjMzMjkwOTBlYTE4MjQwZmEwNDNkM2EwMWU4ZjE2Njk2NmU4YTdkMjk2MjhkMzc3MzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NTI2YWZkNzhlMmJiZGM0N2QwODZmNjliOTdhZjYwZTQ5MjAzZDNjNDlhMTAwMDNmNTQxNzEyODlmOTYxZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkMTA0ZTU1ZGJhNzg3YTNmYzYzYmJlOWQwMzk4YjgzYWU3YjU2MDhiZDkxMzAxZmNjNjBmMTg0NzE1NmI4ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmOWQ3MTFjYzBkODMzOTEwZDIzMzMyNWJiODQ0M2VjYzcwMTk2OGUxM2Q2MmRmOWFmMzVkMTJmMTJlZTExNTgifQ"
+          "resource": "repo://agent/review/findings.py#L368-L422",
+          "version": "repo-lines-v1:sha256:4b75910894abaa2df4cc1c379c1c78bbb408d93e20a897d288bf77387748af4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg5MTJiOWRkOTQzMjcwMjMzMjkwOTBlYTE4MjQwZmEwNDNkM2EwMWU4ZjE2Njk2NmU4YTdkMjk2MjhkMzc3MzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkMTA0ZTU1ZGJhNzg3YTNmYzYzYmJlOWQwMzk4YjgzYWU3YjU2MDhiZDkxMzAxZmNjNjBmMTg0NzE1NmI4ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZiNDY2MjE1NTY5Yzg4ZDFhNmE3OWM4ZTAwZWIxMzA1M2JkOGVmYWM4NWY1MDU2ZjlhODBjYTIwNjkzMmY5YjkifQ"
         }
       ]
     },
@@ -99,8 +99,8 @@
       "statement": "Findings writes go through a locked read-modify-write layer: mutate_findings reads the freshest list and only persists when the mutator reports a change, replace_findings merges an incoming snapshot by id so concurrently-added findings are not dropped, and append_finding de-duplicates by fingerprint against open findings.",
       "evidence": [
         {
-          "resource": "repo://agent/review/findings.py#L552-L615",
-          "version": "repo-lines-v1:sha256:21940151efdc28a67b58d95e0b7727d61ea8c42f30d8daee9a7ea1c623afd2fb:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0NjgxZThkYTRlYmJiYzM0ZTdkOTQ2YzMxZTc5NDhkZDMwNjYyZWY3NzE2MThkN2RmNTI3MDMyYTcxZWJjYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlN2E0MTI0YWFhZWQ5Y2ZkMjg4YjJkNjgyMGMxMmNlMTZlMzUyZTQwZDMzMTUyNjU5OTAwNWYwMTE2NmJhMDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjMDE5YTVhODgwZmVlZWI1M2YwYjU3YjQ0NWEzOTE5M2Q1N2RjYTQ5NTgwNzFjMjk5ZTQ1YTNkNzIzMWUyODIifQ"
+          "resource": "repo://agent/review/findings.py#L652-L760",
+          "version": "repo-lines-v1:sha256:9220aa73ed365dd0a83b00e40b00f93896c92f3c1201d8eedc03532825297341:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkMmNjMjJiMTQzYmYwMzlkNjcxY2E1YjkzZTE4YzQwMzY4ZjkwOWNhOTJmMTI0ZTM3OTRmMDIzM2UwNWYwZTllIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjZjgzMmMzOTFiNTJlMjQyYTQ0YmI3N2M3MzgwYzMzMTc5ZWVlOTU1MTc4ZDI0MDI2OTM4ZmMxYTQ2NWYxNzI4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2ZDUyYTlkZTMxZmEzM2VkOWRlZWU3NDRkZGY3NWQyOTZlYjBiN2U3MzljNDcxODdmYWFkYTc0NGQ4YWEwMGMzIn0"
         }
       ]
     },
@@ -109,12 +109,12 @@
       "statement": "When the reviewer thread backing findings storage does not exist, the storage layer raises ReviewerThreadMissingError and tools return a structured do-not-retry result (thread_missing_tool_result) instead of blindly retrying.",
       "evidence": [
         {
-          "resource": "repo://agent/review/findings.py#L33-L43",
-          "version": "repo-lines-v1:sha256:9963ae40c15e611cd3bb7f40004af4c77664d240181d3c7448410fe8810105bc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MTM3MTE2ZmVlMzJmMmQ1ODhkMWEwYWFlYWZmNTYxMWE4MThhYzQyNGYyMzlkMjkzYTdhYjQ3MDBhNDdlNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2NTU5OTMzZDg4OTg0YWRkZjNlOGMwZGQ1ODYwOWU0NjA1OGEzNGVhYTI5OGZkM2Y4NTRlMWU1MThjN2M0NTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE5OGIwNjNkOWI0N2U2NTM3OTYyNTU3MmNjZTE5NzY2OWQ1NzY3ZTEyYzE4YmUwNzU2NTJiOGNkOTgxY2U4ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlOWJhZGRjMWY3YWE2NjllMDBhNTFjOTkzYTg1OWZmYmM5NTE5ZjE5NTQ1YTVhOGNlODljMjc2NGQyOTI1NWEifQ"
+          "resource": "repo://agent/review/findings.py#L43-L53",
+          "version": "repo-lines-v1:sha256:9963ae40c15e611cd3bb7f40004af4c77664d240181d3c7448410fe8810105bc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MTM3MTE2ZmVlMzJmMmQ1ODhkMWEwYWFlYWZmNTYxMWE4MThhYzQyNGYyMzlkMjkzYTdhYjQ3MDBhNDdlNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2NTU5OTMzZDg4OTg0YWRkZjNlOGMwZGQ1ODYwOWU0NjA1OGEzNGVhYTI5OGZkM2Y4NTRlMWU1MThjN2M0NTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMDA5N2U0YWE1MDA2OGJhMTU3ZjlhMjczOWZhZDg2OTk1ZTFlMGNkY2NkYWRjNTg5N2MyMDM0Yzc0ZDNlZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlOWJhZGRjMWY3YWE2NjllMDBhNTFjOTkzYTg1OWZmYmM5NTE5ZjE5NTQ1YTVhOGNlODljMjc2NGQyOTI1NWEifQ"
         },
         {
-          "resource": "repo://agent/review/findings.py#L534-L549",
-          "version": "repo-lines-v1:sha256:759eb5ddc50175c3423aa838cba7eb6a2d44a83e081c2daf38d426435206cc11:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MDg0MTdiMjllMzllOTdlMDY5NDA5YWE5MGFhNzRkYjJhY2I0ZjAzYWE2NDZkZGNiY2MzNmMxOGE4NTYxN2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmYjlhY2JhZWNkZjc5ZTg5MDQ5YjIyNGViOWJhM2VlZjc1ZjgyMWZiMmI2OWI2ZmI5OTk2NWE3N2Y1YmIzM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU4MDBhODUzNTYwOGEyMjA3YzM5NDBmNDIxMTFmZThiMWY0YzkyZGNiMjhjN2FlYzc1NTdmYjcyNGUyNjlhM2YifQ"
+          "resource": "repo://agent/review/findings.py#L462-L469",
+          "version": "repo-lines-v1:sha256:9792bd48e95424ce3cd729c42d8157b1390eecc16397fdf751725e0aa94d56a4:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNTk2NDBmNzFmNmIwMjgxYzM3MmI1ODVhNWQxNDNlNDI3MDZhMGM1OGZjOTI0MGM3ZDk5NzBhMDMwNTcwMDJkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGU5ZWY5YWZhZWNkMjM3MTFmNDM4OTg1YjJlYWI0ZDRhZjIwNWZkZjA2NmJkMDE1YTRkMDczMjkyZDE3OWVlOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDM0NjY3ODFmNjRiZTlmMjBkZjdhZjc1YmQwMDM4YzdmODRkNzliZmM3N2EzMzNlZDgxN2E4MjgwNjNkMzg4NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGYxMDUzMDZjYmE1NjIxZjNhZjZmMTFjODg3YmQ3MzgxNDNhNjFkNDEwNzQ5YjAwY2M1N2JlZjgxMGIyNGQ5ZCJ9"
         }
       ]
     },
@@ -123,12 +123,8 @@
       "statement": "add_finding enforces in-diff-only discipline: it validates start_line..end_line against the diff line set for the file/side via is_range_in_diff and rejects out-of-diff findings with success:false and in_diff:false and an explicit do-not-retry message; file-level findings (both lines None) are accepted but do not render as inline comments.",
       "evidence": [
         {
-          "resource": "repo://agent/review/publish.py#L212-L233",
-          "version": "repo-lines-v1:sha256:1d804179d78442abe69f7b88af09462f5fd3ebc625dc71e79f08735d1f8473a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0MzQxNTJjZWY3MDliYzU5YTkwMjhlYjEwNTg3MTI5M2I4MzUyYzAyYjhhNjE5YzBhMGJmNGM4ZjkwNjJjYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFhMDg1MWFjNWEwNGQ5MDdlNjRjOTA4ZTUyMDQxMDI4YmI4M2ZkMGZlYWE3Y2ZlNTdjYjBjZmM4NjQxNDA2NTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlYjhmYTFlNGJmMGRhNDJkZDRlMzZlNjJhNDAyMGJiNmQ0ZTRhNjk5ZDc3MDgwMzBkZThlZTA5Mzc1Yzk3NDAifQ"
-        },
-        {
-          "resource": "repo://agent/tools/add_finding.py#L63-L75",
-          "version": "repo-lines-v1:sha256:19700ebad3156d00409ccee16664e8fefccbd283166eb1c560134e0e48f92053:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwMDJiZWExY2M3MDdlZmEyNDZjNDVkNjNiOWUxMWJmZTRhMWM0MjUyMjY2ZmZhNGMwZjI4NzNkNjIyYTYxODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyZTc1YTUyNzk3NzA0ZWU0OWM5MGE5NWYyYTBhYjc4OTUyODk0YTg2ZTJiYmIyNGExZjM5YTIzZjMzZTZkODIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNTZhNWRjM2JhZGU5NzQ3NmYzOWI4OWNmMzJjYjc3NDQ2ZjQ3OWI2MDQwNjhiY2I2ZThmNzZkMTM4NDA1YWEifQ"
+          "resource": "repo://agent/tools/add_finding.py#L60-L75",
+          "version": "repo-lines-v1:sha256:74179a0ae855553ec6119b66c31de88706893128069b189bdec8eeb8e40325f3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyNDc5YzBmZTZlNGQ3NzA2MTQxZGUwMjhlYWI3OWE4MzI0ZThhMmQyM2FiZjE2ODJhNTQ4ZWIwYjJiMzY4NTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2ODU1ZTFlNzk0NTQ3MTQ3ODExMTJiZDRkZTE1NmUwODU3ZmI2ODRhMGE5Y2QxNDI1YjBlYjYzNjY2OTIwODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNTZhNWRjM2JhZGU5NzQ3NmYzOWI4OWNmMzJjYjc3NDQ2ZjQ3OWI2MDQwNjhiY2I2ZThmNzZkMTM4NDA1YWEifQ"
         }
       ]
     },
@@ -147,12 +143,12 @@
       "statement": "Severity is ordered low < medium < high < critical (SEVERITY_ORDER); filter_findings_for_publish surfaces only open findings at or above the severity_threshold (default medium), sorted severity-descending then file/line, capped at REVIEW_FINDING_CAP (6). Confidence is recorded per finding but does not gate publication.",
       "evidence": [
         {
-          "resource": "repo://agent/review/findings.py#L735-L761",
-          "version": "repo-lines-v1:sha256:f13fb3081e07ceb4f7e0d2b1e56f16b1cf67d61ab853f54222c4d682775227f0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIxZDUzM2RkMWZmNGFmZTBhMzc5MWVkNTMyMzNiN2ViY2IwMWQ1ZDA2NzFjM2VlMmJmMGI1MTI2ZjdmYjUzMTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkYzg2MGQwZWQzNWYzZDgwZmNkMTlmNmJjOGQyOWUxYmMwNTBmNDUxZGYwNzJjNjFhMjY1NWUyNmM2YTk5NGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwNmJlZDIxYzg0NWQ3Njk3NmZhZWY3OTZmYmIyYWVkMzIxNjU3OTlhNWNlODhhODcyMjhmMTYxY2FkMjdhYzgifQ"
+          "resource": "repo://agent/review/findings.py#L89-L107",
+          "version": "repo-lines-v1:sha256:da45188d078577e012ca15954b440a08665c91f96f5d725c443beb7967708f6c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkOTljMzJiMTI4NzYxYWUyYWQ3OTdiMmUxYjgxMzNmMDE1MGIwNDEyMDZjNWY4MDE0NmQzMmE1ZDllZmM1NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwNjRkZWU3NmFjY2UyYjAwMjMwN2IzYTcwNjkxYmRiZGZiZWIxNzEyMTAyYTUzMWRhNTllMjBlYWI3NTEwNjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI4MTZkYmJkODJiMjJiYTg5N2E0OWMyYTE1NjZmNDYyN2U3YWQ2Y2ZhOTliMDA5ZjQ3NGQyMWRlYTU0MGZkNmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImViZjgyN2RjMTQwNzM2ZTg1ZmY1YjI3MTdlNzE3MWJmN2M0NGI0ZjQxMzhiYTAxMzEwZGViMmFjNGRiMmJiN2YifQ"
         },
         {
-          "resource": "repo://agent/review/findings.py#L89-L107",
-          "version": "repo-lines-v1:sha256:55323864e514910205a20edb48014d5cdf746b6bd57b8174a77cfcc07024ebe6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlN2NhNzMxYTdkMmQyODU3NjM5Y2VhM2FkZmFmODI3ODlkYjk0MGY1OTg0NmVlZTg4MmZhMjU0MTg0ZWU4N2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdiZTgyNzlkMmU2MTI1N2UxMTJhY2E5NzM5MWE0ODhjNTczNDU0MzdlODJlNGE0M2RjODJhZTQ3NjMyY2VkNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJhNDZmNmM4M2JiMjU0NGJjYjU4ZWVmZjc4NThjMzQyNGFhMDQ5NDZkNDI2OGI2MjE1YzE2ZmRlNWE5YzY4YTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYjlhZTg0NDNhMWNhYTZiMDg0NTA0OTVlOTE1ZDFlNTNhN2EyYmUyN2UxZGE4ZTA4YTk3NzNjNDA5NjE2MDAifQ"
+          "resource": "repo://agent/tools/publish_review.py#L356-L368",
+          "version": "repo-lines-v1:sha256:76f3487e3d346426891c986cac3ec3253870e7ffedc6a6c2b80e695820780d64:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3MGQyY2EwNDg5NzVjNGZiYWVlODNlNGUyODcxZWQwOWU1Yzc0ZTEzNjg5OGMzNDdmMWIyMzhjMTQ0NDYzZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUyMTI0ZjYxM2U3ZmZlMzJkNmJjYThiMjVjNmNiZDkzMTllZDRmNGNmMmI3NTNkY2IxZmIyOGE4NjZhNGM0YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZDE3NGVlOTI0MzIyMDAyZWE1ZjRhNmMwMzlmOTQ3MzJiODczYjBjYTgwZDk5MDY2ZjFhNzBiMTU3Yjk1ODUifQ"
         }
       ]
     },
@@ -165,8 +161,8 @@
           "version": "repo-lines-v1:sha256:9b772b3a701290a73e4805a13a4bb2836a336b24a35e64d633b3abf04802b96d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzZjQ0NDdhMzJjNTE1MzlmYWIyZTRlM2JlMTNhMmMyMDJkOGJhNzE4ZTU1NmY4NGI1ZDFhNTE1N2NlZjQyODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwYWViYWJkZWRjZmU4MjFiMzllZDgyMGJiOWEzMWRjMzViNmI5ZjY3YjQ5MWVkZWNiMzdiMjQwNTIzNDVlYjIifQ"
         },
         {
-          "resource": "repo://agent/tools/publish_review.py#L238-L275",
-          "version": "repo-lines-v1:sha256:04c7b1fbb0af65f20e02257468ffd71b1a29d3967c835a12f46f41a936134fe0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNjM1ZTNiN2FiYmNiNDg4NDU5NTI4M2U2YmUxODdjMjc4ZjRmZTljZDU1Yzg0MDY4MjBiODkxNDg5NzIwOTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRiNTdjNjM3OWVmOWYwY2M2MTY2ZWU1MmRlZjM2NGRhZjE5ODJmOWQ2YzgxZjQ2MTlhMTZlNzUwMWI4OTRmMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MjdkM2RhYzI0ZmMzM2RlYjI3N2M2MGU3MmNlMDNiMTViOWEzYmM2YzY4ZWU2OGJjMjQ3OTFlZTAzNmU1MDcifQ"
+          "resource": "repo://agent/tools/publish_review.py#L342-L377",
+          "version": "repo-lines-v1:sha256:e45aae4aa2b7893c0290d84f48ad0b668dad48a926a59584c087ac98493588ec:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkNTdiMTQyZTQ0ZDEzMTA3OWZkNDBmZDIyYTQzM2FlMjVjMzllNWRlYjRlZjQ0YzE4YWQ4ZDA0Yzk2NmNiZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1MTU1NjIzMjJmNjlkYjg0YjRjZmVhYjljNzVmZGNjMzQ0ZjQ4ZWI3NzkxMjI0YjU4MzQ4ODdhMmU2MGQ2YzIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkZjE2MjgwY2E1M2IyZGM2MjRjM2U5OTEzYjhhNWZhZGJjODk2NTVkYzk3MTAwNWQzNGJkNTk5YzljYTYzODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhkZWIyNDJkZTA0MjU2NGYyYzc4ODJkZjM4ODk1YzE1Nzc0NmMxYzE3NjMxOTIzZTRjYWMwOGEwZjZlYWZjMWEifQ"
         }
       ]
     },
@@ -175,12 +171,12 @@
       "statement": "publish_review resolves the effective head SHA from thread metadata (a mid-run push updates the live head there ahead of the run's frozen config), then records the GitHub review id and per-comment/thread ids back onto each finding to avoid a surfaced-but-unrecorded state.",
       "evidence": [
         {
-          "resource": "repo://agent/review/findings.py#L460-L474",
-          "version": "repo-lines-v1:sha256:f5b68d3b57df8787892d1974f1df930a47c962b33878abc1b885a79b0fbc5b19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzOTA3NDliYmRiZjg3Mzg4YzhhZmE2ZTZlMjFjNThjMzdiYmY1ZGFkY2UzYjgzZjI5N2FiOTg3ZGVhYjk5Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlNzM0Yjk2NTk4ZDg4MWNmNWZlYjkwZTk2MjU1ZmI0Y2I4MjViMzY1ZThkYTc1NjU4MzljZDJhNTc3OTViYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyZTYyYzIyNGRkMThkZDJlMGE5MmM2OWZmZmVmMmRlZTg0MjQ5YWExNTE3ODg0MzQ4NjQ0ZTlkZjVjYTQxMDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmOGFkODQ4YzFkNGQ5OWY0ZjdiYjJlZTBiZjFiYmFjNjhiNjlmMDhkOGFjZWUzMDUyMzA0ZDcwNTQ2NzA1MjMifQ"
+          "resource": "repo://agent/review/findings.py#L472-L486",
+          "version": "repo-lines-v1:sha256:f5b68d3b57df8787892d1974f1df930a47c962b33878abc1b885a79b0fbc5b19:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzOTA3NDliYmRiZjg3Mzg4YzhhZmE2ZTZlMjFjNThjMzdiYmY1ZGFkY2UzYjgzZjI5N2FiOTg3ZGVhYjk5Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlNzM0Yjk2NTk4ZDg4MWNmNWZlYjkwZTk2MjU1ZmI0Y2I4MjViMzY1ZThkYTc1NjU4MzljZDJhNTc3OTViYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyZTYyYzIyNGRkMThkZDJlMGE5MmM2OWZmZmVmMmRlZTg0MjQ5YWExNTE3ODg0MzQ4NjQ0ZTlkZjVjYTQxMDgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxNDkzZjFlNGMwNTczMjY5MzRlNmNkYmI5MDM2Y2MyMTQ0NGQyMGVlNGYyMDhiNjM2MWU3MDczOTVjYzg4NWUifQ"
         },
         {
-          "resource": "repo://agent/tools/publish_review.py#L225-L275",
-          "version": "repo-lines-v1:sha256:f3a3ec849653cde904b764fa1577d708d86a7d9bbe9234ccc3ed38d5307f5dbf:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZWNlZWFhODI0MDMxYWZlNjU2ODliMjI1MjA1NDhkZWJlN2VmMDFmNGI4YjIyOTI2NTQ3ZGIxODY2NDQ3NmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijc4MjJkYjZmZWNmMWNiMmE2NDI2MDk4MjdiOTVhYzEzN2JiZmZkMjVhMzVkMzFjN2Q4ZGZjMTBkMzUyOWU4ZGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4MjdkM2RhYzI0ZmMzM2RlYjI3N2M2MGU3MmNlMDNiMTViOWEzYmM2YzY4ZWU2OGJjMjQ3OTFlZTAzNmU1MDcifQ"
+          "resource": "repo://agent/tools/publish_review.py#L311-L329",
+          "version": "repo-lines-v1:sha256:8d975d032ae18f62b9e61dc374810eed246cded3a73d5ef82e577dbf15751233:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyZTI4NjE1YjNiMGJiZGY4NzFhMGJkZTFjMjY3NDI5ZDIwZTA1Mjg5MmYxZGFjMmVmN2E2OTVhOTEzMjM3YmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2Y2EwYzI1ZWM3NmI0OGEzMDNlZTg1NTYzMGUxOTE4OGMzNzAwYzVmZDNjYmZlZWUwYmJmYmYzNDk0ODM3NzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyOGQ5M2M2NTU2YzUzYmNkYzJhZjMxYWE2MjQyZDA4ZThhNTY5NzczY2JjOWM1NzUzMGEzN2YwMGNjNGQ4MmQifQ"
         }
       ]
     },
@@ -189,8 +185,8 @@
       "statement": "publish_review handles edge cases explicitly: on a 422 unresolved-anchor rejection it drops identifiable offending findings, retries once, and returns unresolvable_findings; an empty re-review with an existing Open SWE summary skips a new summary (skipped_empty_re_review, review_id:null) but still resolves fixed threads and advances last_reviewed_sha; eval mode is a dry_run that posts nothing. Only a numeric review_id with neither flag confirms a real review was posted.",
       "evidence": [
         {
-          "resource": "repo://agent/tools/publish_review.py#L285-L420",
-          "version": "repo-lines-v1:sha256:d9736c7321117ee3ea257dc2850d3e47befe1f3c034503194f7117eb1dbe36ea:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyZjc2ZjU0NGUxZmZkOGIyMjJlODA5OGEyZTNlMzk2NjA0MGMwYmIyNTI2MzEyMmMwNDYxYjc3ZmU3ZDkxN2U3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwOGZlZGQxZDJkZmQ4ZDQ1NDRiODMxMGQ1MzI4YTgwMjk3MTA0NDkwYzNhNjAyODA3NDJhZGVjMjM5YWZhOGY3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4ODIwMWY0NTM2YmQ2ODEwYTRhMDc5OGNhYzhiMTEzMjM3MjhlYTQ3NzA2YThiODNmOWI0M2I5N2U3ZmViNjVlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3NjVjMmY3NDg5ZTdjNjcwNmQ3ZTExZWMwZTI5NTZmZWVmZjFmM2E3NjExNGNmMWJiYjE4Yjg5ZDM4ZGZiODU1In0"
+          "resource": "repo://agent/tools/publish_review.py#L389-L432",
+          "version": "repo-lines-v1:sha256:f63d192892a2bd4db9d1b8d91e19e65271a9ec57132a2fde5a558176a9cba1ab:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOGRkNDEyMzBjNTdkMzhjMTNkMjZiMTBiMDcxNzAxMmMyNmViMmE2NDk4NDI2MzcxMDBhYzdjZmQwYjQ4NWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNDk3OWMxZWI2NzZlYjhmM2Y5NDU3YzgyYzBhZmZjOGUwOTBlNWZhZWQ5NTRlZjNmN2QyYTFhMWJmZmU2YjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjExZjVmZTJhZGNjNWQ4YTBhNGVmYjdhMGE0NGUxYjVlNzQyOTA4MDlmNDExYjhhYjhmYmEzMDE1YjI3NjUyODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1ZjRkYjU5ZjZmZGFkNzA3MWM5NWM3NWU4NTUwZjU5MDVmMWViNmYzNmE4NjFjY2M2N2Y1ZTNmZWIwNzI0MjMifQ"
         }
       ]
     },
@@ -199,8 +195,8 @@
       "statement": "process_github_pr_close toggles the reviewer thread watch flag on PR lifecycle transitions: reopened re-enables watch, closed disables it, and converted_to_draft disables watch only when the author's effective draft-review setting is off.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L502-L554",
-          "version": "repo-lines-v1:sha256:93df3a78a4741141889f050673570108e3dcd05ea9ec06a4ab9281ce3dc8850c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwZWYzMTY0MjVlMDIxZTRlMzg2OWU5ZDdmZGEyMTIxY2EyZjI4NzA4OWU1NjU2ZWU0YjRhOTc0OGEwZmY0MDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNiYjAzY2ExNWE4YmMwMjViODk0ZWNhYWFkZWQxOWU3MDI2NGVmYWE5ZTk0MDJkNmRjYjMwYzNiOGI0OWU3ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0OTUzYzY3YTdlMDYwMzczOGVmNTUxNDIyNWMyMWY4YjA4ZjVmMWU1NGNiNTdkNjY0NTliMzgxZDRhNGU2MzkifQ"
+          "resource": "repo://agent/github/webhook.py#L547-L599",
+          "version": "repo-lines-v1:sha256:93df3a78a4741141889f050673570108e3dcd05ea9ec06a4ab9281ce3dc8850c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwZWYzMTY0MjVlMDIxZTRlMzg2OWU5ZDdmZGEyMTIxY2EyZjI4NzA4OWU1NjU2ZWU0YjRhOTc0OGEwZmY0MDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmZWRmZWYwMTU3NGQ2ZTNjYzc3YTg5MWQyZTdlMzU1MDcwYjQ2MDU2Y2U5Yzg5ZGE0ZDllMWFhZDNhMGRlZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0OTUzYzY3YTdlMDYwMzczOGVmNTUxNDIyNWMyMWY4YjA4ZjVmMWU1NGNiNTdkNjY0NTliMzgxZDRhNGU2MzkifQ"
         }
       ]
     },
@@ -209,8 +205,8 @@
       "statement": "process_github_push_event re-triggers the reviewer only for a watched reviewer thread whose PR head actually changed; it short-circuits when the head equals last_reviewed_sha, the thread is not watching, or the diff is proven unchanged, in which case it advances last_reviewed_sha and creates-then-settles a 'No new changes to review' check on the new head so the check stays visible.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L557-L801",
-          "version": "repo-lines-v1:sha256:efa888fe3fa4da6e64e58ba4b7f38c3e4d43f770b54b1a9e322e1b150ae2334f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQ1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyMmZkYTA0YzJlODQyMWZjYjA4YmQ4OWE5MjQ2NjE0OGQ1MWE0YTNjN2VhNzUzOWI3YWFmOTU1ZDBlODAwMTNkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4Y2M0YTdkMWNjNzk2YWJhM2U0NjcyMzMyN2Y1MTdlOWY4MTE5ODJkMjUwZjA3MDI5ODZlNGI1NzY0YWQ5NTg5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3ZDZlMzk0ZWUwYTEyMjA5ZmE4MzI1OTlmZTE2ZGJkNTBjMDliNmUwNWJjZDEyY2Q5NTZlM2U0MGEwYThmZTEyIn0"
+          "resource": "repo://agent/github/webhook.py#L602-L764",
+          "version": "repo-lines-v1:sha256:ccd81d11e001da39f1a72d86468a8fb98e1e21dc030e6176cf4d3738d3e58dfa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyMmZkYTA0YzJlODQyMWZjYjA4YmQ4OWE5MjQ2NjE0OGQ1MWE0YTNjN2VhNzUzOWI3YWFmOTU1ZDBlODAwMTNkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJhYjVjODI2MzJmYzgyZDRiMmMzNDBmNDI1NThiYTNkZmEzMWM3NjU1ZGY2ZmNjMTY4YjRmZGNlNTdmYWM2MDQzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4Y2M0YTdkMWNjNzk2YWJhM2U0NjcyMzMyN2Y1MTdlOWY4MTE5ODJkMjUwZjA3MDI5ODZlNGI1NzY0YWQ5NTg5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlODhjYmZmMmQ2NTg5OGI4NGFlMzMxNGVjZTg2MGZlOTdiN2FiOWQyYmQzM2RjYzZhODk1ZjcwMWU0NjYzMDFiIn0"
         }
       ]
     },
@@ -219,12 +215,12 @@
       "statement": "On a changed-diff push (or a ready_for_review event after a prior review), a re-review is dispatched with re_review=True and a prompt to reconcile existing findings against the new diff, add net-new findings, and call publish_review; the ready_for_review path skips dispatch when head_sha equals last_reviewed_sha.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L388-L403",
-          "version": "repo-lines-v1:sha256:cf40af3554bbf2384b181d9f40b62265018426486ea21d2b1d2df823441735c4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxODg1YTIwMGY5MGZhNTgwMzExNjU2ODMxMzY0YmRkYzk4NmYxZjE2ZjQxMzJkMTFhY2Q1YzQxZTQ0NWY1Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmYTk2YTIyYzIwNjNmOTRkZmRiOWFmMmM1MjY2YjA3M2NiODgzNTBhZTNjZmJlZjUyMWE3ZDk4ZWJkZTVhMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlZDNiY2JhMDE5MTdkN2QwY2I3ZmVkZDNjYzhmNmM5NTliMDFmNDYxODNkYzdjODNiNmVhZDI1NWY4YWUzYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwODBlZGEzNGU1YzYyY2MzYzk5N2Q3OTY4MWJlYTVkMDQyNDk2YjlhY2Q1ZDAyZGJjODkxMTIyY2VlNzBmMjkifQ"
+          "resource": "repo://agent/github/webhook.py#L417-L430",
+          "version": "repo-lines-v1:sha256:bf8980004ddc902338ad6dd8e0746bfea81b652f13162bfa7081293e573567c6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxODg1YTIwMGY5MGZhNTgwMzExNjU2ODMxMzY0YmRkYzk4NmYxZjE2ZjQxMzJkMTFhY2Q1YzQxZTQ0NWY1Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwMDEwNWUwYTY4NTIxYzNkMzMyNjE1MzkwZTg1OWUzOWNmMjQxMjc0YTdkNzgxZDE5NmEzYWRhMDdiMTBmZDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVlZDNiY2JhMDE5MTdkN2QwY2I3ZmVkZDNjYzhmNmM5NTliMDFmNDYxODNkYzdjODNiNmVhZDI1NWY4YWUzYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImFhZTg5ZjE3NjEwODcwMjZmNGZhMDE4YjgwMjJmOGJkNTE1MjMzNDg4ZGQyMzcxMDkxNThkM2UyZjVhOWFiMDAifQ"
         },
         {
-          "resource": "repo://agent/github/webhook.py#L432-L453",
-          "version": "repo-lines-v1:sha256:1b2fd419db82def0aab85b25c80311079d3185e6f3d401cff4dfac27dceeba9b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhY2EwODM5NmJjYjQ2YmI5OTczMjBkYTk2ZmZjY2Y3MjUyMzRhN2MyOTA5NDViODMwZWQ3OWVmZDE3NTM5NjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyNjVlMWIxMzU4NGI3MmE4MGZiZmI1NjhhODRlYmQwNDY1YjhiMTFmMGI2ZTdiYTNjZTBmZmUyMTAxNjQ3MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVhYWJkODg2MmU5MWEyNjQyMTcyMjhmZGE2NTZhMjU3MDBlZGQ0NTc4YWQ4NDFlNTUxNmFkMTQ5YmVhMWFhMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkZDg2NDAxMjdiYTg3NmU3N2I1NmNlNmMxM2JiZTRhMWEwYWJlOTdhYTUzNjNjMTAwOGEwZmFlZmIyZDMzZGMifQ"
+          "resource": "repo://agent/github/webhook.py#L766-L856",
+          "version": "repo-lines-v1:sha256:4e96494d86264e3f01e7bd08ae77132524ee856507f32776811139c10dbfde61:eyJzZWxlY3RlZExpbmVDb3VudCI6OTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYmY1NTNkN2NmZmMxYTc4OWQ3MTMxYzljZDQxZTk1MjNkY2QwNjBkNWVlYWQzNTRlZDEwY2JhMWVhMzQ0ODgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVkOWI5OGE4MDc1ZWVhZDNlNmEwNDkzMjhkZmM4NmNkMGRiNmQwZDRkY2IwN2U5MDAwZmRjMWVmM2JjYTlkODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4ZDFhYzczMTI1NTE0ZjM5MzNlMjU5Njc1ZTdjZmViZjM0NmViMjMzYTM5NmIzYzg4NGNlYzAzNzI1ODJkMjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU2YmQ1MzkyMjU2MDJlODMxMmQ1YWJkYTkxZTc2ZTIxY2IyODdlOGEwZThiNTZlZmFhYTk0MTBiOThjZTE3MzIifQ"
         }
       ]
     },
@@ -233,12 +229,8 @@
       "statement": "reconcile_findings_with_review_threads is the watch-mode sweep that syncs tracked findings with live GitHub review threads: it backfills GitHub comment/thread identity and marks findings surfaced, records the latest human reply as an interaction flagged for reassessment, and moves a finding to status=resolved / surface_state=resolved once all its GitHub threads are resolved, writing only on change.",
       "evidence": [
         {
-          "resource": "repo://agent/review/reconcile.py#L107-L247",
-          "version": "repo-lines-v1:sha256:6d6a3d297b085705015b14363e6d959db03fd8222835a5dcffc3bb33deec2b08:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4NmYwODRkZmQxOTA4NDE2NDc3ODk3NTY4M2IxZjNmZTdkYjI0MzA0ZTg0NTdmM2UyNDEzYWQ2YjViMmJkZTBlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1YmJmMjUwODEyZWY1NGFhNjE1NjIyNTI2Nzg4NjM5NjU3ODU1ZTE0YWJjYTZjYTNlZTdjMTU3YzA4ODgwZjRkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3YTA3YjY3Y2ZiN2IxMzFhNWZjY2M4MDU2NzM3N2E2OTMyZjczOTEzNzI4MGQ4Mjg1NmQ4MWRkNzhjMWM3ZWU4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
-        },
-        {
-          "resource": "repo://agent/review/reconcile.py#L51-L77",
-          "version": "repo-lines-v1:sha256:5bda2212864814956b89dfbca481f434b505eb55c54a4632624541b9296bc8ee:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFlMzFkZmZjNDA5MmJlOTdkMzhhMGQwMjZmOGI3MGFiMjE2NTI3MjU2MGI5ZDFjZTI0MWRiYjkxMTc5NmRjMjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNmMTFiM2ZkNTUwOGE1YzlhMDRkZWExYTYwNDYyMzc4MDRlZjZjNTZiMzJmMjgxMzRiZDI0ZGYwZWRkYWRjMjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhNTE1Njg0MGU3YjE3OGVmNjEwZmJkZWRjZWVhNTBmOTg2YWNmZjFhNDcwNWJkNDZmMDYyNDIwNDlkZmYzM2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVlODZlODkxNWQzNGVhZDI2MzQ4YTYyMDgwZGUyNjFlOTA5MGExMjE1MzAwY2VmODhhNjdmMjlkZDUzNTcxM2EifQ"
+          "resource": "repo://agent/review/reconcile.py#L80-L127",
+          "version": "repo-lines-v1:sha256:09fd49ca73e3c4a8ca56ca9bba38344800f823467a4577f5bfc9646ab35b10ff:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3OWFiYjMyZWY5YjRmMWY1NTg1ODllMTYyZTRmMzAzODk1MTg4Nzk4YmM1YWNlNDc1ZTQwZDlmMDgzZjJlYWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3OWZkZDAxY2E2YzYyMzFhYmQ3ZjgzYWMzN2I2YWQxNzA0NThjN2QwN2FjZTMxNGI4NGRmM2FhZmViN2IxNzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjExOGNiMjAyNjBmNGQ1ZWQ5NGE0ZmQ5MzhhMWY5MjUwMGQ0MzA5NjkwYmU4OTVhMmNmNjM2ZTg1OGZjMDkwOWIifQ"
         }
       ]
     },
@@ -247,8 +239,8 @@
       "statement": "process_github_review_finding_reply routes a non-bot reply to an Open SWE review comment back to the reviewer graph: it reconciles findings, matches the parent comment id to a finding, records the reply as a FindingInteraction flagged needs_reassessment, and dispatches a reviewer run with reviewer_event='finding_reply'.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L997-L1123",
-          "version": "repo-lines-v1:sha256:47a6fe7e511b5faf97f81199bdfd39205d93e80ba702d1ada286ca5990cf0ebb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2ZWU1Y2Y1ZDAzZWUyNWRjMTYyMDM4YjdlZGVjNDFiYTdkZjI3ODIwYjFjMTM0YzEzOWIzZjc2ODEyZmExOWJiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4Y2M0YTdkMWNjNzk2YWJhM2U0NjcyMzMyN2Y1MTdlOWY4MTE5ODJkMjUwZjA3MDI5ODZlNGI1NzY0YWQ5NTg5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3NjJmN2M5Yjk2Y2JiYzlkNjRkYjU4MDFlZjRiMDA5MTQ4MDM2NmZlODE4ZTk1YzBiNmJlZGJiMGQyNDU4MTZmIn0"
+          "resource": "repo://agent/github/webhook.py#L1187-L1313",
+          "version": "repo-lines-v1:sha256:60e957fcc17dd17675a32e0260087685b4924ca61233e5c9ad1aa8df63773700:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2ZWU1Y2Y1ZDAzZWUyNWRjMTYyMDM4YjdlZGVjNDFiYTdkZjI3ODIwYjFjMTM0YzEzOWIzZjc2ODEyZmExOWJiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZDliOThhODA3NWVlYWQzZTZhMDQ5MzI4ZGZjODZjZDBkYjZkMGQ0ZGNiMDdlOTAwMGZkYzFlZjNiY2E5ZDg4IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4Y2M0YTdkMWNjNzk2YWJhM2U0NjcyMzMyN2Y1MTdlOWY4MTE5ODJkMjUwZjA3MDI5ODZlNGI1NzY0YWQ5NTg5IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI1MDZiMmQwMTgzMjMwMzBjYmU1M2E0ZmU3ODhiMTcwYjc5ZjdkYWVlMWU3ZDY4NTg1ODRhMWI2NjkwMGQ2NjEzIn0"
         }
       ]
     },
@@ -257,12 +249,12 @@
       "statement": "Automatic first-review and push dispatch paths create an 'Open SWE Review' GitHub check run and store review_check_run_id in thread metadata; settle_review_check_run completes it on publish, only clearing the id after a successful PATCH and stashing the intended result in review_check_pending_result so a transient failure is retried with the real conclusion.",
       "evidence": [
         {
-          "resource": "repo://agent/github/webhook.py#L420-L430",
-          "version": "repo-lines-v1:sha256:e1523d7191310939fe742f51c719469c3068ec840e67c4511902ec9635ab2222:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiMDYxNGIzNTBkMmYxNmZjMzg1YzdhMTNhMWJkNWVjMjI1MTJlODVkZjg4Mjk4YWMyMjU4ZjRjYTUyZTMwZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU4NDA1M2U3YjJkZDViYzlkN2UxYTAxODY3MmQ4ZWRhN2I2MjUxMjdiMDEzNjlkNGI4NGU0MjAxYjM0Y2MzMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY2NmNjODc3NWIzNTI0M2IwNzQ5NmM0YmM5M2JmZDQ4OGUxZDYzMWE2YjY0ZDJjZmQyMDkyZmM1YWVhODE3YzYifQ"
+          "resource": "repo://agent/github/webhook.py#L802-L815",
+          "version": "repo-lines-v1:sha256:ee29acb54a47190d96fcf549d85377a57f3b2a3bcb0a71c020ede9d2b36282d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZiMDYxNGIzNTBkMmYxNmZjMzg1YzdhMTNhMWJkNWVjMjI1MTJlODVkZjg4Mjk4YWMyMjU4ZjRjYTUyZTMwZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA1OGFlMDNlYzY1NTM3MTJhM2M2M2ZlMDYzYTc0OWE1MTgyM2NiM2Q1OGI0MTg1OGE5ZWUzYTcyOThiNDExMGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjOWY2Y2JkYjRkZjU0YWZiOGI5ZjA3MThhNTI0MTAyMTRkMTBkNTY4Y2E1NDU5YTg3ZDBhNGU5YzIyM2UzMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzM2QwMjY5MjJlYjA4Y2RkNjNhNjM0ODVmYjM0MjA3Nzk0ZDRhYTBhZWU4NWRjNTIxNWE0ZjE2MzNmNWM0NjEifQ"
         },
         {
-          "resource": "repo://agent/review/publish.py#L437-L486",
-          "version": "repo-lines-v1:sha256:e240271a61040eba827b9c71919020a84b36c1a84bb210961c5dbc40e425c5da:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiNmVjNDIxYjFmOGU5MWFhOWNmODhkMmQ0NjYwNWQ1MDEzMWVmNDYyMDAzMjAxY2ViM2YxMDRlODFiN2RiZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3YzU0YjYwOWM1ZWY1NTU3NzI0OTJkYzFkMmE1OWFiODRhNDYwMmRhNGVmY2MwYjljZjJmZDNiYTAxYjIyYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0MmU5YWYwNTE1NmM5YWJlZWQ3OTBmYTZkOGUzYWM3NmQ3YWYxODk2NWYzNTJmMmU3MzBmODMzM2NkYmMyZTkifQ"
+          "resource": "repo://agent/review/publish.py#L474-L521",
+          "version": "repo-lines-v1:sha256:33b62a693e4df06af0b5221e046fc09520350b048d3f5684e4af278ceb8b7378:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiNmVjNDIxYjFmOGU5MWFhOWNmODhkMmQ0NjYwNWQ1MDEzMWVmNDYyMDAzMjAxY2ViM2YxMDRlODFiN2RiZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjNjQ3OWNjMjMwNDQwZmQ0MWU4MjI0MjE4Njc5Njk4NTU5ZDI4OTNiZDY3YjQzODBhZmFiODExYjM4YTU1YWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ3YzU0YjYwOWM1ZWY1NTU3NzI0OTJkYzFkMmE1OWFiODRhNDYwMmRhNGVmY2MwYjljZjJmZDNiYTAxYjIyYWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYyNGRlOGRiYzU4YmIyMmRjNDIzNjhlODY3MWMyNmJhOWQ1NGVhZmEzZWE5OWJkYzM2N2ZlZmFiOTJhMzE2OTEifQ"
         }
       ]
     },
@@ -271,8 +263,8 @@
       "statement": "If a reviewer run ends without ever publishing, the settle_review_check_on_exit after-agent middleware closes the still-open review check as neutral (an incomplete review is reviewer infrastructure failing, not a code problem), reusing a stashed review_check_pending_result when publish had actually finished but its completion PATCH failed.",
       "evidence": [
         {
-          "resource": "repo://agent/middleware/settle_review_check.py#L1-L79",
-          "version": "repo-lines-v1:sha256:ffaf78afc98fa81de431cfd79f1fcb45024e9467cceafc6333fb0c842fd71609:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MmY4MGZlMmFiMzZhZmNiZWEwZjM0OWYwN2YxMTAwYjBkZjJmMjU2MThiODhjZjJkZmI1YmYyNmZkYjY4YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/middleware/settle_review_check.py#L27-L79",
+          "version": "repo-lines-v1:sha256:0f333c1332a5525a27b45e91650df61748d615090b3fe327994ed66867c660da:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkZWYyNGNkNGEyNGJmMGZiNDcxOTk4ZDZiZDVlYTE4MmU4NTliZTVlYzY4NzFmYWU3MTljZjJiN2FiYmNkMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwNGJjZTVjMjFkZDI5YzMxNjU2NzRjN2Q3YTkxNzcxMzVlYWIxNmMyODY1YzMwYWFjMzMxNDE2OGI3OTlmNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -286,7 +278,7 @@
         },
         {
           "resource": "repo://tests/reviewer/test_reviewer_publish.py",
-          "version": "repo-file-v1:sha256:e700ad203723c463c2fc1e94ccc44504c10e1d42f2c95ea7fbaba7501cf8c857"
+          "version": "repo-file-v1:sha256:513aa16aeedf0867ba318cb5ba24c3eb4ac90ab500cc4229e9d3a3f785b01b06"
         },
         {
           "resource": "repo://tests/reviewer/test_reviewer_reconcile.py",
@@ -298,7 +290,7 @@
         },
         {
           "resource": "repo://tests/reviewer/test_reviewer_watch.py",
-          "version": "repo-file-v1:sha256:fe0e77917c02ada1b640dd617b23cbd7de226244b20bb0a0567c206843bdf397"
+          "version": "repo-file-v1:sha256:1946edbb70727d54462dc29596113d675469cba9a1132086b8444d6a77131b56"
         }
       ]
     },
@@ -307,12 +299,12 @@
       "statement": "Reviewer preparation obtains a GitHub App token, prepares a replaceable per-thread sandbox and checkout before the model runs, materializes the appropriate first-review or re-review diff, and injects its per-file/per-side changed-line set so finding creation can validate anchors locally.",
       "evidence": [
         {
-          "resource": "repo://agent/middleware/settle_review_check.py#L1-L79",
-          "version": "repo-lines-v1:sha256:ffaf78afc98fa81de431cfd79f1fcb45024e9467cceafc6333fb0c842fd71609:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA5MmY4MGZlMmFiMzZhZmNiZWEwZjM0OWYwN2YxMTAwYjBkZjJmMjU2MThiODhjZjJkZmI1YmYyNmZkYjY4YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/middleware/settle_review_check.py#L27-L79",
+          "version": "repo-lines-v1:sha256:0f333c1332a5525a27b45e91650df61748d615090b3fe327994ed66867c660da:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkZWYyNGNkNGEyNGJmMGZiNDcxOTk4ZDZiZDVlYTE4MmU4NTliZTVlYzY4NzFmYWU3MTljZjJiN2FiYmNkMGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwNGJjZTVjMjFkZDI5YzMxNjU2NzRjN2Q3YTkxNzcxMzVlYWIxNmMyODY1YzMwYWFjMzMxNDE2OGI3OTlmNjgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://agent/reviewer.py#L1061-L1104",
-          "version": "repo-lines-v1:sha256:7fff3f92d8cf1fa4c97fe2e8144eab11a97c6074b5931bf07619f3c26f45aaf9:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkMGYxYmY3MzUwODk0MWZmOGRjNTM1MzBiOTA5OTk0M2UzNDg5MTUyNTc4YjUyODA2NmE5ZmM4ZWJhMDkzNjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwYTA2MmJiMGZlNDZiNjJlMjQzZjgxNzllOTAyODc3NDZjMTY4NzI1ODk3M2JhOGE5MjU5ODg3ODNiMGI0M2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlOWU2YjllNGI2MDFlMDMwZmFjZWQ5M2FjNDQ5MGRmMTYxZGM0MTIwYWZhNTg2N2Y0MTI3MmQwMTZlNzNhNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/reviewer.py#L1-L15",
+          "version": "repo-lines-v1:sha256:b3dd24194d1703861a51766230807d062b8f6cf3d2ed04fa39ab427695051390:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1OTYxM2I0ZDYxNThmZTM2ZDhiMTA4YTkxODE2ZjhhN2U3NjY1YmU5NzQzNDNiZTQ4M2UxM2MwMmE5NzE3ZDIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyNTJhMzdhNmFjZGYwMGJjMzY1NzE3OGU3ZDRiZDVjNGZiNWJmYWExMjNkOTVmNzZlNjdmYjQ2ZDBlYzE5ZTUifQ"
         }
       ]
     },
@@ -321,18 +313,18 @@
       "statement": "The reviewer prompt treats PR descriptions and existing review-thread bodies as untrusted data, delimits them to resist prompt injection, and directs the reviewer to reject style-only, speculative, pre-existing, and out-of-diff findings while allowing organization, repository, and base-branch conventions to refine review criteria.",
       "evidence": [
         {
-          "resource": "repo://agent/reviewer.py#L163-L233",
-          "version": "repo-lines-v1:sha256:393ced91c1d609cbcb1759c10682cb166ec86d680887bd374c27864fe37f4419:eyJzZWxlY3RlZExpbmVDb3VudCI6NzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ0NzE1ODY2MGMzNmQ4ODUxYTM3YTFjNmMxYWMxMGI2MDk2NmE4NmFmZWU1NWZjMzcyYzZkMjFlMTE5NWNiZjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhYWY4OGVlMzRlMmMyMjQxYTQwZDQwODE2ODJkODA2MDFiNWFlOTNjMjhjMWIyN2JjNGZjZGY0ZTgzOGYzMzIifQ"
+          "resource": "repo://agent/review/publish.py#L1-L18",
+          "version": "repo-lines-v1:sha256:9b772b3a701290a73e4805a13a4bb2836a336b24a35e64d633b3abf04802b96d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUzZjQ0NDdhMzJjNTE1MzlmYWIyZTRlM2JlMTNhMmMyMDJkOGJhNzE4ZTU1NmY4NGI1ZDFhNTE1N2NlZjQyODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwYWViYWJkZWRjZmU4MjFiMzllZDgyMGJiOWEzMWRjMzViNmI5ZjY3YjQ5MWVkZWNiMzdiMjQwNTIzNDVlYjIifQ"
         },
         {
-          "resource": "repo://agent/reviewer.py#L443-L519",
-          "version": "repo-lines-v1:sha256:6f4e7504ca2c06aec0db3e11efbf0a5b602fa516f40f5bac3a6898b47fe2e34b:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4NzU1YzFkYzU2YWVjZGRjZmU1NzQwNzVjNmU4YTE5OGRhNWM1MmU2YzgwZTI3NTZhZDUzOGZhNTkxMjU5ZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4MmY2OTM4NzBmNGMxM2IwNDVmY2VjNzIzMDdmYjJjMGMxYmVlNDcxNDU0OTMyOTFjMzcxOWIxZmMwYWEzZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwOTkyMmMxMDI5MTE4OWU1OWNmMGRhYThhN2ZhYTdkY2RmMjViMjhmYzA2MTMyYTMyMzYyMWZmNjZjNWI3NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY5YjllM2JmNTE1MDI5MzdiZmE5YzEzZmEzNjdkMjlmYWE3ZDVkZDY3ODI1NTQzNTkwMmU1ZmNlODIwZDMwYmQifQ"
+          "resource": "repo://agent/reviewer.py#L85-L89",
+          "version": "repo-lines-v1:sha256:aae90dd2a2a04ca111084fea733e6d01882437cd4d48afb5d628bd5065bb4157:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODA3ZDgxZWMxMjI5ZGNhNDQzNmNjOTM3NzY1ODc1Y2YwYTg1Y2U5Njk0OGYwZmU3NmRmNzY2YzZhZTNlNjA5YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGMxNjZjZDVkYTM2ZDkyYWZjODAxY2NjYjk2MDdkODE0ZWE4NDAyZjkxOGMzYzVjN2EwN2FmNWM2NTM0M2IxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWNhYTc2Zjk3MmEzOWQxNjcwODE2NWQ5MTk1YTA4ZWNhMDYwM2QyMWM2NWMzODBjNGMxMjBkNmYwOTM5Yzc3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjgyZGZhZDRlMzVmZWZjNGNhMDU5M2ZlMTczNjZiZmFmMjQ1OWQ0MzFlMDBhZmI0Zjk0ZGFhZTBlNDQ1YzRjMiJ9"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-22T13:11:45.998Z"
+    "at": "2026-09-28T16:33:19.776Z"
   }
 }

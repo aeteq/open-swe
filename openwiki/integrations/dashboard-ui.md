@@ -3,9 +3,6 @@ type: integration
 title: Dashboard and Desktop Clients
 description: The dashboard's FastAPI API, React/TanStack Start serving and proxy boundary, authenticated product capabilities, and the Electron client's supervised local-project execution model.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -42,6 +39,9 @@ sources:
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
 generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Dashboard and Desktop Clients

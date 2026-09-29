@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:2045d9954407f144ef63e7c706292501bce4192032133e05fc5226f747ba828c",
+  "pageVersion": "sha256:60eb481bff7654729b4b7ae9e90d607a68c1561432e0f3159637dc72c43b6f8c",
   "claims": [
     {
       "id": "claim_6cbbd97db30a4ea28cefabb033ed91f3",
@@ -53,16 +53,16 @@
       "statement": "MCP tool loading defers the server handshake via DynamicToolMiddleware until the agent explicitly calls load_integration_tools, exposing only tool names initially to avoid blocking the first model call when availability is uncertain.",
       "evidence": [
         {
-          "resource": "repo://agent/mcp/runtime.py#L214-L236",
-          "version": "repo-lines-v1:sha256:739e1889f2d61743eb917252f6217dd649ae043cb5ba2e220353bf875022a45e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3ZTEwZjJkYmEzOGI2NDNjMWEzNTk4YjhiY2IxZGQ1MzUwMzY1MDE0ZWYyZjdlY2ZkMzZkNWM0MmI0YmY3YjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMjJjMDMwMzg4NzE2OTFhYmRlOWE5ZTdkZjI4OGNkZTA1ZThjMTI2MTQ0OTg1YjE1OWNhYzcxMjMzMTYzMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljZmUwZTM4NDQ0MmNhZWE5MzRjMDM1MzVhZGJlMjljM2U1MzI2ODBjNGU1YmI1ODU1NjQ2NjQwMjQzZGIwMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/mcp/runtime.py#L226-L244",
+          "version": "repo-lines-v1:sha256:41b357b0fa0a4577c5a15a98613b152566ced9b101a53fde51d04c916b0dc094:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1YmYyZjFiZjk5ZDQ5NzYyODMyN2JmOGM5YzliYWU1OWU5ZTJmYzFiZGU2NzA1ZmFiMTNkNzBkOTFiYjhmODciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgwNWIxYjFhMDZkMWJjYTllN2RjMzQ1YjY4NjQxNWU3OGZhN2M4YjVhZGQ2NjUwM2M5YTNjNWM2YTExZGIwZGYifQ"
         },
         {
-          "resource": "repo://agent/middleware/dynamic_tools.py#L32-L42",
-          "version": "repo-lines-v1:sha256:24e6b1de478bc566939d5a7b37f69ae1ecafc8308455d6504a86630176fecb01:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmNWUxZTIzMTA3N2IyNDY0YTFhMDc0OTlhZDA1ZDAxMDFlMzM3MzBjYzc5OGU2MzM3YmIzODhjN2Q2OWYwYzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2MzdlZmZkMDNhZGZlZjY2YzA0MjIyYzBmYjdjZGFmZDlhODM4MGEwMTIwYjU1NGZlMjYxNDMwY2RmMjI5MjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZjFjZDJhZDkwYjdhNzA4ZWRkYThkZjQzZDk4ZGZlZTdlYjc5MDY1NzUzZjczNmM3NzE5N2NhNWM4OWZkMDAifQ"
+          "resource": "repo://agent/middleware/dynamic_tools.py#L57-L68",
+          "version": "repo-lines-v1:sha256:62013c49daaed8b51d0d51e4fcbba1e69de5717feefc932233944bdf9070f17f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2MzdlZmZkMDNhZGZlZjY2YzA0MjIyYzBmYjdjZGFmZDlhODM4MGEwMTIwYjU1NGZlMjYxNDMwY2RmMjI5MjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNjYzVjZjE0ZDk1YzIzYjMxMDFhMzQ2MmZlYjYxZmNlYmQ0ZjQ4MTQ3ZjE2MzA1MGVhM2Q2ZWIwNWU4MTBiNWUifQ"
         },
         {
-          "resource": "repo://agent/server.py#L1306-L1316",
-          "version": "repo-lines-v1:sha256:3646c223367be5a89ca62d94665413b6852d0d068445c9c0dc8edee1f7ee4f15:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwY2U2Njc0NWQyYTQzMWExMGI2MzQyNzcxMTZkNjdkZmYwNTYxMGQxNWM3ZDJkMTljZTQyMWM3NmExMmM3MDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM3MDdkNzY2YTFkZmYxZWJkNmZhMDg1MjdkNDEzNjIyNDY3ODljNmIxZDRlOWViODJkNzAyYjYzZDExMTI2NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1YzEwNmQxNDQ5YTQxZTNiYWI2OTAwYTZjOTNjODY5MzBmOGY1NTYyODE1MGVmZWRkMWViY2I4YjViODZmZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkNTJhYzJkOWZkNjY1ODEzMmJjZDdmNDdiMDMyZDAyMWI2MTI3ODNiZDEyMDI2NTVmZjI0NDEwMmE2OTE2ZTgifQ"
+          "resource": "repo://agent/server.py#L1398-L1411",
+          "version": "repo-lines-v1:sha256:1f6afe61461ca6dece1b845d3fae6ade1ae72e3a9136796df6b3972eaf474b4a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0ZDE3NTU1YjBjMzI5NjdlNzQzMTIxOTY1ODE2MWY3MjkzMTFkYjdhOGRkMDU3MGRiM2E5OWY1MWRiOTVlMGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNjI4NDI3ZjNlNTc2ZDQ1MDJjNmRlNmQ1NzA2YmVhYmYxYzJiMWI2YWU5YzUyZmQ2OTZiMjIwNDAzYmNjZTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMDBiMmZhYTc5ZDg1Zjc0OTE3MmFhMTg1OGM4YWFiMDRlMDRmNTdhZjUyMWZlNjAxNzA1ZmY4ODNhNGJmZGMifQ"
         }
       ]
     },
@@ -71,12 +71,12 @@
       "statement": "MCP tool loaders use TTL caching (300 seconds typical) and per-load timeouts, returning an empty tool list on exception or timeout rather than failing the run; Store reads are fail-soft so unreachable backends cost optional tools, not the run itself.",
       "evidence": [
         {
-          "resource": "repo://agent/mcp/runtime.py#L214-L236",
-          "version": "repo-lines-v1:sha256:739e1889f2d61743eb917252f6217dd649ae043cb5ba2e220353bf875022a45e:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3ZTEwZjJkYmEzOGI2NDNjMWEzNTk4YjhiY2IxZGQ1MzUwMzY1MDE0ZWYyZjdlY2ZkMzZkNWM0MmI0YmY3YjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMjJjMDMwMzg4NzE2OTFhYmRlOWE5ZTdkZjI4OGNkZTA1ZThjMTI2MTQ0OTg1YjE1OWNhYzcxMjMzMTYzMjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljZmUwZTM4NDQ0MmNhZWE5MzRjMDM1MzVhZGJlMjljM2U1MzI2ODBjNGU1YmI1ODU1NjQ2NjQwMjQzZGIwMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/mcp/runtime.py#L246-L270",
+          "version": "repo-lines-v1:sha256:f352a6cb36d6bbe88d886d6ec17fc6e648a92c5ea8b9711f9e4494fcf4372339:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI3ZTEwZjJkYmEzOGI2NDNjMWEzNTk4YjhiY2IxZGQ1MzUwMzY1MDE0ZWYyZjdlY2ZkMzZkNWM0MmI0YmY3YjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZDhiZGQ4ZWM4NDdiYzE4ZTJlY2QxOTkzMDBiMTAzYTAwMzM3MWJkMDRlMTVlMWYxMjg0MjViODIzMzc0NjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA1ZDJmYTRhYzNmOGJiZGFhNjM1Yzc2OTYzNmU2OGExMDkyZDUxMTU1MTg2NzY5ZTJlMDg0NGQzODQyMzkxZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM2ZDkzNDMyMDIyNmMyNWJmMTNjMWIwZmUyNjMzZWY0ZDEwNGQ3NWY4YTgyNDE1MGY1MjQ4MmE3OWQzMDFlNWEifQ"
         },
         {
-          "resource": "repo://agent/server.py#L552-L563",
-          "version": "repo-lines-v1:sha256:be30fe69fd8be88abdf3beaf24146be64f413f6cb497cfede4b39a757a4ccce7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExYmQ2MzM4ZDNmMzQzODc3YTVjMDQ2MWE2NzNhYTg3YTIzOTcxNDZkYjkxNTQ4NWE2OTRiZmE0MjJmMjY3NjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiMWJmOTJmNWMwNDFkN2FkNzcxNGUwMDM5ZGI5NzBjMmU4ZDViY2ZmZjFmN2RiMTIwY2YzNDkzODJmNWNlY2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNzdlZjQ4OGQ3MjAxNDYxNjM3MzFiMjVlOWQyZjIzYWM4M2ZlNGVmMDU2ZjhkNDVmOTdiZGIxZWJjNmM0YzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0MjczYjU5ZTk2YmI4YjJkMjU4NjAwYWE4MDZjN2E0OTNmNmIyMTFmMDk3OGFiMzQwNzNjMWVmMDQyZTIyYmUifQ"
+          "resource": "repo://agent/server.py#L698-L715",
+          "version": "repo-lines-v1:sha256:d5bf12d1e58c04021c2a0e6a94667a8101a315a0c064b8ffaa912da495308167:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1NjAxNGFmZDM5MzdkN2FmZmY2OWY3M2VmZjk5MTgxN2QzODQwMmIxMzg5YmYwNWYzNzdiODE3MmNhODhhY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1NGU1NDdlOTdkYTc5NzE3ZWE4NTVlZWJmZjU1OTE3M2I2ZTAxOWM1YTdkOTUxYmVmYWQxOTBkYjQ0N2RlYTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzMTZhYmY4NWM2MzgzNWJlZTZiOTMwMzBkNGJlYzIzYjNmMmU4NWZmMTQzZDgxNzg0YmI3NDE5ZTE3MmI2NTYifQ"
         }
       ]
     },
@@ -85,8 +85,8 @@
       "statement": "During agent assembly for non-local, non-summary runs with known credential scope, MCP tools from instance, workspace, and user tiers are loaded concurrently, and Notion tools are loaded only for the triggering login.",
       "evidence": [
         {
-          "resource": "repo://agent/server.py#L1196-L1210",
-          "version": "repo-lines-v1:sha256:634779649c4ab4dad8caada29dd966ae28aaf9ce56fcb20734dc761ffbc7b97c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1N2RlZjUzNGJhZjlkMzkwN2UxNjMxYWJhNWViYjc0NzI1NTU3ZWNhOGMwNjJiNmVlNTA0YmJlYmNjNzNkYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkN2NmODA0MDMyYmVmNWE0NWZmZWJiZTI5ODIzYWQ4MzU2ZGFiZDUzNGUxMzUwNzFiYTI3MmY2OTgxYzEzZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMDBiMmZhYTc5ZDg1Zjc0OTE3MmFhMTg1OGM4YWFiMDRlMDRmNTdhZjUyMWZlNjAxNzA1ZmY4ODNhNGJmZGMifQ"
+          "resource": "repo://agent/server.py#L1396-L1411",
+          "version": "repo-lines-v1:sha256:83c492e037a86ef6a219ddee678b2298b631cd970505d06cd651e6fe3e66351a:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlNDkxYzAxNDg1MDUzMzQxM2NmOTA4MGE1YmMxM2UyYjcwODFiMzZjMDlhODc5NTE2YjU2OWJkMzdlNmE4MzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlMzcxOTFmODU1N2Y0OGY5ODdjNDAyZTRlZmQzN2ZkOWQxNDc1YTljZjJlNjJkNTgwZDZiN2U3OTgyMDQ1YTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMDBiMmZhYTc5ZDg1Zjc0OTE3MmFhMTg1OGM4YWFiMDRlMDRmNTdhZjUyMWZlNjAxNzA1ZmY4ODNhNGJmZGMifQ"
         }
       ]
     },
@@ -159,10 +159,100 @@
           "version": "repo-lines-v1:sha256:18130ca9ddab5b9cec53dc42dcbcecedc071e30f3d0e9aecfbf313359d66871f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzMDk4OTBmZGJmNDNmZWM0ZGZkMTZiOTQ3MDZmOGVhZTVlMDkwNTEzYmUzMjFmYmZhODg0MTNmMGI2OTM5OGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxM2UxYjQ1YWRiZGQ1MzJmNTVmYTFjMWZmYzhkN2Y2OTY0ZjJkYWY1YTIxMmYzMGU0ZjAxMDM0ZjRmZjdmYzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEwMzdkOTcxNWZhZWY0NmU0ODhhNDEyNjM0YjBhY2VjZTFlNWE0ZTQ3OWY0NjVhNzg4ZjViMmMwZjk0MTExOTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_5502e3cb2e7845f2a934dd956086e23e",
+      "statement": "TraceResourceNameMiddleware renames platform APM spans to route paths and methods (e.g. GET /api/mcp/instance), enabling searches and alerts on traces by endpoint instead of landing on a single generic dashboard GET resource.",
+      "evidence": [
+        {
+          "resource": "repo://agent/api/tracing.py#L22-L68",
+          "version": "repo-lines-v1:sha256:4afe152d824383b880a78ecd9fdc17f4991336ba66861eaabe5cd381ae145e9e:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkNWYzZjdhYzBiYWE5YTg0ZDgyMGRmZThjNmViM2I5OWI5MDI3ZmY3ODMxOWRmNTI4OGRlNmUyZDlhYzI2YjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzYTVjMDc4NzI3ZDdlOWYyN2RkYjQ2ZWM4MGJjNTMzMTA0YTEyNTc1ZDAzOTg2OWRkYjkxNDFiM2M0ZWM4ODIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkYzIzM2RhNzRhNDc0YmFmYThkYmI0ZTk5YjcxMzUwMzIwZGY5YWU1YjI1MmFlNDhmNmZkNWU0MGM5YTRmMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e5377433935545eaa2edb1e715e870ed",
+      "statement": "OpenSWEMiddleware base class and scrub_middleware_inputs helper enforce SCRUBBED_TRACE_POLICY across all agent middleware, which omits input payloads from LangSmith traces to protect sensitive data.",
+      "evidence": [
+        {
+          "resource": "repo://agent/middleware/trace.py#L1-L20",
+          "version": "repo-lines-v1:sha256:a4f0c8154b97df98b51cd4c814b515eed3a487f1704de0bc8fa97ba656549998:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhN2FkZmYzNTJlNGVjYTExY2UxOTgzOGI0YmUwOWMyZjYzNTFkNDY5MjY2ZDYwNDhhMzcwZGQ1YTlmM2MxNjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxNzk4OGQwOGQ3OThkMmQ1M2NjNmZmNWJlMzE5NGI4MWI3NzAwYTU0ZjMwNDU5ZjQyNWY4YmU5MzVlYWVkM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_77a2c96a355c4645977a5eace963fbf1",
+      "statement": "get_langsmith_trace_url builds dashboard URLs for embedding in context blocks; it discovers and caches tenant and project IDs once per workspace and returns None if LangSmith is not configured, providing best-effort links that never fail runs.",
+      "evidence": [
+        {
+          "resource": "repo://agent/utils/langsmith.py#L176-L196",
+          "version": "repo-lines-v1:sha256:79f39870bc043c27aaf365528f9bf68089e5b62f574f1eb2b37cb3f6f4194591:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzMGJmYjQ0OWYwZTIxNjRkOWFmNThhNjc4YTk2N2MwY2QxMzI2MmU2ZTQ4NWM0N2Y4MDBjOWU5YzVkZTBmMDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MTI3ZDZiZjgyNTNiNTUyODQ1N2VlNzk3YmM5YTcwMjMyNGI4ODkyNmFiMzQxODFjOTY4NjE0MzljY2YwOWQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY5NDJlNWIxYzY3MWI5ZjY2YzZiNDc1NjJiYmI4ZTliY2Y1YjRjYWIxODlhMTgxM2E1MjE5ZDI0ZWIyNDJiZTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAyNzU2NTkzYjQ2YTYyMTBhMzdhZWNmZWQ5NmVjZDc0YTQ1ZTRjOTFkZTEyZTQ0ODQ4NWMwYjk0NDM0MDQ0YzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0bc38b19269f4b75bcab6b6ea1b5d62a",
+      "statement": "finalize_agent_invocation_usage records terminal invocation status and model-call token counts immediately, then schedules deferred cost refresh with bounded retries at exponential delays (15, 30, 60, 120, 240 seconds) if cost is unavailable from LangSmith.",
+      "evidence": [
+        {
+          "resource": "repo://agent/agent_cost.py#L165-L205",
+          "version": "repo-lines-v1:sha256:c771a1eadba6dea8d1a19a069776fb6e9ed885d4c1a1322f6f036fda1bbf1277:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3Njk1MjIyM2YxODQ0MzIwMGI5MGFhMWQ1NTJlYWJjZmQ0ZWQ2MWYxYmYwZWJlZDNiZmY0ZGYxYjMwZDMzMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmYmQwMDkzMTRiYzI3MDg0MTY3MzRhMDJhZTVmZjM5YTFlNDhhMDUwYmU5MWY0M2IyZmFhOTIwMDJjNjJiZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_684cb76f43f24487bfda5a8ee4c3e8df",
+      "statement": "run_agent_cost_refresh queries LangSmith thread stats by invocation_id or prepare_run_id metadata, correlates cost to the completed invocation, and stores cost via record_agent_invocation_cost; terminal 4xx errors (except 408/429) prevent further retries; timeouts and 5xx errors schedule the next attempt.",
+      "evidence": [
+        {
+          "resource": "repo://agent/agent_cost.py#L98-L162",
+          "version": "repo-lines-v1:sha256:001425aa8a26121c333353b7436dee46a6574821c8a6ed1cce13c8a181fc22a4:eyJzZWxlY3RlZExpbmVDb3VudCI6NjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMjE1ODU1YjUxMmE4MzA2MzgzZTAzNDgyNTI3NzAyY2Q3YTU5N2UxZjQwOTc1OTEyYmIyYTE4N2ZiOWQ0M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlNzU3NWMzYjc3NzZjZjJmOWMyYmZiY2E0NGYyMTQ4MTNhNzgyN2VhYTljMzg0NTRjNzAzYjY4OWE3NDQzODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzYTg3ZTdmNjA0ZjRiOTkxYTRhNDI0OTdmNzBjZmI2ZDRjZDhlMjI5OWQ5NjIyNzM2NDk0NmU2NjA5ZmM4NzIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_241cdc2cdddf4c21b93a25a37854c928",
+      "statement": "session_cost.py tracks per-workspace cumulative usage and posts deferred cost updates to Slack reply messages; it marks final reply messages with pending-cost indicators before cost is known, then updates them with total cost and token counts when available.",
+      "evidence": [
+        {
+          "resource": "repo://agent/session_cost.py#L1-L96",
+          "version": "repo-lines-v1:sha256:15103342fc66f1fb428d67c256cb1715d5cb19972d8f18f7bbdc5fe558448dac:eyJzZWxlY3RlZExpbmVDb3VudCI6OTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ2NjM4NGU3ZTI0MzFhYzUwOTRhYzM0MDljYTZhNjAzOTA3NzE0NzE1MzNiNGFkZjg3ODhlZjZlNzRlZjJjYTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4OWQ0MDI1MGFmN2YyZTYzMDVlODc4NzE2OTQwOTUzYjFlOWQyYzkyYTYzMjE1MmVlMmZhM2QyMDkwMDI3ZWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NWUyNThhM2E1ZGNkOGJhYjlmOTNjOWNiOGEwZWQ4ZmRiMzQ3NTczY2ExOWFhYTRkOTRiOTAxYzk0ZDc5M2IifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fa0ccc4be13a459ab2cd3d68cd8fe54e",
+      "statement": "record_agent_invocation_usage, record_agent_invocation_completion, and record_agent_invocation_cost emit fail-soft analytics events via agent/analytics/emitter.py and persist to PostgreSQL outbox for asynchronous delivery; failures never block runs.",
+      "evidence": [
+        {
+          "resource": "repo://agent/analytics/usage.py#L86-L228",
+          "version": "repo-lines-v1:sha256:2831ca26a75ef823a30641b30af6aeedeba24204c9d962d8b6d82497d868d350:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1NWNhMDg1YTA4ZTA1MGU2ZWYzZWEzZjYxOWQzOTk0MzUyZjNlODZjOThkMmY4YzFiNDA5ODI3NTY4ZWM5ZjFlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzMGMxZjE4OGYxNDJlZDdhODI0NjgwYjIwNzE3MmM1NTE5YmM2MTRhNDhmZGE3Y2YxNjdlZGI4ZGRmNzk5NTZjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiIzZDhiNjYzMDdhZDZmZjBiNTc1YTllOWJmN2Y4NWFmMGZhYjZkNjM0OTZkOTNkOGM2MTJmOTY1M2NjNWNjMzQzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhNDFhNjNkOGJiYTU0MDUyMDA4ZWVjYTcxNDc1NDYxMjAyZDExYTQ0MjdhMDM5YjhiMzY5OTc4ZGQ4ZjdkNWM5In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_e12756d7b70044a49e70827164b75f19",
+      "statement": "TranscriptMiddleware captures complete append-only run transcripts for debugging and replay; per-run state lives in a module-level registry keyed by thread_id:run_id; events are queued and written by a background task so model streams never wait on database I/O.",
+      "evidence": [
+        {
+          "resource": "repo://agent/middleware/transcript.py#L1-L50",
+          "version": "repo-lines-v1:sha256:6f9b430039f9ca850330b138826e235c53c916729e70346bccc056a781da619e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2Mzg0YmIzZDk4NDYwMmM3MGU1ZDU4NDg4NTIwYTY3YTIxNTNkOGFlZTEyMGY0M2I4NGE5OTk4MzY4NGQyZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3NzRmY2NiMWM2MmUzYjc5OTYyZmEzN2MzMDliZTA4ZGU1ZWQ4NjAzYTIwYmY0ZDExOWZiYTE3MWNkZDdlM2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkZGNhNDNhODcxNzBjYTIyNjY3NGRmZTUyNWM1NTYzYWZmYTY0ODI2Y2EzYjUxYzhhYzJhMTdhYWMzNWQ4YWQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4b22f658411d41e19356693d8710f2e8",
+      "statement": "Transcript captures turn lifecycle, message events with sender identity and attachments, tool invocation details and truncated results, reasoning blocks, and token usage; events are flushed with soft boundaries at paragraph breaks and hard boundaries at 24 KB; failures never fail runs.",
+      "evidence": [
+        {
+          "resource": "repo://agent/middleware/transcript.py#L50-L108",
+          "version": "repo-lines-v1:sha256:56002577c76b9e341b1195fe097baa626f87a5474a6ed827f4ea7323790da00a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3NzRmY2NiMWM2MmUzYjc5OTYyZmEzN2MzMDliZTA4ZGU1ZWQ4NjAzYTIwYmY0ZDExOWZiYTE3MWNkZDdlM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzNTkxOGU2MWY4M2RmMWZiZWMxYzc1YjMzNGYyNWQzOGUwNDJjM2I2NGNhMDA3OGFhY2Q1Mjg4ZmQ4NjgxZjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwN2VkODg4MjQwNGI3NDk3OTg0MmYwNjdlNWUyMzE4MDNhZTEyMjM3NTZkMzY2MWRkZTg0Y2UyZWM1OTExMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU2ZGRkYWE0YTI1YjkwN2Y3ZWJlNjEzMDZhNDJlNGEzYmFmMWRhOGJiOGQ0MTViMjEyOGVkMDBkMDZhNzY5MWYifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-22T13:11:45.998Z"
+    "at": "2026-09-28T16:33:19.776Z"
   }
 }

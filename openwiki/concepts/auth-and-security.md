@@ -14,8 +14,6 @@ sources:
     resource: repo://agent/credential_scope.py
   - id: openwiki-source-ef92164b6963a5a6100712cb
     resource: repo://agent/dashboard/admin.py
-  - id: openwiki-source-04f1d39360e23b075eaca9f3
-    resource: repo://agent/dashboard/auth_routes.py
   - id: openwiki-source-5460c3972fe61bb256d07994
     resource: repo://agent/dashboard/oauth.py
   - id: openwiki-source-d9f679c15adbf4b3f612d406
@@ -59,7 +57,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries
