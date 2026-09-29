@@ -154,7 +154,9 @@ ENV.var(
 ENV.var(
     "LANGSMITH_ENDPOINT",
     "LangSmith API endpoint; set for self-hosted or regional LangSmith.",
-    default="https://api.smith.langchain.com",
+    # LangGraph Platform reserves LANGSMITH_ENDPOINT but sets only LANGSMITH_AUTH_ENDPOINT
+    # on regional (e.g. AWS US) deployments.
+    default=os.environ.get("LANGSMITH_AUTH_ENDPOINT") or "https://api.smith.langchain.com",
 )
 ENV.var(
     "LANGSMITH_TENANT_ID",
