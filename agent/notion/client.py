@@ -23,6 +23,7 @@ from agent.notion.models import (
     NotionPage,
     NotionUser,
     PageList,
+    PageMarkdown,
 )
 from agent.notion.settings import notion_settings
 from agent.utils.http import DEFAULT_HTTP_TIMEOUT
@@ -162,6 +163,27 @@ class NotionClient:
 
     async def get_page(self, page_id: str) -> NotionPage:
         return NotionPage.model_validate(await self._read("GET", f"/pages/{page_id}"))
+
+    async def get_page_markdown(self, page_id: str) -> PageMarkdown:
+        return PageMarkdown.model_validate(await self._read("GET", f"/pages/{page_id}/markdown"))
+
+    async def create_page(
+        self,
+        data_source_id: str,
+        properties: JsonObject,
+        *,
+        markdown: str,
+        icon_emoji: str = "",
+    ) -> NotionPage:
+        """Create a page in the data source, its content given as Notion-flavored markdown."""
+        body: JsonObject = {
+            "parent": {"type": "data_source_id", "data_source_id": data_source_id},
+            "properties": properties,
+            "markdown": markdown,
+        }
+        if icon_emoji:
+            body["icon"] = {"type": "emoji", "emoji": icon_emoji}
+        return NotionPage.model_validate(await self._write("POST", "/pages", body))
 
     async def get_data_source(self, data_source_id: str) -> NotionDataSource:
         return NotionDataSource.model_validate(
