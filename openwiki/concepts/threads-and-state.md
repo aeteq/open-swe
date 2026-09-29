@@ -40,10 +40,10 @@ sources:
     resource: repo://agent/utils/thread_settings.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Threads, Durable Runs, and State
@@ -66,7 +66,7 @@ The boundary matters when changing an integration: a webhook, dashboard action, 
 | GitHub issue | `github_issue_thread_id` | `github-issue:{issue_id}` |
 | Baby-sit lock | `baby_sit_lock_thread_id` | `open-swe:baby-sit-lock:{key}` |
 
-Slack, PR-comment, reviewer, review-style, and baby-sit lock IDs are URL-namespace UUIDv5 values. Linear and GitHub issue IDs use `_sha256_uuid`. The reviewer key deliberately differs from the agent PR-comment key, so a PR's autonomous reviewer and its agent conversation cannot collide.
+IDs are derived either as URL-namespace UUIDv5 values (Slack, PR-comment, reviewer, review-style, baby-sit lock) via `uuid.uuid5(NAMESPACE_URL, key)`, or as a SHA-256-derived UUID (Linear and GitHub issues) via `_sha256_uuid`. The reviewer key deliberately differs from the agent PR-comment key, so a PR's autonomous reviewer and its agent conversation cannot collide.
 
 For a PR that Open SWE created, the GitHub PR-comment handler first extracts a UUID embedded in the branch with `thread_id_from_branch`; only a branch without one uses `pr_comment_thread_id`. Linear delivery uses `linear_issue_thread_id(issue_id)`, so redelivery stays on the issue's thread.
 
@@ -86,11 +86,11 @@ Thread identity lets independently triggered work converge on the correct durabl
 
 ### Slack mappings support moves and retirement
 
-Slack has a Store-backed mapping in a per-channel namespace, keyed by the Slack thread timestamp. `resolve_slack_thread_id` checks that explicit mapping first. If absent, it searches thread metadata for matching `source_context`; it rejects multiple matches, otherwise binds the matching ID or the deterministic Slack fallback. Binding validates the Slack location, refuses a conflicting existing mapping, then reads back the write. Thus one Slack location cannot silently be assigned to two Open SWE threads.
+Slack has a Store-backed mapping in a per-channel namespace, keyed by the Slack thread timestamp. `resolve_slack_thread_id` first checks an explicit stored mapping, then searches thread metadata for matching `source_context`, rejects multiple matches, and falls back to deriving a deterministic fallback ID or using an existing nonce. Binding validates the Slack location, refuses a conflicting existing mapping by raising, then verifies the write persisted; thus one Slack location cannot be assigned to two Open SWE threads.
 
-Deleting associations does not simply erase the map: it writes a fresh nonce at that location. With no mapped ID, a future resolution derives a different fallback ID, avoiding collision with the retired conversation. This is used by moves such as creating a code channel.
+Deleting associations does not simply erase the map: `delete_slack_thread_associations` writes a fresh nonce at that location. With no mapped ID, a future resolution derives a different fallback ID, avoiding collision with the retired conversation. This is used by moves such as creating a code channel.
 
-A code channel is one session for the whole channel, keyed by `CODE_CHANNEL_SESSION_TS = "0"`, not a Slack reply thread. `manage_code_channel` binds the existing agent thread to `(channel_id, "0")` and changes its `source_context`. The sentinel selects `conversations.history` without `ts`; ordinary Slack conversations use `conversations.replies` with the thread timestamp. Slack's `processing`, `active`, `suspended`, and `closed` session statuses are Slack UI lifecycle state, distinct from LangGraph thread status.
+A code channel is one session for the whole channel, keyed by `CODE_CHANNEL_SESSION_TS = "0"`, not a Slack reply thread. `manage_code_channel` binds the existing agent thread to `(channel_id, "0")` and updates its `source_context`. The sentinel selects `conversations.history` without `ts`; ordinary Slack conversations use `conversations.replies` with the thread timestamp. Slack's `processing`, `active`, `suspended`, and `closed` session statuses are Slack UI lifecycle state, distinct from LangGraph thread status.
 
 ## State ownership and metadata
 
@@ -131,7 +131,7 @@ sequenceDiagram
 ```
 A trigger creates a run on the selected durable thread using a normalized input and configuration.
 
-The standard defaults are `multitask_strategy="interrupt"`, `durability="sync"`, `if_not_exists="create"`, resumable streaming, the Protocol v2 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its sync checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.
+The standard defaults are `multitask_strategy="interrupt"`, `durability="sync"`, `if_not_exists="create"`, resumable streaming, the Protocol v3 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its sync checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.
 
 A completion webhook is attached only if `RUN_COMPLETE_WEBHOOK_SECRET` is set and `COMPLETION_WEBHOOK_URL` is an absolute non-loopback HTTP(S) URL. Otherwise dispatch logs a warning and creates the run without the webhook, rather than allowing a platform-rejected URL to fail every run. The checkpointer has deletion TTL configured as 43,200 minutes with a 60-minute sweep interval: checkpointed state of inactive threads eventually expires.
 
@@ -149,7 +149,7 @@ When changing these mechanisms, test the invariants rather than only a caller:
 
 - Verify every new entrypoint chooses an existing deterministic ID or explicitly creates a new identity boundary.
 - Exercise Slack mapping conflict, metadata fallback, duplicate metadata match, retirement nonce, and code-channel sentinel paths.
-- Verify dispatch arguments, invalid completion-webhook degradation, interrupt versus enqueue behavior, and resumable Protocol v2 configuration.
+- Verify dispatch arguments, invalid completion-webhook degradation, interrupt versus enqueue behavior, and resumable Protocol v3 configuration.
 - Verify input envelope escaping, identity validation, dynamic-context de-duplication, and reintroduction after summarization.
 - Verify sandbox create/publish ordering and the distinction between unreachable and gone sandboxes. See [Sandbox Lifecycle](../architecture/sandbox-lifecycle.md).
 

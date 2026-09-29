@@ -10,6 +10,10 @@ sources:
     resource: repo://agent/chat.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
+  - id: openwiki-source-f8665996049065d2172f68e2
+    resource: repo://agent/graphs/agent.py
+  - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
+    resource: repo://agent/graphs/scheduler.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
@@ -39,7 +43,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Open SWE Codebase Guide

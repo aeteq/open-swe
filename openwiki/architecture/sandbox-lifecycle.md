@@ -3,9 +3,6 @@ type: architecture lifecycle
 title: Thread Sandbox Lifecycle
 description: How a thread acquires, persists, reconnects to, and deliberately replaces its sandbox. Covers provider selection, proxy-backed credentials, recovery safety, and operational lifecycle controls.
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -29,7 +26,10 @@ sources:
     resource: repo://agent/sandboxes/retry.py
   - id: openwiki-source-3f4feeeb872e0d43c9b850c8
     resource: repo://agent/sandboxes/state.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Thread Sandbox Lifecycle
@@ -54,7 +54,7 @@ The proxy is asynchronous. Synchronous backend methods fail with `NotImplemented
 
 At server startup, `validate_sandbox_startup_config` validates the active LangSmith configuration rather than deferring errors until the first sandbox. It checks numeric size and retention settings, rejects negative TTLs, and validates `SANDBOX_CREATE_EXTRA_JSON` when present.
 
-For a new thread sandbox, `SandboxCreateConfig.resolve` chooses an environment's ready snapshot when available, otherwise the admin base snapshot. It carries environment resource settings and create parameters into `create_sandbox`. The LangSmith provider also applies configurable idle and delete-after-stop retention to new boxes. Its creation path retries configured transient create failures; command retry is more conservative: only `SandboxRetryableConnectionError`, which guarantees the WebSocket upgrade failed before the command frame was sent, may be retried. Retries are bounded at four attempts with exponential jittered backoff, preventing a potentially executed command from being double-run.
+For a new thread sandbox, `SandboxCreateConfig.resolve` chooses an environment's ready snapshot when available, otherwise the admin base snapshot. The `resolve` method returns a config object carrying environment resource settings and create parameters. If a workspace is loaded (when source is "workspace" and the workspace is found), the config holds `ready_snapshot_id` and workspace-scoped `SandboxResources`; otherwise both default to their empty values. The LangSmith provider also applies configurable idle and delete-after-stop retention to new boxes. Its creation path retries configured transient create failures; command retry is more conservative: only `SandboxRetryableConnectionError`, which guarantees the WebSocket upgrade failed before the command frame was sent, may be retried. Retries are bounded at four attempts with exponential jittered backoff, preventing a potentially executed command from being double-run.
 
 The local provider is development-only: it runs commands directly on the host without isolation. It creates a project-local `.gitconfig-sandbox` that includes the developer's normal Git configuration, preventing per-run bot identity writes from overwriting the host identity. It also constructs an explicit environment excluding model and provider API keys.
 
@@ -108,7 +108,7 @@ GitHub App tokens expire after one hour. `record_proxy_token_expiry` keeps worke
 
 `recreate_sandbox_for_thread` is the ordinary tool: it creates a fresh sandbox using the resolved environment configuration, configures it, persists the new ID, and only then replaces the cached backend. The fresh box has no prior files or worktree state. Neither operation deletes the old sandbox; it remains preserved but detached from the thread.
 
-The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. If metadata persistence fails, the existing cached proxy retains the old backend. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached.
+The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. The new ID is persisted to thread metadata before replacing the cached proxy target. If metadata persistence fails, the existing cached proxy retains the old backend, leaving the new provider resource detached. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached.
 
 ## Repository paths and reviewer preparation
 

@@ -16,22 +16,26 @@ sources:
     resource: repo://agent/dashboard/user_instructions.py
   - id: openwiki-source-0a6d03ee63c0e527ce21bf77
     resource: repo://agent/dashboard/workspace_settings.py
+  - id: openwiki-source-cb4e403499865fd6b797127c
+    resource: repo://agent/input_messages.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
   - id: openwiki-source-e081118d2ce6ecdbd524a5ee
     resource: repo://agent/threads/runs.py
+  - id: openwiki-source-5cd6c19c6bd276f57c96412c
+    resource: repo://agent/utils/authorship.py
   - id: openwiki-source-f0db445078d7a8158aa93724
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Models, Profiles, and Instructions
@@ -100,7 +104,7 @@ Provider request routing is distinct from runtime model fallback. `ModelFallback
 
 Repository custom instructions are workspace-admin-authored records in `["agent_instructions"]`, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
 
-Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and passes it to `construct_sender_context`, which emits a trusted sender-context message. It explicitly applies to that turn only.
+Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
 
 Prompt authority is explicit:
 

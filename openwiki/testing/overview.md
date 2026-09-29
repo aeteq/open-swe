@@ -3,9 +3,6 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Comprehensive test infrastructure, focused validation strategies, and end-to-end flows for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
 sources:
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
@@ -45,7 +42,10 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -55,7 +55,7 @@ The testing strategy separates concerns by layer: focused pytest tests for agent
 <!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
 flowchart TD
-    Change["Changed behavior"] --> Owner{"Boundary that owns it"}
+    Change["Changed behavior"] --> Owner{"Boundary that<br/>owns it"}
     Owner -->|"Agent, middleware,<br/>reviewer, sandbox,<br/>webhook, tools"| Pytest["Focused pytest<br/>in asyncio auto mode"]
     Owner -->|"Dashboard React<br/>component or client"| Vitest["Dashboard Vitest"]
     Owner -->|"Electron main<br/>process"| Node["Desktop Node --test"]

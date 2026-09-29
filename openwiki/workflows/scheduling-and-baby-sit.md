@@ -48,10 +48,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-22T13:11:45.998Z
+    at: 2026-09-28T16:33:19.776Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -64,8 +64,7 @@ The principal consumers are dashboard schedules, stale-run reconciliation, defer
 
 `agent/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler deterministically:
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart TD
   Tick["Cron or delayed run"] --> Launch["scheduler launch"]
   Launch -->|reconcile| Reconcile["reconcile_stale_runs"]
@@ -73,7 +72,7 @@ flowchart TD
   Launch -->|background_tasks| Background["monitor_background_tasks"]
   Launch -->|session_cost| SessionCost["run_session_cost_refresh"]
   Launch -->|agent_cost| AgentCost["run_agent_cost_refresh"]
-  Launch -->|other tasks| Other["workspace_refresh,<br/>expedited_review,<br/>thread_feedback"]
+  Launch -->|other tasks| Other["workspace refresh, expedited review, thread feedback"]
   Launch -->|no task| Schedule["launch_scheduled_agent_run"]
 ```
 
