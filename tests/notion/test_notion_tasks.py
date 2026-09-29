@@ -32,6 +32,7 @@ OTHER_TASK = "1111aaaa-0000-0000-0000-000000000002"
 DOC = "2222bbbb-0000-0000-0000-000000000001"
 OTHER_DOC = "2222bbbb-0000-0000-0000-000000000002"
 BOB = "3333cccc-0000-0000-0000-000000000001"
+REPO_ID = "CJ%40j"
 
 
 @dataclass
@@ -231,6 +232,25 @@ async def test_missing_repository_asks_for_one(harness: Harness) -> None:
     assert any("Repository" in text for text in harness.notion.comment_writes())
 
 
+async def test_setting_the_missing_repository_starts_the_task(harness: Harness) -> None:
+    harness.notion.add(task_page(TASK))
+
+    await service.handle_notion_event(_event("page.properties_updated", TASK, updated=[REPO_ID]))
+
+    [run] = harness.dispatched
+    assert run["thread_id"] == notion_page_thread_id(TASK)
+    assert _status_writes(harness.notion) == [{"status": {"name": "In progress"}}]
+
+
+async def test_repository_change_on_a_started_task_does_not_restart_it(harness: Harness) -> None:
+    harness.notion.add(task_page(TASK, status="In progress"))
+    harness.existing_threads.add(notion_page_thread_id(TASK))
+
+    await service.handle_notion_event(_event("page.properties_updated", TASK, updated=[REPO_ID]))
+
+    assert harness.dispatched == []
+
+
 async def test_unapproved_design_blocks_the_task_with_a_comment(harness: Harness) -> None:
     harness.notion.add(task_page(TASK, designs=[DOC]))
     harness.notion.add(design_page(DOC, status="In Review", title="Tech Design: versions"))
@@ -383,6 +403,30 @@ async def test_record_pull_request_links_the_pr_and_moves_to_review(harness: Har
     assert harness.notion.comment_writes() == [
         "✅ Pull request opened: https://github.com/aeteq/sportsbook/pull/30"
     ]
+
+
+async def test_pr_from_a_question_on_the_agent_s_task_is_recorded_on_it(harness: Harness) -> None:
+    harness.notion.add(task_page(TASK))
+
+    await notifications.record_pull_request(
+        TASK, "https://github.com/aeteq/sportsbook/pull/36", opened=True, agent_task_only=True
+    )
+
+    [properties] = harness.notion.property_writes()
+    assert properties["Status"] == {"status": {"name": "In review"}}
+
+
+async def test_pr_from_a_question_on_someone_else_s_task_is_not_recorded(
+    harness: Harness,
+) -> None:
+    harness.notion.add(task_page(TASK, assignees=[ALICE]))
+
+    await notifications.record_pull_request(
+        TASK, "https://github.com/aeteq/sportsbook/pull/36", opened=True, agent_task_only=True
+    )
+
+    assert harness.notion.property_writes() == []
+    assert harness.notion.comment_writes() == []
 
 
 async def test_linked_pr_is_announced_as_linked_and_keeps_a_done_status(

@@ -11,7 +11,7 @@ from pydantic import JsonValue
 
 from agent.notion.client import NOTION_ERRORS, notion_client, notion_writer
 from agent.notion.models import NotionDataSource, NotionPage
-from agent.notion.properties import status_name, status_patch, url_patch
+from agent.notion.properties import people_ids, status_name, status_patch, url_patch
 from agent.notion.settings import NotionSettings, notion_settings
 
 logger = logging.getLogger(__name__)
@@ -72,10 +72,13 @@ async def set_task_status(page: NotionPage, status: str, settings: NotionSetting
     return await update_task_properties(page, patch or {})
 
 
-async def record_pull_request(page_id: str, pr_url: str, *, opened: bool) -> None:
+async def record_pull_request(
+    page_id: str, pr_url: str, *, opened: bool, agent_task_only: bool = False
+) -> None:
     """Link the PR on the task, move it to review, and say so when the task's PR changes.
 
     ``opened`` says whether this run created the PR or linked an existing one.
+    ``agent_task_only`` records it only when the page is a task assigned to the agent.
     """
     settings = notion_settings()
     try:
@@ -88,6 +91,11 @@ async def record_pull_request(page_id: str, pr_url: str, *, opened: bool) -> Non
         )
         return
 
+    if agent_task_only and not (
+        settings.is_task_data_source(page.parent.data_source_id)
+        and people_ids(page, settings.assignee_property) & settings.agent_user_ids
+    ):
+        return
     prop = page.properties.get(settings.pr_property)
     already_recorded = prop is not None and prop.url == pr_url
     properties: dict[str, JsonValue] = dict(url_patch(page, settings.pr_property, pr_url) or {})
