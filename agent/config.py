@@ -154,7 +154,7 @@ ENV.var(
 ENV.var(
     "LANGSMITH_ENDPOINT",
     "LangSmith API endpoint; set for self-hosted or regional LangSmith.",
-    default="https://api.smith.langchain.com",
+    default="https://aws.api.smith.langchain.com",
 )
 ENV.var(
     "LANGSMITH_TENANT_ID",
