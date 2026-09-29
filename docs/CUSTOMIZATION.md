@@ -544,8 +544,16 @@ The Notion trigger (`agent/notion/`) reads task properties by name. Override the
 | `NOTION_DESIGN_PROPERTY` | `Design` | Relation to design documents that gate the task |
 | `NOTION_DESIGN_STATUS_PROPERTY` | `Status` | Status property of a design document |
 | `NOTION_DESIGN_APPROVED_STATUS` | `Approved` | Design status that lets linked tasks start |
+| `NOTION_DESIGN_REVIEW_STATUS` | `In Review` | Status of a design the agent publishes |
+| `NOTION_DESIGN_TEMPLATE_ID` | — | Template page (id, slug, or URL) the agent's designs follow |
+| `NOTION_DESIGN_TITLE_PREFIX` | `Tech Design: ` | Prefix of a published design's title |
+| `NOTION_DESIGN_ICON` | `📐` | Emoji icon of a published design |
+| `NOTION_DESIGN_TAG_PROPERTY` | `Tag` | Multi-select property tagging a design |
+| `NOTION_DESIGN_TAGS` | `Tech Design` | Comma-separated tags of a published design; tags missing from the property's options are skipped |
 
 A missing property or status option is logged and that write is skipped; the run still starts.
+
+When `NOTION_DOCUMENTS_DATA_SOURCE_ID` is set, an agent working an assigned task can publish a design with `create_notion_design`. The design is created in the documents database in review and linked through `NOTION_DESIGN_PROPERTY`, and the task resumes in its thread once every linked design is approved. With `NOTION_DESIGN_TEMPLATE_ID` set, the agent reads that page's content through `get_notion_design_template` before writing. Designs are created as the agent's Notion member when `NOTION_AGENT_API_KEY` is set, so that member needs edit access to the documents database and the task database.
 
 ### Customizing Slack routing
 

@@ -341,6 +341,31 @@ ENV.var(
     "Design document status that lets linked tasks start.",
     default="Approved",
 )
+ENV.var(
+    "NOTION_DESIGN_REVIEW_STATUS",
+    "Status given to a design document the agent publishes.",
+    default="In Review",
+)
+ENV.var(
+    "NOTION_DESIGN_TEMPLATE_ID",
+    "Notion page id or URL of the template the agent's design documents follow.",
+)
+ENV.var(
+    "NOTION_DESIGN_TITLE_PREFIX",
+    "Prefix of the title of a design document the agent publishes.",
+    default="Tech Design: ",
+)
+ENV.var("NOTION_DESIGN_ICON", "Emoji icon of a design document the agent publishes.", default="📐")
+ENV.var(
+    "NOTION_DESIGN_TAG_PROPERTY",
+    "Multi-select property tagging a design document.",
+    default="Tag",
+)
+ENV.var(
+    "NOTION_DESIGN_TAGS",
+    "Comma-separated tags given to a design document the agent publishes.",
+    default="Tech Design",
+)
 
 # --- Dashboard ------------------------------------------------------------------------------
 ENV.var(

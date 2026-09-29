@@ -181,10 +181,16 @@ class SchemaProperty(_NotionModel):
     type: str = ""
     status: SchemaOptions | None = None
     select: SchemaOptions | None = None
+    multi_select: SchemaOptions | None = None
 
     def option_names(self) -> set[str]:
-        options = self.status or self.select
+        options = self.status or self.select or self.multi_select
         return {option.name for option in options.options} if options else set()
+
+
+class PageMarkdown(_NotionModel):
+    markdown: str = ""
+    truncated: bool = False
 
 
 class NotionDataSource(_NotionModel):

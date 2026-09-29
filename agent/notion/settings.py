@@ -1,13 +1,25 @@
 """Notion task integration settings, read from the environment on every call."""
 
+import re
 from dataclasses import dataclass
 
 from agent.config import ENV
+
+_TRAILING_ID_RE = re.compile(
+    r"([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+)
 
 
 def normalize_notion_id(value: str) -> str:
     """Notion ids appear both dashed and undashed; compare them undashed."""
     return value.replace("-", "").strip().lower()
+
+
+def page_id_from_reference(value: str) -> str:
+    """The page id in a bare id, a ``Title-<id>`` slug, or a page URL; empty when none."""
+    path = value.strip().split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    match = _TRAILING_ID_RE.search(path.rsplit("/", 1)[-1].lower())
+    return normalize_notion_id(match.group(1)) if match else ""
 
 
 def _id_set(raw: str) -> frozenset[str]:
@@ -36,6 +48,12 @@ class NotionSettings:
     design_property: str
     design_status_property: str
     design_approved_status: str
+    design_review_status: str
+    design_template_id: str
+    design_title_prefix: str
+    design_icon: str
+    design_tag_property: str
+    design_tags: tuple[str, ...]
 
     def is_agent_user(self, user_id: str) -> bool:
         return normalize_notion_id(user_id) in self.agent_user_ids
@@ -73,4 +91,10 @@ def notion_settings() -> NotionSettings:
         design_property=ENV.NOTION_DESIGN_PROPERTY.get(),
         design_status_property=ENV.NOTION_DESIGN_STATUS_PROPERTY.get(),
         design_approved_status=ENV.NOTION_DESIGN_APPROVED_STATUS.get(),
+        design_review_status=ENV.NOTION_DESIGN_REVIEW_STATUS.get(),
+        design_template_id=page_id_from_reference(ENV.NOTION_DESIGN_TEMPLATE_ID.get()),
+        design_title_prefix=ENV.NOTION_DESIGN_TITLE_PREFIX.get(),
+        design_icon=ENV.NOTION_DESIGN_ICON.get().strip(),
+        design_tag_property=ENV.NOTION_DESIGN_TAG_PROPERTY.get(),
+        design_tags=tuple(sorted(_name_set(ENV.NOTION_DESIGN_TAGS.get()))),
     )
