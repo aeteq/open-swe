@@ -3,6 +3,9 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Comprehensive test infrastructure, focused validation strategies, and end-to-end flows for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
@@ -42,10 +45,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -65,6 +65,8 @@ flowchart TD
     Node --> Gate
     Playwright --> Gate
 ```
+
+Test layer responsibilities: pytest owns Python backend contracts via unit tests with fakes; Vitest owns frontend React components; Node tests own Electron main process; Playwright owns real webhook routes, UI integration, and end-to-end flows through the agent.
 
 ## Python test organization and fixtures
 
@@ -88,14 +90,12 @@ make typecheck
 
 - **`fake_store`**: Routes `agent.store` access to an in-memory `FakeStore` that round-trips values through `model_dump`/`model_validate` the same way production does. Seed it only when persisted state is part of the contract.
 - **`_no_bundled_dashboard`** (autouse): Points `DASHBOARD_STATIC_DIR` to a missing temporary directory so a locally built `ui/.output` cannot influence Python tests.
-- **`_reset_ttl_cache`** (autouse): Clears the process-global TTL cache before and after each test, preventing cached team settings from leaking between tests.
+- **`_reset_ttl_cache`** (autouse): Clears the process-global TTL cache before and after each test, preventing cached team settings from leaking between tests. Also clears the langgraph_api in-process cache when not running against a PostgreSQL backend.
 - **`_reset_sandbox_registries`** (autouse): Clears `SANDBOX_BACKENDS` and `SANDBOX_CONNECTIONS` (process globals) to prevent one test's sandbox from answering for another's thread.
 - **`_default_enable_auto_review`** (autouse): Stubs `is_review_repo_enabled` to return `True` for every repository because the dashboard opt-in list is empty without a live Store. Tests targeting the auto-review gate must override it with a stricter policy.
-- **`registry_db`** and **`registry_db_if_available`**: Isolated PostgreSQL schemas for pull-request and repository rows; required for tests using the real database code path.
+- **`registry_db`** and **`registry_db_if_available`**: Isolated PostgreSQL schemas for pull-request and repository rows; required for tests using the real database code path. Set `TEST_ANALYTICS_POSTGRES_URI` to enable.
 - **`slack_api`**: A mock Slack API server for tests driving real Slack endpoints without credentials.
 - **`allowed_bot`**: Seeds a test Slack bot configuration into the fake store.
-
-The `_workspace_store_import_completed` fixture treats the startup import of LangGraph Store workspaces as done, since tests do not run the application lifespan.
 
 ### System-boundary test locations and patterns
 
@@ -166,6 +166,8 @@ sequenceDiagram
     PW->>Slack: Assert PR link in thread
 ```
 
+The E2E flow drives the entire happy path: user mention in Slack → real agent implementation → PR opened → PR link posted back to the same thread.
+
 ### E2E architecture and fakes
 
 - **Real pieces**: Webhook routes, agent graph, deepagents loop, tools, middleware, real local sandbox provider, real git, real browser UI, real dashboard server rendering.
@@ -208,7 +210,7 @@ pnpm exec playwright show-report                       # browse runs with Trace 
 pnpm exec playwright show-trace test-results/<test>/trace.zip   # open trace directly
 ```
 
-In CI the browser shards upload separate `playwright-report-*` artifacts; download, extract, and run `pnpm exec playwright show-report <dir>` (or drag a `trace.zip` to <https://trace.playwright.dev>) to replay any run.
+In CI the browser shards upload separate `playwright-report-*` artifacts; download, extract, and run `pnpm exec playwright show-report <dir>` (or drag a `trace.zip` to https://trace.playwright.dev) to replay any run.
 
 The E2E backend requires PostgreSQL: export `POSTGRES_URI` or run a throwaway `docker run -d -p 5433:5432 -e POSTGRES_PASSWORD=postgres postgres:16` with `POSTGRES_URI=postgresql://postgres:postgres@localhost:5433/postgres` before running tests or `langgraph dev`.
 

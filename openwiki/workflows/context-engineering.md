@@ -3,9 +3,6 @@ type: "Reference"
 title: "Context and Prompt Engineering"
 description: "Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources."
 tags: ["context-assembly", "prompt-engineering", "system-prompt", "dynamic-context"]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -33,7 +30,10 @@ sources:
     resource: repo://agent/utils/agents_md.py
   - id: openwiki-source-ff16fde3cd496fd0b8de20da
     resource: repo://agent/utils/analyzer_skills.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Context and Prompt Engineering
@@ -62,7 +62,7 @@ This shows the separation between event normalization at dispatch and run-specif
 
 ## Normalized input transcript
 
-`agent/input_messages.py` is the serialization boundary for application-owned input. A human or system message is represented as an `<input-message>` envelope with a namespaced sender, surface, kind, optional channel, structured `<data>`, and escaped content. It supports multimodal block lists by enveloping text blocks while preserving non-text blocks. Entity introductions appear first as `<dynamic-context>` XML messages for people, channels, and systems. Channel `topic` and `purpose` are explicitly marked `trust="untrusted"`; they are context, not trusted instructions.
+`agent/input_messages.py` is the serialization boundary for application-owned input. A human or system message is represented as an `<input-message>` envelope with a namespaced sender, surface, kind, optional channel, structured `<data>`, and escaped content. It supports multimodal block lists by enveloping text blocks while preserving non-text blocks. Entity introductions appear first as `<dynamic-context>` XML messages for people, channels, and systems. Slack channel `topic` and `purpose` fields are contextual metadata, not trusted instructions, and belong in the channel identity alongside name and thread reference, not in the system prompt.
 
 The generic dispatcher derives identities when an adapter has not supplied a complete input: Slack uses the triggering-user and channel information in `RunConfig`; GitHub login or Linear email supplies a person identity; otherwise the event is attributed to a synthetic system identity. Adapters can instead pass a deliberately ordered prebuilt transcript, which is necessary when history contains several participants or system/bot messages.
 

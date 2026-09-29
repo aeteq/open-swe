@@ -54,10 +54,10 @@ sources:
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
     resource: repo://tests/dashboard/test_github_token_auth.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-20T12:55:00.283Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries
@@ -110,6 +110,41 @@ The App signs an RS256 JWT—issued 60 seconds in the past for clock skew and va
 
 A LangSmith sandbox is configured with a GitHub **App installation** token through opaque proxy headers. The sandbox environment receives `GH_TOKEN=proxy-injected`, not the real token; API traffic to `api.github.com` receives Bearer auth and traffic to `github.com` receives Basic `x-access-token` auth. The proxy token expiry record retains repository and permission scope so a refresh cannot broaden authority. Before each model call, middleware refreshes a near-expiry proxy token; a reused sandbox that cannot be reconfigured is treated as unreachable rather than silently continuing with stale access.
 
+## Token types and scope narrowing
+
+```mermaid
+flowchart TD
+    A["GitHub Token Types"] --> B["Installation Token"]
+    A --> C["User OAuth Token"]
+    A --> D["Bearer Token API Auth"]
+    
+    B --> B1["Minted by GitHub App"]
+    B --> B2["RS256 JWT exchange"]
+    B --> B3["In-process cached"]
+    B --> B4["Scope: repos, perms"]
+    
+    C --> C1["Dashboard OAuth store"]
+    C --> C2["Encrypted at rest"]
+    C --> C3["Per-user principal"]
+    C --> C4["Access + refresh token"]
+    
+    D --> D1["GitHub token header"]
+    D --> D2["CSRF exempt"]
+    D --> D3["Requires admin match"]
+    
+    B4 --> Narrow["Scope Narrowing"]
+    C3 --> Narrow
+    
+    Narrow --> N1["App-wide repos"]
+    Narrow --> N2["Thread subset repos"]
+    Narrow --> N3["Per-proxy refresh"]
+    
+    style A fill:#e1f5ff
+    style Narrow fill:#f3e5f5
+```
+
+Token types, caching, and scope narrowing for GitHub authorization.
+
 ## Dashboard authentication
 
 The dashboard uses the GitHub App OAuth code flow and an HS256 session JWT signed with `DASHBOARD_JWT_SECRET`. `osw_session` is valid for seven days; `require_session` rejects absent or invalid sessions, and `/me` returns the session identity and a freshly evaluated `is_admin` flag.
@@ -145,7 +180,9 @@ Webhook verifiers operate on raw request bodies and fail closed when their secre
 
 Authentication is not authorization. `CONFIGURED_ADMINS` matches emails or logins case-insensitively, and `require_admin` checks the triggering run identity at tool-call time instead of trusting thread metadata. Team observability tools are exposed only when the current run's identity is an admin or its email is in `OBSERVABILITY_AUTHORIZED_EMAILS`; the decision is intentionally evaluated per run to prevent attacker-influenced thread state from granting access.
 
-Unmapped GitHub comment content is wrapped in reserved `<dangerous-external-untrusted-users-comment>` tags. Raw comments have those reserved tags replaced before wrapping, so an external author cannot forge the trusted delimiter.
+## GitHub comment trust model
+
+External GitHub comment content must be wrapped in reserved trust tags so the agent can identify untrusted input. `sanitize_github_comment_body` strips the reserved `<dangerous-external-untrusted-users-comment>` open and close tags from raw comment bodies before they are processed, preventing external authors from spoofing the trust wrapper. `format_github_comment_body_for_prompt` classifies comments by author membership in a known Open SWE users set (lowercased GitHub login): registered authors bypass the wrapper, while external authors are fenced with the reserved tags. This design prevents prompt injection by making untrusted boundaries explicit within the prompt.
 
 ## Focused verification
 

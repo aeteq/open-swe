@@ -3,9 +3,6 @@ type: architecture
 title: Review and Style Analysis Graphs
 description: Architecture of the isolated reviewer and review-style analyzer graphs, including repository preparation, durable finding reconciliation and publication, per-repository style persistence, and continual analysis scheduling.
 tags: [reviewer, analyzer, code-review, findings, review-style, langgraph, sandbox, github]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -39,9 +36,10 @@ sources:
     resource: repo://langgraph.json
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
-  - id: openwiki-source-c2a2305421bcb0df9ae61668
-    resource: repo://tests/reviewer/test_reviewer_findings.py
 generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Review and Style Analysis Graphs

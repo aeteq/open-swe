@@ -26,10 +26,10 @@ sources:
     resource: repo://agent/sandboxes/retry.py
   - id: openwiki-source-3f4feeeb872e0d43c9b850c8
     resource: repo://agent/sandboxes/state.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Thread Sandbox Lifecycle
@@ -38,7 +38,8 @@ A normal agent thread has one durable sandbox binding: the sandbox contains its 
 
 Desktop runs are different: the agent factory supplies a `LocalShellBackend` rooted in an allowlisted project or a desktop-created worktree, rather than invoking the thread sandbox lifecycle. Desktop artifact routes put internal large-result and conversation-history files outside the project so they cannot be accidentally included in `git add -A`.
 
-Related: [Agent graph](agent-graph.md), [Middleware stack](middleware-stack.md), [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
+<!-- openwiki: broken internal link [../operations/middleware-stack.md] file "../operations/middleware-stack.md" does not exist. Fix the href or restore the target, then delete this comment. -->
+Related: [Middleware stack](../operations/middleware-stack.md), [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
 
 ## Binding and handles
 
@@ -46,7 +47,7 @@ Related: [Agent graph](agent-graph.md), [Middleware stack](middleware-stack.md),
 
 `SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `SANDBOX_CONNECTIONS` is keyed by *sandbox* ID rather than thread ID, so a thread rebound on another worker cannot be handed a stale connection from its previous worker. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object.
 
-The proxy is asynchronous. Synchronous backend methods fail with `NotImplementedError`; its `a*` methods resolve the current backend before delegating. If it has no target, resolution uses a registered reconnect callback, or falls back to the metadata ID and `create_sandbox`. A lock and shared startup task collapse concurrent first operations to one reconnect; `asyncio.shield` means cancellation of one waiter does not cancel shared startup. The proxy subclasses `BaseSandbox` so filesystem tooling recognizes capture-at-source support and can preserve the in-sandbox output cap. If an underlying backend lacks execute-offload support, the proxy explicitly falls back to ordinary execution.
+The proxy is asynchronous. Synchronous backend methods fail with `NotImplementedError`; its `a*` methods resolve the current backend before delegating. If it has no target, resolution uses a registered reconnect callback, or falls back to the metadata ID and `create_sandbox`. A lock and shared startup task collapse concurrent first operations to one reconnect; `asyncio.shield` means cancellation of one waiter does not cancel shared startup. The proxy subclasses `BaseSandbox` so filesystem tooling recognizes capture-at-source support and can preserve the in-sandbox output cap. If an underlying backend lacks execute-offload support, the proxy explicitly falls back to ordinary execution. The `ready()` contract exposes `_aget_backend()` so callers can await a fully resolved backend without executing a command.
 
 ## Provider selection and provisioning
 
@@ -64,7 +65,9 @@ The local provider is development-only: it runs commands directly on the host wi
 
 ```mermaid
 flowchart TD
-  Start["ensure_sandbox_for_thread"] --> Cached{"Live cached backend"}
+  Start["ensure_sandbox_for_thread"] --> CheckBridge{"Bridge sandbox ID"}
+  CheckBridge -->|"yes"| ConnectBridge["Connect to bridge backend"]
+  CheckBridge -->|"no"| Cached{"Live cached backend"}
   Cached -->|"yes"| Refresh["Reapply identity and refresh proxy"]
   Cached -->|"no"| Bound{"Metadata sandbox ID"}
   Bound -->|"yes"| Reconnect["Reconnect using provider"]
@@ -78,11 +81,12 @@ flowchart TD
   Create --> Bind["Persist new metadata ID"]
   Replace --> Bind
   Bind --> Publish["Publish stable proxy"]
+  ConnectBridge --> Publish
 ```
 
-*Thread sandbox selection, recovery decision, durable binding, and final publication.*
+*Thread sandbox selection, bridge detection, recovery decision, durable binding, and final publication.*
 
-The flow has three normal cases: reuse a live cached backend; reconnect using the durable ID; or boot a new backend when neither is available. Reconnect has no separate ping: for LangSmith, refreshing proxy configuration necessarily reaches the box, so that real operation is the reachability check. Git identity is re-applied every run because a reused box can lose its global config and commit authors must remain valid for downstream preview deployments. Identity configuration starts concurrently with proxy configuration because it requires the box but not proxy credentials.
+The flow has three normal cases: reuse a live cached backend; reconnect using the durable ID; or boot a new backend when neither is available. Bridge sandboxes are detected by ID prefix and skip both provisioning and proxy configuration. Reconnect has no separate ping: for LangSmith, refreshing proxy configuration necessarily reaches the box, so that real operation is the reachability check. Git identity is re-applied every run because a reused box can lose its global config and commit authors must remain valid for downstream preview deployments. Identity configuration starts concurrently with proxy configuration because it requires the box but not proxy credentials.
 
 Creation initializes the sandbox before writing `sandbox_id` to metadata. It writes the ID and persisted base proxy configuration before calling `set_sandbox_backend`; thus a creation or metadata failure leaves no new backend exposed through the proxy and a later run will create rather than adopt a half-initialized box.
 

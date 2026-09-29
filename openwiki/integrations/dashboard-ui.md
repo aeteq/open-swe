@@ -38,10 +38,10 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Dashboard and Desktop Clients
@@ -55,6 +55,47 @@ The dashboard is the human-facing surface around the agent: a FastAPI router, a 
 When a dashboard build is available, `agent.utils.dashboard_ui` mounts immutable hashed assets at `/assets` and serves `_shell.html` for HTML navigation requests. It deliberately declines API, webhook, health, LangGraph, docs, metrics, and asset prefixes; a non-HTML request for an unknown UI route is likewise left for the underlying server to return as a 404. The shell is `no-cache` so it can reference a new asset manifest, while hashed assets can be cached for a year. With `DASHBOARD_DEV_SERVER_URL`, the backend instead reverse-proxies non-reserved traffic to Vite, preserving the backend origin and redirect responses. The catch-all is registered last; code which subsequently adds a route must call `keep_dashboard_ui_last`.
 
 `DASHBOARD_STATIC_DIR` selects an explicit build; otherwise the in-repository `ui/.output/public` build is used when present. A build served under a LangGraph mount prefix must be built with the matching `DASHBOARD_BASE_PATH`. The UI router uses Vite's `BASE_URL` as its `basepath`, so client navigation follows that mount.
+
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
+graph TB
+    subgraph Deployment["Production deployment"]
+        Browser["Browser<br/>(same-origin)"]
+        Nitro["Nitro UI Server<br/>port 3000"]
+        BackendProxy["Proxy handler<br/>/dashboard/api/**<br/>/webhooks/**"]
+        PythonAPI["Python FastAPI<br/>port 2024"]
+    end
+    
+    subgraph DevFlow["Development mode"]
+        DevBrowser["Browser"]
+        ViteDev["Vite Dev Server<br/>with HMR"]
+        PythonDev["FastAPI loopback"]
+    end
+    
+    subgraph Desktop["Electron local mode"]
+        Renderer["Renderer process<br/>open-swe://app"]
+        DesktopProxy["Local-graph proxy<br/>bearer token auth"]
+        LocalBackend["Supervised backend<br/>127.0.0.1:random"]
+    end
+    
+    Browser -->|relative /dashboard/api/*| Nitro
+    Nitro -->|route to| BackendProxy
+    BackendProxy -->|forward| PythonAPI
+    
+    DevBrowser -->|relative /dashboard/api/*| ViteDev
+    ViteDev -->|proxy| PythonDev
+    
+    Renderer -->|/dashboard/api/**| DesktopProxy
+    Renderer -->|/local-graph/**| DesktopProxy
+    DesktopProxy -->|configured backend| PythonAPI
+    DesktopProxy -->|loopback| LocalBackend
+    
+    style Nitro fill:#e1f5ff
+    style BackendProxy fill:#e1f5ff
+    style ViteDev fill:#fff3e0
+    style DesktopProxy fill:#f3e5f5
+```
+Diagram: dashboard architecture showing production Nitro proxy, development Vite flow, and Electron desktop routing with loopback backend supervision.
 
 ```mermaid
 sequenceDiagram

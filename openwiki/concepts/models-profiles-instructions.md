@@ -3,6 +3,9 @@ type: configuration concept
 title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
 tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-09b129ff728dd4990ea2f25e
     resource: repo://agent/dashboard/agent_instructions.py
@@ -32,15 +35,12 @@ sources:
     resource: repo://agent/utils/model.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
 # Models, Profiles, and Instructions
 
-A hosted agent run resolves a valid `(model_id, effort)` pair and a thread-stable repository-instruction value before it builds models. The triggering user's identity, credentials, PR preference, and personal instructions are deliberately re-evaluated for each message. This split lets a multi-party, long-lived thread keep its operational choices while avoiding attribution of one participant's preferences to another. See [Agent graph](../architecture/agent-graph.md), [Authentication and security](auth-and-security.md), [Configuration](../operations/configuration.md), and [Context engineering](../workflows/context-engineering.md).
+A hosted agent run resolves a valid `(model_id, effort)` pair and a thread-stable repository-instruction value before it builds models. The triggering user's identity, credentials, PR preference, and personal instructions are deliberately re-evaluated for each message. This split lets a multi-party, long-lived thread keep its operational choices while avoiding attribution of one participant's preferences to another.
 
 ## Model registry and stale selections
 
@@ -65,24 +65,37 @@ Team settings are a single LangGraph Store record keyed `"default"` in `["team_s
 
 Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, and PR/CI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
-  Team["Team main and subagent pairs"] --> Profile{"No stored thread model"}
-  Profile -- "yes" --> ApplyProfile["Apply valid profile main and optional subagent pair"]
-  Profile -- "no" --> KeepTeam["Keep team pairs"]
-  ApplyProfile --> Stored{"Stored thread model"}
-  KeepTeam --> Stored
-  Stored -- "yes" --> Snapshot["Use stored main and subagent pairs"]
-  Stored -- "no" --> Initial["Use resolved pairs"]
-  Snapshot --> Explicit{"Valid explicit run pair"}
-  Initial --> Explicit
-  Explicit -- "yes" --> Replace["Replace main and subagent pairs"]
-  Explicit -- "no" --> Persist["Persist resolved settings"]
+  Team["Team main and subagent pairs"]
+  Profile{"Stored thread model<br/>exists?"}
+  ApplyProfile["No: check profile"]
+  UseStored["Yes: use stored"]
+  ProfileApply{"Valid profile<br/>main pair?"}
+  UseTeam["No: use team"]
+  UseProfile["Yes: use profile"]
+  Explicit{"Explicit run pair<br/>provided?"}
+  Replace["Yes: replace pairs"]
+  Persist["Persist pairs<br/>to thread"]
+  Gate["Gate Fable,<br/>build models"]
+  
+  Team --> Profile
+  Profile -->|"yes"| UseStored
+  Profile -->|"no"| ApplyProfile
+  ApplyProfile --> ProfileApply
+  ProfileApply -->|"yes"| UseProfile
+  ProfileApply -->|"no"| UseTeam
+  UseStored --> Explicit
+  UseTeam --> Explicit
+  UseProfile --> Explicit
+  Explicit -->|"yes"| Replace
+  Explicit -->|"no"| Persist
   Replace --> Persist
-  Persist --> Gate["Apply Fable gate then build models"]
+  Persist --> Gate
 ```
 
-*Caption: first-run resolution creates the thread snapshot; only a valid explicit run pair intentionally changes its model choice.*
+*Caption: Model selection precedence from team defaults through stored thread snapshot to explicit per-run override.*
 
 `get_agent` seeds hosted runs from the team pairs. It reads a sender profile only if the thread has no stored main model; a valid profile main pair also becomes the subagent pair unless a valid profile subagent pair is supplied. Stored settings then take precedence. Finally, a valid `configurable.agent_model_id` plus `agent_effort` replaces both pairs and is persisted. `agent_settings` lives in thread metadata, is cached for five minutes, accepts only its typed fields, and reads or writes fail soft; malformed legacy metadata becomes an empty snapshot.
 
@@ -114,6 +127,12 @@ Prompt authority is explicit:
 4. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.
+
+## Model pair concept and adaptive routing
+
+Each role (agent, reviewer, chat) has a main model and optional subagent model. The subagent model is used for research, code search, and context-gathering subtasks, while the main model handles the user-facing response. A profile can override both pairs independently; when a profile provides only a main model, it becomes the subagent model unless an explicit subagent override exists.
+
+When `model_routing_enabled` is true at the workspace or user level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests.
 
 ## Change and test guide
 

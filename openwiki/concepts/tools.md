@@ -3,9 +3,6 @@ type: tool catalog and authorization model
 title: Tool Catalog and Authorization
 description: How Open SWE exports curated tools, wires graph-specific and deferred tool surfaces, and enforces authorization and mode-specific controls. Use this page when safely adding or changing an agent capability.
 tags: [tools, agent, authorization, integrations, dynamic-tools, automation, reviewer]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -29,7 +26,10 @@ sources:
     resource: repo://agent/tools/automations.py
   - id: openwiki-source-dcf576fc340e5f1a2bc3f5f4
     resource: repo://agent/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Tool Catalog and Authorization
@@ -69,18 +69,19 @@ This diagram distinguishes the import catalog from the graph-specific execution 
 
 ## Main coding agent assembly
 
-`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (save_plan); background execution (background_execute, background_task); user instructions and skills (save_user_instructions, save_user_skill, delete_user_skill); dashboard thread operations (list_threads, get_thread, manage_thread); optional thread creation (start_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management (manage_baby_sit); PR creation (open_pull_request, link_pull_request) and expedited review (expedite_pr_approval, merge_expedited_pr); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); platform-issue reporting (report_platform_issue); Slack tools; incident management (manage_incident); and code-channel management (manage_code_channel). Signed sandbox helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them. Optional read-only SQL (read_only_sql) and review approval policy management are included only for private admin surfaces.
+`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (save_plan); background execution (background_execute, background_task); user instructions and skills (save_user_instructions, save_user_skill, delete_user_skill); dashboard thread operations (list_threads, get_thread, manage_thread); optional thread creation (start_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management (manage_baby_sit); PR creation (open_pull_request, link_pull_request), expedited review (expedite_pr_approval, merge_expedited_pr), and Slack review request (request_pr_review); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); optional user-settings mutation (save_user_settings); platform-issue reporting (report_platform_issue); Slack tools; incident management (manage_incident); and code-channel management (manage_code_channel). Signed sandbox helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them. Optional read-only SQL (read_only_sql), Notion task comments (comment_on_notion_task), CLI result logging (cli_result), and review approval policy management (manage_feature_flags, manage_review_approval_mode) are included only for private admin surfaces or as needed.
 
 The final list depends on trusted run context:
 
 - An `admin_thread` receives `ADMIN_TOOLS`: automation management (create_automation, update_automation, trigger_automation, delete_automation, list_automations), workspace management (list_workspaces, publish_workspace, refresh_workspace_start, configure_repository, delete_workspace), and organization-skill mutations (save_organization_skill, delete_organization_skill). The factory accepts the flag only after checking the triggering identity against the configured administrators, so metadata cannot transfer admin capability to a later participant.
 - A desktop `local_run` receives only `http_request`, `fetch_url`, and `web_search`. A `stop_summary` run initially receives only Slack thread reading and reply. In both cases, integration groups are not collected.
 - Slack operations are removed unless trusted Slack context enables them. This filtering occurs after the mode-specific list is chosen.
-- Slack DM and channel-ask modes exclude thread-bound operations and certain Slack mutations via `DM_EXCLUDED_TOOLS` and `SLACK_ASK_EXCLUDED_TOOLS` sets.
-- Personal user-settings tools are removed when no credential login is verified (no personal identity in the thread).
-- Expedited review tools are removed when disabled or when Slack bot context is unavailable.
+- Slack DM mode excludes slack_add_reaction via `DM_EXCLUDED_TOOLS` to avoid clutter on user messages.
+- Slack channel-ask mode excludes thread-bound operations (slack_add_reaction, slack_attach_html, slack_move_thread) and incident management via `SLACK_ASK_EXCLUDED_TOOLS`, but retains write capabilities for answering in the channel.
+- Personal user-settings tools (save_user_instructions, save_user_settings, save_user_skill, delete_user_skill, read_user_settings) are removed when no credential login is verified (no personal identity in the thread).
+- Expedited review tools (expedite_pr_approval, merge_expedited_pr) are removed when disabled or when Slack bot context is unavailable.
 - Incident-session tools are added if an incident is in scope; when incident management is automatic (not explicitly requested), additional mutations are excluded via `INCIDENT_AUTOMATIC_EXCLUDED_TOOLS`.
-- The general-purpose subagent gets the applicable static list except `background_execute` and `background_task`; separately compiled subagent graphs do not inherit parent middleware. Dynamic integration middleware is explicitly passed to it.
+- The general-purpose subagent gets the applicable static list except `save_user_settings`; separately compiled subagent graphs do not inherit parent middleware. Dynamic integration middleware is explicitly passed to it.
 
 ## Deferred integration tools
 
@@ -111,7 +112,7 @@ Integration loading is also a credential boundary. Notion schemas require an `on
 
 ### Tool addition protocol
 
-Models that accept in-conversation tool addition (Anthropic's `tool_addition` and OpenAI's `additional_tools`) receive loaded integration tools via those fields, preserving prompt cache across the load. Models without this support receive tools in the standard tools list, which invalidates cache. Model prefixes recognized: `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5` (Anthropic tool_addition); `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` (OpenAI Responses API additional_tools).
+Models that accept in-conversation tool addition (Anthropic's `tool_addition` and OpenAI's `additional_tools`) receive loaded integration tools via those fields, preserving prompt cache across the load. Models without this support receive tools in the standard tools list, which invalidates cache. Model prefixes recognized: `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5`, `claude-sonnet-5-5` (Anthropic tool_addition); `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` (OpenAI Responses API additional_tools).
 
 ## Specialist surfaces
 

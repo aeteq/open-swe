@@ -1,11 +1,11 @@
 ---
 type: operations-guide
-title: Deployment and Runtime
-description: Run Open SWE locally or in production with Docker, LangGraph Cloud, or the Electron desktop app. Covers environment setup, local development, webhook tunneling, dashboard mounting, multiple replicas, and deployment boundaries.
-tags: [deployment, local-development, docker, langgraph, dashboard, webhooks, desktop, operations]
+title: Development, Deployment, and Serving
+description: Deploy Open SWE as a single LangGraph service across multiple topologies — local development with Docker PostgreSQL, standalone Docker, LangGraph Platform, Electron desktop, and multiple replicas. Covers environment setup, dashboard mounting, webhook exposure, authentication modes, and durability.
+tags: [deployment, development, docker, langgraph, dashboard, webhooks, desktop, postgresql, operations]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -49,40 +49,73 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
-# Deployment and Runtime
+# Development, Deployment, and Serving
 
-Open SWE is deployed as a single LangGraph application: six registered graphs (`agent`, `reviewer`, `analyzer`, `review-scout`, `chat`, `scheduler`) plus the FastAPI application (`agent.webapp:app`), wired through `langgraph.json`, which declares the Python version, LangGraph API version, registered graphs, checkpointer TTL policy, and dashboard bundle instructions. The same origin serves the LangGraph API (`/threads`, `/runs`, `/assistants`, `/store`), the FastAPI dashboard API (`/dashboard/api/*`), webhook endpoints (`/webhooks/*`), and the bundled dashboard UI.
+Open SWE is deployed as a single LangGraph application: six registered graphs (`agent`, `reviewer`, `analyzer`, `review-scout`, `chat`, `scheduler`) plus a FastAPI application (`agent.webapp:app`), wired through `langgraph.json`. The deployment topology determines serving: all components share one origin, so the LangGraph API (`/threads`, `/runs`, `/assistants`, `/store`), the FastAPI dashboard API (`/dashboard/api/*`), webhook endpoints (`/webhooks/*`), and the bundled dashboard UI are served from the same URL. Multiple replicas share Postgres for state and Redis for workers. The local development and production backend support Electron desktop clients as well as web clients.
 
-## Architecture and configuration
+<!-- openwiki: broken internal link [../configuration.md] file "../configuration.md" does not exist. Fix the href or restore the target, then delete this comment. -->
+See [Configuration](../configuration.md) for the complete environment variable reference, [Dashboard UI](../integrations/dashboard-ui.md) for UI behavior and mounting, and [Invocation](../workflows/invocation.md) for how requests become runs.
 
-The deployment topology is determined by environment variables and the manifest. See [Configuration](configuration.md) for the complete env contract, [Dashboard UI](../integrations/dashboard-ui.md) for UI behavior, and [Invocation](../workflows/invocation.md) for how requests become runs.
+## Architecture
 
-**Startup sequence:**
+### Manifest and runtime versions
 
-1. **Database setup:** FastAPI lifespan starts, validates configuration, runs SQLAlchemy migrations on `POSTGRES_URI`, and creates the `open_swe_analytics` schema.
-2. **Data imports:** LangGraph Store migrations (workspace and user mappings) are applied; any pre-migration workspaces/users in the Store are moved to Postgres.
+Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api>=0.15.0rc1,<0.16` and `langgraph-runtime-inmem>=0.35.0rc1,<0.36` (set in `pyproject.toml`). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the six registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
+
+For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.13.3-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
+
+The desktop build uses a separate trimmed manifest `langgraph.desktop.json` that exposes only the `agent` graph, disables the built-in UI, and configures a local auth handler (`agent.local_auth:auth`) with Studio auth disabled, so the app owns a private loopback LangGraph server for local-only agent work.
+
+### Startup sequence
+
+```mermaid
+sequenceDiagram
+  participant Boot as Startup
+  participant DB as Postgres
+  participant Store as LangGraph Store
+  participant Listeners
+  participant Ready as Ready to serve
+
+  Boot->>DB: Run migrations
+  Boot->>DB: Create analytics schema
+  Boot->>Store: Import user mappings (once)
+  Boot->>Store: Import concierge preferences (once)
+  Boot->>Store: Migrate automation workspaces (once)
+  Boot->>DB: Sync admin flags
+  Boot->>DB: Load workspace metadata
+  Boot->>Listeners: Start analytics worker pool
+  Boot->>Listeners: Start transcript listener
+  Boot->>Listeners: Start sandbox-bridge listener
+  Note over Listeners: failures log warnings only
+  Boot->>Ready: LangGraph runtime opens all graphs
+```
+
+The FastAPI lifespan startup runs in this order:
+
+1. **Database setup:** Validates configuration, runs SQLAlchemy migrations on `POSTGRES_URI`, creates the `open_swe_analytics` schema.
+2. **Store migrations:** Applies LangGraph Store migrations for workspace and user record mappings; any pre-migration workspaces or users in the Store are moved to Postgres.
 3. **Admin sync:** Admin flags are synced from `CONFIGURED_ADMINS` into the user table.
-4. **Analytics activation:** Workspace records are loaded, reporting metadata is initialized.
+4. **Analytics activation:** Workspace records are loaded and reporting metadata is initialized.
 5. **Background workers:** A pooled analytics event worker starts (reads the Store, writes to Postgres).
 6. **Listeners:** Transcript and sandbox-bridge listeners start (handle multi-replica notifications).
 7. **Ready:** LangGraph runtime opens all registered graphs and serves requests.
 
-Startup failures in imports, analytics, or listeners (steps 2, 4, 5, 6) do not prevent the server from running; they log warnings and continue. The dashboard and API remain available, but dashboard features depending on those subsystems may degrade.
+Failures in imports, analytics, listeners, or worker startup (steps 2–6) do not prevent the server from running; they log warnings and continue. The dashboard and API remain available, but affected features may degrade.
 
 ## Local serving modes
 
 ### Installation
 
-Install backend dependencies with:
+Install backend dependencies:
 
 ```bash
 make install
 ```
 
-This runs `uv sync --extra dev` and installs the project in development mode. The local Python runtime uses `langgraph-api>=0.15.0rc1,<0.16` and `langgraph-runtime-inmem>=0.35.0rc1,<0.36` (set in `pyproject.toml` constraints).
+This runs `uv sync --extra dev` and installs Open SWE in development mode.
 
 ### Full development server
 
@@ -90,9 +123,9 @@ This runs `uv sync --extra dev` and installs the project in development mode. Th
 make dev
 ```
 
-This executes `uv run langgraph dev --no-browser --port 2024 --n-jobs-per-worker 10`. The server runs all six graphs and the FastAPI app on `http://localhost:2024`. `langgraph.json` is the manifest: it selects Python 3.14 and LangGraph API `>~=0.15.0rc1`, registers the six graphs and FastAPI app, and configures the checkpointer (a 60-minute checkpoint sweep interval with a 43,200-minute—30 day—TTL for deletion). The manifest also loads `.env` from the repository root.
+Executes `uv run langgraph dev --no-browser --port 2024 --n-jobs-per-worker 10`. The server runs all six graphs and the FastAPI app on `http://localhost:2024`, making both `/webhooks/*` and `/dashboard/api/*` endpoints available from a single process.
 
-A local PostgreSQL 16 container (`open-swe-postgres`) is started automatically unless `POSTGRES_URI` is already set. The container binds to loopback only (127.0.0.1:5433) and persists data in the `open-swe-postgres` named volume, so stopping the container preserves workspace and user data across restarts.
+A local PostgreSQL 16 container (`open-swe-postgres`) is started automatically unless `POSTGRES_URI` is already set. The container binds to loopback only (`127.0.0.1:5433`) and persists data in a named volume (`open-swe-postgres`), so stopping the container preserves workspace and user data across restarts.
 
 ### FastAPI only
 
@@ -100,7 +133,7 @@ A local PostgreSQL 16 container (`open-swe-postgres`) is started automatically u
 make run
 ```
 
-This executes `uv run uvicorn agent.webapp:app --reload --port 8000`. It serves only the FastAPI app (webhooks, dashboard API, bundled UI) without the LangGraph runtime. This is useful for HTTP-only development, but dashboard features that create runs require `make dev`.
+Executes `uv run uvicorn agent.webapp:app --reload --port 8000`. Serves only the FastAPI app (webhooks, dashboard API, bundled UI) without the LangGraph runtime. This is useful for HTTP-only development, but dashboard features that create LangGraph runs require `make dev`.
 
 ### UI development with hot reload
 
@@ -108,17 +141,26 @@ This executes `uv run uvicorn agent.webapp:app --reload --port 8000`. It serves 
 make dev-ui
 ```
 
-This starts the dashboard Vite dev server on port 3000 and the LangGraph backend on port 2024 together with `-j2` parallelism. The backend receives `DASHBOARD_DEV_SERVER_URL=http://localhost:3000` and reverse-proxies non-reserved UI requests to it. Browser navigations stay on `http://localhost:2024` (the FastAPI origin), so API calls, login callbacks, and cookies work without cross-origin setup. The UI's HMR WebSocket connects directly to Vite's port.
+Starts the dashboard Vite dev server on port 3000 and the LangGraph backend on port 2024 together with `-j2` parallelism. The backend receives `DASHBOARD_DEV_SERVER_URL=http://localhost:3000` and reverse-proxies non-reserved UI requests to it. Browser navigations stay on `http://localhost:2024` (the FastAPI origin), so API calls, login callbacks, and cookies work without cross-origin setup. The UI's HMR WebSocket connects directly to Vite's port.
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
-  DevUI["make dev-ui"] --> Vite["Vite dev server on port 3000"]
-  DevUI --> LG["LangGraph dev on port 2024"]
-  Vite --> FastAPI["proxied to FastAPI"]
-  LG --> Graphs["six graphs"]
-  LG --> API["FastAPI app"]
-  API --> Routes["dashboard API webhooks health"]
-  API --> Proxy["reverse-proxies Vite for UI"]
+  DevUI["make dev-ui"]
+  Vite["Vite dev server on port 3000"]
+  LG["LangGraph dev on port 2024"]
+  FastAPI["FastAPI app"]
+  Graphs["Six LangGraph graphs"]
+  Routes["Dashboard API<br/>Webhooks<br/>Health check"]
+  Proxy["Reverse-proxy Vite<br/>for UI requests"]
+
+  DevUI --> Vite
+  DevUI --> LG
+  LG --> FastAPI
+  LG --> Graphs
+  FastAPI --> Routes
+  FastAPI --> Proxy
+  Proxy --> Vite
 ```
 
 ### Dashboard asset building
@@ -129,7 +171,9 @@ Before starting a backend that should serve the dashboard, build it:
 make build-dashboard
 ```
 
-This installs the frozen pnpm workspace and builds the `open-swe-dashboard` package into `ui/.output/public`. The backend discovers that directory by default (or an explicit `DASHBOARD_STATIC_DIR`) and serves the shell at non-reserved HTML routes. It deliberately declines `/dashboard/api`, `/webhooks`, `/health`, and LangGraph-owned prefixes (`/threads`, `/runs`, `/assistants`, `/store`, `/mcp`, `/a2a`, `/ui`, `/docs`, `/openapi.json`, `/info`, `/metrics`, `/ok`), so the catch-all cannot shadow API endpoints. Hashed assets are immutable-cacheable with `Cache-Control: public, max-age=31536000, immutable`, while the shell is revalidated with `no-cache` so a new build can refer to new asset hashes.
+Installs the frozen pnpm workspace and builds the `open-swe-dashboard` package into `ui/.output/public`. The backend discovers that directory by default or via an explicit `DASHBOARD_STATIC_DIR` and serves the shell at non-reserved HTML routes. It deliberately declines reserved API paths (`/dashboard/api`, `/webhooks`, `/health`, and LangGraph-owned prefixes: `/threads`, `/runs`, `/assistants`, `/store`, `/mcp`, `/a2a`, `/ui`, `/docs`, `/openapi.json`, `/info`, `/metrics`, `/ok`), so the catch-all cannot shadow API endpoints.
+
+Hashed assets are immutable-cacheable with `Cache-Control: public, max-age=31536000, immutable`, while the shell (`_shell.html`) is revalidated with `no-cache` so a new build can refer to new asset hashes.
 
 ## Webhooks during local development
 
@@ -139,7 +183,7 @@ This installs the frozen pnpm workspace and builds the `open-swe-dashboard` pack
 make tunnel NGROK_DOMAIN=<name>.ngrok-free.dev
 ```
 
-This runs ngrok against port 2024 with `examples/ngrok/webhooks-only.yml`; the policy returns 404 for every path except `/webhooks/*`. GitHub, Slack, and Linear can deliver to the public hostname while dashboard and LangGraph access stay local. Any other tunnel is acceptable only if it provides an equivalent allowlist.
+This runs ngrok against port 2024 with `examples/ngrok/webhooks-only.yml`; the policy returns 404 for every path except `/webhooks/*`. GitHub, Slack, and Linear can deliver to the public hostname while dashboard and LangGraph access stay local.
 
 Point integration settings at the public webhook paths (e.g., `/webhooks/github`, `/webhooks/slack`, `/webhooks/linear`) and use the localhost URL where the dashboard is opened for the GitHub OAuth callback. Restart `make dev` after changing `.env`: it reloads code but not environment variables.
 
@@ -193,19 +237,18 @@ The standalone image defaults to `LANGGRAPH_AUTH_TYPE=noop`, which leaves raw La
 - `LANGGRAPH_AUTH_TYPE=langsmith` with `LANGSMITH_AUTH_ENDPOINT` and `LANGSMITH_TENANT_ID` to require a LangSmith API key on every LangGraph API call
 - Private networking or an authenticated gateway for network boundary protection
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart LR
-  Browser["Browser"] -->|osw_session cookie| Deploy["same-origin backend"]
-  Deploy --> FrontAPI["dashboard API webhooks"]
-  Deploy --> LangGraph["graphs and LangGraph routes"]
+  Browser["Browser"] -->|osw_session cookie| Deploy["Same-origin backend"]
+  Deploy --> FrontAPI["Dashboard API<br/>Webhooks"]
+  Deploy --> LangGraph["Graphs and<br/>LangGraph routes"]
   LangGraph --> Postgres["Postgres"]
   LangGraph --> Redis["Redis workers"]
-  GH["GitHub Slack Linear"] -->|signature checked| FrontAPI
+  GH["GitHub<br/>Slack<br/>Linear"] -->|Signature checked| FrontAPI
 ```
 
-The default production topology keeps browser traffic and webhook delivery on one public origin.
-
-When public URLs change, update `LANGGRAPH_URL`, webhook targets, and the GitHub callback (`<dashboard API base>/dashboard/api/auth/callback`). `DASHBOARD_BASE_URL` and `DASHBOARD_API_BASE_URL` default to `LANGGRAPH_URL` when the backend serves a bundled build or fronts Vite, so they are not needed when serving from the same origin.
+The default production topology keeps browser traffic and webhook delivery on one public origin. When public URLs change, update `LANGGRAPH_URL`, webhook targets, and the GitHub callback (`<dashboard API base>/dashboard/api/auth/callback`). `DASHBOARD_BASE_URL` and `DASHBOARD_API_BASE_URL` default to `LANGGRAPH_URL` when the backend serves a bundled build or fronts Vite, so they are not needed when serving from the same origin.
 
 ## Separate dashboard deployment
 
@@ -232,9 +275,9 @@ Set the backend's `DASHBOARD_BASE_URL` and `DASHBOARD_API_BASE_URL` to the front
 
 Alternatively, build with `VITE_DASHBOARD_API_BASE_URL` set to the backend origin, keep `DASHBOARD_API_BASE_URL` on the backend, and include the frontend origin in `DASHBOARD_ALLOWED_ORIGINS`. The client then resolves the session after hydration. **Do not use secrets in `VITE_*` values** because they are build-time browser data.
 
-## Workspace and tooling
+## Frontend build and caching
 
-The pnpm workspace comprises `ui`, `desktop`, `cli`, and `tests/e2e`. Turborepo orchestrates per-package tasks:
+The pnpm workspace comprises four packages: `ui` (dashboard), `desktop` (Electron app), `cli` (command-line tool), and `tests/e2e`. Turborepo orchestrates per-package tasks:
 
 - `dev`: runs the dev server (no cache)
 - `build`: builds the package (cached, outputs `.output/**`, `.vercel/output/**`, `build/**`)
@@ -242,21 +285,22 @@ The pnpm workspace comprises `ui`, `desktop`, `cli`, and `tests/e2e`. Turborepo 
 - `test`: runs unit tests (no cache)
 - `check`: runs checks (no cache)
 
-Build cache inputs include `DASHBOARD_API_URL`, `VERCEL`, `E2E_HARNESS`, and `VITE_*` variables, so changing them invalidates cached builds.
+Build cache inputs include `DASHBOARD_API_URL`, `VERCEL`, `E2E_HARNESS`, and `VITE_*` variables, so changing them invalidates cached builds. Root `lint` (oxlint) and `format`/`format:check` (oxfmt) run directly, not as Turborepo tasks.
 
-Root `lint` (oxlint) and `format`/`format:check` (oxfmt) run directly, not as Turborepo tasks.
+### Building the dashboard
 
-## Desktop boundary
+The dashboard build (`make build-dashboard` or `pnpm --filter open-swe-dashboard run build`) produces a Vite static output tree with:
+- A client-only `_shell.html` entry point that receives no request-specific props (all navigation is client-side)
+- Hashed immutable assets that are never updated
+- The server serves hashed assets with `Cache-Control: max-age=31536000,immutable` and the shell with `no-cache` so new builds can be picked up without manual cache invalidation
 
-The experimental Electron client bundles the compiled dashboard and a local LangGraph backend. It supports both cloud-connected and local-only modes.
+## Desktop client
 
-**Cloud mode:**
+The experimental Electron client bundles the compiled dashboard and a local LangGraph backend. It supports both cloud-connected and local-only modes:
 
-Packaged builds ask for an organization backend URL on first launch and store it in the app's local user data. The bundled UI proxies `/dashboard/api/*` requests to that selected backend, so the browser never calls the raw LangGraph API or sees a LangSmith API key. GitHub login creates the same signed dashboard session used by the web UI.
+**Cloud mode:** Packaged builds ask for an organization backend URL on first launch and store it in the app's local user data. The bundled UI proxies `/dashboard/api/*` requests to that selected backend, so the browser never calls the raw LangGraph API or sees a LangSmith API key. GitHub login creates the same signed dashboard session used by the web UI.
 
-**Local mode:**
-
-A private loopback LangGraph server (running `langgraph.desktop.json`) supports **This Mac** local-agent work:
+**Local mode:** A private loopback LangGraph server (running `langgraph.desktop.json`) supports **This Mac** local-agent work:
 
 - `langgraph.desktop.json` exposes only the `agent` graph
 - Disables the built-in UI
@@ -320,18 +364,40 @@ Multiple replicas of the same deployment share a Postgres database and Redis ins
 
 If a listener fails to start, the replica continues; affected features degrade (threads driven from other replicas may not receive updates) but the replica remains operational.
 
-## Operational helpers and scripts
+## Workspace and tooling
 
-### Testing and linting
+Root workspace package scripts:
 
 ```bash
-make test [TEST_FILE=...]           # pytest (skip if path missing)
-make integration_tests              # pytest on tests/integration_tests/
-make lint                           # ruff lint
-make format                         # ruff format
+make install                        # uv sync --extra dev
+make build-dashboard                # build dashboard into ui/.output/public
+make dev                            # langgraph dev on :2024
+make dev-ui                         # Vite :3000 + langgraph dev :2024
+make run                            # uvicorn :8000 (FastAPI only)
+make web                            # pnpm run dev (dashboard Vite)
+make tunnel NGROK_DOMAIN=...        # ngrok :2024 on domain with webhooks-only policy
+make desktop                        # pnpm run dev:desktop (Electron app)
+make install-desktop                # git main → fast-forward → install/update
+make install-checkout               # install/update current checkout
+make cli                            # build oswe CLI binary with Bun
+make swagger                        # regenerate swagger.json
+make test                           # pytest (default: tests/)
+make integration_tests              # pytest tests/integration_tests/
+make lint                           # ruff check
+make format                         # ruff format --fix
 make format-check                   # ruff check (no changes)
 make typecheck                      # ty check agent tests
 ```
+
+## Operational helpers and scripts
+
+### CLI binary
+
+```bash
+make cli
+```
+
+Builds the `oswe` CLI binary into `cli/dist/oswe` using Bun. The result is a single executable that runs on any system without Node or Bun installed.
 
 ### Sandbox image snapshot creation
 
@@ -349,14 +415,6 @@ uv run python scripts/purge_wakeup_crons.py
 ```
 
 Backfill script to delete expired one-shot `thread_wakeup` crons from a deployment. Resolves the deployment URL from `--url` / `LANGGRAPH_URL` / `LANGGRAPH_URL_PROD` and the API key from `LANGGRAPH_API_KEY` / `LANGSMITH_API_KEY` / `LANGSMITH_API_KEY_PROD`. Start with `--dry-run` to preview changes.
-
-### CLI binary
-
-```bash
-make cli
-```
-
-Builds the `oswe` CLI binary into `cli/dist/oswe` using Bun. The result is a single executable that runs on any system without Node or Bun installed.
 
 ### Swagger schema
 
