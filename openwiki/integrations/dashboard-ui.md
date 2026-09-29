@@ -3,51 +3,45 @@ type: integration
 title: Dashboard and Desktop Clients
 description: The dashboard's FastAPI API, React/TanStack Start serving and proxy boundary, authenticated product capabilities, and the Electron client's supervised local-project execution model.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-22T13:11:45.998Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
   - id: openwiki-source-412c2c84023da365b8201b9f
     resource: repo://agent/dashboard/__init__.py
-  - id: openwiki-source-09b129ff728dd4990ea2f25e
-    resource: repo://agent/dashboard/agent_instructions.py
+  - id: openwiki-source-04f1d39360e23b075eaca9f3
+    resource: repo://agent/dashboard/auth_routes.py
+  - id: openwiki-source-68232aadafb64efa8bf106e5
+    resource: repo://agent/dashboard/deps.py
   - id: openwiki-source-5460c3972fe61bb256d07994
     resource: repo://agent/dashboard/oauth.py
   - id: openwiki-source-61ace7d4952db9ddb8316aeb
     resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-202e70aa1fb446ab05cc6d99
-    resource: repo://agent/dashboard/schedules.py
-  - id: openwiki-source-fb23e4421b72cc55be83e96d
-    resource: repo://agent/dashboard/skills.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
-  - id: openwiki-source-31ac80d273943055d537bae8
-    resource: repo://agent/review/styles.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-82825a65559de3e8581a123a
+    resource: repo://agent/threads/handlers.py
+  - id: openwiki-source-eacf03704e0535f30594d663
+    resource: repo://agent/threads/listing.py
+  - id: openwiki-source-7e34667f01351599d23e4443
+    resource: repo://agent/threads/summary.py
+  - id: openwiki-source-2125456467ee589819c93414
+    resource: repo://agent/threads/terminal.py
   - id: openwiki-source-6e64b1ccdb133daeb8f4d1d4
     resource: repo://agent/utils/dashboard_ui.py
-  - id: openwiki-source-2f66613e587b7c57d9be522e
-    resource: repo://desktop/README.md
   - id: openwiki-source-f94f5d5d16b6aac2f4bc309c
     resource: repo://desktop/src/backend-supervisor.cjs
-  - id: openwiki-source-62d0819e47a738ba26f898fd
-    resource: repo://tests/dashboard/test_dashboard_thread_api_activity.py
-  - id: openwiki-source-654bec991273a9eb3ccdf2c1
-    resource: repo://tests/dashboard/test_dashboard_thread_api.py
   - id: openwiki-source-cee8c9d42a08db69733a075f
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-3b0d59e2570cb537382d8c12
     resource: repo://ui/src/lib/dashboard-fetch.ts
-  - id: openwiki-source-c7a3ad58e4b4017484c1e326
-    resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 ---
 
 # Dashboard and Desktop Clients
@@ -82,7 +76,7 @@ Diagram: normal web traffic reaches the dashboard API through either the UI serv
 
 GitHub login creates signed state containing a hash of a nonce placed in a short-lived, HTTP-only state cookie, then redirects to GitHub. The callback verifies the state cookie for normal browser login, exchanges the authorization code, resolves the GitHub user, applies the organization login gate, persists the token response, and redirects with a signed session cookie. A desktop handoff is different: after the same identity checks it returns a PKCE-challenge-bound code to the desktop loopback listener without setting a browser session; `POST /auth/desktop/exchange` requires the matching verifier before minting the desktop session.
 
-Cookie security is derived from the API URL and whether UI and API share an origin: HTTP is non-secure and `SameSite=Lax`; same-origin HTTPS is `Secure; SameSite=Lax`; split-origin HTTPS is `Secure; SameSite=None`. `require_session` turns a missing or invalid session cookie into `401`. Admin routes additionally enforce `is_admin`; CI admin operations may authenticate with an Actions OIDC token or an administrator GitHub PAT.
+Cookie security is derived from the API URL and whether UI and API share an origin: HTTP is non-secure and `SameSite=Lax`; same-origin HTTPS is `Secure; SameSite=Lax`; split-origin HTTPS is `Secure; SameSite=None`. `require_session` turns a missing or invalid session cookie into `401`. Admin routes additionally enforce `is_admin`; no alternate authentication methods are currently supported for dashboard admin endpoints.
 
 The router-wide CSRF guard permits safe methods and a request authenticated only with an explicit bearer token. Cookie-authenticated mutations require an allowed `Origin` or `Referer`; WebSockets always receive the origin check. This control protects the ambient cookie, not business authority: individual endpoints still enforce administrator status, repository access, or thread postability. At app construction, credentialed CORS may be configured from `DASHBOARD_ALLOWED_ORIGINS`, but `*` is rejected because it is unsafe with credentials.
 

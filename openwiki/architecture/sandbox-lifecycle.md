@@ -5,7 +5,7 @@ description: How a thread acquires, persists, reconnects to, and deliberately re
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-22T13:11:45.998Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -13,8 +13,6 @@ sources:
     resource: repo://agent/github/proxy.py
   - id: openwiki-source-9d5775155057d8f8c3a08e3e
     resource: repo://agent/middleware/refresh_github_proxy.py
-  - id: openwiki-source-276ab38291eb5741b4c2141c
-    resource: repo://agent/reviewer.py
   - id: openwiki-source-6fd11c8bb15f5eb94b765440
     resource: repo://agent/sandboxes/lifecycle.py
   - id: openwiki-source-31cdc3533d50e7ed84c89652
@@ -31,19 +29,7 @@ sources:
     resource: repo://agent/sandboxes/retry.py
   - id: openwiki-source-3f4feeeb872e0d43c9b850c8
     resource: repo://agent/sandboxes/state.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
-  - id: openwiki-source-8df2adb4d3d3b703aed3451b
-    resource: repo://tests/sandbox/test_sandbox_publish_ordering.py
-  - id: openwiki-source-71e56ad3da996973b32520ab
-    resource: repo://tests/sandbox/test_sandbox_recreation.py
-  - id: openwiki-source-46397d5eb777a7a1eefb168d
-    resource: repo://tests/sandbox/test_sandbox_reset.py
-  - id: openwiki-source-f05d7497d4c60c3b322628eb
-    resource: repo://tests/sandbox/test_sandbox_state.py
-  - id: openwiki-source-1a0d5f0c064da60b08174a51
-    resource: repo://tests/sandbox/test_stale_sandbox_creating.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
 ---
 
 # Thread Sandbox Lifecycle
@@ -58,7 +44,7 @@ Related: [Agent graph](agent-graph.md), [Middleware stack](middleware-stack.md),
 
 `thread.metadata["sandbox_id"]` is the durable identity of a sandbox. `get_sandbox_metadata` first uses metadata supplied in the run configuration and otherwise reads the live LangGraph thread; a lookup failure returns `{}`, hence no ID. That fail-open behavior is safe for reading but is why provider interfaces intentionally have no delete operation keyed from this metadata: an unreliable lookup must not delete a live working tree.
 
-`SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object.
+`SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `SANDBOX_CONNECTIONS` is keyed by *sandbox* ID rather than thread ID, so a thread rebound on another worker cannot be handed a stale connection from its previous worker. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object.
 
 The proxy is asynchronous. Synchronous backend methods fail with `NotImplementedError`; its `a*` methods resolve the current backend before delegating. If it has no target, resolution uses a registered reconnect callback, or falls back to the metadata ID and `create_sandbox`. A lock and shared startup task collapse concurrent first operations to one reconnect; `asyncio.shield` means cancellation of one waiter does not cancel shared startup. The proxy subclasses `BaseSandbox` so filesystem tooling recognizes capture-at-source support and can preserve the in-sandbox output cap. If an underlying backend lacks execute-offload support, the proxy explicitly falls back to ordinary execution.
 
@@ -120,12 +106,9 @@ GitHub App tokens expire after one hour. `record_proxy_token_expiry` keeps worke
 
 ## Deliberate replacement operations
 
-Both replacement operations require an existing bound sandbox and ensure the provider returns a distinct ID. Neither deletes the old sandbox; it remains preserved but detached from the thread.
+`recreate_sandbox_for_thread` is the ordinary tool: it creates a fresh sandbox using the resolved environment configuration, configures it, persists the new ID, and only then replaces the cached backend. The fresh box has no prior files or worktree state. Neither operation deletes the old sandbox; it remains preserved but detached from the thread.
 
-- `recreate_sandbox` is the ordinary tool: it creates a fresh sandbox using the resolved environment configuration, configures it, persists the new ID, and only then replaces the cached backend. The fresh box has no prior files or worktree state.
-- `sandbox_reset` is admin-gated and LangSmith-only. It accepts a raw LangSmith create-body request, configures GitHub proxy and git identity on the new box, persists both its ID and its base proxy configuration, then hands the proxy over. The tool warns callers never to put secrets or tokens in raw create options.
-
-If metadata persistence fails in either operation, the existing cached proxy retains the old backend. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached.
+The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. If metadata persistence fails, the existing cached proxy retains the old backend. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached.
 
 ## Repository paths and reviewer preparation
 
@@ -135,4 +118,4 @@ The reviewer prepares its repo before the first model call: it clones once or fe
 
 ## Focused verification
 
-The sandbox test suite exercises provider registry routing, startup settings, LangSmith proxy payloads and retries, thread binding order, gone/unreachable recovery, reset and recreate handoff ordering, proxy token refresh scope, paths, reviewer preparation, and local-provider behavior. In particular, tests assert concurrent proxy callers reconnect only once, initialization failures publish no backend, metadata update failures retain the old target, and retryable gateway errors are retried only when the SDK guarantees no command ran.
+The sandbox test suite exercises provider registry routing, startup settings, LangSmith proxy payloads and retries, thread binding order, gone/unreachable recovery, recreate handoff ordering, proxy token refresh scope, paths, reviewer preparation, and local-provider behavior. In particular, tests assert concurrent proxy callers reconnect only once, initialization failures publish no backend, metadata update failures retain the old target, and retryable gateway errors are retried only when the SDK guarantees no command ran.

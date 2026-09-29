@@ -588,7 +588,7 @@ def test_process_github_issue_followup_keeps_the_threads_workspace(monkeypatch) 
                 },
                 "comment": {
                     "id": 999,
-                    "body": "@openswe please handle this",
+                    "body": "@jarvis-aeteq please handle this",
                     "user": {"login": "octocat"},
                 },
                 "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
@@ -605,14 +605,56 @@ def test_process_github_issue_followup_keeps_the_threads_workspace(monkeypatch) 
 @pytest.mark.parametrize(
     ("private", "persisted", "scope", "dispatched"),
     [
-        (False, True, ["langchain-ai/open-swe"], True),
-        (None, True, ["langchain-ai/open-swe"], True),
+        (False, True, ["aeteq/open-swe"], True),
+        (None, True, ["aeteq/open-swe"], True),
         (True, True, None, True),
-        (False, False, ["langchain-ai/open-swe"], False),
+        (False, False, ["aeteq/open-swe"], False),
     ],
 )
 def test_a_new_issue_thread_on_a_public_repository_records_a_single_repository_scope(
     monkeypatch, private: bool | None, persisted: bool, scope: list[str] | None, dispatched: bool
+    messages = cast(list[dict[str, str]], captured["messages"])
+    assert len(messages) == 1
+    request = ElementTree.fromstring(messages[0]["content"])
+    assert request.attrib["sender"] == "github:octocat"
+    assert (request.text or "").strip() == "**octocat:**\n@jarvis-aeteq please handle this"
+    assert request.find("repository") is None
+
+
+async def test_github_webhook_routes_pr_comment_review_to_agent(monkeypatch, registry_db) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_process_pr_comment(payload: dict[str, object], event_type: str) -> None:
+        captured["payload"] = payload
+        captured["event_type"] = event_type
+
+    monkeypatch.setattr(github_webhooks, "process_github_pr_comment", fake_process_pr_comment)
+    monkeypatch.setattr(webhook_common, "GITHUB_WEBHOOK_SECRET", _TEST_WEBHOOK_SECRET)
+    monkeypatch.setattr(webhook_common, "ALLOWED_GITHUB_ORGS", frozenset({"langchain-ai"}))
+    register_github_logins(monkeypatch, "octocat")
+
+    response = await _post_github_webhook(
+        "issue_comment",
+        {
+            "action": "created",
+            "issue": {
+                "id": 12345,
+                "number": 1244,
+                "pull_request": {"url": "https://api.github.com/repos/x/y/pulls/1244"},
+            },
+            "comment": {"id": 9, "body": "@jarvis-aeteq review"},
+            "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
+            "sender": {"login": "octocat"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted", "message": "Processing issue_comment event"}
+    assert captured["event_type"] == "issue_comment"
+
+
+async def test_github_webhook_routes_pr_review_request_comment_to_agent(
+    monkeypatch, registry_db
 ) -> None:
     captured: dict[str, object] = {}
 

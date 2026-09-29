@@ -45,7 +45,7 @@ def _render_source_guidance(
         name = "background-task"
     elif source == "slack" and slack_context:
         name = "slack-ask" if slack_ask else "slack"
-    elif source in {"linear", "github", "schedule", "dashboard"}:
+    elif source in {"linear", "notion", "github", "schedule", "dashboard"}:
         name = source
     else:
         name = "generic"
