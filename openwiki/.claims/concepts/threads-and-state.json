@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:5aad4a3952961ea091b4120d6777326e83bf7c3a4b30dbf6dad1c67f18b1222c",
+  "pageVersion": "sha256:c31cfc767a4f71c9d257601fdd0bc3af896be888d02e6eb8a3e53af87dab2df3",
   "claims": [
     {
       "id": "claim_59daaaa8396044a0ab47378f78878e79",
@@ -234,7 +234,7 @@
       "evidence": [
         {
           "resource": "repo://agent/sandboxes/lifecycle.py#L437-L450",
-          "version": "repo-lines-v1:sha256:1f1f0c14277c7d40ff963278916bf96fd81d58d699e3deaf57ebf5648339cba1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZWMzMTFjZTk0OTljMDliZWYyZTI3NmQyYmQ5ZDAwNzA1OTFiZTRlMmU1YTQ4NjcwYjRjYTBkMmRjZWI0NGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzcxNDk3Y2ZjODJlNmZlMGZmZmYwYjA2MjM2NWVmNDk3MTUzODhhNjU0N2I5N2ExMzAwZjdlZWEyOGYwMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4ZDYyZmQxZmQxMDlmMGZhNDFmZWQzNWQ3ZDc1YTI4ZmVhYWE3ZmFlYTViNDM2NmNiNTJmOWJiNzNkOTIwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiNGM4ODQ3ZGM4ZGM0OGJhMzVkNTZjYjM5ZTlmZjEyNmViMGU3ZjllNmI1Y2QxOGIzMWE0Yzg0ZWU2YTE4ZDQifQ"
+          "version": "repo-lines-v1:sha256:5a332a9ecd8ab3477a44c47b99449a5411c5fe4ddcd0c3600ef2868a8fdcca95:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwZWMzMTFjZTk0OTljMDliZWYyZTI3NmQyYmQ5ZDAwNzA1OTFiZTRlMmU1YTQ4NjcwYjRjYTBkMmRjZWI0NGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5YzcxNDk3Y2ZjODJlNmZlMGZmZmYwYjA2MjM2NWVmNDk3MTUzODhhNjU0N2I5N2ExMzAwZjdlZWEyOGYwMmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY4ZDYyZmQxZmQxMDlmMGZhNDFmZWQzNWQ3ZDc1YTI4ZmVhYWE3ZmFlYTViNDM2NmNiNTJmOWJiNzNkOTIwOTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJiNGM4ODQ3ZGM4ZGM0OGJhMzVkNTZjYjM5ZTlmZjEyNmViMGU3ZjllNmI1Y2QxOGIzMWE0Yzg0ZWU2YTE4ZDQifQ"
         }
       ]
     },
@@ -375,10 +375,48 @@
           "version": "repo-lines-v1:sha256:fa88ba278c79b8aaf7402d6e7f1450083056a91d9e0dca4808e2aaf3ad2392e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2NzlkNzc4ZTMzYTdkYTEzYjlmZjBiOTViY2U5OTcyYTJiMDYxNzgyMTEzNmYzYWZiZjJhM2JlNDZlNWQxMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxMDkwNzY0ZWJhZGM4NTlkNGVkZjk1MWFmODkzMWM3ZDRhN2JmMDJjZjBiZWI3YmM5NzU5MmUwZmRmODQ1YTMifQ"
         }
       ]
+    },
+    {
+      "id": "claim_2b747d6add0b4fc69da47e63f59fff2f",
+      "statement": "agent/threads/creation.py is the only place LangGraph threads are created, and every thread people can open must have a non-empty, stripped title; this enforces an invariant that prevents untitled conversations.",
+      "evidence": [
+        {
+          "resource": "repo://agent/threads/creation.py#L1-L55",
+          "version": "repo-lines-v1:sha256:7aab487922ab6cb5a06dfa15e674eb4cdc5dbaad5896f9403dfa870b555e2dc6:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0NDdkYzcxNGJmYmJjM2EwNzU4MWJmOGMwMDAxNjZiZDc5MjQ3MDAzNDdhOWUxNTc1M2JkNzNlN2QyMDIwYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhNzRkNWYyODRmM2ZiMjQzZGNmZjBkZjg5NWQxMzRkY2EyNWYyNjkwODJlMmQ4OGQ5MDFmNjAwNTc3M2QyODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_1560f1500b3741ce8c1d1140373ed33a",
+      "statement": "invocation_id is a unique UUID added to both run metadata and configurable during dispatch, serving as a deduplication key for follow-up messages and retries: the same invocation_id on a follow-up to an existing thread reuses the run result, while a new invocation_id creates a fresh run.",
+      "evidence": [
+        {
+          "resource": "repo://agent/dispatch.py#L230-L245",
+          "version": "repo-lines-v1:sha256:17628bfa77b6be37206880626eed9fe09a9625881e1f8cbf053622273c1a2695:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlZjRjZWQyNDI1ZTE5MDA2NjE1NDc1NGU3YWU4N2Y0NGVlZTBkYjQwYzZhZWY1MThlNzdiNzQxZDUzODUzMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjYWIxN2JkODQ4NjM0YzRiOTllZWYwZDk4MWExMzIxODFhNjNhYjRmMjY1OTZiZjA2ZTgwMGU3YzUzZjIwMjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJlZmU0NWZkM2I3OTMxMTIzZDZmMjkzY2Q5NjU0YTlmOGRhMWVmZmU5Yjk2MTFmNWM3Y2M2OGMyODE2YzRiODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjMzkxMDIwZmM3ZWZhMDdkMDY5ODVjMmNiODNmNWIyY2JjNWVmZDg0YjBhZWQzZTM3YWQ0YmFjMTA2YmExNmQifQ"
+        },
+        {
+          "resource": "repo://agent/invocation.py#L1-L47",
+          "version": "repo-lines-v1:sha256:3d8c9fe07bad56102902b43e07dbb58f43a09b9f3cc7af7d3fd07b7905ec994d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYwZDYwNzgxOTA3YzY4OGI0NjY1MmY0YTdhNTRhMjM2NWI2MGM0NDVjYTMyYzE5MzJjMjNmZjFhMTRkYTg4YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_94143805a78a4630b7ceca74cc9526da",
+      "statement": "RunConfig's configurable dictionary carries thread_id, repo (owner and name), workspace, source (webhook trigger name), github_login, slack_thread (for Slack-specific context), and per-run model/effort overrides that shadow thread-level agent_settings.",
+      "evidence": [
+        {
+          "resource": "repo://agent/dispatch.py#L273-L287",
+          "version": "repo-lines-v1:sha256:f4ae0a2c89e5bbf6557c9913cfdcc4125dfcd160e4780dd246ef47b2a4f33a00:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhNWM3ZjY4ZDM4ZjYyNTFjNGE2NDVmZDQyMzY5ZTFjYjExZmQzMDQ3NDJiNWYyODYyNTM2ZTUxMmRkMzEyYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZGI0NDE3YzJhZTQzMjlmOWE1Nzk3YjA2NGRmZGYxYjgxNWVkNTE4MDE0NDkyYTkwYzc1MjI2MmJhODNkZWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNjODEzNDEzMmVhNTE0MzJlMTg4OGM1NzA2NTU2NDI1OTFlYWFjYmFjNzQyMjNmMjRmNzRjZWJjYTU3YzcxNjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmZDVjMmYwMTNmNTZjMWE3ZjA0NTMwMjBmNDA1YTJlODI3MzI0ODI1YTBmODQ3Mzg4ZThjZDdhM2E3ZWM0NzYifQ"
+        },
+        {
+          "resource": "repo://agent/run_config.py#L95-L200",
+          "version": "repo-lines-v1:sha256:c4fcbb8cebeb014860ce9e129bb49e2879bf6d103419a30be8f2093955e28277:eyJzZWxlY3RlZExpbmVDb3VudCI6MTA2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMTcwODU2OGJlNTFmZTIxOGY1MmY5ZDRjMzc1M2JkMzJlZDJkMGZmZjFkZDcyMzE1ZjY3ZDdlNDk0OTZkNmVkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJhOTU3OWMyMzMxODAxZjQ5NGY4ZWUwZTBhM2NiNWZiNTkyNzg3Y2JiNDdkZjU2ODA2ZDk0YzNiMjFjOGY0ZDNkIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyNzU3YTI1YzNhYTNiOTYzNmY4ODM5Y2E3ZDMzZDU2OGQyZGE1NmZkY2E0MGE3NzlmZDJlZDRjOTEwZTc1NzAwIn0"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-28T16:33:19.776Z"
+    "at": "2026-09-29T14:41:34.067Z"
   }
 }

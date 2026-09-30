@@ -3,6 +3,9 @@ type: workflow
 title: Inbound Invocation to Durable Run
 description: How GitHub, Slack, Linear, dashboard, desktop, and scheduled automation inputs are admitted, attributed, routed to a thread, dispatched as durable LangGraph runs, and handled at completion.
 tags: [invocation, webhooks, dashboard, slack, linear, github, durable-runs, automation]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -38,15 +41,12 @@ sources:
     resource: repo://agent/threads/proxy.py
   - id: openwiki-source-e081118d2ce6ecdbd524a5ee
     resource: repo://agent/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
 # Inbound Invocation to Durable Run
 
-Open SWE accepts work from signed integration callbacks (GitHub, Slack, Linear, Notion), an authenticated dashboard (including its desktop client), and scheduler ticks. These sources deliberately converge at the same LangGraph thread/run boundary, but retain source context and structured sender identities so the graph can act with the right repository, user credential, response surface, and history. See [Auth and security](../concepts/auth-and-security.md) for access policy, [Threads and state](../concepts/threads-and-state.md) for persistence, and [Follow-up messages](follow-up-messages.md) for mid-run behavior.
+Open SWE accepts work from signed integration callbacks (GitHub, Slack, Linear), an authenticated dashboard (including its desktop client), and scheduler ticks. These sources deliberately converge at the same LangGraph thread/run boundary, but retain source context and structured sender identities so the graph can act with the right repository, user credential, response surface, and history. See [Auth and security](../concepts/auth-and-security.md) for access policy, [Threads and state](../concepts/threads-and-state.md) for persistence, and [Follow-up messages](follow-up-messages.md) for mid-run behavior.
 
 ## Common lifecycle
 
@@ -90,7 +90,9 @@ Slack first obtains channel context. Operations are permitted only in DMs or cha
 
 The route resolves the Slack location before it schedules work. `resolve_slack_thread_id` prefers an explicit stored location mapping, then matching thread metadata, then the deterministic Slack-derived id. Conflicting metadata matches raise `SlackThreadMappingError`; the route tells the user it will not guess. A Slack worker fetches profile, thread history, channel context, mappings, and optional images, then records `SourceContext.slack_thread`, repository, user, title, environment, and plan mode in thread metadata/configurable state. A first message can select an environment with `env:<name>`; later turns retain the stored environment because the sandbox has already been chosen.
 
-Slack runs require a valid GitHub credential for the mapped triggering user unless the deployment is in bot-token-only mode, because coding work opens pull requests as that user. An unlinked or revoked credential produces an account-link/re-login prompt instead of dispatching. The worker serializes channel, people/bots, historical messages, operational context, and the current request into typed input. Explicit requests (mentions) interrupt an active run with `multitask_strategy='interrupt'`; ordinary Slack follow-ups use `enqueue`. Message edits are queued rather than independently dispatched, so an edit corrects the existing conversation.
+Slack runs require a valid GitHub credential for the mapped triggering user unless the deployment is in bot-token-only mode, because coding work opens pull requests as that user. An unlinked or revoked credential produces an account-link/re-login prompt instead of dispatching. The worker serializes channel, people/bots, historical messages, operational context, and the current request into typed input.
+
+Slack explicitly mentions and code-channel interactions use `multitask_strategy='interrupt'`, which halts an active run and resumes the agent with full history plus the new message. Ordinary follow-ups use `enqueue`, which preserves a queued-message order rather than interrupting. Message edits are queued rather than independently dispatched, so an edit corrects the existing conversation.
 
 ### Linear
 
@@ -126,7 +128,19 @@ Inputs are not arbitrary prompt strings at the graph boundary. `human_input` and
 
 Every created run is marked for Protocol v2 streaming via the `__event_streaming_v2` configuration key, includes the v2 stream modes (`values`, `updates`, `messages`, `custom`, `tasks`, `checkpoints`) and subgraphs, and receives an `invocation_id` (with legacy `prepare_run_id` alias) in both configurable state and metadata. This preserves tools/lifecycle and nested-agent visibility for runs that the dashboard did not start, and lets a later client replay the stream.
 
-When both `RUN_COMPLETE_WEBHOOK_SECRET` and an absolute non-loopback `COMPLETION_WEBHOOK_URL` are configured, dispatch attaches `/webhooks/run-complete?token=…`; otherwise it deliberately omits the webhook so an invalid local URL cannot make all run creation fail. The receiving route is fail-closed on that token. On `success`, completion can schedule a deduplicated Slack session-cost refresh. On `error` or `timeout`, it loads thread metadata, settles an unfinished reviewer check where relevant, restores a code-channel session only if no later run is live, and best-effort posts a source-appropriate failure reply to Slack, Linear, GitHub, or Notion. Failure replies are idempotent per run id (with a legacy thread-level fallback when an old payload has no run id); `interrupted` is intentionally not treated as a user-visible failure because it is the normal replacement behavior for an interrupting follow-up.
+### Multitask strategies
+
+The `multitask_strategy` parameter controls how a new run interacts with any active run on the same thread:
+
+- **`interrupt`** (default): Stops the active run and creates a new one. The stopped run's progress is preserved by the sync checkpoint, and the new run resumes the agent with full history plus the new message. This is used for explicit user requests (Slack mentions, code-channel explicit commands) where a user expects their input to take priority.
+
+- **`enqueue`**: Queues the new run for sequential processing after the active run completes. This preserves message ordering and is used for follow-ups (untagged Slack replies, follow-up dashboard messages) where causality matters more than responsiveness.
+
+### Completion webhook and failure handling
+
+When both `RUN_COMPLETE_WEBHOOK_SECRET` and an absolute non-loopback `COMPLETION_WEBHOOK_URL` are configured, dispatch attaches `/webhooks/run-complete?token=…`; otherwise it deliberately omits the webhook so an invalid local URL cannot make all run creation fail. The receiving route is fail-closed on that token.
+
+On `success`, completion schedules a deduplicated Slack session-cost refresh. On `error` or `timeout`, it loads thread metadata, settles an unfinished reviewer check where relevant, restores a code-channel session only if no later run is live, and best-effort posts a source-appropriate failure reply to Slack, Linear, GitHub, or Notion. Failure replies are idempotent per run id (with a legacy thread-level fallback when an old payload has no run id); `interrupted` is intentionally not treated as a user-visible failure because it is the normal replacement behavior for an interrupting follow-up.
 
 ## Safe changes and focused verification
 

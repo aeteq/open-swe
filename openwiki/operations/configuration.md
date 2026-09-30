@@ -10,6 +10,8 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-b05c9910677cf23a9325276c
     resource: repo://agent/config.py
+  - id: openwiki-source-5460c3972fe61bb256d07994
+    resource: repo://agent/dashboard/oauth.py
   - id: openwiki-source-0a6d03ee63c0e527ce21bf77
     resource: repo://agent/dashboard/workspace_settings.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
@@ -32,10 +34,10 @@ sources:
     resource: repo://agent/workspaces/store.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Configuration and Startup Validation
@@ -59,17 +61,20 @@ The canonical name takes precedence over aliases. Deprecated aliases are central
 
 ## Startup lifecycle and failures
 
-The FastAPI composition entrypoint is `agent.api.app:create_app`. It pins the process to a single event loop before queue work is constructed and again in lifespan startup. The lifespan then validates the active sandbox configuration and local-development model credentials. It yields only if both succeed; on shutdown it closes the database connection and stops background workers.
+The FastAPI composition entrypoint is `agent.api.app:create_app`. It pins the process to a single event loop before queue work is constructed and again in lifespan startup. The lifespan validates the configured sandbox provider, local-development model credentials, and GitHub login authorization; then yields only if all succeed. On shutdown it closes the database connection and stops background workers.
 
 ```mermaid
 flowchart TD
     Init["Import application"] --> Pin["Pin one event loop"]
     Pin --> Build["Create FastAPI application"]
     Build --> Start["Lifespan startup"]
-    Start --> CheckSandbox["Validate active sandbox configuration"]
+    Start --> CheckAuth["Validate GitHub login allowlist"]
+    CheckAuth --> CheckSandbox["Validate active sandbox configuration"]
     CheckSandbox --> CheckModel["Validate localhost model credential"]
-    CheckModel --> Serve["Serve routes and runs"]
-    CheckSandbox --> Stop["Raise and abort startup"]
+    CheckModel --> Migrate["Run non-blocking migrations"]
+    Migrate --> Serve["Serve routes and runs"]
+    CheckAuth --> Stop["Raise and abort startup"]
+    CheckSandbox --> Stop
     CheckModel --> Stop
     Serve --> Close["Close database and stop workers"]
 ```
@@ -77,6 +82,8 @@ flowchart TD
 The diagram shows the boot-time checks performed by the FastAPI lifespan and cleanup on shutdown.
 
 Not every bad setting is checked at boot. The sandbox validator is provider-specific: it currently validates LangSmith resource fields and extra JSON only when `SANDBOX_TYPE=langsmith`; an unknown provider name is rejected when the registry is asked to create a sandbox. Likewise, model startup validation deliberately applies only when an explicitly configured `DASHBOARD_BASE_URL` starts with `http://localhost`; it checks the credential needed by the deployment's `LLM_MODEL_ID` (or default) and does not attempt to validate models that may later be chosen through team, profile, or thread settings.
+
+GitHub login allowlist validation requires that when no local-auth token is configured, either `ALLOWED_GITHUB_ORGS` or `ALLOWED_GITHUB_USERS` is set; startup fails closed if neither is present and the deployment is not in local-auth-only mode.
 
 `DASHBOARD_ALLOWED_ORIGINS` is separately checked while the application is built: if it contains `*`, construction raises because credentialed CORS cannot safely use a wildcard. Nonempty explicit origins enable credentialed CORS for the dashboard API.
 

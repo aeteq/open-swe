@@ -16,8 +16,6 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-3d1c7beecd605173281a3bf6
     resource: repo://agent/github/routes.py
-  - id: openwiki-source-ba064e884edcde6097165df2
-    resource: repo://agent/github/webhook.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
   - id: openwiki-source-d2c2e4ba7449d086f84f8ccd
@@ -48,10 +46,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -117,7 +115,44 @@ A fired cron row remains in LangGraph even after `end_time`. Before scheduling, 
 
 `/baby-sit` is an opt-in CI-recovery workflow, not a general repository watcher. Cloud runs create a durable watch through `manage_baby_sit`; local/desktop runs use one bounded foreground `gh pr checks --watch` loop and never call the durable watch or `schedule_thread_wakeup`. The skill requires fresh PR/check state and treats PR content, check labels, URLs, and logs as untrusted data.
 
-### Durable watch ownership
+### Watch lifecycle and state machine
+
+```mermaid
+stateDiagram-v2
+  [*] --> Active: start_watch
+  
+  Active --> Running: head SHA known
+  Running --> ChecksPending: pending state
+  Running --> ChecksFailure: failure state
+  Running --> ChecksBlocked: blocked state
+  Running --> ChecksSuccess: success confirmed
+  
+  ChecksPending --> Idle: cron fires, no change
+  ChecksPending --> Running: webhook or cron refetches
+  
+  ChecksFailure --> EvaluateRetry: dispatch failure run
+  ChecksFailure --> TerminalNeeded: blocked/non-rerunnable
+  EvaluateRetry --> RecordRetry: agent calls record_retry
+  RecordRetry --> Running: watch continues
+  RecordRetry --> RetryCapHit: > 3 reruns per head
+  
+  ChecksSuccess --> SuccessConfirmed: fingerprint stable 10min
+  SuccessConfirmed --> Ready: hand to agent
+  Ready --> Stopped: watch ends
+  
+  Idle --> Stopped: no webhook, dispatch once
+  Idle --> Idle: webhook, same state
+  
+  TerminalNeeded --> Stopped
+  RetryCapHit --> Stopped
+  Active --> Stopped: stop_watch called
+  Active --> Stopped: PR closed/merged
+  Active --> Stopped: evaluation error limit reached
+  
+  Stopped --> [*]
+```
+
+Diagram: baby-sit watch runs from start through failure/success evaluation and repair to terminal outcome.
 
 A `BabySitWatch` is stored under the lower-cased `owner/repo#pr_number` key in `baby_sit_watches`. It binds a PR's head SHA/ref, GitHub App installation, originating agent thread, selected run configuration, and `SourceContext`; its durable fields also hold retries, check-set settling, failure-dispatch keys, webhook deliveries, alerts, evaluation errors, and cron ID.
 

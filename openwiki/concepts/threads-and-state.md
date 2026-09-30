@@ -12,6 +12,8 @@ sources:
     resource: repo://agent/dispatch.py
   - id: openwiki-source-cb4e403499865fd6b797127c
     resource: repo://agent/input_messages.py
+  - id: openwiki-source-3d2b76242daeddb328ca8564
+    resource: repo://agent/invocation.py
   - id: openwiki-source-f2ef7b73c8002cd7b756ad30
     resource: repo://agent/review/findings.py
   - id: openwiki-source-24b1722c4aacbce0b06350ae
@@ -32,6 +34,8 @@ sources:
     resource: repo://agent/store.py
   - id: openwiki-source-2df3763659a7f9d1944f28e7
     resource: repo://agent/thread_ids.py
+  - id: openwiki-source-e5994648cf6eef7bfa70e240
+    resource: repo://agent/threads/creation.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
   - id: openwiki-source-7c60191e42b8e30b62935af1
@@ -40,10 +44,10 @@ sources:
     resource: repo://agent/utils/thread_settings.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Threads, Durable Runs, and State
@@ -51,6 +55,10 @@ verified:
 A LangGraph thread is Open SWE's unit of continuity. A stable `thread_id` selects a conversation's checkpointed graph state and message history; thread metadata holds durable, queryable facts about that conversation; and the LangGraph Store holds separately namespaced application records. A run is an execution on that thread, not a replacement for it.
 
 The boundary matters when changing an integration: a webhook, dashboard action, reviewer, or background task must route a follow-up to the right existing thread and supply a new input. It must not manufacture a random identity, overwrite another surface's source context, or replace a sandbox merely because a reconnect failed.
+
+## Thread creation enforces a title
+
+Threads are created through `agent.threads.creation.create_thread`, which is the only place LangGraph threads are created. Every thread people can open must have a title; the module enforces this invariant by requiring a non-empty, stripped title string. Titles are stored in thread metadata and remain unchanging from the opening activity unless explicitly updated. System-named threads use `ensure_titled_thread` to create or keep titles current.
 
 ## Identity is a persistence contract
 
@@ -108,11 +116,11 @@ Each run supplies new messages; the graph retains its thread state. `build_run_i
 
 Dynamic context blocks are content-hashed. `build_input_messages` excludes introductions already recorded in the injected-hash set. When summarization has moved early messages behind its cutoff, `visible_dynamic_context_hashes` treats those hidden blocks as no longer visible, allowing necessary identity context to be introduced again. This prevents deduplication state from making a summarized conversation lose information the model can no longer see.
 
-`configurable` is the per-run transport contract, not durable thread state. `RunConfig` accepts unknown keys and dumps only fields that were supplied, so independent writers can enrich it without erasing one another's keys. Parsing is deliberately tolerant: invalid fields are dropped iteratively while valid fields, including a thread ID, survive. Its values are optional because each graph and trigger needs a different subset.
+`configurable` is the per-run transport contract, not durable thread state. `RunConfig` accepts unknown keys and dumps only fields that were supplied, so independent writers can enrich it without erasing one another's keys. Parsing is deliberately tolerant: invalid fields are dropped iteratively while valid fields, including a thread ID, survive. Its values are optional because each graph and trigger needs a different subset. The dictionary typically carries `thread_id`, `repo` (owner and name), `workspace`, `source` (webhook trigger name), `github_login`, `slack_thread` (for Slack-specific context), and per-run model/effort overrides that shadow thread-level settings.
 
 ## Durable dispatch and checkpoints
 
-All product triggers use `dispatch_agent_run`, which delegates to `create_durable_run`; it can select the `agent` or `reviewer` graph and accepts either a prebuilt input or source identities, never both. The dispatch helper adds a unique `prepare_run_id` into both `configurable` and run metadata, merges supplied metadata, and enables the event-streaming marker.
+All product triggers use `dispatch_agent_run`, which delegates to `create_durable_run`; it can select the `agent` or `reviewer` graph and accepts either a prebuilt input or source identities, never both. The dispatch helper adds a unique `invocation_id` into both `configurable` and run metadata, merges supplied metadata, and enables the event-streaming marker.
 
 ```mermaid
 sequenceDiagram
@@ -134,6 +142,10 @@ A trigger creates a run on the selected durable thread using a normalized input 
 The standard defaults are `multitask_strategy="interrupt"`, `durability="sync"`, `if_not_exists="create"`, resumable streaming, the Protocol v3 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its sync checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.
 
 A completion webhook is attached only if `RUN_COMPLETE_WEBHOOK_SECRET` is set and `COMPLETION_WEBHOOK_URL` is an absolute non-loopback HTTP(S) URL. Otherwise dispatch logs a warning and creates the run without the webhook, rather than allowing a platform-rejected URL to fail every run. The checkpointer has deletion TTL configured as 43,200 minutes with a 60-minute sweep interval: checkpointed state of inactive threads eventually expires.
+
+### Invocation identity for deduplication and retry safety
+
+Each run carries an `invocation_id` (aliased as `prepare_run_id` for backwards compatibility) in both metadata and configurable. This UUID is a deduplication key for follow-up messages and user retries: the same invocation_id on a follow-up to an existing thread means "reuse the same run result," while a new invocation_id always creates a fresh run. The ID is assigned once during dispatch and checked across metadata, configurable, and historical values to reject conflicts. A trigger should generate one invocation_id per user action, then reuse it on retries; this prevents duplicate work and user-facing duplicates when a webhook redelivers or a retry button is clicked.
 
 ## Sandbox association and recovery boundary
 

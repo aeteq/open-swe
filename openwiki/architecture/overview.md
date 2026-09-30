@@ -3,6 +3,9 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -50,10 +53,7 @@ sources:
     resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-767ef8a0f66938a5c0710041
     resource: repo://ui/src/routeTree.gen.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
 # Runtime and Product Architecture
@@ -112,15 +112,15 @@ The scheduler is a compiled, single-node `StateGraph`. Its `task` selects stale-
 
 ## HTTP composition and ingress
 
-`agent/webapp.py` is a compatibility re-export of the application assembled by `agent/api/app.py:create_app`. At import time the API pins one event loop before queue workers are built. The app factory configures credentialed CORS from `DASHBOARD_ALLOWED_ORIGINS` and rejects `*`, then mounts dashboard, plan, workflow-approval, Linear, Slack, GitHub, and health routers plus the bundled dashboard UI. Its lifespan repeats event-loop pinning, validates sandbox and local-development LLM configuration at startup, and closes cached models on shutdown.
+`agent/webapp.py` is a compatibility re-export of the application assembled by `agent/api/app.py:create_app`. At import time the API pins one event loop before queue workers are built. The app factory configures credentialed CORS from `DASHBOARD_ALLOWED_ORIGINS` and rejects `*`, then mounts dashboard, plan, workflow-approval, Linear, Notion, Slack, GitHub, and health routers plus the bundled dashboard UI. Its lifespan hook repeats event-loop pinning, validates sandbox and local-development LLM configuration at startup, and closes cached models on shutdown.
 
-The dashboard router is rooted at `/dashboard/api` and applies a same-origin dependency to mutations. It is the browser-facing boundary for OAuth, profiles, team defaults, administration, repository and review-style configuration, and thread APIs. Importing `agent.dashboard` does not eagerly load this large surface: a PEP 562 `__getattr__` imports and caches `routes.router` only when the web application mounts it.
+The dashboard router is rooted at `/dashboard/api` and applies a same-origin dependency to mutations. It is the browser-facing boundary for OAuth, profiles, team defaults, administration, repository and review-style configuration, and thread APIs. Importing `agent.dashboard` does not eagerly load this large surface: a PEP 562 `__getattr__` imports and caches `routes.router` only when the web application mounts it. This prevents middleware and non-webapp modules from pulling in FastAPI and all downstream API/job dependencies.
 
 Slack, Linear, and GitHub webhook routes validate and normalize external events before scheduling their service work. They derive or resolve stable thread identities—for example, Linear uses the issue ID and reviewer runs use repository and PR coordinates—so later activity can recover the corresponding thread state rather than starting an unrelated session. GitHub rejects invalid webhook signatures; Slack rejects conflicting mapping rather than guessing an agent thread.
 
 ## Durable dispatch and state ownership
 
-`dispatch_agent_run` is the common run-creation contract used by Slack, Linear, GitHub, dashboard, and scheduled agent/reviewer triggers. `assistant_id` selects `agent` or `reviewer`; `source` determines input identity and is retained for metadata/logging, not graph selection. The dispatcher also rejects ambiguous combinations of a prebuilt input with content or identity arguments.
+`dispatch_agent_run` is the common run-creation contract used by Slack, Linear, GitHub, dashboard, and scheduled agent/reviewer triggers. `assistant_id` selects `agent` or `reviewer`; `source` determines input identity and is retained for metadata/logging, not graph selection. The dispatcher rejects ambiguous combinations of a prebuilt input with content or identity arguments, ensuring callers choose either a fully constructed `RunInput` or build one from content, context, and identities.
 
 The durable defaults are intentional: `multitask_strategy="interrupt"` interrupts an active run so the follow-up resumes with prior history; `durability="sync"` checkpoints before steps; streams are resumable and include subgraphs; and a private event-streaming v3 configurable marker and compatible stream modes make externally initiated runs observable in the dashboard. Background follow-ups may explicitly choose another multitask strategy such as `enqueue`.
 
@@ -132,7 +132,7 @@ A graph factory is ephemeral, but thread execution context is durable: LangGraph
 
 The cloud manifest currently pins Python 3.14 and LangGraph API version 0.15.0rc1 (a release candidate). Its checkpointer TTL uses `delete`, sweeps every 60 minutes, and defaults to 43,200 minutes. The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
 
-`langgraph.desktop.json` intentionally registers only the main agent graph, uses `agent.local_auth:auth` with Studio authentication disabled, and disables the bundled UI. A desktop run is identified by `configurable.source == "desktop"`. Its requested `local_project_path` must resolve to an existing directory that is either in `OPEN_SWE_LOCAL_PROJECTS_FILE` or beneath `OPEN_SWE_LOCAL_WORKTREES_DIR`; otherwise it is rejected. The local backend inherits only a small shell environment allowlist. Desktop scratch routes put large tool results and conversation history outside the project so they are not swept into `git add -A`.
+`langgraph.desktop.json` intentionally registers only the main agent graph, uses `agent.local_auth:auth` with Studio authentication disabled, and disables the bundled UI. A desktop run is identified by `configurable.source == "desktop"`. Its requested `local_project_path` must resolve to an existing directory that is either in `OPEN_SWE_LOCAL_PROJECTS_FILE` or beneath `OPEN_SWE_LOCAL_WORKTREES_DIR`; otherwise it is rejected. The local backend inherits only a small shell environment allowlist (`HOME`, `LANG`, `LC_ALL`, `PATH`, `SHELL`, `TMPDIR`). Desktop scratch routes put large tool results and conversation history outside the project so they are not swept into `git add -A`.
 
 The `ui/` application is a TanStack Router React client with routes for agent sessions and threads, local sessions, plans, automations, skills, reviews and styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes and selects `cloud` or `local` streaming transport from the active route. Router `basepath` follows Vite's build base, allowing the bundle to run below a configured mount prefix.
 

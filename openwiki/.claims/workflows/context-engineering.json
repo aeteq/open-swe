@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:aaec1b75b7732c96b8e08e3136d6eaeeabec890238d79eb4b5a18e7955445a98",
+  "pageVersion": "sha256:00b6855e30ebd9150ccdadcecd93aa8e0667e87cb48f0621c7e9962dc031ef23",
   "claims": [
     {
       "id": "claim_a92a213a430c4e9e8cac73490f5ecdb8",
@@ -18,7 +18,7 @@
     },
     {
       "id": "claim_ad1fae40600e42daabbb6af2eba6988e",
-      "statement": "Input serialization uses escaped input-message envelopes and dynamic-context XML blocks, marks Slack channel topic and purpose untrusted, and reintroduces contexts hidden by summarization.",
+      "statement": "Input serialization uses escaped input-message envelopes and dynamic-context XML blocks, treats Slack channel topic and purpose as contextual metadata rather than trusted instructions, and reintroduces contexts hidden by summarization.",
       "evidence": [
         {
           "resource": "repo://agent/input_messages.py#L245-L260",
@@ -127,14 +127,14 @@
           "version": "repo-lines-v1:sha256:0aceef93b9fbde3b1964cb0d70513ed7eecdbbbdbb027aab583a47b2cfe1e4fd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmMGU3NjliN2Q5ODVjMTZkZjcyN2U3OWFlY2Y0ODY1NTBhMWQxMzMxNTE0MTRjNzE3NTg5ZGVjZmUxMGE1MzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI0OTdhNzg3Nzc3YjRhODE5NzM2MDI5MzRhYWVmMTRhNDQxZDdlMDZiNzc1MjgwMDg1ZWE0MWVmOGU5YTRiOGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://agent/server.py#L901-L1041",
-          "version": "repo-lines-v1:sha256:58b54461a9e73b4b8ed46036636e90c4a4174ff163a4910178736e103bb706ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MWFiY2QwY2M2OTEzZDRmNTFlYjIxZTRmNWFmYzJlOTBmODZkMzZhNDUwYmI0MmNiMDVjNmYzZTBkNzA2ZjhjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJkN2JmMDcxYzQyMWU2MDQ0OWFjZmQ1YzBhNDI3MWYxNzhmYTNmNmFiNGZjZjkzNDJmMjhmYTA3ZTUxNzJhNmRhIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1MDRjZGIyNTM3MzNhNGViNjFlZWQzOWMzN2UxMWJmYTc5NGZiZWE2ZTJiZmRmZjJjNWE1ZGIyZDU4ZDU1ZDZlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlN2UzYjMyMTRlYTkwMDk3OTlhNjdmZDFmNGEyMDdlOTE4MDRjMmFjZjM4ZTU5MGQxNmVjZjIyZWUxZWM0ODg4In0"
+          "resource": "repo://agent/server.py#L901-L1092",
+          "version": "repo-lines-v1:sha256:969c7c142336ea10d9406a57c5b79e7b71a5750dd900389308055d001702df27:eyJzZWxlY3RlZExpbmVDb3VudCI6MTkyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxMzllYjE1MTVlODIxNTRmOTI3ZDA5ZDczZDY5M2M1MjIzOTJjMzkxZWMwMDJlYWRiN2ZmNGRkZjYzNWNmMmQyIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJjYjIwYjA2M2MzZDA0NTBlNGZjZTkxOGE2MWVlNjYwZjJmNTEyMzE1MmIwZjRiOGJmNmU3MzgyYTY1NjlhZDA4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyNmNkYzgzZjAzY2ZjN2E1Y2E5M2I1ZTNjYWQ4OTlhNTE5MDU3NmUxY2NmYWQ2ZTExMzljOTQxOGNmYmNjMjMxIn0"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-28T16:33:19.776Z"
+    "at": "2026-09-29T14:41:34.067Z"
   }
 }

@@ -44,15 +44,15 @@ sources:
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
   - id: openwiki-source-b074bf11145a0ff6206cec7b
     resource: repo://tests/sandbox/test_sandbox_retry.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Middleware and Failure Boundaries
 
-`get_agent` and `get_reviewer_agent` pass ordered middleware lists to `create_deep_agent`. The list is an onion: earlier entries wrap later entries, so an outer layer can alter a request or handle an exception from every inner layer. This makes order part of the runtime contract, rather than an implementation detail. See [Agent Graph](agent-graph.md), [Reviewer and Analyzer](reviewer-and-analyzer.md), [Sandbox Lifecycle](sandbox-lifecycle.md), and [PR Creation](../workflows/pr-creation.md) for the graph, review, sandbox, and delivery contexts.
+`get_agent` and `get_reviewer_agent` pass ordered middleware lists to `create_deep_agent`. The list is an onion: earlier entries wrap later entries, so an outer layer can alter a request or handle an exception from every inner layer. This makes order part of the runtime contract, rather than an implementation detail. See [Quickstart](../quickstart.md), [Sandbox Lifecycle](sandbox-lifecycle.md), and [PR Creation](../workflows/pr-creation.md) for the graph, review, sandbox, and delivery contexts.
 
 ## Coding-agent stack
 
@@ -111,7 +111,7 @@ This is the inner model-call path: timeout errors are recorded before the outer 
 
 `DynamicToolMiddleware` exposes configured integration groups lazily; `ExcludeToolsMiddleware` filters disallowed tool names from model requests. `SanitizeToolInputsMiddleware` repairs known malformed integer arguments such as `read_file` `offset` and `limit`. `SubdirAgentsReadMiddleware` contributes applicable ancestor `AGENTS.md` instructions once per thread.
 
-The proxy refresh hook runs before each model call. It refreshes a near-expiry sandbox GitHub-proxy installation token. Next, the queue hook reads `("queue", thread_id)` from the LangGraph store, deletes `pending_messages` before constructing messages to avoid duplicate delivery, and injects queued human input in FIFO order. It also consumes a pending autofix event. Image content is omitted with a warning when the resolved model has no vision support.
+The proxy refresh hook runs before each model call. It refreshes a near-expiry sandbox GitHub-proxy installation token that expires after one hour. Next, the queue hook reads `("queue", thread_id)` from the LangGraph store, deletes `pending_messages` before constructing messages to avoid duplicate delivery, and injects queued human input in FIFO order. It also consumes a pending autofix event. Image content is omitted with a warning when the resolved model has no vision support.
 
 ### Limits, policy, and completion
 
@@ -125,7 +125,7 @@ The PR guard blocks `execute` and `background_execute` command forms that create
 
 ## Retry and failure boundaries
 
-`ModelFallbackMiddleware` is installed only when `LLM_FALLBACK_MODEL_ID`, or the primary model's default fallback, resolves to a different model. It makes one more attempt than its backoff schedule entries: by default six attempts with delays `0, 5, 15, 30, 45` seconds plus positive jitter. Attempts alternate primary and fallback models. It retries connection and timeout failures and selected provider statuses (including 408, 409, 425, 429, 5xx, and 529). An Anthropic/OpenAI model-not-available access error is immediately converted to a user-facing `AIMessage`; an exhausted transient budget normally returns an outage `AIMessage`, although `surface_outage_message=False` re-raises the final error.
+`ModelFallbackMiddleware` is installed only when `LLM_FALLBACK_MODEL_ID`, or the primary model's default fallback, resolves to a different model. It makes one more attempt than its backoff schedule entries: by default six attempts with delays `0, 5, 15, 30, 45` seconds plus ±25% jitter. Attempts alternate primary and fallback models. It retries connection and timeout failures and selected provider statuses (including 408, 409, 425, 429, 5xx, and 529). An Anthropic/OpenAI model-not-available access error is immediately converted to a user-facing `AIMessage`; an exhausted transient budget normally returns an outage `AIMessage`, although `surface_outage_message=False` re-raises the final error.
 
 `ModelCallTimeoutMiddleware` reads `OPEN_SWE_MODEL_CALL_TIMEOUT_SECONDS`, validates that it is positive, and otherwise uses 900 seconds. `asyncio.wait_for` makes a websocket or other provider stall observable; it deliberately sits above provider-level request timeouts, which get a chance to retry inside the provider client first.
 
