@@ -3,6 +3,9 @@ type: configuration concept
 title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
 tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-09b129ff728dd4990ea2f25e
     resource: repo://agent/dashboard/agent_instructions.py
@@ -12,37 +15,32 @@ sources:
     resource: repo://agent/dashboard/options.py
   - id: openwiki-source-d9f679c15adbf4b3f612d406
     resource: repo://agent/dashboard/profiles.py
-  - id: openwiki-source-61ace7d4952db9ddb8316aeb
-    resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-23002b87792ed6949edb723b
-    resource: repo://agent/dashboard/team_settings.py
-  - id: openwiki-source-dc33a233b67bb1d08952543c
-    resource: repo://agent/dashboard/thread_api.py
   - id: openwiki-source-9bf84d0c3d7e3b3001405497
     resource: repo://agent/dashboard/user_instructions.py
+  - id: openwiki-source-0a6d03ee63c0e527ce21bf77
+    resource: repo://agent/dashboard/workspace_settings.py
+  - id: openwiki-source-cb4e403499865fd6b797127c
+    resource: repo://agent/input_messages.py
   - id: openwiki-source-10938886c8b24d0cdc72ad9e
     resource: repo://agent/prompt.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
+  - id: openwiki-source-e081118d2ce6ecdbd524a5ee
+    resource: repo://agent/threads/runs.py
+  - id: openwiki-source-5cd6c19c6bd276f57c96412c
+    resource: repo://agent/utils/authorship.py
   - id: openwiki-source-f0db445078d7a8158aa93724
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
     resource: repo://agent/utils/model.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-  - id: openwiki-source-654bec991273a9eb3ccdf2c1
-    resource: repo://tests/dashboard/test_dashboard_thread_api.py
-  - id: openwiki-source-72fb34b832807b302aeea76e
-    resource: repo://tests/models/test_model_fallback_resolution.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
 # Models, Profiles, and Instructions
 
-A hosted agent run resolves a valid `(model_id, effort)` pair and a thread-stable repository-instruction value before it builds models. The triggering user's identity, credentials, PR preference, and personal instructions are deliberately re-evaluated for each message. This split lets a multi-party, long-lived thread keep its operational choices while avoiding attribution of one participant's preferences to another. See [Agent graph](../architecture/agent-graph.md), [Authentication and security](auth-and-security.md), [Configuration](../operations/configuration.md), and [Context engineering](../workflows/context-engineering.md).
+A hosted agent run resolves a valid `(model_id, effort)` pair and a thread-stable repository-instruction value before it builds models. The triggering user's identity, credentials, PR preference, and personal instructions are deliberately re-evaluated for each message. This split lets a multi-party, long-lived thread keep its operational choices while avoiding attribution of one participant's preferences to another.
 
 ## Model registry and stale selections
 
@@ -63,28 +61,41 @@ All team default resolvers use a valid saved pair first, then same-provider reco
 
 ## Precedence, roles, and thread lifecycle
 
-Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]`. Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
+Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]`. (Note: the instance record is sometimes called "team settings" for historical reasons—the pre-workspaces architecture had no separate workspace records.) Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
 
 Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, and PR/CI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
-  Team["Team main and subagent pairs"] --> Profile{"No stored thread model"}
-  Profile -- "yes" --> ApplyProfile["Apply valid profile main and optional subagent pair"]
-  Profile -- "no" --> KeepTeam["Keep team pairs"]
-  ApplyProfile --> Stored{"Stored thread model"}
-  KeepTeam --> Stored
-  Stored -- "yes" --> Snapshot["Use stored main and subagent pairs"]
-  Stored -- "no" --> Initial["Use resolved pairs"]
-  Snapshot --> Explicit{"Valid explicit run pair"}
-  Initial --> Explicit
-  Explicit -- "yes" --> Replace["Replace main and subagent pairs"]
-  Explicit -- "no" --> Persist["Persist resolved settings"]
+  Team["Team main and subagent pairs"]
+  Profile{"Stored thread model<br/>exists?"}
+  ApplyProfile["No: check profile"]
+  UseStored["Yes: use stored"]
+  ProfileApply{"Valid profile<br/>main pair?"}
+  UseTeam["No: use team"]
+  UseProfile["Yes: use profile"]
+  Explicit{"Explicit run pair<br/>provided?"}
+  Replace["Yes: replace pairs"]
+  Persist["Persist pairs<br/>to thread"]
+  Gate["Gate Fable,<br/>build models"]
+  
+  Team --> Profile
+  Profile -->|"yes"| UseStored
+  Profile -->|"no"| ApplyProfile
+  ApplyProfile --> ProfileApply
+  ProfileApply -->|"yes"| UseProfile
+  ProfileApply -->|"no"| UseTeam
+  UseStored --> Explicit
+  UseTeam --> Explicit
+  UseProfile --> Explicit
+  Explicit -->|"yes"| Replace
+  Explicit -->|"no"| Persist
   Replace --> Persist
-  Persist --> Gate["Apply Fable gate then build models"]
+  Persist --> Gate
 ```
 
-*Caption: first-run resolution creates the thread snapshot; only a valid explicit run pair intentionally changes its model choice.*
+*Caption: Model selection precedence from team defaults through stored thread snapshot to explicit per-run override.*
 
 `get_agent` seeds hosted runs from the team pairs. It reads a sender profile only if the thread has no stored main model; a valid profile main pair also becomes the subagent pair unless a valid profile subagent pair is supplied. Stored settings then take precedence. Finally, a valid `configurable.agent_model_id` plus `agent_effort` replaces both pairs and is persisted. `agent_settings` lives in thread metadata, is cached for five minutes, accepts only its typed fields, and reads or writes fail soft; malformed legacy metadata becomes an empty snapshot.
 
@@ -106,16 +117,22 @@ Provider request routing is distinct from runtime model fallback. `ModelFallback
 
 Repository custom instructions are workspace-admin-authored records in `["agent_instructions"]`, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
 
-Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and passes it to `construct_sender_context`, which emits a trusted sender-context message. It explicitly applies to that turn only.
+Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
 
 Prompt authority is explicit:
 
 1. A repository `AGENTS.md`, if present, overrides prompt defaults with the same authority as the system prompt.
 2. Repository-specific custom instructions are mandatory but yield to `AGENTS.md`.
-3. Environment instructions yield to repository instructions and `AGENTS.md`.
+3. Workspace-level instructions yield to repository instructions and `AGENTS.md`.
 4. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.
+
+## Model pair concept and adaptive routing
+
+Each role (agent, reviewer, chat) has a main model and optional subagent model. The subagent model is used for research, code search, and context-gathering subtasks, while the main model handles the user-facing response. A profile can override both pairs independently; when a profile provides only a main model, it becomes the subagent model unless an explicit subagent override exists.
+
+When `model_routing_enabled` is true at the workspace or user level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests.
 
 ## Change and test guide
 

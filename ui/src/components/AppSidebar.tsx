@@ -50,7 +50,7 @@ const NAV: Array<{ heading: string; items: Array<NavItem> }> = [
     items: [
       {
         to: "/review",
-        label: "Open SWE Review",
+        label: "Jarvis Review",
         icon: IoGitPullRequestOutline,
       },
       { to: "/workspaces", label: "Workspaces", icon: IoCubeOutline },

@@ -3,6 +3,7 @@ from importlib import resources
 from pathlib import Path
 
 from agent.config import ENV
+from agent.notion.settings import notion_settings
 from agent.prompts import prompt
 from agent.utils.authorship import (
     OPEN_SWE_BOT_EMAIL,
@@ -45,12 +46,16 @@ def _render_source_guidance(
         name = "background-task"
     elif source == "slack" and slack_context:
         name = "slack-ask" if slack_ask else "slack"
-    elif source in {"linear", "github", "schedule", "dashboard"}:
+    elif source in {"linear", "notion", "github", "schedule", "dashboard"}:
         name = source
     else:
         name = "generic"
     if name in {"slack", "schedule"}:
         guidance = prompt(f"system/source-{name}", breakout=slack_breakout, slack=slack_context)
+    elif name == "notion":
+        guidance = prompt(
+            "system/source-notion", designs=bool(notion_settings().documents_data_source_id)
+        )
     else:
         guidance = prompt(f"system/source-{name}")
     return f"<open_swe_source_context>\n{guidance}\n</open_swe_source_context>"

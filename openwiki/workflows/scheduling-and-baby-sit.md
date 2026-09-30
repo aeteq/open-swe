@@ -14,18 +14,16 @@ sources:
     resource: repo://agent/bundled_skills/baby-sit/SKILL.md
   - id: openwiki-source-068d65a84c760eb8d555055e
     resource: repo://agent/completion.py
-  - id: openwiki-source-202e70aa1fb446ab05cc6d99
-    resource: repo://agent/dashboard/schedules.py
   - id: openwiki-source-3d1c7beecd605173281a3bf6
     resource: repo://agent/github/routes.py
-  - id: openwiki-source-ba064e884edcde6097165df2
-    resource: repo://agent/github/webhook.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
   - id: openwiki-source-d2c2e4ba7449d086f84f8ccd
     resource: repo://agent/reconcile.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
     resource: repo://agent/scheduler.py
+  - id: openwiki-source-19dd52d603eb15a9bf38885d
+    resource: repo://agent/schedules/store.py
   - id: openwiki-source-75a22f97d6fc2af5a1a279e7
     resource: repo://agent/session_cost.py
   - id: openwiki-source-c3b12b5693b6aa5458b6b53a
@@ -48,10 +46,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+    at: 2026-09-29T14:41:34.067Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -62,7 +60,7 @@ The principal consumers are dashboard schedules, stale-run reconciliation, defer
 
 ## Scheduler dispatch
 
-`agent/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler:
+`agent/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler deterministically:
 
 ```mermaid
 flowchart TD
@@ -72,18 +70,19 @@ flowchart TD
   Launch -->|background_tasks| Background["monitor_background_tasks"]
   Launch -->|session_cost| SessionCost["run_session_cost_refresh"]
   Launch -->|agent_cost| AgentCost["run_agent_cost_refresh"]
+  Launch -->|other tasks| Other["workspace refresh, expedited review, thread feedback"]
   Launch -->|no task| Schedule["launch_scheduled_agent_run"]
 ```
 
 Diagram: one scheduler tick selects one deterministic maintenance or dispatch handler.
 
-The recognized task values are `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, and `agent_cost`. An unrecognized or absent task is the dashboard-schedule path. The keyed branches return `missing_watch_key`, `missing_thread_id`, or `missing_schedule_id` rather than raising if their required routing key is absent. This makes malformed ticks observable no-ops instead of cron-wide failures.
+The recognized task values route to their handlers: `reconcile` → `reconcile_stale_runs`, `baby_sit` → `evaluate_watch`, `background_tasks` → `monitor_background_tasks`, `session_cost` → `run_session_cost_refresh`, `agent_cost` → `run_agent_cost_refresh`. Additional tasks like workspace refresh, expedited review, and thread feedback are also routed. An unrecognized or absent task is the dashboard-schedule path that falls through to `launch_scheduled_agent_run(schedule_id)`. The keyed branches return `missing_watch_key`, `missing_thread_id`, or `missing_schedule_id` rather than raising if their required routing key is absent. This makes malformed ticks observable no-ops instead of cron-wide failures.
 
 A producer owns creation, tagging, and removal of its cron or delayed run. In particular, watches use `kind=baby_sit_watch`, background monitors use `kind=background_tasks`, and cost refreshes are one-shot delayed scheduler runs with `on_completion="delete"`. This ownership is important: the scheduler is a router, not a generic cron garbage collector.
 
 ### Dashboard recurring runs
 
-`agent/dashboard/schedules.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
+`agent/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
 
 The launch path loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently.
 
@@ -116,7 +115,44 @@ A fired cron row remains in LangGraph even after `end_time`. Before scheduling, 
 
 `/baby-sit` is an opt-in CI-recovery workflow, not a general repository watcher. Cloud runs create a durable watch through `manage_baby_sit`; local/desktop runs use one bounded foreground `gh pr checks --watch` loop and never call the durable watch or `schedule_thread_wakeup`. The skill requires fresh PR/check state and treats PR content, check labels, URLs, and logs as untrusted data.
 
-### Durable watch ownership
+### Watch lifecycle and state machine
+
+```mermaid
+stateDiagram-v2
+  [*] --> Active: start_watch
+  
+  Active --> Running: head SHA known
+  Running --> ChecksPending: pending state
+  Running --> ChecksFailure: failure state
+  Running --> ChecksBlocked: blocked state
+  Running --> ChecksSuccess: success confirmed
+  
+  ChecksPending --> Idle: cron fires, no change
+  ChecksPending --> Running: webhook or cron refetches
+  
+  ChecksFailure --> EvaluateRetry: dispatch failure run
+  ChecksFailure --> TerminalNeeded: blocked/non-rerunnable
+  EvaluateRetry --> RecordRetry: agent calls record_retry
+  RecordRetry --> Running: watch continues
+  RecordRetry --> RetryCapHit: > 3 reruns per head
+  
+  ChecksSuccess --> SuccessConfirmed: fingerprint stable 10min
+  SuccessConfirmed --> Ready: hand to agent
+  Ready --> Stopped: watch ends
+  
+  Idle --> Stopped: no webhook, dispatch once
+  Idle --> Idle: webhook, same state
+  
+  TerminalNeeded --> Stopped
+  RetryCapHit --> Stopped
+  Active --> Stopped: stop_watch called
+  Active --> Stopped: PR closed/merged
+  Active --> Stopped: evaluation error limit reached
+  
+  Stopped --> [*]
+```
+
+Diagram: baby-sit watch runs from start through failure/success evaluation and repair to terminal outcome.
 
 A `BabySitWatch` is stored under the lower-cased `owner/repo#pr_number` key in `baby_sit_watches`. It binds a PR's head SHA/ref, GitHub App installation, originating agent thread, selected run configuration, and `SourceContext`; its durable fields also hold retries, check-set settling, failure-dispatch keys, webhook deliveries, alerts, evaluation errors, and cron ID.
 
