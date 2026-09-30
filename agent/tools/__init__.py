@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Any
 
 _TOOL_MODULES = {
     "add_finding": ".add_finding",
+    "assign_human_reviewer": ".request_human_review",
+    "auto_assign_human_reviewer": ".request_human_review",
     "background_execute": ".background_execute",
     "background_task": ".background_task",
     "comment_on_notion_task": ".comment_on_notion_task",
@@ -12,6 +14,7 @@ _TOOL_MODULES = {
     "create_sandbox_file_download_url": ".create_sandbox_file_download_url",
     "delete_automation": ".automations",
     "delete_workspace": ".workspaces",
+    "dismiss_human_review_request": ".request_human_review",
     "expedite_pr_approval": ".expedite_pr_approval",
     "expose_port": ".expose_port",
     "fetch_review_diff": ".fetch_review_diff",
@@ -42,6 +45,7 @@ _TOOL_MODULES = {
     "refresh_workspace_start": ".workspaces",
     "configure_repository": ".workspaces",
     "report_platform_issue": ".report_platform_issue",
+    "request_human_review": ".request_human_review",
     "request_pr_review": "agent.slack.tools.request_pr_review",
     "reply_to_finding_thread": ".reply_to_finding_thread",
     "resolve_finding_thread": ".resolve_finding_thread",
@@ -70,11 +74,14 @@ _TOOL_MODULES = {
     "trigger_automation": ".automations",
     "update_automation": ".automations",
     "update_finding": ".update_finding",
+    "upload_pr_attachment": ".open_pull_request",
     "web_search": ".web_search",
 }
 
 __all__ = [
     "add_finding",
+    "assign_human_reviewer",
+    "auto_assign_human_reviewer",
     "background_execute",
     "background_task",
     "comment_on_notion_task",
@@ -83,6 +90,7 @@ __all__ = [
     "create_sandbox_file_download_url",
     "delete_automation",
     "delete_workspace",
+    "dismiss_human_review_request",
     "expedite_pr_approval",
     "expose_port",
     "fetch_review_diff",
@@ -113,6 +121,7 @@ __all__ = [
     "refresh_workspace_start",
     "configure_repository",
     "report_platform_issue",
+    "request_human_review",
     "request_pr_review",
     "reply_to_finding_thread",
     "resolve_finding_thread",
@@ -141,6 +150,7 @@ __all__ = [
     "trigger_automation",
     "update_automation",
     "update_finding",
+    "upload_pr_attachment",
     "web_search",
 ]
 
@@ -182,7 +192,11 @@ if TYPE_CHECKING:
     from agent.tools.merge_expedited_pr import merge_expedited_pr
     from agent.tools.notify_automation_channel import notify_automation_channel
     from agent.tools.notion_designs import create_notion_design, get_notion_design_template
-    from agent.tools.open_pull_request import link_pull_request, open_pull_request
+    from agent.tools.open_pull_request import (
+        link_pull_request,
+        open_pull_request,
+        upload_pr_attachment,
+    )
     from agent.tools.organization_skills import delete_organization_skill, save_organization_skill
     from agent.tools.output_iframe import output_iframe
     from agent.tools.publish_review import publish_review
@@ -192,6 +206,12 @@ if TYPE_CHECKING:
     from agent.tools.recreate_sandbox import recreate_sandbox
     from agent.tools.reply_to_finding_thread import reply_to_finding_thread
     from agent.tools.report_platform_issue import report_platform_issue
+    from agent.tools.request_human_review import (
+        assign_human_reviewer,
+        auto_assign_human_reviewer,
+        dismiss_human_review_request,
+        request_human_review,
+    )
     from agent.tools.resolve_finding_thread import resolve_finding_thread
     from agent.tools.save_plan import save_plan
     from agent.tools.save_user_instructions import save_user_instructions
