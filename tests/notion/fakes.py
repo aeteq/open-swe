@@ -187,7 +187,10 @@ class FakeNotion:
             if page["parent"]["data_source_id"] != TASKS_DS:  # type: ignore[index]
                 continue
             relation = page["properties"]["Design"]["relation"]  # type: ignore[index]
-            if any(normalize_notion_id(str(ref["id"])) == doc_id for ref in relation):  # type: ignore[union-attr]
+            if isinstance(relation, list) and any(
+                isinstance(ref, dict) and normalize_notion_id(str(ref["id"])) == doc_id
+                for ref in relation
+            ):
                 results.append(page)
         return results
 

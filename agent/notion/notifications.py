@@ -98,7 +98,8 @@ async def record_pull_request(
         return
     prop = page.properties.get(settings.pr_property)
     already_recorded = prop is not None and prop.url == pr_url
-    properties: dict[str, JsonValue] = dict(url_patch(page, settings.pr_property, pr_url) or {})
+    properties: dict[str, JsonValue] = {}
+    properties.update(url_patch(page, settings.pr_property, pr_url) or {})
     # A task someone already moved past review keeps its status.
     if status_name(page, settings.status_property) in settings.startable_statuses:
         properties.update(
