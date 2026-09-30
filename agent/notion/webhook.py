@@ -185,7 +185,7 @@ async def evaluate_task(
         await post_notion_comment(
             page.id,
             f"⚠️ Can't start {identifier or 'this task'}: set its {settings.repo_property} "
-            "property to the GitHub repository to work in, then assign it again.",
+            "property to the GitHub repository to work in and I'll start.",
         )
         return _ignored("no repository", page.id)
     if not common.is_repo_allowed(repo):
@@ -495,10 +495,16 @@ async def _dispatch(
 async def _handle_task_page(
     client: NotionClient, event: WebhookEvent, page: NotionPage, settings: NotionSettings
 ) -> TaskResult:
-    if event.type == "page.properties_updated" and not property_was_updated(
-        page, settings.assignee_property, event.data.updated_properties
-    ):
-        return _ignored("assignee unchanged", page.id)
+    if event.type == "page.properties_updated":
+        updated = event.data.updated_properties
+        assignee_changed = property_was_updated(page, settings.assignee_property, updated)
+        # A task refused for a missing repository starts once the repository is set;
+        # a repository change on a task already being worked on must not restart it.
+        repo_set_before_start = property_was_updated(
+            page, settings.repo_property, updated
+        ) and not await common.thread_exists(notion_page_thread_id(page.id))
+        if not assignee_changed and not repo_set_before_start:
+            return _ignored("assignee unchanged", page.id)
     return await evaluate_task(client, page, settings, assigner_id=event.person_author_id)
 
 

@@ -106,6 +106,8 @@ class FakeNotion:
     blocks: dict[str, list[Json]] = field(default_factory=dict)
     comments: dict[str, list[Json]] = field(default_factory=dict)
     users: dict[str, Json] = field(default_factory=dict)
+    schemas: dict[str, Json] = field(default_factory=dict)
+    markdown: dict[str, str] = field(default_factory=dict)
     writes: list[tuple[str, str, Json]] = field(default_factory=list)
     write_tokens: list[str] = field(default_factory=list)
     fail_writes: bool = False
@@ -159,6 +161,24 @@ class FakeNotion:
             if method == "PATCH" and path.startswith("/v1/pages/")
         ]
 
+    def created_pages(self) -> list[Json]:
+        return [
+            body for method, path, body in self.writes if method == "POST" and path == "/v1/pages"
+        ]
+
+    def _create_page(self, body: Json) -> Json:
+        page_id = f"9999ffff-0000-0000-0000-{len(self.pages):012d}"
+        return self.add(
+            {
+                "object": "page",
+                "id": page_id,
+                "url": f"https://www.notion.so/{page_id.replace('-', '')}",
+                "in_trash": False,
+                "parent": body["parent"],
+                "properties": {},
+            }
+        )
+
     def _query(self, body: Json) -> list[JsonValue]:
         conditions = body["filter"]["and"]  # type: ignore[index]
         doc_id = normalize_notion_id(str(conditions[0]["relation"]["contains"]))  # type: ignore[index]
@@ -181,6 +201,15 @@ class FakeNotion:
             if self.fail_writes:
                 return httpx2.Response(502, json={"code": "bad_gateway", "message": "down"})
         parts = path.removeprefix("/v1/").split("/")
+        if parts[0] == "pages" and method == "GET" and parts[-1] == "markdown":
+            markdown = self.markdown.get(normalize_notion_id(parts[1]))
+            if markdown is None:
+                return httpx2.Response(404, json={"code": "object_not_found", "message": "no"})
+            return httpx2.Response(
+                200, json={"object": "page_markdown", "markdown": markdown, "truncated": False}
+            )
+        if parts == ["pages"] and method == "POST":
+            return httpx2.Response(200, json=self._create_page(body))
         if parts[0] == "pages" and method == "GET":
             page = self.pages.get(normalize_notion_id(parts[1]))
             if page is None:
@@ -190,6 +219,8 @@ class FakeNotion:
             return httpx2.Response(200, json=self.pages[normalize_notion_id(parts[1])])
         if parts[0] == "data_sources" and len(parts) == 3:
             return httpx2.Response(200, json={"results": self._query(body), "has_more": False})
+        if parts[0] == "data_sources" and normalize_notion_id(parts[1]) in self.schemas:
+            return httpx2.Response(200, json=self.schemas[normalize_notion_id(parts[1])])
         if parts[0] == "data_sources":
             return httpx2.Response(
                 200,
