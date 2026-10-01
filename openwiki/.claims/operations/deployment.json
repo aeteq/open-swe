@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:51839959af80eac08aacb9edd96413fa0795efd90600f4e2a3f0b8abf6331d70",
+  "pageVersion": "sha256:a3c1c447920c93bff89b864bcdbb638f554f1babac47e5321d42989a2c1be882",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -286,11 +286,11 @@
     },
     {
       "id": "claim_bb9d3a53ae9a4aa4905268d354202787",
-      "statement": "The FastAPI app rejects a wildcard DASHBOARD_ALLOWED_ORIGINS configuration because credentials are enabled, and applies the configured origins to credentialed CORS with dashboard, plan, workflow, webhook, health, GitHub/Slack/Linear webhook, and sandbox-tool routers installed.",
+      "statement": "The FastAPI app rejects a wildcard DASHBOARD_ALLOWED_ORIGINS configuration because credentials are enabled, and applies the configured origins to credentialed CORS with dashboard, plan, workflow approval, GitHub webhook, Slack webhook, Linear webhook, Notion webhook, health check, and sandbox-tool routers installed.",
       "evidence": [
         {
           "resource": "repo://agent/api/app.py#L118-L149",
-          "version": "repo-lines-v1:sha256:d24470b6b8284874a8a1213851f5edaf3243fd15514cd147abd10d4bf97ddf3e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDY5NWIxZTRhMmEyYmU5OTQ1MWNmZTYyYjhmMWYwOWFlY2U5MjllZTg3NWQ3NWYyNWVkZWViNGJmMWYyYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUifQ"
+          "version": "repo-lines-v1:sha256:dec6a6e2d3bc77e0798f57a910cd592e770b75035fb11948bdb6264dd2f07dac:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDY5NWIxZTRhMmEyYmU5OTQ1MWNmZTYyYjhmMWYwOWFlY2U5MjllZTg3NWQ3NWYyNWVkZWViNGJmMWYyYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUifQ"
         }
       ]
     },
@@ -437,6 +437,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-29T14:41:34.067Z"
+    "at": "2026-10-01T15:12:02.643Z"
   }
 }

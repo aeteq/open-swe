@@ -32,10 +32,10 @@ sources:
     resource: repo://agent/threads/handlers.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-28T16:33:19.776Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Follow-up Messages and Polling

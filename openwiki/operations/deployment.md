@@ -3,9 +3,6 @@ type: operations-guide
 title: Development, Deployment, and Serving
 description: Deploy Open SWE as a single LangGraph service across multiple topologies — local development with Docker PostgreSQL, standalone Docker, LangGraph Platform, Electron desktop, and multiple replicas. Covers environment setup, dashboard mounting, webhook exposure, authentication modes, and durability.
 tags: [deployment, development, docker, langgraph, dashboard, webhooks, desktop, postgresql, operations]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -49,7 +46,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Development, Deployment, and Serving
@@ -105,6 +105,15 @@ The FastAPI lifespan startup runs in this order:
 
 Failures in imports, analytics, listeners, or worker startup (steps 2–6) do not prevent the server from running; they log warnings and continue. The dashboard and API remain available, but affected features may degrade.
 
+## API and router configuration
+
+The FastAPI app (created in `agent/api/app.py`) applies CORS middleware to all routes with the following constraints:
+
+- **Origins:** Parses `DASHBOARD_ALLOWED_ORIGINS` by splitting on commas and trimming whitespace
+- **Credentials:** Sets `allow_credentials=True`, which forbids wildcard origins; the configuration explicitly rejects `*` in `DASHBOARD_ALLOWED_ORIGINS`
+- **Allowed origins:** Adds all configured origins plus `open-swe://app` for the Electron client
+- **Installed routers:** Dashboard API, plan, workflow approval, GitHub webhook, Slack webhook, Linear webhook, Notion webhook, health check, and sandbox tool routers
+
 ## Local serving modes
 
 ### Installation
@@ -143,16 +152,15 @@ make dev-ui
 
 Starts the dashboard Vite dev server on port 3000 and the LangGraph backend on port 2024 together with `-j2` parallelism. The backend receives `DASHBOARD_DEV_SERVER_URL=http://localhost:3000` and reverse-proxies non-reserved UI requests to it. Browser navigations stay on `http://localhost:2024` (the FastAPI origin), so API calls, login callbacks, and cookies work without cross-origin setup. The UI's HMR WebSocket connects directly to Vite's port.
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart TD
   DevUI["make dev-ui"]
   Vite["Vite dev server on port 3000"]
   LG["LangGraph dev on port 2024"]
   FastAPI["FastAPI app"]
   Graphs["Six LangGraph graphs"]
-  Routes["Dashboard API<br/>Webhooks<br/>Health check"]
-  Proxy["Reverse-proxy Vite<br/>for UI requests"]
+  Routes["Dashboard API / Webhooks / Health"]
+  Proxy["Reverse-proxy Vite for UI requests"]
 
   DevUI --> Vite
   DevUI --> LG
@@ -162,6 +170,8 @@ flowchart TD
   FastAPI --> Proxy
   Proxy --> Vite
 ```
+
+Development flow showing parallel Vite and LangGraph servers with proxy integration.
 
 ### Dashboard asset building
 
@@ -237,16 +247,25 @@ The standalone image defaults to `LANGGRAPH_AUTH_TYPE=noop`, which leaves raw La
 - `LANGGRAPH_AUTH_TYPE=langsmith` with `LANGSMITH_AUTH_ENDPOINT` and `LANGSMITH_TENANT_ID` to require a LangSmith API key on every LangGraph API call
 - Private networking or an authenticated gateway for network boundary protection
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart LR
-  Browser["Browser"] -->|osw_session cookie| Deploy["Same-origin backend"]
-  Deploy --> FrontAPI["Dashboard API<br/>Webhooks"]
-  Deploy --> LangGraph["Graphs and<br/>LangGraph routes"]
-  LangGraph --> Postgres["Postgres"]
-  LangGraph --> Redis["Redis workers"]
-  GH["GitHub<br/>Slack<br/>Linear"] -->|Signature checked| FrontAPI
+  Browser["Browser"]
+  Deploy["Same-origin backend"]
+  FrontAPI["Dashboard API / Webhooks"]
+  LangGraph["Graphs and LangGraph routes"]
+  Postgres["Postgres"]
+  Redis["Redis workers"]
+  GH["GitHub / Slack / Linear"]
+
+  Browser -->|osw_session cookie| Deploy
+  Deploy --> FrontAPI
+  Deploy --> LangGraph
+  LangGraph --> Postgres
+  LangGraph --> Redis
+  GH -->|Signature checked| FrontAPI
 ```
+
+Production topology showing same-origin backend with browser and webhook traffic, backed by Postgres and Redis.
 
 The default production topology keeps browser traffic and webhook delivery on one public origin. When public URLs change, update `LANGGRAPH_URL`, webhook targets, and the GitHub callback (`<dashboard API base>/dashboard/api/auth/callback`). `DASHBOARD_BASE_URL` and `DASHBOARD_API_BASE_URL` default to `LANGGRAPH_URL` when the backend serves a bundled build or fronts Vite, so they are not needed when serving from the same origin.
 

@@ -26,10 +26,10 @@ sources:
     resource: repo://agent/tools/automations.py
   - id: openwiki-source-dcf576fc340e5f1a2bc3f5f4
     resource: repo://agent/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Tool Catalog and Authorization
@@ -69,7 +69,7 @@ This diagram distinguishes the import catalog from the graph-specific execution 
 
 ## Main coding agent assembly
 
-`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (save_plan); background execution (background_execute, background_task); user instructions and skills (save_user_instructions, save_user_skill, delete_user_skill); dashboard thread operations (list_threads, get_thread, manage_thread); optional thread creation (start_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management (manage_baby_sit); PR creation (open_pull_request, link_pull_request), expedited review (expedite_pr_approval, merge_expedited_pr), and Slack review request (request_pr_review); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); optional user-settings mutation (save_user_settings); platform-issue reporting (report_platform_issue); Slack tools; incident management (manage_incident); and code-channel management (manage_code_channel). Signed sandbox helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them. Optional read-only SQL (read_only_sql), Notion task comments (comment_on_notion_task), CLI result logging (cli_result), and review approval policy management (manage_feature_flags, manage_review_approval_mode) are included only for private admin surfaces or as needed.
+`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (save_plan); background execution (background_execute, background_task); user instructions and skills (save_user_instructions, save_user_skill, delete_user_skill); dashboard thread operations (list_threads, get_thread, manage_thread); optional thread creation (start_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management (manage_baby_sit); PR creation (open_pull_request, link_pull_request), expedited review (expedite_pr_approval, merge_expedited_pr), and Slack review request (request_pr_review); human reviewer management (request_human_review, assign_human_reviewer, auto_assign_human_reviewer, dismiss_human_review_request); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); optional user-settings mutation (save_user_settings); platform-issue reporting (report_platform_issue); Slack tools; incident management (manage_incident); and code-channel management (manage_code_channel). Signed sandbox helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them. Optional read-only SQL (read_only_sql), Notion task comments (comment_on_notion_task), CLI result logging (cli_result), and review approval policy management (manage_feature_flags, manage_review_approval_mode) are included only for private admin surfaces or as needed.
 
 The final list depends on trusted run context:
 
@@ -79,7 +79,7 @@ The final list depends on trusted run context:
 - Slack DM mode excludes slack_add_reaction via `DM_EXCLUDED_TOOLS` to avoid clutter on user messages.
 - Slack channel-ask mode excludes thread-bound operations (slack_add_reaction, slack_attach_html, slack_move_thread) and incident management via `SLACK_ASK_EXCLUDED_TOOLS`, but retains write capabilities for answering in the channel.
 - Personal user-settings tools (save_user_instructions, save_user_settings, save_user_skill, delete_user_skill, read_user_settings) are removed when no credential login is verified (no personal identity in the thread).
-- Expedited review tools (expedite_pr_approval, merge_expedited_pr) are removed when disabled or when Slack bot context is unavailable.
+- Human review tools are removed when Slack bot context is unavailable. Expedited review tools (expedite_pr_approval, merge_expedited_pr) are removed when disabled or when Slack bot context is unavailable.
 - Incident-session tools are added if an incident is in scope; when incident management is automatic (not explicitly requested), additional mutations are excluded via `INCIDENT_AUTOMATIC_EXCLUDED_TOOLS`.
 - The general-purpose subagent gets the applicable static list except `save_user_settings`; separately compiled subagent graphs do not inherit parent middleware. Dynamic integration middleware is explicitly passed to it.
 
@@ -112,7 +112,7 @@ Integration loading is also a credential boundary. Notion schemas require an `on
 
 ### Tool addition protocol
 
-Models that accept in-conversation tool addition (Anthropic's `tool_addition` and OpenAI's `additional_tools`) receive loaded integration tools via those fields, preserving prompt cache across the load. Models without this support receive tools in the standard tools list, which invalidates cache. Model prefixes recognized: `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5`, `claude-sonnet-5-5` (Anthropic tool_addition); `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` (OpenAI Responses API additional_tools).
+Models that accept in-conversation tool addition (Anthropic's `tool_addition` and OpenAI's `additional_tools`) receive loaded integration tools via those fields, preserving prompt cache across the load. Models without this support receive tools in the standard tools list, which invalidates cache. Model prefixes recognized: `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5`, `claude-sonnet-5-5` (Anthropic tool_addition); `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna` (OpenAI Responses API additional_tools).
 
 ## Specialist surfaces
 
@@ -135,7 +135,7 @@ This pattern is required for tools with sensitive side effects: validate trusted
 
 ## Mode-specific tool gating
 
-Tool exclusion is applied per-mode after the static list is determined:
+Tool exclusion is applied per-mode after the static list is determined, using `ExcludeToolsMiddleware` to remove context-inappropriate tools after Deep Agents injects built-ins:
 
 - **Stop-summary mode** (`STOP_SUMMARY_EXCLUDED_TOOLS`) removes filesystem mutation (write_file, edit_file, delete), shell execution (execute), delegation (task), and grep, leaving only Slack read/reply tools available.
 - **Slack channel-ask mode** (`SLACK_ASK_EXCLUDED_TOOLS`) removes thread-bound Slack operations (slack_add_reaction, slack_attach_html, slack_move_thread) and incident management, but retains write capabilities for answering in the channel.

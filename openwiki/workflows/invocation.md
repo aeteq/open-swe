@@ -3,9 +3,6 @@ type: workflow
 title: Inbound Invocation to Durable Run
 description: How GitHub, Slack, Linear, dashboard, desktop, and scheduled automation inputs are admitted, attributed, routed to a thread, dispatched as durable LangGraph runs, and handled at completion.
 tags: [invocation, webhooks, dashboard, slack, linear, github, durable-runs, automation]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -42,6 +39,9 @@ sources:
   - id: openwiki-source-e081118d2ce6ecdbd524a5ee
     resource: repo://agent/threads/runs.py
 generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Inbound Invocation to Durable Run

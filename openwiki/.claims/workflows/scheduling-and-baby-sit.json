@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:7c47acf463e9c492bec6acd5ccea8255199839e6f14729fe50ec592a625210c6",
+  "pageVersion": "sha256:3df3d639ecbea4a349c22d76d629726feda24196337199e5a41f2036e1a39ad4",
   "claims": [
     {
       "id": "claim_851e23a08e794421a0ac06c407e8a9d0",
@@ -11,32 +11,32 @@
           "version": "repo-file-v1:sha256:38f828039e6212641cf3ba7e13473711fbc24ea3c1d8e63de8f6722df7ec3ef2"
         },
         {
-          "resource": "repo://agent/scheduler.py#L105-L110",
+          "resource": "repo://agent/scheduler.py#L113-L118",
           "version": "repo-lines-v1:sha256:7eae2ce6201a24683071e835499d09005df0c8d0d8d38acb46978c32062d294d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFiY2JhZTI0ZDczZmVlYWJiNzg5YTZiZDQxNDk5N2VhYjBmMjdhYzJiMzcxYWZiMWU5YmNmY2Y4YTVhZTRhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAwYzZiNjMzOTU0MGM4YWE3YzZlNmYyOTI0MjA3NWZiNGRiNjhlYjM3ZWZhMGJkMTUxZWRkZGUwN2E5MjJiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGEyMTY4YjdjOTMxNWVmYTY5MmFmOGI2ZDFlNmIyNjIyNjliODZhNzJjYmMwODEzM2M5ZDIyMjg1NWFiNjg5OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         },
         {
-          "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:d391730acff73cd2cf765a7efd1e064bc7cef378eb2a5b0f9a19043367ac4bee"
+          "resource": "repo://langgraph.json#L11-L11",
+          "version": "repo-lines-v1:sha256:43e053f53dc01fd5cb7ccb8516b60e161925a64841b9af64e7c08b15d847cbd6:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDNlMDUzZjUzZGMwMWZkNWNiN2NjYjg1MTZiNjBlMTYxOTI1YTY0ODQxYjlhZjY0ZTdjMDhiMTVkODQ3Y2JkNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDNlMDUzZjUzZGMwMWZkNWNiN2NjYjg1MTZiNjBlMTYxOTI1YTY0ODQxYjlhZjY0ZTdjMDhiMTVkODQ3Y2JkNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTM2Y2U4MDJhMGJlZTc4NWMyODE2NzlhZGYwMTExNzJhZjgxY2E5MWRmMjA3Y2E5ZGJhNjJiNjBmY2Q0OTgzYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzExZWNmZTY1ZGNhMTdjNDFlMDNhODJmZTljY2VhNzg4OWJiNWY0ZjdhNzljNjIzNGI4MjZmOWUzZTBlMzI2MiJ9"
         }
       ]
     },
     {
       "id": "claim_3682bb8bd72d486a95134e55f8c79184",
-      "statement": "The scheduler's `_launch` routes `task` values `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, `agent_cost`, and `thread_feedback` to their handlers, plus additional tasks like `expedited_review`, workspace refresh, and falls through to `launch_scheduled_agent_run(schedule_id)` when no task matches.",
+      "statement": "The scheduler's `_launch` routes `task` values `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, `agent_cost`, `thread_feedback`, `expedited_review`, workspace refresh, and human-review deadlines to their handlers, plus falls through to `launch_scheduled_agent_run(schedule_id)` when no task matches.",
       "evidence": [
         {
-          "resource": "repo://agent/scheduler.py#L55-L90",
-          "version": "repo-lines-v1:sha256:65cc45ab1a6807ada996980e4e2ea243c42570b16b0393397930cf13e07904bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMTc1NWE0NzlkNzgxYTY2NDkzYTBkMTI3Y2IyYmU5MzE4YTk5ZjZlZWQ3ZmY3MGMyYmE0NTU2MTk4OTk2YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNjEzNWZiNWRmMDMzNjRkN2FlNjMzNGMxZGMzMWVjMjVkMTY5MjQ1MTU3Y2UxMjk3NGY2NDRjMDQ0ZjViNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
+          "resource": "repo://agent/scheduler.py#L63-L98",
+          "version": "repo-lines-v1:sha256:b6b0c1a49ace65953e8c85f465a9a3be1c18c2e9aaed0f7a2e73e069a3ea0ab2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
         }
       ]
     },
     {
       "id": "claim_d9afc0d3df954f499b1b1e919b41a09c",
-      "statement": "When a scheduler tick is missing its required key (watch_key, thread_id, or schedule_id), `_launch` returns a `missing_*` status result instead of raising, so a malformed tick degrades to a no-op rather than crashing the cron.",
+      "statement": "When a scheduler tick is missing its required key (watch_key, thread_id, request_id, or schedule_id), `_launch` returns a `missing_*` status result instead of raising, so a malformed tick degrades to a no-op rather than crashing the cron.",
       "evidence": [
         {
-          "resource": "repo://agent/scheduler.py#L62-L90",
-          "version": "repo-lines-v1:sha256:d94fad72940a4d0226f8c51f146b82b779982c6f29eb6fb4053cbfaa431316a8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUzZmZlNTYxNGRmNGZkMWY2NTFiNmYyMGRlOWY1MGRjZTcxNDRjNmE2MjJkNmZmM2QzZWJlNDFmMjdjYzI5OTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRhYWNlY2U5ZWYyNGJiYjZlYzExZDAyYzYyM2EzYzhjMTg3MDY2ZTRkNWY5OWYwYTQ5ZDBjMGE1NDU3MjBlMTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
+          "resource": "repo://agent/scheduler.py#L63-L98",
+          "version": "repo-lines-v1:sha256:b6b0c1a49ace65953e8c85f465a9a3be1c18c2e9aaed0f7a2e73e069a3ea0ab2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
         }
       ]
     },
@@ -102,11 +102,11 @@
         },
         {
           "resource": "repo://agent/session_cost.py#L108-L143",
-          "version": "repo-lines-v1:sha256:2983ea86eabab01662eb1df1a1abcdde6495b357c3adf253db49a78ba8ecd2fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmMTE1MGVjOGU4ZmVmNjc3MTE1OTRmOTkwMTQzYzkzMjcxMzA4MDUzMTFmNjE2YzgwNWZmYzczZTk4MTQ1ZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2MTk1YjczMDQxMDczMjZjZDk4MDlkMWU2NDUyNjA2ZjViNjRiNDhmMjEzMmU1OGI1YmQxZjc4N2U0OWNmMzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5OGYyYjI5ZWZiY2ExZWE4MDJlOGYwNzk0MTJiNzdmYjVmN2U4Yzg3YTkxZjhiNmQxNGYzNDlkODhjZWI5ZjUifQ"
+          "version": "repo-lines-v1:sha256:42ac89df1fe69e2427ecbc157a495ffd822651cf2104c295efe7450fd9dcdcf6:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwZTJhNDY1MDA5NWZhOTVkMGUyYmI0MWIyZGIyOTA5NGQzNDA0ZDI4Y2UxMjMzOWVjODhiYjRiNWM1YmU4ZjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM4OTNlZjIxNWUwMTNkNWMxZmRmNWM2ODJjNzQ2YTRhM2VhZGQ5YjJlZDM3ZmExNWMzMzAxNTU1OTBhYTA2YWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1ZWQxYzM2MDliZWZlMWY5ZjliNzNiZDM3NGVmMGMzYjRjYjA0YzIxZjIxNTk2MzAwNzc4ZjQ1Zjc4NTY1ZTEifQ"
         },
         {
-          "resource": "repo://agent/session_cost.py#L160-L182",
-          "version": "repo-lines-v1:sha256:709b2e318fa1f9875e7b0995146ef6d9d936b6a615d9505615fa6b70774da46f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NmYyZTRmM2ZmMzY3Yzg5NDE5YWE1MzljOTI4MTRjMjUxMzFlMzg3NGJjNjQ0NmY5N2I3MTVkYWQyNGMxNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwYjIxYmY4OTVmYWUyZDczOTIwZDkzMTc4Y2ZkNTg0MWNkZjhmOTUyNDUxNmM4YTU2NTg0MzZhNGFjNDhmM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJhMDEwYzc4ODg4YTkxYWEzZDE0YTJiZTE2ZGVhNWJmYzIxYWNlY2U1ZmVjNGUxMGU5OWYwNjY2MDIxYmJmZjYifQ"
+          "resource": "repo://agent/session_cost.py#L161-L218",
+          "version": "repo-lines-v1:sha256:1280a4d26579928f823ee18a502a9b2e87a044c4bcddd555e298dcf6d3b7c2d9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2NmYyZTRmM2ZmMzY3Yzg5NDE5YWE1MzljOTI4MTRjMjUxMzFlMzg3NGJjNjQ0NmY5N2I3MTVkYWQyNGMxNjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MmEyNjNmN2Q0NWI4YzE2YmU4NGQzOGVjYTlmNjU4ODQ1ODg1NDFhMmU2NjdjMzcyZTQ2NDdjMTFmNTUwMGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwYjIxYmY4OTVmYWUyZDczOTIwZDkzMTc4Y2ZkNTg0MWNkZjhmOTUyNDUxNmM4YTU2NTg0MzZhNGFjNDhmM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMwN2ZlMTcwMzM5ZDViNzQ2NzNmYzM2YzA2ODNiMzU1YWE4MzhlNDA1NzhhZDYzZDNkZTAwNGFlZWE3NThjZGQifQ"
         }
       ]
     },
@@ -154,7 +154,7 @@
     },
     {
       "id": "claim_e9c34bd6972d4dedb308576ab1dfddad",
-      "statement": "The per-watch baby_sit cron fires on the fixed */10 * * * * schedule against the scheduler assistant, providing a deterministic ~10-minute fallback that dispatches no agent run (returns statuses like pending, settling, or duplicate) while CI state is unchanged, so it consumes no model tokens for unchanged state.",
+      "statement": "The per-watch baby_sit cron fires on the fixed */10 * * * * schedule against the scheduler assistant, providing a deterministic ~10-minute fallback that dispatches no agent run (returns statuses like pending or duplicate) while CI state is unchanged, so it consumes no model tokens for unchanged state.",
       "evidence": [
         {
           "resource": "repo://agent/baby_sit.py#L152-L157",
@@ -204,7 +204,7 @@
     },
     {
       "id": "claim_522038fb0ac34733a59561f595a9ab31",
-      "statement": "On a new head SHA _evaluate_watch resets retry_count, settle state, and dedupe key lists; on a genuinely new failing state it dispatches a /baby-sit --continue run to the originating agent thread whose prompt lists failing signals as untrusted data for confidence-gated diagnosis, skipping dispatch when the per-head failure fingerprint was already dispatched.",
+      "statement": "On a new head SHA _evaluate_watch resets retry_count and dedupe key lists; on a genuinely new failing state it dispatches a /baby-sit --continue run to the originating agent thread whose prompt lists failing signals as untrusted data for confidence-gated diagnosis, skipping dispatch when the per-head failure fingerprint was already dispatched.",
       "evidence": [
         {
           "resource": "repo://agent/baby_sit.py#L442-L543",
@@ -218,15 +218,15 @@
     },
     {
       "id": "claim_f3a4b6b24ad4453e97aee723e2f027e6",
-      "statement": "Baby-sit signals success only after the exact check set has been stable for 10 minutes, avoiding a premature green while checks are still being added.",
+      "statement": "Baby-sit detects success when all required checks are reported and all check runs and statuses are successful/neutral/skipped, then immediately dispatches a ready notification to the originating thread to decide on next steps, avoiding premature green by requiring all required checks to be present.",
       "evidence": [
         {
-          "resource": "repo://agent/baby_sit.py#L156-L156",
-          "version": "repo-lines-v1:sha256:474679e662c697b0523722219d5d248b2d375e2201d64f510bfcce2480b475a4:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDc0Njc5ZTY2MmM2OTdiMDUyMzcyMjIxOWQ1ZDI0OGIyZDM3NWUyMjAxZDY0ZjUxMGJmY2NlMjQ4MGI0NzVhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDc0Njc5ZTY2MmM2OTdiMDUyMzcyMjIxOWQ1ZDI0OGIyZDM3NWUyMjAxZDY0ZjUxMGJmY2NlMjQ4MGI0NzVhNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGE4Zjc3NGY1NTA5YzRlZGE0NTJmMDkxODM2MjhiMThmZDRlMWU2ZGZiYjk0NGY4YTE3NDQ2MjhhOGVjNmY3ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2I3YjY0N2VhYTNlZGRjZGJhODMyYzQ1OTA1YmY0OWYxNjA4N2FlYzE1NDI1MmE0NTg2YTQ2NjhjYmY2Y2M0YSJ9"
+          "resource": "repo://agent/baby_sit.py#L339-L365",
+          "version": "repo-lines-v1:sha256:75a0227f85b6a214c460a4f54db18dadf0a0ec696da61f62a3635d29e54ebb99:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MDUzM2NkZGIxMTQ3ZDg0MTFkMDk4ZjZmN2JkNjAyM2MwMjcwNWIzZDgwYWIyMTVkMjQzYmFiNjljNjI2ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyZjIxZWNhNjFlODkzNWJjN2FlYWVhMzAyZDg2ZWZlNjc0NTQ4MTQ5ZmI0NTVhN2Q2MDdkYzUzYjlhZTI5MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5NzUwN2U4Y2VhNTU0NjQzZGYxZDVmYjc4ZDdiYzZmYjU4ZTg1MzZjNmNkZWNiNTE3YTAxZGE5ZjExYjZmN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwN2JhYjBkNGYwNTQzYzY4YWQwNGNkN2I0Y2NhODFjYWVhNzgxNWRlMzUxNDcyN2JmNzZiZWYyM2EwOTU3MDcifQ"
         },
         {
-          "resource": "repo://agent/baby_sit.py#L41-L41",
-          "version": "repo-lines-v1:sha256:072d8b1f54b6c4d2670b6fcf9a0664a2f5660f8bdfc3739fb7c870ce104fce5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODEwNzUzNDc2NzNmY2ZhNTk5NWI4YjAxMWM2MjE4ZjVjNmVkZTRmN2I3OTNjYmI4YzcwZDQ4ZjkxNGExMzIyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2U2ZmJkMWViNDk4ODhiYzgyMzk2NGM3MWJmMDBiYmJhNGE4YWE2NzY3NDJiOGIyZjFjMTYyMDkyZjRkZjBhNyJ9"
+          "resource": "repo://agent/baby_sit.py#L396-L415",
+          "version": "repo-lines-v1:sha256:629cb9e09f4d382ffda814433b7caf9da4ce1c1b953f129ffab266e7816f78de:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlYmE5YTVjYzUyYWI3YjI5ZGQ1ZGI3ZjVmZGRhMjJjZmZiNmI0ZTdjNjRjY2QzZDk5NTg3NmEzMjMzYTBlY2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4NTQ1OTQ0YmZiOTg0NjY3YTM4YTk5YTFkYjZjNjJkMTc0YWE0NWVkODEzODk1NTY5MmUzNTNjNjZiOTFjYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk0YzhjZDZmMjU5NmM1MWU0MDRjYTlhYzMyN2MyNDZmODE2Y2IxMWFiMThmMjJiZWZkMWM3ZjIwOTVkYWZjMGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1OGZkZGFmMjM5MGU4NWM2OTliOTE1NGNiYmFlMjQ3ZGM5ZjA5NTZiMjdiYjU3ZmJlZGE0YTc5ZWNlNmZjYzQifQ"
         },
         {
           "resource": "repo://agent/baby_sit.py#L493-L505",
@@ -254,7 +254,7 @@
     },
     {
       "id": "claim_79cd87e5bca147b2b055c4f06f495707",
-      "statement": "Terminal watch outcomes (PR closed/merged, settled success, terminal non-rerunnable checks needing triage, flaky-rerun cap reached, or MAX_EVALUATION_ERRORS consecutive evaluation failures) are posted to the originating source thread by _finish_watch, preferring the SourceContext Slack/Linear/GitHub destination and falling back to a /baby-sit --terminal run on the originating agent thread, then the watch is stopped.",
+      "statement": "Terminal watch outcomes (PR closed/merged, success dispatched, terminal non-rerunnable checks needing triage, flaky-rerun cap reached, or MAX_EVALUATION_ERRORS consecutive evaluation failures) are posted to the originating source thread by _finish_watch, preferring the SourceContext Slack/Linear/GitHub destination and falling back to a /baby-sit --terminal run on the originating agent thread, then the watch is stopped.",
       "evidence": [
         {
           "resource": "repo://agent/baby_sit.py#L263-L305",
@@ -265,8 +265,8 @@
           "version": "repo-lines-v1:sha256:7c0fa1b730238761587b7a87eb49be7ea883399dcec767dabf29ce3165c85fd7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExYzVjMzlhMzllY2EzOGM2YjIwZTIxNGZmMDVmZmRiNWFmYjcyNTc2ZGYwNjMyMWNkMWIyYjUzOTM3NmI2ZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyZjIxZWNhNjFlODkzNWJjN2FlYWVhMzAyZDg2ZWZlNjc0NTQ4MTQ5ZmI0NTVhN2Q2MDdkYzUzYjlhZTI5MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwYjIxYmY4OTVmYWUyZDczOTIwZDkzMTc4Y2ZkNTg0MWNkZjhmOTUyNDUxNmM4YTU2NTg0MzZhNGFjNDhmM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0MmVlOWU0ZjkzOTlmZTkwZTVmYzEwMmE0ZGI1MTYxYmNkZWEwYTFhOTAyM2Y5ZWJhYTJmNzJiMzFiYWE1NDAifQ"
         },
         {
-          "resource": "repo://agent/baby_sit.py#L506-L517",
-          "version": "repo-lines-v1:sha256:2cce265b69b0c576f7f15ccec0df6296636ddedfb1e23715a0e6bbe1b70be4f7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5ZDYxODdiODYwM2U4NThmNDM3ZmE5NWQ4N2U4NzIwOTFiYzI3ODUxMWFhNDNhMjk1N2FhOTg3ZTJlYmJmYWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIyYmI5N2QyYTRkMWM0Zjk3MmFmOTIwZTY3YTQyMjJhNGIxYjYxMTM3ZTA5MjgwNWE1YTBjNzBkNzQ4NmU4ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU3MzdkYTI0NTVjOTAwOGQ0NDJiZGM1MjY4ZGE1OWExNTFjZjFjMjNlZTAyYzI2ZTUyYzJiNzBjMmFkNjg4M2YifQ"
+          "resource": "repo://agent/baby_sit.py#L339-L365",
+          "version": "repo-lines-v1:sha256:75a0227f85b6a214c460a4f54db18dadf0a0ec696da61f62a3635d29e54ebb99:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4MDUzM2NkZGIxMTQ3ZDg0MTFkMDk4ZjZmN2JkNjAyM2MwMjcwNWIzZDgwYWIyMTVkMjQzYmFiNjljNjI2ODIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyZjIxZWNhNjFlODkzNWJjN2FlYWVhMzAyZDg2ZWZlNjc0NTQ4MTQ5ZmI0NTVhN2Q2MDdkYzUzYjlhZTI5MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA5NzUwN2U4Y2VhNTU0NjQzZGYxZDVmYjc4ZDdiYzZmYjU4ZTg1MzZjNmNkZWNiNTE3YTAxZGE5ZjExYjZmN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwN2JhYjBkNGYwNTQzYzY4YWQwNGNkN2I0Y2NhODFjYWVhNzgxNWRlMzUxNDcyN2JmNzZiZWYyM2EwOTU3MDcifQ"
         }
       ]
     },
@@ -400,7 +400,7 @@
         },
         {
           "resource": "repo://tests/agent/test_session_cost.py",
-          "version": "repo-file-v1:sha256:25153238ed6c9f7beddf9c7881871b561ee17a01afc5e9043be77939c43c1755"
+          "version": "repo-file-v1:sha256:3ab42942575068fe94e5c542f448315fbfe0f62a2be5f6224b46994942a70b61"
         },
         {
           "resource": "repo://tests/github/test_baby_sit_webhook.py",
@@ -419,6 +419,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-09-29T14:41:34.067Z"
+    "at": "2026-10-01T15:12:02.643Z"
   }
 }

@@ -3,9 +3,6 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Comprehensive test infrastructure, focused validation strategies, and end-to-end flows for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
@@ -46,6 +43,9 @@ sources:
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
 generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Testing Infrastructure and Validation Patterns
