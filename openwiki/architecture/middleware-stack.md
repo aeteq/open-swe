@@ -6,6 +6,8 @@ tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails]
 sources:
   - id: openwiki-source-828b741451bbda4468382d9b
     resource: repo://agent/middleware/check_message_queue.py
+  - id: openwiki-source-991c2ce9c2221af2a4467690
+    resource: repo://agent/middleware/image_model_fallback.py
   - id: openwiki-source-0b53777f0ea426a90cf976b4
     resource: repo://agent/middleware/model_call_timeout.py
   - id: openwiki-source-92dfac98dd4efa19a44e0c4e
@@ -44,10 +46,10 @@ sources:
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
   - id: openwiki-source-b074bf11145a0ff6206cec7b
     resource: repo://tests/sandbox/test_sandbox_retry.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Middleware and Failure Boundaries
@@ -81,13 +83,14 @@ The coding-agent middleware chain is outer to inner:
 21. `record_run_usage`
 22. `ModelSelectionMiddleware`, only if adaptive model routing is enabled
 23. `ModelFallbackMiddleware`, only when a different fallback model resolves
-24. `DynamicToolMiddleware`, only if integration groups are present
-25. `SanitizeFireworksMessagesMiddleware`
-26. `SanitizeOpenAIResponsesMiddleware`
-27. `SanitizeThinkingBlocksMiddleware`
-28. `StableToolResultOrderMiddleware`
-29. `ModelErrorMiddleware`
-30. `ModelCallTimeoutMiddleware`
+24. `ImageModelFallbackMiddleware`, only when the primary model lacks vision support
+25. `DynamicToolMiddleware`, only if integration groups are present
+26. `SanitizeFireworksMessagesMiddleware`
+27. `SanitizeOpenAIResponsesMiddleware`
+28. `SanitizeThinkingBlocksMiddleware`
+29. `StableToolResultOrderMiddleware`
+30. `ModelErrorMiddleware`
+31. `ModelCallTimeoutMiddleware`
 
 The last three layers form the critical model-failure boundary. Provider-specific message cleanup and stable tool-result ordering prepare a valid provider request. `ModelCallTimeoutMiddleware` is innermost, so its wall-clock deadline includes the provider operation itself. It converts a stalled call to `ModelCallTimeoutError`, which is a `TimeoutError`; that exception first passes through `ModelErrorMiddleware` for classification and thread metadata, then reaches the optional fallback wrapper. Thus a hang becomes either a retried request or a controlled, visible end to the run rather than a silent parked invocation.
 
@@ -126,6 +129,8 @@ The PR guard blocks `execute` and `background_execute` command forms that create
 ## Retry and failure boundaries
 
 `ModelFallbackMiddleware` is installed only when `LLM_FALLBACK_MODEL_ID`, or the primary model's default fallback, resolves to a different model. It makes one more attempt than its backoff schedule entries: by default six attempts with delays `0, 5, 15, 30, 45` seconds plus ±25% jitter. Attempts alternate primary and fallback models. It retries connection and timeout failures and selected provider statuses (including 408, 409, 425, 429, 5xx, and 529). An Anthropic/OpenAI model-not-available access error is immediately converted to a user-facing `AIMessage`; an exhausted transient budget normally returns an outage `AIMessage`, although `surface_outage_message=False` re-raises the final error.
+
+`ImageModelFallbackMiddleware` routes image-bearing requests to a vision-capable fallback model when the primary model does not support images, preventing image-related failures on text-only models. When no fallback is available, image content is simply omitted with a warning.
 
 `ModelCallTimeoutMiddleware` reads `OPEN_SWE_MODEL_CALL_TIMEOUT_SECONDS`, validates that it is positive, and otherwise uses 900 seconds. `asyncio.wait_for` makes a websocket or other provider stall observable; it deliberately sits above provider-level request timeouts, which get a chance to retry inside the provider client first.
 

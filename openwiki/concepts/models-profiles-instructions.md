@@ -3,9 +3,6 @@ type: configuration concept
 title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
 tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-09b129ff728dd4990ea2f25e
     resource: repo://agent/dashboard/agent_instructions.py
@@ -36,6 +33,9 @@ sources:
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
 generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Models, Profiles, and Instructions

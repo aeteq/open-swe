@@ -3,9 +3,6 @@ type: contributor guide
 title: Open SWE Codebase Guide
 description: Start here to set up Open SWE, choose the entrypoint and owner for a safe change, and run focused validation. Links route contributors to the detailed architecture, workflow, integration, operations, and testing guides.
 tags: [open-swe, contributor-guide, development, langgraph, testing]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -45,7 +42,10 @@ sources:
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Open SWE Codebase Guide
@@ -85,8 +85,7 @@ Python is async-first: implement the async path. Add a synchronous method only w
 
 ### Request flow: from trigger to durable run
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart TD
     Dashboard["Dashboard"] --> Api["FastAPI routes"]
     GitHub["GitHub webhook"] --> Api
@@ -95,7 +94,7 @@ flowchart TD
     Cron["Cron tick"] --> Scheduler["Scheduler dispatch"]
     
     Api --> Dispatch["dispatch_agent_run"]
-    Dispatch --> RunInput["Create run input<br/>with identity/context"]
+    Dispatch --> RunInput["Create run input with identity and context"]
     RunInput --> DurableRun["Create durable LangGraph run"]
     DurableRun --> AgentGraph["Agent or Reviewer graph"]
     Scheduler --> RunInput
@@ -105,7 +104,7 @@ flowchart TD
     Result --> Webhook["Completion webhook"]
 ```
 
-This is the principal work-routing boundary: interactive coding and review triggers converge on durable run creation via `dispatch_agent_run`, while the scheduler selects maintenance work or launches a scheduled agent run.
+Interactive coding and review triggers converge on durable run creation via `dispatch_agent_run`; the scheduler routes cron ticks to maintenance work or scheduled agent runs.
 
 ### Invariants worth preserving
 

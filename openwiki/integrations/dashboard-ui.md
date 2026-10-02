@@ -18,6 +18,10 @@ sources:
     resource: repo://agent/dashboard/routes.py
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
+  - id: openwiki-source-4dd0e3b41526d159078a3d7b
+    resource: repo://agent/review/routes.py
+  - id: openwiki-source-bcdbf9656d4045712d8041c3
+    resource: repo://agent/schedules/routes.py
   - id: openwiki-source-856ade03ef31ac38e1347f7c
     resource: repo://agent/server.py
   - id: openwiki-source-82825a65559de3e8581a123a
@@ -41,7 +45,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
+    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Dashboard and Desktop Clients
