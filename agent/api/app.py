@@ -15,6 +15,7 @@ from agent.dashboard import router as dashboard_router
 from agent.github.routes import router as github_webhook_router
 from agent.linear.routes import router as linear_webhook_router
 from agent.notion.routes import router as notion_webhook_router
+from agent.openai_responses.routes import router as sandbox_openai_router
 from agent.sandboxes.tool_routes import router as sandbox_tool_router
 from agent.slack.routes import router as slack_webhook_router
 from agent.threads.plan_api import plan_router
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(github_webhook_router)
     app.include_router(sandbox_tool_router)
+    app.include_router(sandbox_openai_router)
     mount_dashboard_ui(app)
     return app
 
