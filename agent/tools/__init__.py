@@ -23,6 +23,8 @@ _TOOL_MODULES = {
     "get_thread": ".threads",
     "http_request": ".http_request",
     "list_automations": ".automations",
+    "list_event_types": ".listen_events",
+    "listen_events": ".listen_events",
     "list_workspaces": ".workspaces",
     "list_findings": ".list_findings",
     "list_review_findings": ".list_review_findings",
@@ -47,6 +49,7 @@ _TOOL_MODULES = {
     "report_platform_issue": ".report_platform_issue",
     "request_human_review": ".request_human_review",
     "request_pr_review": "agent.slack.tools.request_pr_review",
+    "request_service_connection": ".request_service_connection",
     "reply_to_finding_thread": ".reply_to_finding_thread",
     "resolve_finding_thread": ".resolve_finding_thread",
     "delete_organization_skill": ".organization_skills",
@@ -62,6 +65,7 @@ _TOOL_MODULES = {
     "start_thread": ".threads",
     "slack_add_reaction": "agent.slack.tools.add_reaction",
     "slack_attach_html": "agent.slack.tools.attach_html",
+    "slack_list_channel_members": "agent.slack.tools.channels",
     "slack_list_channels": "agent.slack.tools.channels",
     "slack_move_thread": "agent.slack.tools.move_thread",
     "slack_no_reply_needed": "agent.slack.tools.no_reply_needed",
@@ -74,7 +78,6 @@ _TOOL_MODULES = {
     "trigger_automation": ".automations",
     "update_automation": ".automations",
     "update_finding": ".update_finding",
-    "upload_pr_attachment": ".open_pull_request",
     "web_search": ".web_search",
 }
 
@@ -99,6 +102,8 @@ __all__ = [
     "get_thread",
     "http_request",
     "list_automations",
+    "list_event_types",
+    "listen_events",
     "list_workspaces",
     "list_findings",
     "list_review_findings",
@@ -123,6 +128,7 @@ __all__ = [
     "report_platform_issue",
     "request_human_review",
     "request_pr_review",
+    "request_service_connection",
     "reply_to_finding_thread",
     "resolve_finding_thread",
     "publish_workspace",
@@ -138,6 +144,7 @@ __all__ = [
     "start_thread",
     "slack_add_reaction",
     "slack_attach_html",
+    "slack_list_channel_members",
     "slack_list_channels",
     "slack_move_thread",
     "slack_no_reply_needed",
@@ -150,7 +157,6 @@ __all__ = [
     "trigger_automation",
     "update_automation",
     "update_finding",
-    "upload_pr_attachment",
     "web_search",
 ]
 
@@ -160,7 +166,11 @@ if TYPE_CHECKING:
     from agent.incidents.tools import manage_incident
     from agent.slack.tools.add_reaction import slack_add_reaction
     from agent.slack.tools.attach_html import slack_attach_html
-    from agent.slack.tools.channels import slack_list_channels, slack_post_message
+    from agent.slack.tools.channels import (
+        slack_list_channel_members,
+        slack_list_channels,
+        slack_post_message,
+    )
     from agent.slack.tools.manage_code_channel import manage_code_channel
     from agent.slack.tools.move_thread import slack_move_thread
     from agent.slack.tools.no_reply_needed import slack_no_reply_needed
@@ -188,15 +198,12 @@ if TYPE_CHECKING:
     from agent.tools.http_request import http_request
     from agent.tools.list_findings import list_findings
     from agent.tools.list_review_findings import list_review_findings
+    from agent.tools.listen_events import list_event_types, listen_events
     from agent.tools.manage_baby_sit import manage_baby_sit
     from agent.tools.merge_expedited_pr import merge_expedited_pr
     from agent.tools.notify_automation_channel import notify_automation_channel
     from agent.tools.notion_designs import create_notion_design, get_notion_design_template
-    from agent.tools.open_pull_request import (
-        link_pull_request,
-        open_pull_request,
-        upload_pr_attachment,
-    )
+    from agent.tools.open_pull_request import link_pull_request, open_pull_request
     from agent.tools.organization_skills import delete_organization_skill, save_organization_skill
     from agent.tools.output_iframe import output_iframe
     from agent.tools.publish_review import publish_review
@@ -212,6 +219,7 @@ if TYPE_CHECKING:
         dismiss_human_review_request,
         request_human_review,
     )
+    from agent.tools.request_service_connection import request_service_connection
     from agent.tools.resolve_finding_thread import resolve_finding_thread
     from agent.tools.save_plan import save_plan
     from agent.tools.save_user_instructions import save_user_instructions

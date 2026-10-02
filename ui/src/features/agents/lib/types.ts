@@ -62,6 +62,7 @@ export type AcpToolKind =
   | "linear"
   | "notion"
   | "sql"
+  | "service-connection"
   /** deepagents `task` tool — spawns a subagent; rendered as a subagent card. */
   | "task"
   | "other"
@@ -430,6 +431,7 @@ export interface AgentSubagentSummary {
 }
 
 export interface AgentThread {
+  ownerLogin?: string | null
   visibility?: "public" | "private"
   id: string
   /** Set on a PR review listed in the sidebar: its row opens this review page. */

@@ -9,6 +9,7 @@ from agent.github.token_scope import GITHUB_TOKEN_REPOSITORIES_KEY
 from agent.run_config import Repo
 from agent.slack import client as slack_utils
 from agent.slack import webhook as slack_webhooks
+from agent.slack.channels import SlackChannel
 from agent.slack.client import (
     format_slack_messages_for_prompt,
 )
@@ -482,6 +483,9 @@ def test_slack_followup_publishes_as_requester_and_preserves_owner(
     assert isinstance(run_create, dict)
     kwargs = run_create["kwargs"]
     assert kwargs["multitask_strategy"] == ("interrupt" if explicitly_tagged else "enqueue")
+    assert (
+        f"@{webhook_common.SLACK_BOT_USERNAME} create the PR" in str(kwargs["input"])
+    ) == explicitly_tagged
     run_config = kwargs["config"]
     run_config["configurable"]["thread_id"] = run_create["thread_id"]
     monkeypatch.setattr("agent.run_config.get_config", lambda: run_config)
@@ -658,7 +662,7 @@ async def test_allowed_bot_starts_and_continues_a_system_thread(bot_run, user_id
     message = ElementTree.fromstring(kwargs["input"]["messages"][-1]["content"][0]["text"])
     assert message.attrib["sender"] == "system:slack-bot-B123"
     assert message.attrib["kind"] == "system"
-    assert (message.text or "").strip() == "Open a PR"
+    assert (message.text or "").strip() == f"@{webhook_common.SLACK_BOT_USERNAME} Open a PR"
     await slack_webhooks._process_slack_mention_impl(
         request.model_copy(update={"event_ts": "1700000000.000300"}), None
     )
@@ -717,6 +721,7 @@ def _context_input(messages: list[dict], **kwargs: object) -> list[str]:
         cast(dict, kwargs.get("user_names_by_id", {"U123": "Alice", "UBOT": "Open SWE"})),
         cast(dict, kwargs.get("logins_by_user_id", {})),
         person_ids_by_user_id=cast(dict, kwargs.get("person_ids_by_user_id", {})),
+        channel_names_by_id=cast(dict, kwargs.get("channel_names_by_id", {})),
         channel={"id": "slack:C123", "platform": "slack"},
         bot_user_id="UBOT",
         event_ts="9.0",
@@ -726,6 +731,73 @@ def _context_input(messages: list[dict], **kwargs: object) -> list[str]:
         run_described_person_ids=cast(set, kwargs.get("run_described_person_ids", set())),
     )
     return [cast(str, message["content"]) for message in run_input["messages"]]
+
+
+def test_slack_context_labels_mentioned_people_with_their_names() -> None:
+    contents = _context_input(
+        [
+            {"ts": "1.0", "text": "cc <@U456> and <@U000> for viz", "user": "U123"},
+            {"ts": "9.0", "text": "<@UBOT> go", "user": "U123"},
+        ],
+        user_names_by_id={"U123": "Alice", "U456": "Bob <B>"},
+    )
+
+    assert "cc &lt;@U456|Bob &amp;lt;B&amp;gt;&gt; and &lt;@U000&gt; for viz" in str(contents)
+
+
+def test_slack_context_names_unnamed_channel_mentions() -> None:
+    contents = _context_input(
+        [
+            {"ts": "1.0", "text": "see <#C456|>, <#C789|old-name>, <#C000>", "user": "U123"},
+            {"ts": "9.0", "text": "<@UBOT> go", "user": "U123"},
+        ],
+        channel_names_by_id={"C456": "eng", "C789": "new-name"},
+    )
+
+    assert "see &lt;#C456|eng&gt;, &lt;#C789|old-name&gt;, &lt;#C000&gt;" in str(contents)
+
+
+def test_breakout_preceding_text_is_prior_message_not_part_of_request() -> None:
+    run_input = slack_webhooks._slack_context_input(
+        [
+            {
+                "ts": "9.0",
+                "text": "Context for this task.\nMore details <@UBOT> /breakout fix it",
+                "user": "U123",
+                "attachments": [
+                    {
+                        "is_share": True,
+                        "author_name": "Bob",
+                        "text": "Forwarded details",
+                    }
+                ],
+            }
+        ],
+        {"U123": "Alice"},
+        {},
+        channel={"id": "slack:C123", "platform": "slack"},
+        bot_user_id="UBOT",
+        event_ts="9.0",
+        trigger_user_id="U123",
+        request_text="fix it",
+        request_blocks=[{"type": "text", "text": "fix it"}],
+        prior_message_text="Context for this task.\nMore details",
+        is_breakout=True,
+    )
+    inputs = [
+        message["content"]
+        for message in run_input["messages"]
+        if message["role"] == "user" and 'kind="human"' in str(message["content"])
+    ]
+
+    assert len(inputs) == 2
+    assert "Context for this task.\nMore details" in inputs[0]
+    assert "/breakout" not in inputs[0]
+    assert "fix it" in inputs[1][0]["text"]
+    assert "[Forwarded Slack message from Bob]" in inputs[1][0]["text"]
+    assert "Forwarded details" in inputs[1][0]["text"]
+    assert "More details" not in inputs[1][0]["text"]
+    assert "/breakout" not in inputs[1][0]["text"]
 
 
 def test_slack_context_never_replays_open_swes_own_replies(
@@ -777,6 +849,74 @@ def test_slack_context_does_not_treat_a_lookalike_bot_as_open_swe(
     assert "sender_type: bot" in intro
 
 
+def test_queued_slack_edit_names_people_and_public_channels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    _setup_slack_mention_fakes(monkeypatch, captured)
+    channels = {
+        "C9": SlackChannel(
+            id="C9",
+            name="eng",
+            payload={
+                "id": "C9",
+                "name": "eng",
+                "is_channel": True,
+                "is_private": False,
+                "is_ext_shared": False,
+                "is_pending_ext_shared": False,
+            },
+        ),
+        "C8": SlackChannel(
+            id="C8",
+            name="secret",
+            payload={"id": "C8", "name": "secret", "is_channel": True, "is_private": True},
+        ),
+    }
+
+    async def fake_thread_exists(thread_id: str) -> bool:
+        return True
+
+    async def fake_queue_message_for_thread(thread_id: str, content: object) -> bool:
+        captured["queued"] = content
+        return True
+
+    async def fake_load(channel_id: str) -> SlackChannel | None:
+        return channels.get(channel_id)
+
+    monkeypatch.setattr(webhook_common, "thread_exists", fake_thread_exists)
+    monkeypatch.setattr(slack_webhooks, "queue_message_for_thread", fake_queue_message_for_thread)
+    monkeypatch.setattr(slack_webhooks.SlackChannel, "load", fake_load)
+
+    asyncio.run(
+        slack_webhooks.process_slack_mention(
+            SlackRequest.model_validate(
+                {
+                    "channel_id": "C123",
+                    "thread_ts": "1700000000.000100",
+                    "event_ts": "1700000000.000300",
+                    "user_id": "U123",
+                    "text": "<@UBOT> ask <@U456> in <#C9|> not <#C8|>",
+                    "bot_user_id": "UBOT",
+                    "message_update": True,
+                    "attachments": [{"is_share": True, "text": "cc <@U777> in <#C9>"}],
+                }
+            ),
+            webhook_common.SlackRepoResolution(
+                Repo(owner="langchain-ai", name="open-swe"), explicit=True
+            ),
+        )
+    )
+
+    text = "\n".join(
+        block["text"]
+        for block in cast(list, captured["queued"])
+        if isinstance(block, dict) and block.get("text")
+    )
+    assert "ask <@U456|Teammate> in <#C9|eng> not <#C8|>" in text
+    assert "U777" in cast(list, captured["user_ids"])
+
+
 def test_process_slack_mention_runs_an_edit_when_queueing_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -817,38 +957,169 @@ def test_process_slack_mention_runs_an_edit_when_queueing_fails(
     assert run_create["kwargs"]["multitask_strategy"] == "enqueue"
 
 
-def test_pending_cost_marks_latest_reply_until_cost_arrives() -> None:
+def test_format_slack_web_link_footer_omits_unavailable_cost() -> None:
+    usage = RunUsageSummary(models=("model-a", "model-b"), total_tokens=12_345)
+
+    footer = slack_utils.format_slack_web_link_footer("https://app.example/agents/t1", usage)
+    footer_without_usage = slack_utils.format_slack_web_link_footer("https://app.example/agents/t1")
+
+    assert footer == "<https://app.example/agents/t1|Open in Web> • model-a + model-b"
+    assert footer_without_usage == "<https://app.example/agents/t1|Open in Web>"
+
+
+def test_format_slack_web_link_footer_prefers_session_cost() -> None:
+    usage = RunUsageSummary(
+        models=("model-a",), total_tokens=12_345, session_cost_usd=0.42, reasoning_effort="high"
+    )
+
+    footer = slack_utils.format_slack_web_link_footer("https://app.example/agents/t1", usage)
+
+    assert footer == "<https://app.example/agents/t1|Open in Web> • model-a (high) • $0.42"
+
+
+def test_format_slack_run_usage_shortens_model_paths() -> None:
+    usage = RunUsageSummary(
+        models=("accounts/fireworks/models/glm-5p3-flash", "openai:gpt-5.6-sol"),
+        total_tokens=12_345,
+    )
+
+    footer = slack_utils.format_slack_run_usage(usage)
+
+    assert footer == "glm-5p3-flash + openai:gpt-5.6-sol"
+
+
+def test_with_slack_session_cost_preserves_blocks_and_is_idempotent() -> None:
+    text = "Done <https://app.example/agents/t1|Open in Web> • model-a • 110 main-agent tokens"
+    blocks = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": "Done"}},
+        {"type": "actions", "elements": [{"type": "button", "action_id": "approve"}]},
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        "<https://app.example/agents/t1|Open in Web> • model-a • "
+                        "110 main-agent tokens"
+                    ),
+                }
+            ],
+        },
+    ]
+
+    updated_text, updated_blocks = slack_utils.with_slack_session_cost(text, blocks, 0.42)
+    repeated = slack_utils.with_slack_session_cost(updated_text, updated_blocks, 0.42)
+
+    assert repeated == (updated_text, updated_blocks)
+    assert updated_text.endswith("model-a • $0.42")
+    assert "main-agent tokens" not in updated_text
+    assert updated_blocks is not None
+    assert updated_blocks[1] == blocks[1]
+    assert updated_blocks[2]["elements"][0]["text"].endswith("model-a • $0.42")
+    assert "main-agent tokens" not in updated_blocks[2]["elements"][0]["text"]
+
+
+@pytest.mark.parametrize("label", ["calculating cost", "calculating cost..."])
+def test_with_slack_session_cost_replaces_usage_only_pending_footer(label: str) -> None:
+    text = f"Done <https://app.example/agents/t1|Open in Web> • {label}"
+    blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Done <https://app.example/agents/t1|Open in Web>",
+            },
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"model-a • {label}"}],
+        },
+    ]
+
+    updated_text, updated_blocks = slack_utils.with_slack_session_cost(text, blocks, 0.42)
+
+    assert updated_text.endswith("Open in Web> • $0.42")
+    assert updated_blocks is not None
+    assert updated_blocks[0] == blocks[0]
+    assert updated_blocks[1]["elements"][0]["text"] == "model-a • $0.42"
+
+    cleared_text, cleared_blocks = slack_utils.without_slack_pending_session_cost(text, blocks)
+    assert cleared_text == "Done <https://app.example/agents/t1|Open in Web>"
+    assert cleared_blocks[1]["elements"][0]["text"] == "model-a"
+    blocks[1]["elements"][0]["text"] = label
+    _, cleared_blocks = slack_utils.without_slack_pending_session_cost(text, blocks)
+    assert cleared_blocks[1]["elements"][0]["text"] == "Cost unavailable"
+
+
+@pytest.mark.parametrize("linked_in_body", [False, True])
+def test_deferred_cost_updates_footer_without_placeholder(linked_in_body: bool) -> None:
+    url = "https://app.example/agents/t1"
+    body = f"Done <{url}|Open in Web>" if linked_in_body else "Done"
+    usage = RunUsageSummary(models=("model-a",), total_tokens=123)
+    blocks = slack_utils._with_slack_web_link_context_block(
+        body, [{"type": "section", "text": {"type": "mrkdwn", "text": body}}], url, usage
+    )
+    text = slack_utils.append_slack_web_link_footer(body, url, usage)
+    assert "calculating cost" not in text
+    updated_text, updated_blocks = slack_utils.with_slack_session_cost(text, blocks, 0.42)
+    assert updated_text.endswith("model-a • $0.42")
+    assert updated_blocks is not None
+    assert updated_blocks[0] == blocks[0]
+    assert updated_blocks[-1]["elements"][0]["text"].endswith("model-a • $0.42")
+    assert slack_utils.with_slack_session_cost(updated_text, updated_blocks, 0.42) == (
+        updated_text,
+        updated_blocks,
+    )
+
+
+def test_feedback_and_web_usage_share_one_actions_block() -> None:
+    from agent.slack.run_feedback import feedback_block
+
     url = "https://app.example/agents/t1"
     usage = RunUsageSummary(models=("model-a",), total_tokens=123)
     blocks = slack_utils._with_slack_web_link_context_block(
-        "Done", [{"type": "section", "text": {"type": "mrkdwn", "text": "Done"}}], url, usage
+        "Done",
+        [
+            {"type": "section", "text": {"type": "mrkdwn", "text": "Done"}},
+            feedback_block("run-1"),
+        ],
+        url,
+        usage,
     )
+    assert blocks is not None
+    assert [block["type"] for block in blocks] == ["section", "actions"]
+    actions = blocks[-1]["elements"]
+    assert [action["text"]["text"] for action in actions] == ["👍", "👎", "↗ model-a"]
+    assert actions[-1]["url"] == url
+    assert actions[-1]["accessibility_label"] == "Open in Web"
+
     text = slack_utils.append_slack_web_link_footer("Done", url, usage)
-    assert "calculating cost" not in text
+    updated_text, updated_blocks = slack_utils.with_slack_session_cost(
+        text, blocks, 0.42, run_cost=0.001
+    )
+    assert updated_text.endswith("model-a • $0.42 (<$0.01)")
+    assert updated_blocks is not None
+    assert [action["text"]["text"] for action in updated_blocks[-1]["elements"]] == [
+        "👍",
+        "👎",
+        "↗ model-a • $0.42 (<$0.01)",
+    ]
+    assert slack_utils.with_slack_session_cost(
+        updated_text, updated_blocks, 0.42, run_cost=0.001
+    ) == (updated_text, updated_blocks)
 
-    pending_text, pending_blocks = slack_utils.with_slack_pending_session_cost(text, blocks)
-    assert pending_text.endswith("model-a • calculating cost...")
-    assert pending_blocks is not None
-    assert pending_blocks[-1]["elements"][0]["text"].endswith("model-a • calculating cost...")
 
-    # Idempotent while awaiting cost, and the refresh swaps the label for the cost.
-    assert slack_utils.with_slack_pending_session_cost(pending_text, pending_blocks) == (
-        pending_text,
-        pending_blocks,
+@pytest.mark.parametrize("usage", [None, RunUsageSummary(models=(), total_tokens=123)])
+def test_cost_enrichment_without_model_metadata(usage: RunUsageSummary | None) -> None:
+    url = "https://app.example/agents/t1"
+    text = f"Done <{url}|Open in Web>"
+    blocks = slack_utils._with_slack_web_link_context_block(
+        text, [{"type": "section", "text": {"type": "mrkdwn", "text": text}}], url, usage
     )
-    final_text, final_blocks = slack_utils.with_slack_session_cost(
-        pending_text, pending_blocks, 0.42, run_cost=0.001
-    )
-    assert final_text.endswith("model-a • $0.42 (<$0.01)")
-    assert final_blocks is not None
-    assert final_blocks[-1]["elements"][0]["text"].endswith("model-a • $0.42 (<$0.01)")
-    assert slack_utils.with_slack_session_cost(final_text, final_blocks, 0.42, run_cost=0.001) == (
-        final_text,
-        final_blocks,
-    )
-
-    # Messages without a web footer (e.g. interim acknowledgements) stay untouched.
-    assert slack_utils.with_slack_pending_session_cost("Working on it", None) == (
-        "Working on it",
-        None,
-    )
+    final_text, final_blocks = slack_utils.with_slack_session_cost(text, blocks, 0.42)
+    assert final_text.endswith("$0.42")
+    assert final_blocks[-1]["elements"][0]["text"] == "$0.42"
+    assert final_blocks[0] == blocks[0]
+    cleared_text, cleared_blocks = slack_utils.without_slack_pending_session_cost(text, blocks)
+    assert "calculating cost" not in cleared_text
+    assert "calculating cost" not in str(cleared_blocks)
