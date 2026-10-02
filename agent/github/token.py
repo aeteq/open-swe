@@ -20,6 +20,7 @@ from agent.github.thread_token import (
     invalidate_cached_github_token,
 )
 from agent.linear.notifications import post_linear_notification
+from agent.notion.notifications import post_notion_comment
 from agent.run_config import RunConfig
 from agent.slack.client import (
     LANGGRAPH_URL,
@@ -79,8 +80,8 @@ def is_bot_token_only_mode() -> bool:
 
 def _retry_instruction(source: str) -> str:
     if source == "slack":
-        return "Once authenticated, mention Open SWE again in this Slack thread to retry."
-    return "Once authenticated, reply to this issue mentioning @openswe to retry."
+        return "Once authenticated, mention me again in this Slack thread to retry."
+    return "Once authenticated, reply to this issue mentioning @jarvis-aeteq to retry."
 
 
 def _source_account_label(source: str) -> str:
@@ -257,6 +258,17 @@ async def leave_failure_comment(
                     "Open SWE couldn't resolve your GitHub account for this run. Sign in "
                     "with GitHub in your Open SWE settings, then mention it again."
                 ),
+            )
+        return
+    if source == "notion":
+        if cfg.notion_page and cfg.notion_page.id:
+            await post_notion_comment(
+                cfg.notion_page.id,
+                warning(
+                    "Open SWE couldn't resolve your GitHub account for this run. Sign in "
+                    "with GitHub in your Open SWE settings, then try again."
+                ),
+                discussion_id=cfg.notion_page.discussion_id,
             )
         return
     if source == "slack":

@@ -5,7 +5,7 @@ description: Start here to set up Open SWE, choose the entrypoint and owner for 
 tags: [open-swe, contributor-guide, development, langgraph, testing]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-08T08:15:30.533Z
+    at: 2026-09-29T14:41:34.067Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -15,14 +15,10 @@ sources:
     resource: repo://agent/dispatch.py
   - id: openwiki-source-f8665996049065d2172f68e2
     resource: repo://agent/graphs/agent.py
-  - id: openwiki-source-f2c7a9cbc0f7af0b4db77658
-    resource: repo://agent/graphs/analyzer.py
-  - id: openwiki-source-368e3a3da2c40119aead4316
-    resource: repo://agent/graphs/chat.py
-  - id: openwiki-source-73db7609f2a24f4a0ff5c32c
-    resource: repo://agent/graphs/reviewer.py
   - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
     resource: repo://agent/graphs/scheduler.py
+  - id: openwiki-source-1e3ecb10e93d93c0658b1895
+    resource: repo://agent/review_scout/graph.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
     resource: repo://agent/reviewer.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
@@ -49,7 +45,7 @@ sources:
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-generated: { by: "openwiki/0.4.2", at: "2026-09-08T08:15:30.533Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 ---
 
 # Open SWE Codebase Guide
@@ -69,7 +65,7 @@ make web                # pnpm run dev
 make desktop            # pnpm run dev:desktop
 ```
 
-Use `make dev` when a change needs LangGraph graph execution; it serves the registered graphs and HTTP app. `make run` is FastAPI-only. `make dev-ui` fronts Vite through the backend at `:2024`; `make desktop` starts Electron and requires the backend separately. For local webhook exposure, `make tunnel NGROK_DOMAIN=<name>.ngrok-free.dev` restricts the ngrok policy to `/webhooks/*` because the development server has no authentication.
+Use `make dev` when a change needs LangGraph graph execution; it serves all six registered graphs and the HTTP app. `make run` is FastAPI-only for dashboard and webhook testing without graph changes. `make dev-ui` fronts Vite through the backend at `:2024`; `make desktop` starts Electron and requires the backend separately. For local webhook exposure, `make tunnel NGROK_DOMAIN=<name>.ngrok-free.dev` restricts the ngrok policy to `/webhooks/*` because the development server has no authentication.
 
 Python is async-first: implement the async path. Add a synchronous method only when an interface requires it, and make that method raise `NotImplementedError`; do not maintain parallel implementations.
 
@@ -82,26 +78,39 @@ Python is async-first: implement the async path. Add a synchronous method only w
 | `agent.graphs.agent:traced_agent` | Main coding graph (`agent/server.py`) | Agent assembly, tools, skills, models, prompts, middleware, and coding sandbox preparation. |
 | `agent.graphs.reviewer:traced_reviewer_agent` | Reviewer graph (`agent/reviewer.py`) | Diff-grounded findings, review publication, reviewer sandbox behavior, and reviewer middleware. |
 | `agent.graphs.analyzer:traced_analyzer` | Style analyzer (`agent/analyzer.py`) | Repository review-style analysis and learned guidance. |
-| `agent.graphs.chat:traced_chat_agent` | PR chat (`agent/chat.py`) | Dashboard “chat with this PR,” virtual PR files, and read-only repository access. |
+| `agent.graphs.review-scout:traced_review_scout` | Review scout (`agent/review_scout/graph.py`) | Diff walkthrough generation, commit ordering, and scout-specific sandbox behavior. |
+| `agent.graphs.chat:traced_chat_agent` | PR chat (`agent/chat.py`) | Dashboard "chat with this PR," virtual PR files, and read-only repository access. |
 | `agent.graphs.scheduler:get_scheduler` | Scheduler (`agent/scheduler.py`) | Cron routing, scheduled work, stale-run repair, CI watches, background tasks, and cost refreshes. |
 | `agent.webapp:app` | FastAPI composition (`agent/api/app.py`) | Dashboard APIs/UI mount, health, plan/approval APIs, CORS, and webhook ingress. |
 
-```mermaid
-flowchart LR
-    Trigger["Dashboard Slack Linear GitHub"] --> Api["FastAPI routes"]
+### Request flow: from trigger to durable run
+
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
+flowchart TD
+    Dashboard["Dashboard"] --> Api["FastAPI routes"]
+    GitHub["GitHub webhook"] --> Api
+    Slack["Slack webhook"] --> Api
+    Linear["Linear webhook"] --> Api
+    Cron["Cron tick"] --> Scheduler["Scheduler dispatch"]
+    
     Api --> Dispatch["dispatch_agent_run"]
-    Dispatch --> Run["Durable LangGraph run"]
-    Run --> Agent["Agent or reviewer graph"]
-    Cron["Cron tick"] --> Scheduler["Scheduler graph"]
-    Scheduler --> Run
+    Dispatch --> RunInput["Create run input<br/>with identity/context"]
+    RunInput --> DurableRun["Create durable LangGraph run"]
+    DurableRun --> AgentGraph["Agent or Reviewer graph"]
+    Scheduler --> RunInput
+    
+    AgentGraph --> Sandbox["Thread-scoped sandbox"]
+    Sandbox --> Result["Result: work or findings"]
+    Result --> Webhook["Completion webhook"]
 ```
 
-This is the principal work-routing boundary: interactive coding and review triggers converge on durable run creation, while the scheduler selects maintenance work or launches a scheduled agent run.
+This is the principal work-routing boundary: interactive coding and review triggers converge on durable run creation via `dispatch_agent_run`, while the scheduler selects maintenance work or launches a scheduled agent run.
 
 ### Invariants worth preserving
 
 - The main agent factory is stateless and rebuilt for execution. Thread continuity belongs to LangGraph state/metadata and the thread sandbox, not to a long-lived graph object.
-- A missing sandbox may be recreated, but do **not** silently replace an unreachable main-agent sandbox: it could contain uncommitted work. Reviewer code may opt into replacement because it recreates its checkout for each review.
+- A missing sandbox may be recreated, but do **not** silently replace an unreachable main-agent sandbox: it could contain uncommitted work. Reviewer and scout code may opt into replacement because they recreate their checkout for each run.
 - The reviewer has no commit, push, or PR-opening tools. PR chat is also sandbox-less and excludes shell and file mutation; it receives `/pr/` virtual files and uses a repository-scoped GitHub App token for GitHub-backed reads.
 - `dispatch_agent_run` is the shared Slack, Linear, GitHub, and dashboard creation contract for `agent` or `reviewer`. Its default multitask strategy is `interrupt`, and callers must choose either a prebuilt input or content/context/identities—not both.
 - FastAPI pins a single event loop before queue construction, validates sandbox and local-development model configuration at startup, and closes cached models at shutdown. Credentialed CORS is added only for configured origins; `*` is rejected.
@@ -122,8 +131,6 @@ This is the principal work-routing boundary: interactive coding and review trigg
 ### Ingress, product, and delivery workflows
 
 - [Inbound Invocation to Durable Run](workflows/invocation.md) — validation, identity/context construction, threads, dispatch, and completion across dashboard, desktop, Slack, Linear, GitHub, and automation.
-- [Follow-ups, Interrupts, and Stop Control](workflows/follow-up-messages.md) — continuation and cancellation semantics for active durable work.
-- [Pull Request Delivery and Approval](workflows/pr-creation.md) — commits, pushes, workflow approval gates, PR creation, and CI state.
 - [Pull Request Review Workflow](workflows/pr-review.md) — manual/automatic reviews, findings, publishing, replies, and settlement.
 - [Scheduling, Background Work, and CI Monitoring](workflows/scheduling-and-baby-sit.md) — schedule lifecycle, reconciliation, watches, and background tasks.
 - [Dashboard and Desktop Clients](integrations/dashboard-ui.md) — authenticated browser APIs, UI proxy/mount behavior, Electron supervision, and local projects.
@@ -134,6 +141,10 @@ This is the principal work-routing boundary: interactive coding and review trigg
 
 - [Configuration and Startup Validation](operations/configuration.md) — lazy environment settings, persisted administrator settings, credentials, aliases, and failure behavior.
 - [Development, Deployment, and Serving](operations/deployment.md) — local versus deployed serving, dashboard builds/mount prefixes, webhook exposure, and desktop distribution.
+
+### Testing
+
+- [Testing Strategy and Patterns](testing/overview.md) — test ownership, shared fixtures, deterministic patterns, and focused E2E validation.
 
 ## Validate only the changed boundary
 
@@ -151,7 +162,9 @@ make typecheck
 
 Use focused pytest families such as `tests/agent/`, `tests/reviewer/`, `tests/sandbox/`, `tests/webhooks/`, `tests/dashboard/`, `tests/github/`, `tests/slack/`, `tests/middleware/`, or `tests/tools/` according to the changed owner. Run a focused dashboard or desktop workspace check through its package when changing frontend code.
 
-Escalate to a single Playwright spec only for a genuine cross-boundary contract:
+### End-to-end validation
+
+Escalate to a Playwright spec only for a genuine cross-boundary contract:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -159,4 +172,4 @@ pnpm run test:e2e:install
 pnpm exec playwright test tests/full_flow.spec.ts
 ```
 
-The E2E harness exercises real agent code, a temporary local sandbox, local git, the real dashboard, and Electron paths while faking the model and external SaaS HTTP boundaries. Browser runs use one worker; the separate desktop configuration selects `desktop.spec.ts`. See [Focused Validation Strategy](testing/overview.md) for test ownership, fakes, artifacts, and narrow frontend/desktop commands.
+The E2E harness exercises real agent code, a temporary local sandbox, local git, the real dashboard, and Electron paths while faking the model and external SaaS HTTP boundaries. Browser runs use one worker; the separate desktop configuration selects `desktop.spec.ts`. See [Testing Strategy and Patterns](testing/overview.md) for test ownership, fakes, artifacts, and narrow frontend/desktop commands.
