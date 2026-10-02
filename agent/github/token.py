@@ -16,6 +16,7 @@ from agent.github.thread_token import (
     github_token_principal,
     invalidate_cached_github_token,
 )
+from agent.notion.notifications import post_notion_comment
 from agent.run_config import RunConfig
 
 logger = logging.getLogger(__name__)

@@ -436,7 +436,7 @@ export function AutomationEditor({
             {slackNotificationMode === "on_action"
               ? "The agent decides whether it performed an action; read-only and no-op runs stay silent."
               : "Each run starts a new thread in the channel."}{" "}
-            The Open SWE bot must be a member of the channel.
+            The Jarvis bot must be a member of the channel.
           </p>
         </div>
 
@@ -447,7 +447,7 @@ export function AutomationEditor({
             value={prompt}
             onValueChange={setPrompt}
             disabled={!canManage}
-            placeholder="What should Open SWE do each time this runs?"
+            placeholder="What should Jarvis do each time this runs?"
             rows={5}
             className="w-full resize-none bg-transparent text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70"
           />
