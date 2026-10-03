@@ -61,6 +61,7 @@ _TOOL_MODULES = {
     "save_user_skill": ".user_skills",
     "delete_user_skill": ".user_skills",
     "schedule_thread_wakeup": ".schedule_thread_wakeup",
+    "search_pull_requests": ".search_pull_requests",
     "search_repo_code": "agent.github.tools.search_repo_code",
     "start_thread": ".threads",
     "slack_add_reaction": "agent.slack.tools.add_reaction",
@@ -140,6 +141,7 @@ __all__ = [
     "save_user_skill",
     "delete_user_skill",
     "schedule_thread_wakeup",
+    "search_pull_requests",
     "search_repo_code",
     "start_thread",
     "slack_add_reaction",
@@ -225,6 +227,7 @@ if TYPE_CHECKING:
     from agent.tools.save_user_instructions import save_user_instructions
     from agent.tools.save_user_settings import save_user_settings
     from agent.tools.schedule_thread_wakeup import schedule_thread_wakeup
+    from agent.tools.search_pull_requests import search_pull_requests
     from agent.tools.submit_thread_feedback import submit_thread_feedback
     from agent.tools.threads import get_thread, list_threads, manage_thread, start_thread
     from agent.tools.update_finding import update_finding
