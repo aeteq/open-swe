@@ -1,8 +1,11 @@
 ---
-type: "Reference"
-title: "Context and Prompt Engineering"
-description: "Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources."
-tags: ["context-assembly", "prompt-engineering", "system-prompt", "dynamic-context"]
+type: "Workflow"
+title: "Context Engineering and Prompting"
+description: "System for assembling run input from surface events, managing dynamic context deduplication, constructing layered system prompts from multiple instruction sources, and rendering prompt material at execution time."
+tags: ["context-assembly", "prompt-engineering", "system-prompt", "dynamic-context", "instruction-precedence"]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-03T13:09:24.486Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -30,15 +33,12 @@ sources:
     resource: repo://agent/utils/agents_md.py
   - id: openwiki-source-ff16fde3cd496fd0b8de20da
     resource: repo://agent/utils/analyzer_skills.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 ---
 
-# Context and Prompt Engineering
+# Context Engineering and Prompting
 
-Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
+Context is assembled in layers: surface adapters construct a normalized `RunInput` transcript from event content and identities; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls; preparation middleware resolves fresh, run-specific prompt material and checkpoints it by fingerprint; and the model call wraps the rendered system message with any existing system guidance.
 
 ```mermaid
 sequenceDiagram
@@ -90,17 +90,17 @@ The graph factory creates a deep agent with an initially empty system prompt. `P
 
 `BasePrepareRunMiddleware` fingerprints the latest message and relevant configuration. Once its before-agent update is checkpointed, a resumed attempt with the same fingerprint skips preparation; a later invocation prepares fresh credentials, prompt, and context. Preparation must therefore be idempotent, and a sandbox failure is surfaced and re-raised rather than silently continuing without a workspace.
 
-For every model call, the middleware combines the rendered prompt with any existing system message. The main prompt states that repository custom instructions and workspace instructions are mandatory, while `AGENTS.md` overrides them on conflict; sender-level standing instructions yield to repository instructions and `AGENTS.md`.
+For every model call, the middleware's `awrap_model_call` combines the rendered prompt with any existing system message: if a `rendered_system_prompt` is present in state, it prepends it to any existing system message text. The main prompt states that repository custom instructions and workspace instructions are mandatory, while `AGENTS.md` overrides them on conflict; sender-level standing instructions yield to repository instructions and `AGENTS.md`.
 
 ### Instruction precedence in the main agent
 
 The complete instruction hierarchy in `construct_system_prompt`, from lowest to highest precedence, is:
 
 1. **Default system guidance** — working environment, tools, task execution, dependencies, commit/PR, and self-awareness sections.
-2. **Environment instructions** — workspace custom instructions configured by an admin.
+2. **Environment instructions** — workspace custom instructions configured by an admin, rendered via `workspace-instructions.md.jinja`.
 3. **User instructions** — standing instructions for the triggering sender, stored per GitHub login. The prompt notes that these yield to repository and `AGENTS.md` instructions.
-4. **Repository custom instructions** — configured by a workspace admin for this repository. The prompt treats them as mandatory rules and states they override defaults, but lose to `AGENTS.md` on conflict.
-5. **`AGENTS.md` at the repository root** — mandatory rules that override all prior instruction sources.
+4. **Repository custom instructions** — configured by a workspace admin for this repository, rendered via `repo-instructions.md.jinja`. The prompt treats them as mandatory rules and states they override defaults, but lose to `AGENTS.md` on conflict.
+5. **`AGENTS.md` at the repository root** — mandatory rules that override all prior instruction sources; required to be read after repository setup.
 6. **Scoped `AGENTS.md` files** — injected by `SubdirAgentsReadMiddleware` after successful `read_file` calls, with deeper scopes taking precedence.
 
 ## Repository conventions: `AGENTS.md`

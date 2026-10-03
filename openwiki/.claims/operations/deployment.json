@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:a3c1c447920c93bff89b864bcdbb638f554f1babac47e5321d42989a2c1be882",
+  "pageVersion": "sha256:0265aff55128b95fe9c8fac28b8b484673b0d0e63d80c155d1aac337a82b7132",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -56,11 +56,11 @@
     },
     {
       "id": "claim_7c0acef30b314001ba9760696f5b0434",
-      "statement": "The local dev server's langgraph constraints are set to langgraph-api>=0.15.0rc1,<0.16 and langgraph-runtime-inmem>=0.35.0rc1,<0.36 in pyproject.toml, while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.13.3-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
+      "statement": "The local dev server's langgraph constraints are set to langgraph-api>=0.15.0rc1,<0.16 and langgraph-runtime-inmem>=0.35.0rc1,<0.36 in pyproject.toml, while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
       "evidence": [
         {
           "resource": "repo://Dockerfile#L1-L1",
-          "version": "repo-lines-v1:sha256:100c52ef6ec9787e73ae795c3e42a5d20a3bf5c15b75a2e7340a13800b45df3b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTAwYzUyZWY2ZWM5Nzg3ZTczYWU3OTVjM2U0MmE1ZDIwYTNiZjVjMTViNzVhMmU3MzQwYTEzODAwYjQ1ZGYzYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTAwYzUyZWY2ZWM5Nzg3ZTczYWU3OTVjM2U0MmE1ZDIwYTNiZjVjMTViNzVhMmU3MzQwYTEzODAwYjQ1ZGYzYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmMyYjY4MjIzZWQwZmJlN2I0MTQyNDYwMGZmZmI2ZTFkYmFlYjFhODNjNGU5M2E1MmNmNTZmOWQ5NDM5MzhhNyJ9"
+          "version": "repo-lines-v1:sha256:06798c4e26d3368f2ed6484bd1b61030a8a13273d0abc5950fcd01d5a866bbef:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDY3OThjNGUyNmQzMzY4ZjJlZDY0ODRiZDFiNjEwMzBhOGExMzI3M2QwYWJjNTk1MGZjZDAxZDVhODY2YmJlZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDY3OThjNGUyNmQzMzY4ZjJlZDY0ODRiZDFiNjEwMzBhOGExMzI3M2QwYWJjNTk1MGZjZDAxZDVhODY2YmJlZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmMyYjY4MjIzZWQwZmJlN2I0MTQyNDYwMGZmZmI2ZTFkYmFlYjFhODNjNGU5M2E1MmNmNTZmOWQ5NDM5MzhhNyJ9"
         },
         {
           "resource": "repo://langgraph.json#L4-L4",
@@ -206,11 +206,11 @@
     },
     {
       "id": "claim_eadc4b3dcf5e4752bf245ed137ea5a67",
-      "statement": "The root Dockerfile builds the standalone production LangGraph API server image from langchain/langgraph-api:0.13.3-py3.14, installing the repository with uv and baking the six graph registrations (via LANGSERVE_GRAPHS), HTTP app (via LANGGRAPH_HTTP), and checkpointer TTL (via LANGGRAPH_CHECKPOINTER) into environment variables; it exposes port 8000.",
+      "statement": "The root Dockerfile builds the standalone production LangGraph API server image from langchain/langgraph-api:0.15.1-py3.14, installing the repository with uv and baking the six graph registrations (via LANGSERVE_GRAPHS), HTTP app (via LANGGRAPH_HTTP), and checkpointer TTL (via LANGGRAPH_CHECKPOINTER) into environment variables; it exposes port 8000.",
       "evidence": [
         {
           "resource": "repo://Dockerfile#L1-L24",
-          "version": "repo-lines-v1:sha256:1bb35f091bf66e67181cdded4529bc990812fe18f2ebdb77e287874d25f78814:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGM1MmVmNmVjOTc4N2U3M2FlNzk1YzNlNDJhNWQyMGEzYmY1YzE1Yjc1YTJlNzM0MGExMzgwMGI0NWRmM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:4282ceb50eb2d0115ee437365c13afa88015f9cb9d7db643db34f059eba3078f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2Nzk4YzRlMjZkMzM2OGYyZWQ2NDg0YmQxYjYxMDMwYThhMTMyNzNkMGFiYzU5NTBmY2QwMWQ1YTg2NmJiZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -289,8 +289,8 @@
       "statement": "The FastAPI app rejects a wildcard DASHBOARD_ALLOWED_ORIGINS configuration because credentials are enabled, and applies the configured origins to credentialed CORS with dashboard, plan, workflow approval, GitHub webhook, Slack webhook, Linear webhook, Notion webhook, health check, and sandbox-tool routers installed.",
       "evidence": [
         {
-          "resource": "repo://agent/api/app.py#L118-L149",
-          "version": "repo-lines-v1:sha256:dec6a6e2d3bc77e0798f57a910cd592e770b75035fb11948bdb6264dd2f07dac:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDY5NWIxZTRhMmEyYmU5OTQ1MWNmZTYyYjhmMWYwOWFlY2U5MjllZTg3NWQ3NWYyNWVkZWViNGJmMWYyYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUifQ"
+          "resource": "repo://agent/api/app.py#L119-L152",
+          "version": "repo-lines-v1:sha256:b688606d78f58631a4e1c3fb145c82534b7c09d5474d84b9fa1b8ba0447aca20:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
         }
       ]
     },
@@ -358,7 +358,7 @@
       "evidence": [
         {
           "resource": "repo://Dockerfile#L1-L24",
-          "version": "repo-lines-v1:sha256:1bb35f091bf66e67181cdded4529bc990812fe18f2ebdb77e287874d25f78814:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMGM1MmVmNmVjOTc4N2U3M2FlNzk1YzNlNDJhNWQyMGEzYmY1YzE1Yjc1YTJlNzM0MGExMzgwMGI0NWRmM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:4282ceb50eb2d0115ee437365c13afa88015f9cb9d7db643db34f059eba3078f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA2Nzk4YzRlMjZkMzM2OGYyZWQ2NDg0YmQxYjYxMDMwYThhMTMyNzNkMGFiYzU5NTBmY2QwMWQ1YTg2NmJiZWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWJjYjgyM2E1ZmU2NWFjZTM3NWNjYTBmMzI5NThjMjIxMGNkYTEzODcxODM2MWEyNTk1ZTM4NWIyOTc0NTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://docs/INSTALLATION.md#L21-L26",
@@ -437,6 +437,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-01T15:12:02.643Z"
+    "at": "2026-10-03T13:09:24.486Z"
   }
 }
