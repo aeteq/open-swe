@@ -127,12 +127,12 @@ def request_blockers(snapshot: PullRequestSnapshot) -> list[str]:
 
 
 async def _target_channel(
-    pr_ref: GitHubPrRef, override: str, token: str, head_sha: str
+    pr_ref: GitHubPrRef, override: str, token: str
 ) -> SlackChannel | RequestResult:
     configured = override.strip()
     if not configured:
         configured = (
-            await RepoSettings.fetch(pr_ref.owner, pr_ref.repo, token=token, ref=head_sha)
+            await RepoSettings.cached(pr_ref.owner, pr_ref.repo, token=token)
         ).review_channel
     if not configured.strip():
         return _failure(
@@ -231,6 +231,7 @@ async def record_pull_request(
     details = PullRequestPayload.model_validate(payload)
     pull_request = await PullRequest.load(pr_ref.owner, pr_ref.repo, pr_ref.number)
     pull_request.title = details.title
+    pull_request.body = details.body or ""
     pull_request.head_ref = details.head_ref
     pull_request.base_ref = details.base_ref
     pull_request.author = details.author
@@ -268,7 +269,7 @@ async def request_review(
             "The pull request cannot be put up for review: " + "; ".join(blockers) + "."
         )
 
-    target = await _target_channel(pr_ref, channel, token, readiness.snapshot.head_sha)
+    target = await _target_channel(pr_ref, channel, token)
     if isinstance(target, RequestResult):
         return target
     recorded = await record_pull_request(pr_ref, token)
