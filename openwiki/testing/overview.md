@@ -42,28 +42,35 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-03T13:09:24.486Z
 ---
 
 # Testing Infrastructure and Validation Patterns
 
 The testing strategy separates concerns by layer: focused pytest tests for agent, middleware, reviewer, sandbox, and webhook behavior; dashboard Vitest for React rendering and client state; desktop Node tests for Electron main-process code; and Playwright for real webhook, authenticated dashboard, git/sandbox, and Electron integration. Choose the test layer that owns the contract being changed, running it in isolation with fakes and mocking only external boundaries.
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
-flowchart TD
-    Change["Changed behavior"] --> Owner{"Boundary that<br/>owns it"}
-    Owner -->|"Agent, middleware,<br/>reviewer, sandbox,<br/>webhook, tools"| Pytest["Focused pytest<br/>in asyncio auto mode"]
-    Owner -->|"Dashboard React<br/>component or client"| Vitest["Dashboard Vitest"]
-    Owner -->|"Electron main<br/>process"| Node["Desktop Node --test"]
-    Owner -->|"Real webhook,<br/>authenticated UI,<br/>git, Electron"| Playwright["Focused Playwright"]
-    Pytest --> Gate["Relevant quality gate"]
-    Vitest --> Gate
-    Node --> Gate
-    Playwright --> Gate
+Test layer selection
+──────────────────────────────────────────────────────────────
+
+Change                                    Owned by
+──────────────────────────────────────────────────────────────
+Agent, middleware, reviewer, sandbox,     pytest in asyncio auto mode
+webhook, tools                            with FakeStore, monkeypatching
+                                          external boundaries
+
+Dashboard React components,               Vitest (vitest run)
+client utilities, state management        from dashboard workspace
+
+Electron main process, IPC, window        Node --test
+lifecycle, git operations                 from desktop workspace
+
+Real webhook routes, authenticated UI,    Playwright on langgraph dev
+git, Electron app, end-to-end flow        with controlled boundaries
+──────────────────────────────────────────────────────────────
 ```
 
 Test layer responsibilities: pytest owns Python backend contracts via unit tests with fakes; Vitest owns frontend React components; Node tests own Electron main process; Playwright owns real webhook routes, UI integration, and end-to-end flows through the agent.

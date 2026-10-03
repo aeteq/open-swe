@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled for an execut
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-03T13:09:24.486Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -33,7 +33,7 @@ sources:
     resource: repo://tests/agent/test_factory_tool_loading.py
   - id: openwiki-source-36e029ef147f9810c97b2c29
     resource: repo://tests/models/test_agent_subagent_models.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 ---
 
 # Coding Agent Assembly
@@ -101,23 +101,28 @@ The ordered `skill_sources` list is supplied to both the parent and the general-
 
 The parent gets a curated static tool list. Slack tools require trusted Slack or schedule source context with a channel and thread timestamp. Authorized admin threads add environment, organization-skill, sandbox-reset, and automation controls. Sandbox download/service URL tools require the LangSmith sandbox provider and are omitted for desktop and stop-summary runs. Desktop is restricted to `http_request`, `fetch_url`, and `web_search`; stop-summary mode is restricted to Slack read and reply.
 
-`ExcludeToolsMiddleware` removes Deep Agents' `grep` in normal runs. In stop-summary mode it also removes mutating filesystem and delegation tools. Plan mode applies a distinct filter that removes delegation and external mutation—including `task`, browser actions, HTTP requests, PR/thread/sandbox operations, and selected Slack, Linear, skill, environment, and automation tools. File editing and `execute` remain available, so the plan-mode shell read-only expectation is prompt-enforced rather than a hard execution boundary.
+`ExcludeToolsMiddleware` removes Deep Agents' `grep` in normal runs. In stop-summary mode it also removes mutating filesystem and delegation tools. Slack-ask mode (from a Slack `/oswe` command) applies a distinct filter that removes `grep`, thread-specific Slack operations (operations requiring the parent's thread context), and delegation to the subagent.
 
 Integration schemas are exposed through `DynamicToolMiddleware`, not appended directly to the static list. MCP tools (Corridor) are eagerly loaded during factory assembly with their names eagerly available (with loader failures and timeouts yielding no tools); their schemas become usable only after `load_integration_tools`. The middleware resets selected integration tools at run start, prevents direct calls before selection, serializes construction per group, and reserves static/Deep Agent names to reject collisions.
 
 ## Subagent boundary
 
-The only configured subagent is the Deep Agents general-purpose subagent. It receives the Open SWE shared base plus Deep Agents task mechanics, the same ordered skills, static tools excluding background execution/tasks and parent-context-sensitive Slack/thread/user-settings tools, and a description requiring Slack communication to be relayed through the parent. Because it compiles independently, parent middleware does not wrap it. It therefore receives its own dynamic-tool and exclusion middleware, workflow-push guard, OpenAI response sanitization, model-error handling, and model-call timeout.
+The only configured subagent is the Deep Agents general-purpose subagent. It receives the Open SWE shared base plus Deep Agents task mechanics, the same ordered skills, static tools excluding background execution/tasks and parent-context-sensitive Slack/thread/user-settings tools, and a description requiring Slack communication to be relayed through the parent. Because it compiles independently, parent middleware does not wrap it. It therefore receives its own dynamic-tool middleware, workflow-push guard, provider-specific response sanitization, model-error handling, and model-call timeout.
 
 ## Middleware order is behavior
 
 The supplied parent list is ordered outermost to innermost:
 
-1. Conversation offloading, `PrepareAgentRunMiddleware`, incident and workspace skills, then optional `DynamicToolMiddleware`.
-2. Input sanitation, image validation, `ModelCallLimitMiddleware`, tool-error conversion, tool exclusion, subdirectory reads, and retry for `task`.
-3. PR/workflow guards, GitHub proxy refresh, and—outside stop summaries—message-queue checking.
-4. Timeout wrap-up, step-limit notification, usage recording, optional model selection routing, optional model fallback, and dynamic-tool addition.
-5. Provider/thinking sanitizers, stable tool-result ordering, model-error handling, then `ModelCallTimeoutMiddleware`.
+1. FilesystemMiddleware, then ConversationOffloadingMiddleware, then PrepareAgentRunMiddleware, then TranscriptMiddleware, then optional client tools.
+2. Optional IncidentMiddleware and WorkspaceSkillsMiddleware.
+3. ValidateImageReadsMiddleware and ModelCallLimitMiddleware.
+4. ToolErrorMiddleware, ExcludeToolsMiddleware, SubdirAgentsReadMiddleware, and ToolRetryMiddleware for `task`.
+5. Optional PullRequestCreationGuardMiddleware, then WorkflowPushGuardMiddleware.
+6. Proxy refresh and queue-check hooks, then RequireUserReplyMiddleware and optional RequireCliResultMiddleware.
+7. Step-limit notification and usage recording.
+8. Optional ModelSelectionMiddleware and ModelFallbackMiddleware, optional ImageModelFallbackMiddleware, optional DynamicToolMiddleware.
+9. Sanitizers: Fireworks, OpenAI responses, thinking blocks, then StableToolResultOrderMiddleware.
+10. ModelErrorMiddleware, then innermost ModelCallTimeoutMiddleware.
 
 The innermost timeout measures the provider call itself and can propagate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside `ToolErrorMiddleware`. `create_deep_agent` supplies its own `PatchToolCallsMiddleware`, so the factory must not add the obsolete custom orphaned-tool-call repairer.
 

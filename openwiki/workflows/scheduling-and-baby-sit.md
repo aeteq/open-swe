@@ -46,10 +46,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-03T13:09:24.486Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -100,9 +100,9 @@ Costs can lag run completion in LangSmith, so both cost mechanisms use a bounded
 
 ## Background-task monitoring
 
-Long-running sandbox commands are monitored without an LLM. `ensure_background_task_cron(thread_id)` idempotently keeps one every-minute `background_tasks` cron for a thread (and removes duplicate cron rows). The scheduler calls `monitor_background_tasks(thread_id)`, which loads the thread's sandbox and lists task state.
+Long-running sandbox commands are monitored without an LLM. `ensure_background_task_cron(thread_id)` idempotently keeps one every-minute `background_tasks` cron for a thread (and removes duplicate cron rows). The scheduler calls `monitor_background_tasks(thread_id)`, which reconciles task state from the sandbox and delivers terminal completions.
 
-For each unreported terminal task (`completed`, `failed`, `timed_out`, `stopped`, or `lost`), the monitor atomically claims a per-task sandbox directory before dispatching a completion message back to the originating thread with `multitask_strategy="enqueue"`. The message treats command output as untrusted and directs the agent to retrieve bounded output only if needed. It marks delivery only after dispatch succeeds; on failure it releases the claim for a later tick. If no task is running and no terminal notification remains pending, a sandbox monitor lock triggers a fresh recheck before all of that thread's monitor crons are deleted. Missing sandbox metadata also removes them. These checks prevent duplicate notifications and avoid deleting a monitor while a concurrent task transition is being discovered.
+For each unreported terminal task (`completed`, `failed`, `timed_out`, `stopped`, or `lost`), the monitor atomically claims a per-task sandbox directory before dispatching a completion message back to the originating thread with `multitask_strategy="enqueue"`. The message treats command output as untrusted and directs the agent to retrieve bounded output only if needed. The monitor marks delivery only after dispatch succeeds; on failure it releases the claim for a later tick. Once no task is running and no terminal notification remains pending, the monitor acquires a sandbox lock and rechecks the task state; if still idle, it deletes all of that thread's monitor crons. Missing sandbox metadata also triggers cron deletion. These checks prevent duplicate notifications and avoid deleting a monitor while a concurrent task transition is being discovered.
 
 ## Thread wakeups
 

@@ -42,10 +42,10 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-03T13:09:24.486Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 ---
 
 # Dashboard and Desktop Clients
@@ -99,6 +99,7 @@ graph TB
     style ViteDev fill:#fff3e0
     style DesktopProxy fill:#f3e5f5
 ```
+
 Diagram: dashboard architecture showing production Nitro proxy, development Vite flow, and Electron desktop routing with loopback backend supervision.
 
 ```mermaid
@@ -115,6 +116,7 @@ sequenceDiagram
     API-->>UI: Response or redirect
     UI-->>Browser: Same-origin response
 ```
+
 Diagram: normal web traffic reaches the dashboard API through either the UI server proxy or the backend's same-origin shell.
 
 ## Session and request security
@@ -147,6 +149,7 @@ flowchart TD
     Readable -->|"yes"| Pinned["Return summary"]
     Readable -->|"no"| Omit["Omit pin"]
 ```
+
 Diagram: discovery is participant/admin scoped, whereas each pinned item is fetched and rechecked for current readability.
 
 The cloud terminal uses a two-step contract. `POST /threads/{id}/terminal/connect` checks readable thread and ready sandbox, returns a no-store WebSocket URL, the `open-swe-terminal` protocol, and a signed ticket. The WebSocket expects protocol plus ticket, validates its thread-bound ticket and origin, then repeats readable/sandbox validation. It only operates for a LangSmith sandbox, permits 20 concurrent sessions, and closes with `1013` when full. It bridges bounded input and resize messages to a PTY shell and kills the handle when the connection ends.

@@ -3,6 +3,9 @@ type: operations reference
 title: Configuration and Startup Validation
 description: Explains Open SWE's lazy environment registry, persisted administrator settings, model and sandbox selection, secrets, and the validation that can stop a server from starting.
 tags: [configuration, operations, environment-variables, startup-validation, sandbox, models, security]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-03T13:09:24.486Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -24,8 +27,6 @@ sources:
     resource: repo://agent/sandboxes/providers/langsmith.py
   - id: openwiki-source-49bfbb811c25e99235121924
     resource: repo://agent/sandboxes/providers/registry.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
   - id: openwiki-source-f0db445078d7a8158aa93724
     resource: repo://agent/utils/gateway.py
   - id: openwiki-source-56ade344fdbe7d47c84f008f
@@ -35,9 +36,6 @@ sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
 generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Configuration and Startup Validation

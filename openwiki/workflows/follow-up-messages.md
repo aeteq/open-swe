@@ -1,11 +1,12 @@
 ---
 type: workflow
-title: Follow-up Messages and Polling
-description: Deferred message handling, store-backed message queues, and follow-up pickup between runs. Explains how the before-model middleware injects queued messages into active runs and how background systems dispatch follow-ups after terminal conditions.
-tags: [follow-up, message-queue, middleware, polling, durable-runs, scheduler, baby-sit, background-tasks]
+title: Follow-up Messages and Continuations
+description: Deferred message handling, store-backed message queues, interrupt strategy dispatch, and continuation semantics. Explains how the before-model middleware injects queued messages into active runs and how background systems dispatch follow-ups after terminal conditions.
+tags: [follow-up, message-queue, middleware, interrupt-strategy, durable-runs, scheduler, baby-sit, background-tasks]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-03T13:09:24.486Z
 sources:
-  - id: openwiki-source-4817379f332cdbc419964b44
-    resource: repo://agent/api/health.py
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
   - id: openwiki-source-26c2c4725a171eaf524f2ad7
@@ -14,8 +15,6 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
-  - id: openwiki-source-cb4e403499865fd6b797127c
-    resource: repo://agent/input_messages.py
   - id: openwiki-source-828b741451bbda4468382d9b
     resource: repo://agent/middleware/check_message_queue.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
@@ -30,15 +29,14 @@ sources:
     resource: repo://agent/slack/webhook.py
   - id: openwiki-source-82825a65559de3e8581a123a
     resource: repo://agent/threads/handlers.py
+  - id: openwiki-source-e081118d2ce6ecdbd524a5ee
+    resource: repo://agent/threads/runs.py
   - id: openwiki-source-79be4c606a697afbf6efb749
     resource: repo://agent/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 ---
 
-# Follow-up Messages and Polling
+# Follow-up Messages and Continuations
 
 This workflow explains how Open SWE manages deferred work after a thread's active run completes, including message queuing for in-flight handoffs, background monitoring (baby-sit watches and sandbox background tasks), and the scheduler's role in dispatching follow-ups.
 
@@ -49,7 +47,7 @@ Two key mechanisms handle work that arrives while a thread is busy or while moni
 
 ## Message queue and before-model injection
 
-### Queueing messages for a live run
+### Queueing messages for a live thread
 
 The dashboard's `send_dashboard_message` endpoint does not create a new run immediately. Instead, it queues a message for injection into the active run at its next model boundary. It first authorizes the caller against thread metadata, checks that the thread is `busy` (returning 409 for idle threads and 502 if status cannot be determined), then stores the message in the LangGraph store:
 
@@ -91,6 +89,28 @@ At every model boundary, the middleware performs three sequential operations:
 ### Image handling and error resilience
 
 For payloads with image URLs, the middleware resolves the thread's configured model once. If the model does not support vision, it omits those fetched images and adds a warning to the text; supplied image blocks are retained. Failures reading images or the queue are logged and allow the model call to proceed rather than aborting the run. A failed queue read still flushes any autofix instruction already assembled, ensuring partial content is not lost.
+
+## Interrupt strategy and multitask semantics
+
+### Durable dispatch and default interrupt strategy
+
+`dispatch_agent_run` is the common agent/reviewer dispatch contract. It uses `multitask_strategy="interrupt"` by default, which supersedes active work and resumes with full history plus the new message. The contract constructs or accepts structured `RunInput` and delegates to `create_durable_run`, which invokes `client.runs.create` with the caller-selectable multitask strategy.
+
+Durable dispatch uses `durability="sync"` (checkpoint before each step), resumable/subgraph-capable Protocol v2 stream modes, and an optional completion webhook. This preserves a checkpoint before each step and allows a later dashboard client to replay runs it did not create.
+
+### Slack dispatch strategy branching
+
+- **Explicit Slack requests** (tagged mentions or configured treat-all-as-mentions mode): use `"interrupt"` to prioritize the user's urgent input.
+- **Untagged Slack follow-ups**: use `"enqueue"` to allow the current turn to finish before the follow-up begins.
+- **Slack message edits**: placed in the store message queue instead of creating a run, so an edit corrects the existing conversation without creating new runs.
+
+### Lower-priority follow-up dispatch
+
+- **Baby-sit and background-task notifications**: use `"enqueue"` to preserve the interactive run's ordering.
+
+### Sandbox lifecycle and interrupt handling
+
+The sandbox lifecycle relies on interrupt dispatch: a subsequent agent step resolves the sandbox by thread, reusing an in-memory backend or reconnecting through the persisted `sandbox_id`. An unreachable existing sandbox is not silently replaced for a normal agent thread, because replacement would discard uncommitted work; a deleted sandbox can be recreated, and the read-only reviewer can explicitly allow replacement.
 
 ## Background monitoring and follow-up dispatch
 
@@ -175,22 +195,9 @@ A code-channel `agent_session_stopped` event performs the same cancellation and 
 
 ### Dashboard stop and queued-message preservation
 
-The dashboard stop endpoint authorizes the caller, cancels all pending and running runs, and marks the thread interrupted. Unlike Slack stop, it **preserves** `pending_messages` in the store. If a queued follow-up exists, it dispatches an empty-input agent run after cancellation; the before-model middleware drains the preserved queue, allowing the follow-up to continue the conversation without losing user input.
+The dashboard stop endpoint authorizes the caller, cancels all pending and running runs by enumerating the thread rather than trusting `latest_run_id`, and marks the thread interrupted. Unlike Slack stop, it **preserves** `pending_messages` in the store. If a queued follow-up exists, it dispatches an empty-input agent run after cancellation (via `dispatch_pending_follow_ups`); the before-model middleware drains the preserved queue, allowing the follow-up to continue the conversation without losing user input.
 
 The admin variant cancels and marks interrupted without authorization checks or queued continuation.
-
-## Durable dispatch and multitask strategy
-
-`dispatch_agent_run` is the common agent/reviewer dispatch contract. It uses `multitask_strategy="interrupt"` by default, superseding active work and resuming with full history plus the new message. Low-priority work (baby-sit updates, background-task notifications) opts into `multitask_strategy="enqueue"`, waiting at the platform run queue:
-
-- **Explicit Slack requests** (tagged mentions): use `"interrupt"` to prioritize the user's urgent input.
-- **Untagged Slack follow-ups**: use `"enqueue"` to allow the current turn to finish before the follow-up begins.
-- **Slack message edits**: placed in the store message queue instead of creating a run, so an edit corrects the existing conversation without creating new runs.
-- **Baby-sit and background-task notifications**: use `"enqueue"` to preserve the interactive run's ordering.
-
-Durable dispatch uses `durability="sync"` (checkpoint before each step), resumable/subgraph-capable Protocol v2 stream modes, and an optional completion webhook. This preserves a checkpoint before each step and allows a later dashboard client to replay runs it did not create.
-
-The sandbox lifecycle relies on interrupt dispatch: a subsequent agent step resolves the sandbox by thread, reusing an in-memory backend or reconnecting through the persisted `sandbox_id`. An unreachable existing sandbox is not silently replaced for a normal agent thread, because replacement would discard uncommitted work; a deleted sandbox can be recreated, and the read-only reviewer can explicitly allow replacement.
 
 ## Testing and regression coverage
 

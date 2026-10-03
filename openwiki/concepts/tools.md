@@ -3,6 +3,9 @@ type: tool catalog and authorization model
 title: Tool Catalog and Authorization
 description: How Open SWE exports curated tools, wires graph-specific and deferred tool surfaces, and enforces authorization and mode-specific controls. Use this page when safely adding or changing an agent capability.
 tags: [tools, agent, authorization, integrations, dynamic-tools, automation, reviewer]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-03T13:09:24.486Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -26,10 +29,7 @@ sources:
     resource: repo://agent/tools/automations.py
   - id: openwiki-source-dcf576fc340e5f1a2bc3f5f4
     resource: repo://agent/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 ---
 
 # Tool Catalog and Authorization
@@ -69,7 +69,7 @@ This diagram distinguishes the import catalog from the graph-specific execution 
 
 ## Main coding agent assembly
 
-`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (save_plan); background execution (background_execute, background_task); user instructions and skills (save_user_instructions, save_user_skill, delete_user_skill); dashboard thread operations (list_threads, get_thread, manage_thread); optional thread creation (start_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management (manage_baby_sit); PR creation (open_pull_request, link_pull_request), expedited review (expedite_pr_approval, merge_expedited_pr), and Slack review request (request_pr_review); human reviewer management (request_human_review, assign_human_reviewer, auto_assign_human_reviewer, dismiss_human_review_request); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); optional user-settings mutation (save_user_settings); platform-issue reporting (report_platform_issue); Slack tools; incident management (manage_incident); and code-channel management (manage_code_channel). Signed sandbox helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them. Optional read-only SQL (read_only_sql), Notion task comments (comment_on_notion_task), CLI result logging (cli_result), and review approval policy management (manage_feature_flags, manage_review_approval_mode) are included only for private admin surfaces or as needed.
+`agent.server:get_agent` constructs the normal `static_tools` list. It includes web access (http_request, fetch_url, web_search); plan lifecycle (save_plan); background execution (background_execute, background_task); user instructions and skills (save_user_instructions, save_user_skill, delete_user_skill); dashboard thread operations (list_threads, get_thread, manage_thread); optional thread creation (start_thread); notifications (notify_automation_channel, submit_thread_feedback, submit_review_assessment_feedback); baby-sit management (manage_baby_sit); PR creation (open_pull_request, link_pull_request), expedited review (expedite_pr_approval, merge_expedited_pr), and Slack review request (request_pr_review); human reviewer management (request_human_review, assign_human_reviewer, auto_assign_human_reviewer, dismiss_human_review_request); sandbox recovery (recreate_sandbox); scheduling (schedule_thread_wakeup); safe user-settings lookup (read_user_settings); optional user-settings mutation (save_user_settings); platform-issue reporting (report_platform_issue); Slack tools; incident management (manage_incident); code-channel management (manage_code_channel); event listening and event-type enumeration (listen_events, list_event_types); optional Notion task commenting (comment_on_notion_task) and Notion design tools; and optional administration tools (cli_result, read_only_sql, manage_feature_flags, manage_review_approval_mode). Signed sandbox helpers (output_iframe, create_sandbox_file_download_url, expose_port) are included only when the run configuration enables them.
 
 The final list depends on trusted run context:
 

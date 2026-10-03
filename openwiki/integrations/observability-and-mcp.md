@@ -38,10 +38,10 @@ sources:
     resource: repo://agent/utils/langsmith.py
   - id: openwiki-source-7c60191e42b8e30b62935af1
     resource: repo://agent/utils/thread_participants.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-03T13:09:24.486Z
 ---
 
 # Observability, Tracing, and MCP
@@ -62,7 +62,7 @@ See [Authentication and security](../concepts/auth-and-security.md) for the broa
 
 Every agent run is traced to [LangSmith](https://www.langsmith.com) for inspection, debugging, and model-call cost attribution. The tracing system provides:
 
-- **Trace resource naming**: `agent/api/tracing.py` defines `TraceResourceNameMiddleware`, which renames APM spans after the route that handled each request. Since the platform instruments the server at a higher level, dashboard requests would otherwise land on a single generic resource. The middleware captures the route path and method (e.g., `GET /api/mcp/instance`) so traces can be searched, compared, and alerted on by endpoint.
+- **Trace resource naming**: `agent/api/tracing.py` defines `TraceResourceNameMiddleware`, which renames APM spans after the route that handled each request. Since the platform instruments the server this app is mounted behind, dashboard requests would otherwise land on a single generic resource. The middleware captures the route path and method (e.g., `GET /api/mcp/instance`) so traces can be searched, compared, and alerted on by endpoint.
 
 - **Middleware trace policies**: `agent/middleware/trace.py` provides `OpenSWEMiddleware`, a base class for all agent middleware that enforces `SCRUBBED_TRACE_POLICY`, which omits input payloads from traces to protect sensitive data. The `scrub_middleware_inputs` helper applies this policy to any traceable middleware before registration.
 
@@ -81,7 +81,7 @@ After a run completes, cost is enriched and tracked by two independent systems:
 1. **Immediate recording** of completion status and model-call token counts (input, output, total) via `record_agent_invocation_completion`.
 2. **Cost refresh scheduling** with bounded retries at delays (15, 30, 60, 120, 240 seconds) if cost is not immediately available from LangSmith.
 
-The refresh function `run_agent_cost_refresh` queries LangSmith thread stats to retrieve total invocation cost, correlating by `invocation_id` or `prepare_run_id` metadata, then stores the cost via `record_agent_invocation_cost`. If cost retrieval fails with a 4xx error (except 408/429), the error is treated as terminal and no further retries are scheduled; otherwise, timeouts and 5xx errors schedule the next attempt.
+The refresh function `run_agent_cost_refresh` queries LangSmith thread stats to retrieve total invocation cost, correlating by `invocation_id` or `prepare_run_id` metadata, then stores the cost via `record_agent_invocation_cost`. Terminal 4xx errors (except 408/429) are treated as fatal and prevent further retries; timeouts and 5xx errors schedule the next attempt.
 
 ### Session cost tracking
 
@@ -190,8 +190,8 @@ This invariant prevents the agent from using one person's credentials to act as 
 
 While assembling a non-local, non-summary agent, the server concurrently loads:
 
-- **MCP tools** from instance, workspace, and user tiers using `_mcp_tools_for`.
-- **Notion tools** for the triggering login using `_notion_tools_for`, only if the run has a known credential scope.
+- **MCP tools** from instance, workspace, and user tiers using `load_mcp_tools`.
+- **Notion tools** for the triggering login using `load_notion_tools`, only if the run has a known credential scope.
 
 Summary-stop and local/desktop runs skip optional tool loading. Both loaders are wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers each tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load a group by name and begin using its tools.
 

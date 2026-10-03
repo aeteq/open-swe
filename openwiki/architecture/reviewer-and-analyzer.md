@@ -1,6 +1,6 @@
 ---
 type: architecture
-title: Review and Style Analysis Graphs
+title: Reviewer and Analyzer Graphs
 description: Architecture of the isolated reviewer and review-style analyzer graphs, including repository preparation, durable finding reconciliation and publication, per-repository style persistence, and continual analysis scheduling.
 tags: [reviewer, analyzer, code-review, findings, review-style, langgraph, sandbox, github]
 sources:
@@ -36,13 +36,13 @@ sources:
     resource: repo://langgraph.json
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
+    at: 2026-10-03T13:09:24.486Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-03T13:09:24.486Z" }
 ---
 
-# Review and Style Analysis Graphs
+# Reviewer and Analyzer Graphs
 
 Open SWE exposes two specialized deep-agent graphs: `reviewer` (`agent.graphs.reviewer:traced_reviewer_agent`) and `analyzer` (`agent.graphs.analyzer:traced_analyzer`). The reviewer evaluates a GitHub pull request using durable, per-PR findings; the analyzer learns a repository-specific supplement to that review policy. They share sandbox infrastructure but have deliberately different authority, state, and entry paths.
 
@@ -61,7 +61,7 @@ For an executable run, the factory selects reviewer and subagent models from exp
 - review lifecycle: `fetch_review_diff`, `add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, and `reply_to_finding_thread`;
 - read-only external helpers: `web_search`, `fetch_url`, and `http_request`.
 
-It permits one `reviewer` subagent. The parent assigns a disjoint file partition; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication.
+It permits one `reviewer` subagent configured via `_reviewer_subagent(model)`. The subagent has its own system prompt, description, and isolated middleware stack (sanitization, retry, error handling, timeout), compiling into its own graph so the parent's middleware does not wrap its model calls. The parent assigns it a disjoint file partition and expects only candidate defects; the subagent has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication.
 
 ### Run preparation, GitHub access, and context
 
@@ -130,7 +130,7 @@ Callers must inspect the structured result: `success: true` with `review_id: nul
 
 ### Graph and sandbox model
 
-The analyzer creates a repository-specific review-style prompt for the reviewer. Its preparation resolves the repository identity and mode, ensures a sandbox, and configures the LangSmith GitHub proxy with either the dashboard-provided OAuth token or a GitHub App installation token. The analyzer has just two domain tools: `read_finding_outcomes` and `save_review_style_prompt`. It has an 80-model-call limit plus input sanitization, tool-error, timeout, and response-sanitization middleware.
+The analyzer creates a repository-specific review-style prompt for the reviewer. Its preparation resolves the repository identity and mode, ensures a sandbox, and configures the LangSmith GitHub proxy with either the dashboard-provided OAuth token or a GitHub App installation token. The analyzer has just two domain tools: `read_finding_outcomes` and `save_review_style_prompt`. It has an 80-model-call limit plus input sanitization, tool-error, and response-sanitization middleware.
 
 Like the reviewer, `get_analyzer` returns an empty agent when no `thread_id` is supplied or graph execution is disabled. Unlike the reviewer factory, it writes the default recursion limit directly into its incoming config; callers that need configuration isolation should not assume the reviewer behavior applies here.
 
