@@ -46,10 +46,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-04T13:47:40.237Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -202,7 +202,4 @@ The agent may rerun only evidence-backed flaky GitHub Actions failures. After a 
 
 ## Focused verification
 
-- `tests/agent/test_baby_sit.py` covers watch cron lifecycle, per-key concurrency, failure and webhook deduplication, SHA reset, success detection, fallback notification, retry cap, and scheduler routing.
-- `tests/github/test_baby_sit_webhook.py` checks that supported CI events reach background processing only with a valid signature. `tests/tools/test_manage_baby_sit.py` exercises configured-repository enforcement and watch startup context.
-- `tests/reviewer/test_reconcile_sweep.py` covers stale-only cancellation, pagination, malformed timestamps, and per-thread failure isolation.
-- `tests/agent/test_session_cost.py` and `tests/agent/test_agent_cost.py` verify cost correlation, persistence, bounded retries, and final exhaustion. `tests/tools/test_schedule_thread_wakeup.py` verifies delay bounds, trace/webhook wiring, budget reset semantics, and cleanup behavior.
+Tests verify key behavioral contracts: scheduler routing determinism and task routing completeness; baby-sit watch lifecycle, concurrent webhook/cron triggers, deduplication, success detection, failure dispatch, and rerun capping; signed GitHub webhook routing; stale-run pagination and per-thread error isolation; bounded session-cost and agent-cost refresh with retry limits; and thread-wakeup budget, correlation, persistence, and cleanup.

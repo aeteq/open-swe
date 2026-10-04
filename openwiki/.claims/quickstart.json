@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:576791642516adbbb15563ea7aea5ba3b3c18f1d88872ea537469d9004ae623e",
+  "pageVersion": "sha256:eb06a85de7f72b57c23e1384cc5fa258464a7d5b80472f927d5942fc53d98ec9",
   "claims": [
     {
       "id": "claim_f5eda20b1e88414b97bbf051c97e27cf",
@@ -49,8 +49,8 @@
       "statement": "agent.webapp:app is a compatibility shim that re-exports the FastAPI app built in agent/api/app.py, which at startup validates sandbox and local-development LLM configuration, mounts the dashboard router plus health, plan, workflow-approval, Linear, Slack, GitHub, and Notion webhook routers, and closes cached models at shutdown.",
       "evidence": [
         {
-          "resource": "repo://agent/api/app.py#L1-L153",
-          "version": "repo-lines-v1:sha256:c8dcd1b439ed54ed56a1845122038eafdf9fa2dd361e81c9261d9c8ae47e22d5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI5Y2MwMDljODIyN2QwZWQzMGU3MTI5ZTcxZGMyMTI3ZmE3ZWJiYzY5MTlmYWE4OWQxZDRjYmM0OWU2ZWJjMGY2IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4Mjc1MjhiMDI0YzM0NmJiMGRiYzJlZGY0NmIzMmRiNTNiNDcxMDA0MDA4OGZkMjk0YTVjNzYxMzY5MDc1NDYzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+          "resource": "repo://agent/api/app.py#L119-L152",
+          "version": "repo-lines-v1:sha256:b688606d78f58631a4e1c3fb145c82534b7c09d5474d84b9fa1b8ba0447aca20:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
         },
         {
           "resource": "repo://agent/webapp.py#L1-L5",
@@ -140,7 +140,7 @@
       "evidence": [
         {
           "resource": "repo://agent/api/app.py#L48-L137",
-          "version": "repo-lines-v1:sha256:a9e78f556dd1152dc396c0a18b43c65ddde00650ff247b57aea808511aabecce:eyJzZWxlY3RlZExpbmVDb3VudCI6ODksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxYTRiYTFlMGExNzI0NWEyM2MzYjQ5MTY1YWFlN2RkYmNjZTI4ZmFhMGM4YWYyZjc2OGU0MzAzZmJiZTRiYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzMjk2YjRjZGJmZDA5NjM4MTMyOGRhZTQ3Nzg5NTQxY2UyMWFhNjEzMjc4YzY4Nzg4MTBkN2M0ZmRjNjg3ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5OGVlMDVlMzY3NDk0ZTIyMzZhYjQ2OWRmMzYwZjJmM2I4MDE0MjMzOTM5ZDFkYjAwZjMyZmFkZDcxZTNlZTIifQ"
+          "version": "repo-lines-v1:sha256:9aaed698be513faf45aa3f8ce04e830fd1e83de31922d7cb303635abaf67e014:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxYTRiYTFlMGExNzI0NWEyM2MzYjQ5MTY1YWFlN2RkYmNjZTI4ZmFhMGM4YWYyZjc2OGU0MzAzZmJiZTRiYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzMjk2YjRjZGJmZDA5NjM4MTMyOGRhZTQ3Nzg5NTQxY2UyMWFhNjEzMjc4YzY4Nzg4MTBkN2M0ZmRjNjg3ZjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5OGVlMDVlMzY3NDk0ZTIyMzZhYjQ2OWRmMzYwZjJmM2I4MDE0MjMzOTM5ZDFkYjAwZjMyZmFkZDcxZTNlZTIifQ"
         }
       ]
     },
@@ -149,8 +149,8 @@
       "statement": "All Slack, Linear, GitHub, and dashboard triggers share dispatch_agent_run, which creates a durable LangGraph run for the selected agent or reviewer graph using a configurable thread id and defaults to an interrupt multitask strategy.",
       "evidence": [
         {
-          "resource": "repo://agent/dispatch.py#L1-L149",
-          "version": "repo-lines-v1:sha256:a04c5f8ecc8dd5ee0d51d2ab2ef61d3b9a23a38484c081e7b3eda4047330a63c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkYWY5YWJhZTU5MWE3MjMxYjNmMmY5MDUwMzI5ZTk4NGUyYWM0MmNiNWM3NDE4NzI1MDU4NDY4OGE2ZGU0NGRiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4Mjg0MDk0NWY4ODcwZDkzM2I0ZWMwZGE4OGYxYzdhYzc4MzBhOWEyNWQ4MGJjMjM2MjMzYTZiNWJhMTIyNzcwIn0"
+          "resource": "repo://agent/dispatch.py#L1-L27",
+          "version": "repo-lines-v1:sha256:17075d5f1a19f2052142a11650e0409eab29fff748a34c603b0c56df2dc305b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjlhYmFlNTkxYTcyMzFiM2YyZjkwNTAzMjllOTg0ZTJhYzQyY2I1Yzc0MTg3MjUwNTg0Njg4YTZkZTQ0ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwMzA3N2VmYzg1NjU3ZmYxNjI3ZGExYjMxNTY1ODA5N2ZiOTI3N2IzMDA0MmM4ZTE0YjUyNTcwNTdhYTk2NTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyZjgwMWU4OGZkMGZiMTljZThlMTc0OTZmMTI0ZGU5NWU0NzEzZjZlYWEwNmVkNTVmYWMzMGI5OGYxZTM3YWQifQ"
         }
       ]
     },
@@ -173,8 +173,8 @@
       "statement": "The scheduler graph has one launch node that routes cron state to reconciliation, baby-sit watch evaluation, background-task monitoring, session-cost or agent-cost refresh, or a scheduled agent run, and reports missing required identifiers as result statuses.",
       "evidence": [
         {
-          "resource": "repo://agent/scheduler.py#L55-L102",
-          "version": "repo-lines-v1:sha256:aeab98c853c7339005d18b7c8e05b9b9f8dd6abca6a794080c1012278554bd3d:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMTc1NWE0NzlkNzgxYTY2NDkzYTBkMTI3Y2IyYmU5MzE4YTk5ZjZlZWQ3ZmY3MGMyYmE0NTU2MTk4OTk2YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwM2RmZmE0NjI5MWE0MmE4NzNhZWQwYmU0NDUyOWFiZjk1MWYzODdmOWE0ZjZiOWYwZDFiMWYyMGE5MzVjY2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNjEzNWZiNWRmMDMzNjRkN2FlNjMzNGMxZGMzMWVjMjVkMTY5MjQ1MTU3Y2UxMjk3NGY2NDRjMDQ0ZjViNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVkMTNhYjE2MzVhMzNhOWQ2ZTQzOTAwNjJmMzgxZTI5ZWM1ZGYyODY3NjMwOWZlYWY4ZDRhNWE2ZjYyZTJiNjkifQ"
+          "resource": "repo://agent/scheduler.py#L59-L98",
+          "version": "repo-lines-v1:sha256:b81915ddefe4a409462ec2b0136136b0caf7a42db26cd555db3eba67e9172c07:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMTc1NWE0NzlkNzgxYTY2NDkzYTBkMTI3Y2IyYmU5MzE4YTk5ZjZlZWQ3ZmY3MGMyYmE0NTU2MTk4OTk2YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNjEzNWZiNWRmMDMzNjRkN2FlNjMzNGMxZGMzMWVjMjVkMTY5MjQ1MTU3Y2UxMjk3NGY2NDRjMDQ0ZjViNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
         }
       ]
     },
@@ -201,8 +201,8 @@
       "statement": "The shared pytest fixtures replace the agent store client with an in-memory implementation that preserves the production serialization path, clear the process-global TTL cache around each test, and default automatic review to enabled unless a test overrides the gate.",
       "evidence": [
         {
-          "resource": "repo://tests/conftest.py#L55-L109",
-          "version": "repo-lines-v1:sha256:2a823ae8138935841134620e99df323fc0a4a806aaaddba7782d20d9724b1cc9:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MzZjYmZhYjUxNjhkYzNhZmM3OTlkYzU3NTU5N2IwYzg5ZDQyODczZDM5Y2YxZGQxYmQ4Njg5YmEwYTk2NWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc0MDg5ZmU5ZDM4NTc2ZGE0YjYyNTE4YjY5ZmI2M2VhNmM3ZWQyZWE2ODQ0OGVjNGU0MjZhZmY5OGU2NTIxZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzOTNmYzRlMWRmMDIyMGQ1YzQ3NTUzZjUxZjU0ZGQxMjc3NDJlMTUyN2Q1OTI1ZmQzNDVmZWU2NjcwN2JkY2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3ZDA4MDBhOThkYjgwNjhjZmFkNmY2OTJmODY3NDM0OTRlMTAwMWExOTdjYTNjY2ZjOGQyZjE3NjVlNTRiZTQifQ"
+          "resource": "repo://tests/conftest.py#L57-L99",
+          "version": "repo-lines-v1:sha256:285abfe8d01f3b7c703a640e39d419d450d01e8039ec3f5853812d00e7f876ac:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MzZjYmZhYjUxNjhkYzNhZmM3OTlkYzU3NTU5N2IwYzg5ZDQyODczZDM5Y2YxZGQxYmQ4Njg5YmEwYTk2NWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYzOTNmYzRlMWRmMDIyMGQ1YzQ3NTUzZjUxZjU0ZGQxMjc3NDJlMTUyN2Q1OTI1ZmQzNDVmZWU2NjcwN2JkY2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmOGUwNTgxMTY4ZGY4OTJmZjUyZjRkNjJhNjU5NjU4M2YwMTk4MmZiZjQyZTEwYWQ4YzBjZmI3ODgwNjA2MWYifQ"
         }
       ]
     },
@@ -243,8 +243,8 @@
       "statement": "dispatch_agent_run rejects a prebuilt run input when content, context, or source identity inputs are also provided, so callers must choose exactly one input-construction path.",
       "evidence": [
         {
-          "resource": "repo://agent/dispatch.py#L1-L149",
-          "version": "repo-lines-v1:sha256:a04c5f8ecc8dd5ee0d51d2ab2ef61d3b9a23a38484c081e7b3eda4047330a63c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkYWY5YWJhZTU5MWE3MjMxYjNmMmY5MDUwMzI5ZTk4NGUyYWM0MmNiNWM3NDE4NzI1MDU4NDY4OGE2ZGU0NGRiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4Mjg0MDk0NWY4ODcwZDkzM2I0ZWMwZGE4OGYxYzdhYzc4MzBhOWEyNWQ4MGJjMjM2MjMzYTZiNWJhMTIyNzcwIn0"
+          "resource": "repo://agent/dispatch.py#L1-L27",
+          "version": "repo-lines-v1:sha256:17075d5f1a19f2052142a11650e0409eab29fff748a34c603b0c56df2dc305b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRhZjlhYmFlNTkxYTcyMzFiM2YyZjkwNTAzMjllOTg0ZTJhYzQyY2I1Yzc0MTg3MjUwNTg0Njg4YTZkZTQ0ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwMzA3N2VmYzg1NjU3ZmYxNjI3ZGExYjMxNTY1ODA5N2ZiOTI3N2IzMDA0MmM4ZTE0YjUyNTcwNTdhYTk2NTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMyZjgwMWU4OGZkMGZiMTljZThlMTc0OTZmMTI0ZGU5NWU0NzEzZjZlYWEwNmVkNTVmYWMzMGI5OGYxZTM3YWQifQ"
         }
       ]
     },
@@ -281,6 +281,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-01T15:12:02.643Z"
+    "at": "2026-10-04T13:47:40.237Z"
   }
 }

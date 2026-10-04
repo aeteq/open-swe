@@ -4,8 +4,6 @@ title: Follow-up Messages and Polling
 description: Deferred message handling, store-backed message queues, and follow-up pickup between runs. Explains how the before-model middleware injects queued messages into active runs and how background systems dispatch follow-ups after terminal conditions.
 tags: [follow-up, message-queue, middleware, polling, durable-runs, scheduler, baby-sit, background-tasks]
 sources:
-  - id: openwiki-source-4817379f332cdbc419964b44
-    resource: repo://agent/api/health.py
   - id: openwiki-source-d87936e6d54eab24f7479af1
     resource: repo://agent/baby_sit.py
   - id: openwiki-source-26c2c4725a171eaf524f2ad7
@@ -14,8 +12,6 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-c48b309c5ca416cf623f0866
     resource: repo://agent/dispatch.py
-  - id: openwiki-source-cb4e403499865fd6b797127c
-    resource: repo://agent/input_messages.py
   - id: openwiki-source-828b741451bbda4468382d9b
     resource: repo://agent/middleware/check_message_queue.py
   - id: openwiki-source-276ab38291eb5741b4c2141c
@@ -35,7 +31,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-04T13:47:40.237Z
 ---
 
 # Follow-up Messages and Polling
