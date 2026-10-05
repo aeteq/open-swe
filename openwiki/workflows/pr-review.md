@@ -38,10 +38,10 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 ---
 
 # Pull Request Review Workflow
@@ -50,7 +50,7 @@ Open SWE reviews a pull request through a dedicated `reviewer` graph. A PR has o
 
 ## Entrypoints and admission
 
-`POST /webhooks/github` is the signed ingress. It verifies `X-Hub-Signature-256`, ignores unsupported event types or PR actions, parses JSON, and schedules accepted work as FastAPI background tasks. The route applies the public-repository organization gate to first-review and comment/reply paths. Thus webhook processing responds promptly; review execution is asynchronous.
+`POST /webhooks/github` is the signed ingress. It verifies `X-Hub-Signature-256` HMAC, ignores unsupported event types or PR actions, parses JSON, and schedules accepted handlers as FastAPI background tasks. The route applies the public-repository organization gate to first-review and comment/reply paths. Thus webhook processing responds promptly; review execution is asynchronous.
 
 A review can begin through:
 

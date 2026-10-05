@@ -26,14 +26,16 @@ sources:
     resource: repo://agent/server.py
   - id: openwiki-source-db8a5812295508f44c54b439
     resource: repo://agent/source_context.py
+  - id: openwiki-source-e87cc1621a76b813197038ed
+    resource: repo://agent/threads/recent_context.py
   - id: openwiki-source-67ffc2016995f2003206500d
     resource: repo://agent/utils/agents_md.py
   - id: openwiki-source-ff16fde3cd496fd0b8de20da
     resource: repo://agent/utils/analyzer_skills.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 ---
 
 # Context and Prompt Engineering
@@ -123,8 +125,12 @@ The main agent includes sender context as separate structured messages produced 
 
 Sender context includes identity, workspace-admin status, git configuration, collaboration metadata, and user-level instructions. The middleware identifies the latest human message and uses that sender's identity as the subject for participant context; if no human message exists or the sender cannot be determined, participant blocks are omitted from that invocation.
 
+## Recent thread context
+
+The agent's prompt can include a digest of the sender's recent threads for orientation. `recent_thread_context_section` fetches a sender's recent threads filtered by audience rules: `"private"` includes only the sender's own public and privately-owned threads, while `"shared_slack"` further filters to threads in the same Slack workspace and channel. The digest is bounded: up to 5 threads, each title capped at 160 characters, total payload capped at 4,000 characters. The selector enforces a 1-second timeout and scans at most 100 threads to find eligible ones, dropping older entries when the payload exceeds limits. This context is background information, not instructions, and is selected under audience rules that keep private-workspace metadata from leaking into shared conversations.
+
 ## Safe change and focused verification
 
 Changes to this workflow should preserve the boundary between untrusted event content, structured identity metadata, durable provenance, and system instructions. In particular, do not turn channel fields into trusted prompt text, mutate cached historical messages to add current sender data, or suppress a dynamic context merely because it exists before the summarization cutoff.
 
-Focused tests live in `tests/agent/test_input_messages.py`, `tests/agent/test_source_context.py`, `tests/agent/test_dispatch.py`, `tests/agent/test_agents_md.py`, `tests/middleware/test_subdir_agents_middleware.py`, `tests/slack/test_slack_context.py`, and `tests/agent/test_skills.py`. They are the first checks for envelope/hashing behavior, malformed provenance, dispatch contracts, convention-document failure modes, scoped injection, Slack attribution, and virtual-skill routing.
+Focused tests live in `tests/agent/test_input_messages.py`, `tests/agent/test_source_context.py`, `tests/agent/test_dispatch.py`, `tests/agent/test_agents_md.py`, `tests/middleware/test_subdir_agents_middleware.py`, `tests/slack/test_slack_context.py`, `tests/agent/test_skills.py`, `tests/middleware/test_prepare_run_middleware.py`, and `tests/threads/test_recent_context.py`. They are the first checks for envelope/hashing behavior, malformed provenance, dispatch contracts, convention-document failure modes, scoped injection, Slack attribution, virtual-skill routing, fingerprinting/checkpointing idempotence, and recent context selection.

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:81ea49cf9bb069958ecd625a77ff1ca1dda91983f5e883cc63b54cd1881e6c82",
+  "pageVersion": "sha256:eae94efd85fb99ced66f529543be96ccad43bfb7a84af652c56faa4975433578",
   "claims": [
     {
       "id": "claim_b84ca73fa9ca440eaddd035980a5842f",
@@ -21,8 +21,8 @@
       "statement": "`SandboxBackendProxy` is an async-only stable handle whose target can be replaced; missing targets reconnect through a registered callback or metadata ID, and a lock plus shared startup task ensures concurrent callers use one reconnect.",
       "evidence": [
         {
-          "resource": "repo://agent/sandboxes/state.py#L55-L180",
-          "version": "repo-lines-v1:sha256:564a36f81809cf2d1c31c95534be4f21ff18c58054b49f02bc6d0c32d7c6ccb9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NDIzY2VlZDc1MTk0NTQ2MjdhYjkyYzY4NjkxNGNiMGY0MDlhODUwYWM0N2JjNGE3ZDZlMTE0MTYwNGZlOWRhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIxM2RjYTUzYWZlNTM3YjhkZGU1NGU3ZDMwNzg3M2MxM2NkN2NlMGIxOGZiM2IzZDk4NWFiOTAzMmNjODljY2E3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NmMxZmM3YWQxMWViNzczYzI4ZWQ1MWQyZDMwNTY5ZmZkOGRkOTY0OTUwOWI0YTQwM2E3NzAzYjg0ZWY5M2M3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzZjg5YjIwMGUwZDNlMDQzOTQ3ZjRjZDMyMjlmNGYwZGU0ZjQ4NzA3OTdmYWZjNDIxNzliYmM5NDM1ODhmZWVlIn0"
+          "resource": "repo://agent/sandboxes/state.py#L55-L185",
+          "version": "repo-lines-v1:sha256:bb391239e8cbc6a4a19bb3a37f101f0fc54fae9bf3504ebd448c8604130e5cf3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0NDIzY2VlZDc1MTk0NTQ2MjdhYjkyYzY4NjkxNGNiMGY0MDlhODUwYWM0N2JjNGE3ZDZlMTE0MTYwNGZlOWRhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIyZjgzMGUzOTUwMTAwODQzOTQ5MWE5MjBhNzNiNmFiMjI5MGY3NjdjNjQ0MmNjOTVjMmNjN2IyOTc0MzQ3NjU0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NmMxZmM3YWQxMWViNzczYzI4ZWQ1MWQyZDMwNTY5ZmZkOGRkOTY0OTUwOWI0YTQwM2E3NzAzYjg0ZWY5M2M3IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyZTMyNDdiMzg0OTNkMWYyYWRlYjIyOWZhMDg1ODcyNDE5YzU2OTgyNGU0N2Q1OTgwNjNlNTUwZjBlOGM5YjlmIn0"
         }
       ]
     },
@@ -233,6 +233,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-04T13:47:40.237Z"
+    "at": "2026-10-05T16:54:23.398Z"
   }
 }

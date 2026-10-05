@@ -16,8 +16,6 @@ sources:
     resource: repo://agent/completion.py
   - id: openwiki-source-3d1c7beecd605173281a3bf6
     resource: repo://agent/github/routes.py
-  - id: openwiki-source-1116ea2d477f08cf0f5b2ef0
-    resource: repo://agent/graphs/scheduler.py
   - id: openwiki-source-d2c2e4ba7449d086f84f8ccd
     resource: repo://agent/reconcile.py
   - id: openwiki-source-3e15117ace082a39e1f130d8
@@ -49,7 +47,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring

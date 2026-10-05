@@ -5,7 +5,7 @@ description: Start here to set up Open SWE, choose the entrypoint and owner for 
 tags: [open-swe, contributor-guide, development, langgraph, testing]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py

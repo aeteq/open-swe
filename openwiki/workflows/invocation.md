@@ -38,10 +38,10 @@ sources:
     resource: repo://agent/threads/proxy.py
   - id: openwiki-source-e081118d2ce6ecdbd524a5ee
     resource: repo://agent/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -76,7 +76,7 @@ This shows the shared path: integration routes acknowledge after inexpensive adm
 
 ## Admission and asynchronous webhook work
 
-GitHub, Linear, Slack, and Notion read the raw request body and verify their respective platform signature (HMAC) before parsing JSON; invalid or missing signatures receive `401`. The verifiers fail closed when the signing secret is absent. Slack additionally rejects timestamps older than five minutes. Routes return `ignored`/`error`/`accepted` JSON rather than creating a run for malformed or ineligible events.
+GitHub, Linear, Slack, and Notion read the raw request body and verify their respective platform signature (HMAC) before parsing JSON; invalid or missing signatures receive `401`. The verifiers fail closed when the signing secret is absent. Routes return `ignored`/`error`/`accepted` JSON rather than creating a run for malformed or ineligible events.
 
 For accepted GitHub and Linear events, and the normal Slack message path, a FastAPI `BackgroundTasks` job does remote API access, metadata construction, and dispatch after the HTTP response returns `202`. Slack claims an event id before scheduling to make delivery deduplication the gate to a run, preventing duplicate processing from retried webhook deliveries.
 
