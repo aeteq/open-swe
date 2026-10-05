@@ -29,6 +29,7 @@ from agent.slack.http import (
     slack_error_details,
     slack_retry_after,
 )
+from agent.slack.review_links import pr_review_links
 from agent.source_context import SlackThreadRef, SourceContext
 from agent.thread_ids import slack_thread_id
 from agent.threads.creation import create_lock_thread
@@ -479,6 +480,7 @@ async def _post_slack_message_with_ts(
     unfurl_media: bool = True,
     blocks: list[dict[str, Any]] | None = None,
     reply_broadcast: bool = False,
+    login: str | None = None,
 ) -> tuple[str | None, str | None]:
     if not SLACK_BOT_TOKEN:
         return None, "missing_slack_bot_token"
@@ -488,6 +490,7 @@ async def _post_slack_message_with_ts(
     # A code channel is one flowing session: replies belong in the channel.
     reply_ts = None if is_code_channel_session(thread_ts) else thread_ts
     broadcast = {"reply_broadcast": True} if reply_broadcast and reply_ts else {}
+    text, blocks = await pr_review_links(text, blocks, login=login)
 
     try:
         async with SlackClient.bot() as client:
@@ -539,6 +542,7 @@ def _safe_model_label(model: str) -> str:
     return sanitized.rsplit("/", 1)[-1][:48].strip("-")
 
 
+SLACK_COST_PENDING_LABEL = "calculating cost..."
 _PENDING_COST_LABEL_RE = re.compile(r"(?: • )?calculating cost(?:\.\.\.)?$")
 
 
@@ -625,20 +629,8 @@ def with_slack_session_cost(
         target["text"] = _replace_slack_session_cost(
             str(target.get("text") or ""), label, require_web_link=False
         )
-    else:
-        for block in updated_blocks:
-            if block.get("type") != "actions" or block.get("block_id") != "open_swe_reply_feedback":
-                continue
-            for element in block.get("elements", []):
-                if isinstance(element, dict) and element.get("action_id") == "open_swe_web_link":
-                    button_text = element.get("text")
-                    if isinstance(button_text, dict) and isinstance(button_text.get("text"), str):
-                        current = _SESSION_COST_LABEL_RE.sub("", button_text["text"])
-                        button_text["text"] = f"{current[: 65 - len(label)]} • {label}"
-                        return updated_text, updated_blocks
-    if (
-        target is None
-        and updated_text != text
+    elif (
+        updated_text != text
         and updated_blocks
         and all(block.get("type") == "rich_text" for block in updated_blocks)
     ):
@@ -654,23 +646,59 @@ def with_slack_session_cost(
     return updated_text, updated_blocks
 
 
-def without_slack_pending_session_cost(
+def with_slack_pending_session_cost(
     text: str,
     blocks: list[dict[str, Any]] | None,
+    *,
+    clear: bool = False,
 ) -> tuple[str, list[dict[str, Any]] | None]:
-    """Remove legacy pending labels without showing a new cost placeholder."""
-    updated_text = _PENDING_COST_LABEL_RE.sub("", text)
+    """Append the pending cost label to a live Slack footer awaiting its cost."""
+    if clear:
+        updated_text = _PENDING_COST_LABEL_RE.sub("", text)
+        updated_blocks = copy.deepcopy(blocks)
+        for block in updated_blocks or []:
+            if block.get("type") != "context":
+                continue
+            values = [block.get("text"), *(block.get("elements") or [])]
+            for value in values:
+                if isinstance(value, dict) and isinstance(value.get("text"), str):
+                    if _PENDING_COST_LABEL_RE.fullmatch(value["text"]):
+                        value["text"] = "Cost unavailable"
+                    else:
+                        value["text"] = _PENDING_COST_LABEL_RE.sub("", value["text"])
+        return updated_text, updated_blocks
+    if _PENDING_COST_LABEL_RE.search(text) or SLACK_WEB_LINK_FOOTER_LABEL not in text:
+        return text, blocks
+    updated_text = f"{text} • {SLACK_COST_PENDING_LABEL}"
+    if blocks is None:
+        return updated_text, None
     updated_blocks = copy.deepcopy(blocks)
-    for block in updated_blocks or []:
+    for block in updated_blocks:
         if block.get("type") != "context":
             continue
-        values = [block.get("text"), *(block.get("elements") or [])]
+        if block.get("block_id") != "open_swe_usage_footer" and not _block_contains_text(
+            block, SLACK_WEB_LINK_FOOTER_LABEL
+        ):
+            continue
+        values: list[dict[str, Any]] = []
+        block_text = block.get("text")
+        if isinstance(block_text, dict):
+            values.append(block_text)
+        elements = block.get("elements")
+        if isinstance(elements, list):
+            values.extend(item for item in elements if isinstance(item, dict))
         for value in values:
-            if isinstance(value, dict) and isinstance(value.get("text"), str):
-                if _PENDING_COST_LABEL_RE.fullmatch(value["text"]):
-                    value["text"] = "Cost unavailable"
-                else:
-                    value["text"] = _PENDING_COST_LABEL_RE.sub("", value["text"])
+            value_text = value.get("text")
+            if isinstance(value_text, str) and not _PENDING_COST_LABEL_RE.search(value_text):
+                value["text"] = f"{value_text} • {SLACK_COST_PENDING_LABEL}"
+                return updated_text, updated_blocks
+    updated_blocks.append(
+        {
+            "type": "context",
+            "block_id": "open_swe_usage_footer",
+            "elements": [{"type": "mrkdwn", "text": SLACK_COST_PENDING_LABEL}],
+        }
+    )
     return updated_text, updated_blocks
 
 
@@ -742,38 +770,6 @@ def _with_slack_web_link_context_block(
             context_block,
         ]
     updated_blocks = copy.deepcopy(blocks)
-    feedback = next(
-        (
-            block
-            for block in updated_blocks
-            if block.get("type") == "actions" and block.get("block_id") == "open_swe_reply_feedback"
-        ),
-        None,
-    )
-    if dashboard_url and feedback is not None:
-        usage_text = format_slack_run_usage(usage)
-        cost_text = (
-            format_slack_session_cost(usage.session_cost_usd)
-            if usage is not None and usage.session_cost_usd is not None
-            else ""
-        )
-        model_text = usage_text.removesuffix(f" • {cost_text}") if cost_text else usage_text
-        label = f"↗ {model_text[:60]}".rstrip()
-        if cost_text:
-            label = f"{label} • {cost_text}"
-        feedback["elements"].append(
-            {
-                "type": "button",
-                "action_id": "open_swe_web_link",
-                "text": {
-                    "type": "plain_text",
-                    "text": label,
-                },
-                "url": dashboard_url,
-                "accessibility_label": "Open in Web",
-            }
-        )
-        return updated_blocks
     if dashboard_url and any(
         _block_contains_text(block, dashboard_url) for block in updated_blocks
     ):
@@ -799,6 +795,7 @@ async def post_slack_thread_reply_with_ts(
     usage: RunUsageSummary | None = None,
     agent_thread_id: str | None = None,
     reply_broadcast: bool = False,
+    login: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Post a reply in a Slack thread and return its Slack timestamp and error."""
     from agent.slack.code_channels import is_code_channel_session
@@ -816,6 +813,7 @@ async def post_slack_thread_reply_with_ts(
         unfurl_media=unfurl_media,
         blocks=blocks,
         reply_broadcast=reply_broadcast,
+        login=login,
     )
 
 
@@ -846,6 +844,7 @@ async def post_slack_top_level_message_with_ts(
     unfurl_links: bool = True,
     unfurl_media: bool = True,
     blocks: list[dict[str, Any]] | None = None,
+    login: str | None = None,
 ) -> tuple[str | None, str | None]:
     """Post a top-level Slack message and return its timestamp and error."""
     return await _post_slack_message_with_ts(
@@ -854,6 +853,7 @@ async def post_slack_top_level_message_with_ts(
         unfurl_links=unfurl_links,
         unfurl_media=unfurl_media,
         blocks=blocks,
+        login=login,
     )
 
 
@@ -965,11 +965,13 @@ async def update_slack_message(
     unfurl_links: bool = True,
     unfurl_media: bool = True,
     blocks: list[dict[str, Any]] | None = None,
+    login: str | None = None,
 ) -> tuple[bool, str | None]:
     """Update a Slack message and return success plus any Slack error."""
     if not SLACK_BOT_TOKEN:
         return False, "missing_slack_bot_token"
 
+    text, blocks = await pr_review_links(text, blocks, login=login)
     try:
         async with SlackClient.bot() as client:
             await client.chat_update(
@@ -1183,6 +1185,7 @@ async def post_slack_ephemeral_message(
     if not SLACK_BOT_TOKEN:
         return False
 
+    text, blocks = await pr_review_links(text, blocks)
     try:
         async with SlackClient.bot() as client:
             await client.chat_postEphemeral(
@@ -1333,6 +1336,7 @@ async def replace_slack_command_message(
     agent_thread_id: str | None = None,
 ) -> bool:
     """Overwrite a slash command's acknowledgement with the reply it stood in for."""
+    text, blocks = await pr_review_links(text, blocks)
     dashboard_url = dashboard_thread_url(agent_thread_id) if agent_thread_id else None
     payload: dict[str, Any] = {
         "response_type": "ephemeral",
