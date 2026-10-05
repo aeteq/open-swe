@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled for an execut
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-04T13:47:40.237Z
 sources:
   - id: openwiki-source-8c60a9544ea26006748dd7a3
     resource: repo://agent/desktop.py
@@ -33,7 +33,7 @@ sources:
     resource: repo://tests/agent/test_factory_tool_loading.py
   - id: openwiki-source-36e029ef147f9810c97b2c29
     resource: repo://tests/models/test_agent_subagent_models.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 ---
 
 # Coding Agent Assembly
@@ -80,7 +80,7 @@ The accepted per-run pair becomes the main and subagent pair and is stored with 
 
 The factory gives `create_deep_agent` an empty static system prompt. `PrepareAgentRunMiddleware` renders the per-thread prompt in its before-agent hook into `rendered_system_prompt`; its base class prepends that content to every model request and wraps it as authoritative system instructions.
 
-`construct_system_prompt` builds the main-agent layer in a fixed order: working environment, dashboard/source context, plan guidance, self-awareness, default repository, optional repository scope, repository setup and task execution, optional Corridor guidance, dependency and untrusted-comment guidance, commit/PR guidance, repository instructions, workspace instructions, optional admin-environment guidance, and shared-base guidance. `render_open_swe_shared_base` appends `OPEN_SWE_SHARED_BASE` and conditionally adds sandbox-download guidance. Sender identity, commit attribution, standing user instructions, and participant context are intentionally excluded from this durable prompt layer.
+`construct_system_prompt` builds the main-agent layer in a fixed order: working environment, dashboard/source context, plan guidance, self-awareness, default repository, optional repository scope, repository setup and task execution, optional Corridor guidance, dependency and untrusted-comment guidance, commit/PR guidance, repository instructions, workspace instructions, optional admin-environment guidance, and shared-base guidance. Sender identity, commit attribution, standing user instructions, and participant context are intentionally excluded from this durable prompt layer.
 
 For hosted runs, preparation resolves the GitHub token, triggering identity, sandbox work directory, environment, sender instructions, and thread participants. It adds the resulting sender context as a separate generated input after a human message, identifies the latest attributed human sender, and does not re-add a context hash still visible after history summarization. This avoids rewriting cached user history and scopes sender-specific metadata to the relevant turn. A sandbox-unreachable failure also posts a user-facing notification before being re-raised.
 

@@ -26,10 +26,10 @@ sources:
     resource: repo://agent/sandboxes/retry.py
   - id: openwiki-source-3f4feeeb872e0d43c9b850c8
     resource: repo://agent/sandboxes/state.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-09-29T14:41:34.067Z
+    at: 2026-10-04T13:47:40.237Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 ---
 
 # Thread Sandbox Lifecycle
@@ -38,12 +38,11 @@ A normal agent thread has one durable sandbox binding: the sandbox contains its 
 
 Desktop runs are different: the agent factory supplies a `LocalShellBackend` rooted in an allowlisted project or a desktop-created worktree, rather than invoking the thread sandbox lifecycle. Desktop artifact routes put internal large-result and conversation-history files outside the project so they cannot be accidentally included in `git add -A`.
 
-<!-- openwiki: broken internal link [../operations/middleware-stack.md] file "../operations/middleware-stack.md" does not exist. Fix the href or restore the target, then delete this comment. -->
-Related: [Middleware stack](../operations/middleware-stack.md), [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
+Related: [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
 
 ## Binding and handles
 
-`thread.metadata["sandbox_id"]` is the durable identity of a sandbox. `get_sandbox_metadata` first uses metadata supplied in the run configuration and otherwise reads the live LangGraph thread; a lookup failure returns `{}`, hence no ID. That fail-open behavior is safe for reading but is why provider interfaces intentionally have no delete operation keyed from this metadata: an unreliable lookup must not delete a live working tree.
+`thread.metadata["sandbox_id"]` is the durable identity of a sandbox. `get_sandbox_metadata` reads the live LangGraph thread; a lookup failure returns `{}`, hence no ID. That fail-open behavior is safe for reading but is why provider interfaces intentionally have no delete operation keyed from this metadata: an unreliable lookup must not delete a live working tree.
 
 `SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `SANDBOX_CONNECTIONS` is keyed by *sandbox* ID rather than thread ID, so a thread rebound on another worker cannot be handed a stale connection from its previous worker. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object.
 

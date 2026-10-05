@@ -38,10 +38,10 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-04T13:47:40.237Z
 ---
 
 # Pull Request Review Workflow
@@ -95,7 +95,7 @@ The graph exposes review-specific tools—`fetch_review_diff`, finding tools, th
 
 ## Selection and publication
 
-Publication selects only open, in-diff findings at or above the requested severity (default `medium`), orders them by severity then file/line, and caps them at `REVIEW_FINDING_CAP` (6). Confidence is stored for calibration but does not gate publication. A re-review additionally limits new publication to unsurfaced findings first seen at the current head, preventing duplicate comments.
+Publication selects only open, in-diff findings at or above the requested severity (default `medium`), orders them by severity then file/line. Confidence is stored for calibration but does not gate publication. A re-review additionally limits new publication to unsurfaced findings first seen at the current head, preventing duplicate comments.
 
 `publish_review` first backfills state from live GitHub threads, resolves the live head from thread metadata rather than trusting a run's frozen config, then emits one GitHub PR Review. Inline comments contain a hidden finding marker, generated title, description, line reference, and optional fenced suggestion; the top-level body is host-formatted and carries a summary marker. Returned review and comment identities are recorded before later thread handling, enabling reconciliation and resolution.
 

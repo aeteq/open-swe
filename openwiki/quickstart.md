@@ -3,6 +3,9 @@ type: contributor guide
 title: Open SWE Codebase Guide
 description: Start here to set up Open SWE, choose the entrypoint and owner for a safe change, and run focused validation. Links route contributors to the detailed architecture, workflow, integration, operations, and testing guides.
 tags: [open-swe, contributor-guide, development, langgraph, testing]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-04T13:47:40.237Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -43,9 +46,6 @@ sources:
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
 generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
 ---
 
 # Open SWE Codebase Guide

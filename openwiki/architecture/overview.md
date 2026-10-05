@@ -53,7 +53,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+    at: 2026-10-04T13:47:40.237Z
 ---
 
 # Runtime and Product Architecture
