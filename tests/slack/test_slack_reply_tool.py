@@ -145,6 +145,42 @@ async def test_slack_reply_holds_mutation_lock_while_posting(
     assert lock_held is False
 
 
+async def test_freshness_conflicts_survive_offloaded_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from langchain_core.messages import HumanMessage, ToolMessage
+
+    from tests.slack.test_slack_thread_mapping import _Client
+
+    client = _Client()
+    monkeypatch.setattr(slack_reply_tool, "get_langgraph_client", lambda: client)
+    latest = {"human_timestamps": ["1.0", "2.0"], "formatted": "new request"}
+    monkeypatch.setattr(slack_reply_tool, "fetch_and_format_thread", AsyncMock(return_value=latest))
+    messages = [HumanMessage(content='<input-message timestamp="1.0">request</input-message>')]
+    conflict = await slack_reply_tool._stale_reply_guard(
+        {"messages": messages}, "C1", "1.0", "run-1"
+    )
+    assert conflict is not None
+    assert conflict["formatted"] == "new request"
+    messages.append(
+        ToolMessage(content="Result offloaded to /large_tool_results/reply", tool_call_id="a")
+    )
+    assert (
+        await slack_reply_tool._stale_reply_guard({"messages": messages}, "C1", "1.0", "run-1")
+        is None
+    )
+    latest["human_timestamps"] = ["1.0", "2.0", "3.0"]
+    assert (
+        await slack_reply_tool._stale_reply_guard({"messages": messages}, "C1", "1.0", "run-1")
+        is not None
+    )
+    latest["human_timestamps"] = ["1.0", "2.0", "3.0", "4.0"]
+    assert (
+        await slack_reply_tool._stale_reply_guard({"messages": messages}, "C1", "1.0", "run-1")
+        is None
+    )
+
+
 async def test_code_channel_reply_stays_in_user_started_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -225,16 +261,20 @@ async def test_only_final_reply_has_feedback_for_its_run(
     }
     assert post.await_args is not None
     blocks = post.await_args.kwargs["blocks"]
-    feedback = [block for block in blocks if block.get("block_id") == "open_swe_reply_feedback"]
+    feedback = [block for block in blocks if block["type"] == "context_actions"]
     if response_type == "progress":
         assert feedback == []
     else:
-        buttons = feedback[0]["elements"]
-        assert [button["type"] for button in buttons] == ["button", "button"]
-        assert [json.loads(button["value"]) for button in buttons] == [
-            {"run_id": "run-1", "rating": "up"},
-            {"run_id": "run-1", "rating": "down"},
-        ]
+        buttons = feedback[0]["elements"][0]
+        assert buttons["type"] == "feedback_buttons"
+        assert json.loads(buttons["positive_button"]["value"]) == {
+            "run_id": "run-1",
+            "rating": "up",
+        }
+        assert json.loads(buttons["negative_button"]["value"]) == {
+            "run_id": "run-1",
+            "rating": "down",
+        }
     assert blocks[0] == {"type": "markdown", "text": "Answer"}
     if options:
         assert blocks[1]["type"] == "actions"
@@ -255,7 +295,7 @@ async def test_long_reply_retains_all_text_alongside_feedback(
     blocks = post.await_args.kwargs["blocks"]
     assert "".join(block["text"]["text"] for block in blocks[:-1]) == "x" * 12001
     assert all(len(block["text"]["text"]) <= 3000 for block in blocks[:-1])
-    assert blocks[-1]["block_id"] == "open_swe_reply_feedback"
+    assert blocks[-1]["type"] == "context_actions"
 
 
 async def test_slack_reply_keeps_code_highlighted_over_native_limit(
