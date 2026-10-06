@@ -3,6 +3,9 @@ type: architecture-component
 title: Middleware and Failure Boundaries
 description: Ordering-sensitive middleware around the coding agent and reviewer model and tool loops. Explains preparation, policy, retries, deadlines, completion hooks, and how failures become safe user-visible outcomes.
 tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-e1f102c9268ae755c7487b1e
     resource: repo://agent/middleware/deliver_event_matches.py
@@ -42,10 +45,7 @@ sources:
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
   - id: openwiki-source-b074bf11145a0ff6206cec7b
     resource: repo://tests/sandbox/test_sandbox_retry.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 ---
 
 # Middleware and Failure Boundaries
@@ -56,18 +56,18 @@ verified:
 
 The coding-agent middleware chain is outer to inner:
 
-1. `FilesystemMiddleware`
-2. `ConversationOffloadingMiddleware`
-3. `PrepareAgentRunMiddleware`
-4. `TranscriptMiddleware`
+1. `FilesystemMiddleware` — exposes file read/write/delete and directory navigation tools with configurable binary content offloading
+2. `ConversationOffloadingMiddleware` — handles deferring of conversation context when configured by the user, permitting long runs without hitting provider context limits
+3. `PrepareAgentRunMiddleware` — checkpointed per-run setup with fingerprinting to skip already-completed setup on resumed invocations
+4. `TranscriptMiddleware` — processes the conversation state and populates the transcript for debugging and auditing
 5. `IncidentMiddleware`, only if an incident session is present
 6. `WorkspaceSkillsMiddleware`, only if configured (non-local, org admins)
-7. `ValidateImageReadsMiddleware`
+7. `ValidateImageReadsMiddleware` — validates image-read tool calls, positioned after basic tool configuration
 8. `ModelCallLimitMiddleware`
-9. `ToolErrorMiddleware`
+9. `ToolErrorMiddleware` — converts unhandled tool exceptions into status=error ToolMessages; treats unreachable sandbox as terminal
 10. `ExcludeToolsMiddleware`
 11. `SubdirAgentsReadMiddleware`
-12. `ToolRetryMiddleware` for `task` (two retries, 1–10 second backoff)
+12. `ToolRetryMiddleware` for `task` — two retries, 1–10 second backoff
 13. `PullRequestCreationGuardMiddleware`, except for local/desktop runs
 14. `WorkflowPushGuardMiddleware`
 15. `refresh_github_proxy_before_model`
@@ -103,17 +103,17 @@ This is the inner model-call path: timeout errors are recorded before the outer 
 
 ### Preparation, tools, and follow-up messages
 
-`BasePrepareRunMiddleware` supplies checkpointed `before_agent` setup for the agent and reviewer specializations. It fingerprints the latest message, middleware class, and preparation configuration. A matching `run_prepared_for` latch skips already checkpointed setup on a resumed invocation; a later invocation on the same thread gets fresh tokens, prompt material, and review/diff context. Preparation must remain idempotent because a failure before the checkpoint can run it again. Its model wrapper installs the rendered system prompt.
+`BasePrepareRunMiddleware` supplies checkpointed `before_agent` setup for the agent and reviewer specializations. It fingerprints the latest message, middleware class, and preparation configuration. A matching `run_prepared_for` latch skips already-checkpointed setup on a resumed invocation; a later invocation on the same thread gets fresh tokens, prompt material, and review/diff context. Preparation must remain idempotent because a failure before the checkpoint can run it again. Its model wrapper installs the rendered system prompt.
 
 `TranscriptMiddleware` processes the conversation state and populates the transcript for debugging and auditing.
 
-`DynamicToolMiddleware` exposes configured integration groups lazily; `ExcludeToolsMiddleware` filters disallowed tool names from model requests. `SubdirAgentsReadMiddleware` contributes applicable ancestor `AGENTS.md` instructions once per thread.
+`DynamicToolMiddleware` exposes configured integration groups lazily, allowing lazy loading of MCPs and Notion tools only when the agent requests them. `ExcludeToolsMiddleware` filters disallowed tool names from model requests. `SubdirAgentsReadMiddleware` contributes applicable ancestor `AGENTS.md` instructions once per thread.
 
 The proxy refresh hook runs before each model call. It refreshes a near-expiry sandbox GitHub-proxy installation token that expires after one hour. Next, the queue hook reads `("queue", thread_id)` from the LangGraph store, deletes `pending_messages` before constructing messages to avoid duplicate delivery, and injects queued human input in FIFO order. It also consumes a pending autofix event. The event-matches hook appends any owed webhook-driven events from the database in oldest-first order. Image content is omitted with a warning when the resolved model has no vision support.
 
 ### Limits, policy, and completion
 
-`notify_step_limit_reached` is an after-agent hook that recognizes the model-call-limit marker and posts an explanatory Slack message.
+`notify_step_limit_reached` is an after-agent hook that recognizes the model-call-limit marker and posts an explanatory Slack message when the agent hits its step limit.
 
 The PR guard blocks `execute` and `background_execute` command forms that create a pull request outside `open_pull_request`, including GitHub CLI, API, curl, and bounded nested `bash -c` forms. It returns a tool error instead of executing and is not installed locally. The workflow-push guard permits a rewritten safe push affecting `.github/workflows` only after recorded human approval; otherwise it returns a blocked result containing an approval URL.
 

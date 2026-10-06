@@ -8,8 +8,6 @@ sources:
     resource: repo://agent/api/app.py
   - id: openwiki-source-6e64b1ccdb133daeb8f4d1d4
     resource: repo://agent/utils/dashboard_ui.py
-  - id: openwiki-source-24f77a48f966a05631988d08
-    resource: repo://desktop/package.json
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
   - id: openwiki-source-bb1ebe868e35e9e500714501
@@ -46,10 +44,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 ---
 
 # Development, Deployment, and Serving
@@ -112,7 +110,7 @@ The FastAPI app (created in `agent/api/app.py`) applies CORS middleware to all r
 - **Origins:** Parses `DASHBOARD_ALLOWED_ORIGINS` by splitting on commas and trimming whitespace
 - **Credentials:** Sets `allow_credentials=True`, which forbids wildcard origins; the configuration explicitly rejects `*` in `DASHBOARD_ALLOWED_ORIGINS`
 - **Allowed origins:** Adds all configured origins plus `open-swe://app` for the Electron client
-- **Installed routers:** Dashboard API, plan, workflow approval, GitHub webhook, Slack webhook, Linear webhook, Notion webhook, health check, and sandbox tool routers
+- **Installed routers:** Dashboard API, plan, workflow approval, GitHub webhook, Slack webhook, Linear webhook, Notion webhook, health check, sandbox tool, and sandbox OpenAI routers
 
 ## Local serving modes
 

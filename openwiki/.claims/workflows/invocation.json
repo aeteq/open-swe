@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:30bac9c6f08cce046d4efc81bef5975fc25c21ad71e44e475d50c702b8a42658",
+  "pageVersion": "sha256:7554d9c543691476ad286deb69d7587c88562c905d33713e922c4d174a7a1288",
   "claims": [
     {
       "id": "claim_e57ed64c311b4d20943e40a2357f8026",
-      "statement": "The FastAPI application composes dashboard, plan, workflow approval, Linear, Slack, GitHub, Notion, and health/completion routers; it refuses wildcard dashboard CORS origins when credentials are enabled and validates sandbox and local-development model configuration during lifespan startup.",
+      "statement": "The FastAPI application composes dashboard, plan, workflow approval, Linear, Slack, GitHub, Notion, and health/completion routers; it rejects a wildcard dashboard CORS origin when credentials are enabled and validates sandbox and local-development model configuration during lifespan startup.",
       "evidence": [
         {
-          "resource": "repo://agent/api/app.py#L119-L152",
-          "version": "repo-lines-v1:sha256:b688606d78f58631a4e1c3fb145c82534b7c09d5474d84b9fa1b8ba0447aca20:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
+          "resource": "repo://agent/api/app.py#L120-L154",
+          "version": "repo-lines-v1:sha256:bb4b592f0aaa19f30623c3215652948700d61363b7b20d305e4c23d49ee2a6e7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhMzlmMmQ2YWZjNWJkZThiMTU2Yzk0Njg2MmY5MDdjZjU1MGI4MGM1MzBkNmM1MDA1YmM5MzUzMzIyOTNkMmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
         }
       ]
     },
@@ -127,8 +127,8 @@
       "statement": "GitHub routes multiplex issue, PR, comment, review, push, and CI events, filter unsupported actions, apply repository/organization gates, require mentions for ordinary issue/comment work, and route review-finding replies separately.",
       "evidence": [
         {
-          "resource": "repo://agent/github/routes.py#L25-L124",
-          "version": "repo-lines-v1:sha256:c37ccff17f4f3d0cd7872b6529edaf8be38ddb8dcff2e95ad84fa6a63bc0731d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzZGEyMDc3OTE2YTRmMGUyNTBmMzk2N2RmYjEzMGQ3YWU5ZTlkY2VjNWU3NzA3YTdlNGEwM2Q1Y2MzYjhjZDRkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwZjdlMGU4YWFhNWY0YWU5MTM2ZWQwODIxYjE1YzNiYmEzZTc4NGU3ZDk3YmNiNWQxNmUwOTJmOGNkOWFkMmZkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkODc5OTJhNzA0ZGU0NTM3ZDJhZjNlOTM5MDc5NGQ3MzhiMDEzNzI1OWRjYjkwYWZlZWI2NTc5MDExYmQ5Mjg4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyMzYwYTE5MTM3ODk3MmNlYmQ0ZmJjZjY5YWU4NmZhMmJmMDUwNGQwMWRhNTE3YTU5MzM1NmVmZjRjMDJlNzhmIn0"
+          "resource": "repo://agent/github/routes.py#L25-L125",
+          "version": "repo-lines-v1:sha256:7c7f3df3888ac877566bb31fccb1c8b4f35a98d2604f5925ac602232c26aedb1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzZGEyMDc3OTE2YTRmMGUyNTBmMzk2N2RmYjEzMGQ3YWU5ZTlkY2VjNWU3NzA3YTdlNGEwM2Q1Y2MzYjhjZDRkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5NTUyZTY5ODg3ZmZmMWVkNjYxMDBmZDBiYTczNTQyNGI1ZGI0Yjc0NWFkNTU5YTk4N2ZjNDJkNjM3NTcyNmFmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkODc5OTJhNzA0ZGU0NTM3ZDJhZjNlOTM5MDc5NGQ3MzhiMDEzNzI1OWRjYjkwYWZlZWI2NTc5MDExYmQ5Mjg4IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJhMGI5NTI0M2Y2NmJiMWY4ZGE3ZDY5OWY5NDM5OTcwMjQ4OTIwNjAzYTAwMDE5Y2NmMjNlYjllYjcxZTAyYjk3In0"
         }
       ]
     },
@@ -206,7 +206,7 @@
         },
         {
           "resource": "repo://agent/schedules/store.py#L639-L700",
-          "version": "repo-lines-v1:sha256:c62e760521d43207051763e0d57dd9cfcbe7b691419477591bcfe413600e6bb3:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2M2U0YmMyNjFhYzlmY2Y3MTE4NDUxNDBlMzhhZmM2NTVmZjBhNDg5Njg3YjA3ODEwYTEyYmJmYjRmM2E3YjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwNTlkOWQ5ZjJkMDBjMjNkODA0Zjk1NmJiYzdiZDgzZWZiYWQ0ZDg2ZGUxZTJlNDg1Y2QwNThmODdiNTI4MzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5Nzc3Zjk2Y2JjY2U1YTVhODhlNzNlODQ2NTcwNzI2MTM4NGRjZDQzOTJlMDU5Yzc3MzA3ZDAwMmU2Y2EwNzkifQ"
+          "version": "repo-lines-v1:sha256:40403e674fd62f0b50796f5df6937aba4ec96368d8babee361e0de9fcb67426a:eyJzZWxlY3RlZExpbmVDb3VudCI6ODYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI2M2U0YmMyNjFhYzlmY2Y3MTE4NDUxNDBlMzhhZmM2NTVmZjBhNDg5Njg3YjA3ODEwYTEyYmJmYjRmM2E3YjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwNTlkOWQ5ZjJkMDBjMjNkODA0Zjk1NmJiYzdiZDgzZWZiYWQ0ZDg2ZGUxZTJlNDg1Y2QwNThmODdiNTI4MzciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM5Nzc3Zjk2Y2JjY2U1YTVhODhlNzNlODQ2NTcwNzI2MTM4NGRjZDQzOTJlMDU5Yzc3MzA3ZDAwMmU2Y2EwNzkifQ"
         }
       ]
     },
@@ -297,6 +297,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-04T13:47:40.237Z"
+    "at": "2026-10-05T16:54:23.398Z"
   }
 }

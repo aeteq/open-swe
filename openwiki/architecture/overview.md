@@ -3,6 +3,9 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -50,10 +53,7 @@ sources:
     resource: repo://ui/src/routes/agents.tsx
   - id: openwiki-source-767ef8a0f66938a5c0710041
     resource: repo://ui/src/routeTree.gen.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 ---
 
 # Runtime and Product Architecture
@@ -126,11 +126,11 @@ The durable defaults are intentional: `multitask_strategy="interrupt"` interrupt
 
 Completion notification is best effort. The dispatcher attaches a webhook only when `RUN_COMPLETE_WEBHOOK_SECRET` is configured and `COMPLETION_WEBHOOK_URL` is absolute and non-loopback. Otherwise it logs the condition and creates the run without a webhook, avoiding a configuration error that would poison all run creation.
 
-A graph factory is ephemeral, but thread execution context is durable: LangGraph checkpointing retains graph state, while LangGraph thread metadata holds the sandbox ID and related thread settings. The sandbox cache is in process and keyed by thread ID; another worker reconnects using the persisted ID. A deleted sandbox is replaced, but an existing unreachable coding sandbox raises by default because silent replacement can discard uncommitted work. Reviewer callers can allow replacement because their checkout is re-derived. The sandbox is published to the cache only after initialization and metadata binding succeed. See [Sandbox Lifecycle](./sandbox-lifecycle.md) and [Invocation](../workflows/invocation.md).
+A graph factory is ephemeral, but thread execution context is durable: LangGraph checkpointing retains graph state, while LangGraph thread metadata holds the sandbox ID and related thread settings. The sandbox cache is in process and keyed by thread ID; another worker reconnects using the persisted ID. An existing unreachable sandbox raises rather than being automatically replaced, because silent replacement can discard uncommitted work. Reviewer callers can allow replacement because their checkout is re-derived. The sandbox is published to the cache only after initialization and metadata binding succeed. See [Sandbox Lifecycle](./sandbox-lifecycle.md) and [Invocation](../workflows/invocation.md).
 
 ## Cloud and desktop product surfaces
 
-The cloud manifest currently pins Python 3.14 and LangGraph API version 0.15.0rc1 (a release candidate). Its checkpointer TTL uses `delete`, sweeps every 60 minutes, and defaults to 43,200 minutes. The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
+The cloud manifest currently pins Python 3.14 and LangGraph API version 0.15.0rc1. Its checkpointer TTL uses `delete`, sweeps every 60 minutes, and defaults to 43,200 minutes. The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
 
 `langgraph.desktop.json` intentionally registers only the main agent graph, uses `agent.local_auth:auth` with Studio authentication disabled, and disables the bundled UI. A desktop run is identified by `configurable.source == "desktop"`. Its requested `local_project_path` must resolve to an existing directory that is either in `OPEN_SWE_LOCAL_PROJECTS_FILE` or beneath `OPEN_SWE_LOCAL_WORKTREES_DIR`; otherwise it is rejected. The local backend inherits only a small shell environment allowlist (`HOME`, `LANG`, `LC_ALL`, `PATH`, `SHELL`, `TMPDIR`). Desktop scratch routes put large tool results and conversation history outside the project so they are not swept into `git add -A`.
 

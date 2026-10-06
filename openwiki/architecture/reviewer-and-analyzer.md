@@ -36,10 +36,10 @@ sources:
     resource: repo://langgraph.json
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 ---
 
 # Review and Style Analysis Graphs

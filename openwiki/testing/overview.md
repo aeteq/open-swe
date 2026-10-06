@@ -3,6 +3,9 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Comprehensive test infrastructure, focused validation strategies, and end-to-end flows for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
@@ -42,10 +45,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-01T15:12:02.643Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -55,11 +55,11 @@ The testing strategy separates concerns by layer: focused pytest tests for agent
 <!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
 flowchart TD
-    Change["Changed behavior"] --> Owner{"Boundary that<br/>owns it"}
+    Change["Changed behavior"] --> Owner{"Which system<br/>boundary owns it?"}
     Owner -->|"Agent, middleware,<br/>reviewer, sandbox,<br/>webhook, tools"| Pytest["Focused pytest<br/>in asyncio auto mode"]
     Owner -->|"Dashboard React<br/>component or client"| Vitest["Dashboard Vitest"]
-    Owner -->|"Electron main<br/>process"| Node["Desktop Node --test"]
-    Owner -->|"Real webhook,<br/>authenticated UI,<br/>git, Electron"| Playwright["Focused Playwright"]
+    Owner -->|"Electron main<br/>process"| Node["Desktop Node test"]
+    Owner -->|"Real webhook, UI auth,<br/>git, Electron"| Playwright["Focused Playwright<br/>E2E"]
     Pytest --> Gate["Relevant quality gate"]
     Vitest --> Gate
     Node --> Gate

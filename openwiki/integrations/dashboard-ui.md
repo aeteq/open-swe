@@ -42,10 +42,10 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-09-29T14:41:34.067Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
+    at: 2026-10-05T16:54:23.398Z
 ---
 
 # Dashboard and Desktop Clients
@@ -60,7 +60,6 @@ When a dashboard build is available, `agent.utils.dashboard_ui` mounts immutable
 
 `DASHBOARD_STATIC_DIR` selects an explicit build; otherwise the in-repository `ui/.output/public` build is used when present. A build served under a LangGraph mount prefix must be built with the matching `DASHBOARD_BASE_PATH`. The UI router uses Vite's `BASE_URL` as its `basepath`, so client navigation follows that mount.
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
 graph TB
     subgraph Deployment["Production deployment"]
