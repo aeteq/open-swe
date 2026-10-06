@@ -939,7 +939,7 @@ def _slack_root_message(
         else "Reply in this thread to follow up with the agent."
     )
     return (
-        f"*Open SWE automation:* {record.get('name') or 'Scheduled agent'}{repo_line}\n\n"
+        f"*Jarvis automation:* {record.get('name') or 'Scheduled agent'}{repo_line}\n\n"
         f"A {run_kind} run started. {follow_up}"
     )
 
