@@ -62,8 +62,8 @@ export function AutomationsList({
       <div className="mx-auto w-full max-w-4xl px-6 py-8 max-md:pt-16">
         <h1 className="text-base font-medium text-foreground">Automations</h1>
         <p className="mt-1 text-xs text-muted-foreground">
-          Run Jarvis on a schedule or when GitHub events happen. Each run
-          starts a fresh agent thread.{" "}
+          Run Jarvis on a schedule or when GitHub events happen. Each run starts
+          a fresh agent thread.{" "}
           {!canManage && "Workspace admins manage automation setup."}
         </p>
         {canManage && (
