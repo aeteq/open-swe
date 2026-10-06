@@ -2,6 +2,7 @@ import logging
 from importlib import resources
 from pathlib import Path
 
+from agent.bridge.constants import BridgeClient
 from agent.config import ENV
 from agent.notion.settings import notion_settings
 from agent.prompts import prompt
@@ -132,8 +133,10 @@ def construct_system_prompt(
     slack_breakout: bool = False,
     slack_by_the_way: bool = False,
     sandbox_file_downloads: bool = False,
+    prefer_tools_in_sandbox: bool = False,
     continued_from_collaborative: bool = False,
     local_checkout: bool = False,
+    local_checkout_client: BridgeClient = "cli",
     recent_thread_context: str | None = None,
     workspace_repos: list[str] | None = None,
 ) -> str:
@@ -142,6 +145,8 @@ def construct_system_prompt(
     ``local_checkout`` says the working directory already *is* the user's own
     repository — a thread bridged to their machine — so the clone-or-sync and
     git-identity steps a hosted sandbox needs would rewrite their checkout.
+    ``local_checkout_client`` is the app serving that machine: only the CLI
+    prints a result the run must hand it.
     """
     del linear_project_id, linear_issue_number
     return prompt(
@@ -161,6 +166,8 @@ def construct_system_prompt(
         working_environment_section=prompt(
             _working_environment_prompt(source, local_checkout=local_checkout),
             working_dir=working_dir,
+            desktop=local_checkout_client == "desktop",
+            prefer_tools_in_sandbox=prefer_tools_in_sandbox,
         ),
         dashboard_context_section=prompt(
             "system/dashboard-context",
