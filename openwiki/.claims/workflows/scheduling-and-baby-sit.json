@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:08f999bc427276c4bdedc0aa8b82fa2ca6d07531bed331dd66609719632ebfb5",
+  "pageVersion": "sha256:492f17cc2bc88b7028bd813fc08158cb88a7a4b8b729e997ae14b53ebee13909",
   "claims": [
     {
       "id": "claim_851e23a08e794421a0ac06c407e8a9d0",
       "statement": "The scheduler graph (agent/scheduler.py) is a single-node StateGraph (START -> launch -> END) registered as the `scheduler` assistant in langgraph.json, and its `_launch` node deterministically routes one cron/run tick to the handler matching the incoming `task`, invoking no LLM.",
       "evidence": [
         {
-          "resource": "repo://agent/scheduler.py#L113-L118",
+          "resource": "repo://agent/scheduler.py#L115-L120",
           "version": "repo-lines-v1:sha256:7eae2ce6201a24683071e835499d09005df0c8d0d8d38acb46978c32062d294d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFiY2JhZTI0ZDczZmVlYWJiNzg5YTZiZDQxNDk5N2VhYjBmMjdhYzJiMzcxYWZiMWU5YmNmY2Y4YTVhZTRhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAwYzZiNjMzOTU0MGM4YWE3YzZlNmYyOTI0MjA3NWZiNGRiNjhlYjM3ZWZhMGJkMTUxZWRkZGUwN2E5MjJiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGEyMTY4YjdjOTMxNWVmYTY5MmFmOGI2ZDFlNmIyNjIyNjliODZhNzJjYmMwODEzM2M5ZDIyMjg1NWFiNjg5OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         },
         {
-          "resource": "repo://agent/scheduler.py#L59-L98",
-          "version": "repo-lines-v1:sha256:b81915ddefe4a409462ec2b0136136b0caf7a42db26cd555db3eba67e9172c07:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMTc1NWE0NzlkNzgxYTY2NDkzYTBkMTI3Y2IyYmU5MzE4YTk5ZjZlZWQ3ZmY3MGMyYmE0NTU2MTk4OTk2YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNjEzNWZiNWRmMDMzNjRkN2FlNjMzNGMxZGMzMWVjMjVkMTY5MjQ1MTU3Y2UxMjk3NGY2NDRjMDQ0ZjViNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
+          "resource": "repo://agent/scheduler.py#L61-L100",
+          "version": "repo-lines-v1:sha256:11056bb6ec0614c808e383025f302b35baa71796704245542668bd3aba659965:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMTc1NWE0NzlkNzgxYTY2NDkzYTBkMTI3Y2IyYmU5MzE4YTk5ZjZlZWQ3ZmY3MGMyYmE0NTU2MTk4OTk2YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYWIxNjJkMGM5NmZmMWM0NmM0MDk5NWE2ZDFkNWQxZDg4M2YxMjgxMjAzOGYwMjU0YThkNDBiZTg1ZjY4NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNjEzNWZiNWRmMDMzNjRkN2FlNjMzNGMxZGMzMWVjMjVkMTY5MjQ1MTU3Y2UxMjk3NGY2NDRjMDQ0ZjViNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
         },
         {
           "resource": "repo://langgraph.json#L11-L11",
@@ -25,8 +25,8 @@
       "statement": "The scheduler's `_launch` routes `task` values `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, `agent_cost`, `thread_feedback`, `expedited_review`, workspace refresh, and human-review deadlines to their handlers, plus falls through to `launch_scheduled_agent_run(schedule_id)` when no task matches.",
       "evidence": [
         {
-          "resource": "repo://agent/scheduler.py#L63-L98",
-          "version": "repo-lines-v1:sha256:b6b0c1a49ace65953e8c85f465a9a3be1c18c2e9aaed0f7a2e73e069a3ea0ab2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
+          "resource": "repo://agent/scheduler.py#L65-L100",
+          "version": "repo-lines-v1:sha256:882bbf33d32757a7c5b4770a7a8c89c71abbe5f80c5c52dfbfe6be2b340c7242:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYWIxNjJkMGM5NmZmMWM0NmM0MDk5NWE2ZDFkNWQxZDg4M2YxMjgxMjAzOGYwMjU0YThkNDBiZTg1ZjY4NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
         }
       ]
     },
@@ -35,8 +35,8 @@
       "statement": "When a scheduler tick is missing its required key (watch_key, thread_id, request_id, or schedule_id), `_launch` returns a `missing_*` status result instead of raising, so a malformed tick degrades to a no-op rather than crashing the cron.",
       "evidence": [
         {
-          "resource": "repo://agent/scheduler.py#L63-L98",
-          "version": "repo-lines-v1:sha256:b6b0c1a49ace65953e8c85f465a9a3be1c18c2e9aaed0f7a2e73e069a3ea0ab2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZjJkNmI3ODNkMWE3YzU3NTc1YzdkMjFhNzA0YjE3NGI0OTA3NWRjZmM0MDJiZmVhM2EwMmI5N2RhNzhhMjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
+          "resource": "repo://agent/scheduler.py#L65-L100",
+          "version": "repo-lines-v1:sha256:882bbf33d32757a7c5b4770a7a8c89c71abbe5f80c5c52dfbfe6be2b340c7242:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYWIxNjJkMGM5NmZmMWM0NmM0MDk5NWE2ZDFkNWQxZDg4M2YxMjgxMjAzOGYwMjU0YThkNDBiZTg1ZjY4NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
         }
       ]
     },
@@ -45,11 +45,11 @@
       "statement": "Dashboard-managed recurring agent schedules validate cron strings with normalize_cron_schedule, which requires a five-field expression and range-checks each field (supporting steps, ranges, and lists) before a schedule is stored.",
       "evidence": [
         {
-          "resource": "repo://agent/schedules/store.py#L151-L168",
-          "version": "repo-lines-v1:sha256:dbd26c612c05adaf389d782149d8720f25eafad5a5073ab030ba08e5cc4bec52:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE3MGFjMzExMjQ3MzljYjVmNjNmY2VhZDk3NGFmNzQ0ZjRhOWFkZmMzMDAxZGUwN2RkZjJkYzE4NzY5NDA4MjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU2MThmMTJjNTU1M2Q0Mjc2YjFmNzdjYzM1NjljM2U2OTJhNWUwOWNkMDFhNmJjNTAyMDlkZGQzN2U3MGYyMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYWUyMjkwNTFjYmNkN2E2M2U2YzI3OWFkYjNlYzE1NjIwMGUzMzlmZDYxNmMzNTc4MDI2MzVmNzVjZTU1Y2IifQ"
+          "resource": "repo://agent/schedules/store.py#L213-L239",
+          "version": "repo-lines-v1:sha256:4133b3c0d2aeb6273ed7d84a6c0ee45aac8ff62829bb254391788e9888ed978f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0ODRjZjg3NzBhOGEwMDlhNDcxZTFjNWY1MDkzNDczOTQ1MGU0ZjQxOGIyN2NhMjA4YWUzNjAwOTkzODdjYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMyZmJjNGY2OTA3ZTNlZGYxYzEzZGVjZmE5NDVhZTNlMjk4M2I0Y2NmYTgyNTMzMmRjZjQ0NjFjZTUwMjY4ZTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAwYWUyMjkwNTFjYmNkN2E2M2U2YzI3OWFkYjNlYzE1NjIwMGUzMzlmZDYxNmMzNTc4MDI2MzVmNzVjZTU1Y2IifQ"
         },
         {
-          "resource": "repo://agent/schedules/store.py#L170-L177",
+          "resource": "repo://agent/schedules/store.py#L241-L248",
           "version": "repo-lines-v1:sha256:935401d47d8947d0e166d23a6ab5e5f4b68a68f9a57511f991aab7789bebeed0:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDRiMTRjNjg1NWI0MzM4ZjJlZWZmMzJmMjEzZDhkNTQ0ZGNkZGM5YTg0ZjhjZmQwMGFhMDQ0OGRkZjZhMTA4NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTkzYTEzMDYyZjEwZWU0ZjEyMThkOTNlMzdhNmY4MWQzNDZmZjExZWM3ZTU1ZGQ1NDJlMmQyZDJlZjA3MTFmMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWEzYTNjZjYwNTkwYWI2OGYyNDViOWMwMTQ1ZDlkMmE2MmE2MzhkNTlmYzZhMTM0ZDQ3NTY0MjVjYjI1ZGVmMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTZlMDc1ZjlmNGU3OTM3OGZkNDRjNWU2NjljNzZmZjNhZTMyNTRlYzVlNDY2NjcyZmFiMjE1NDIyNzIyM2IzZiJ9"
         }
       ]
@@ -59,12 +59,12 @@
       "statement": "launch_scheduled_agent_run loads a stored schedule record and launches a fresh agent run, recording last_thread_id / last_run_id / last_triggered_at (or last_error) in a separate schedule run-state namespace.",
       "evidence": [
         {
-          "resource": "repo://agent/schedules/store.py#L213-L217",
-          "version": "repo-lines-v1:sha256:60b76b282d6be75a5a1628f099c661b82d3d05356398ad922e6aa25eb64438de:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzhkZTVlZWEwY2VhZjQ5YjUwYWM3OWY0ZjUzODFmZTQ1MTFkYTBhMjcyYTM3NTk2YjM0MTUyZDg4MzkxYjgzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDlmNjlkODdhN2JiNGU0ZDRmZjFlYjNhZDk3NWNlNzQ2NzkyMzllMzFjYjA5NzcwYzY2MzhiNTBmYjE5NGEzMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzcwN2UyODBjZjY4ZDZiNDM0ZGZiZWM0ODgyZTk4MWUwMDYwMDMxYzhiYTFjNzBjYTQxMDNiODA5N2EzYzBmMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDVlNzhlYmViNzZiOTZhMjhlNTAwMmJhYjk0MDdlMDQ0MDYwYTNhNDE1OWQ4MzI4OWU2ODQxZmE1YmM1MGM1MCJ9"
+          "resource": "repo://agent/schedules/store.py#L1740-L1771",
+          "version": "repo-lines-v1:sha256:ececa29dcbdb294044c0e879e2e3bb3f75c37e8783db5f7bdbab2eb90a8cff52:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNTA5ZmVjOGRiZmViMTFkNDIzMWQxMzkzYTVhNjk0ZjYzNTkwMjkzMzAyM2UwMmE3NzcwMzdmM2U1ODcxNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMmY5MjBlZWViMWQxMDk3M2YzY2YxZmVmNGFkNzVkNWE4M2Y4NTgyOGQ1MDczNGZiYTcxNzhjZjVkNDUzM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxYzE5YmUyNTRmMjMzNTUxN2FhODM2NGJhYTk3ZDM5ZjRjN2FhODYwMWQxYTg5MzJkNmYwMzdmZDY1MDExNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyNDRhY2YxZmM0Y2RjN2JkZDM4OWFmNzc3NmNiM2Q3MjQ5MjhhZDY3ODU4OTUwOWQ0OWRiMTJhMzA5MjE1OWIifQ"
         },
         {
-          "resource": "repo://agent/schedules/store.py#L48-L49",
-          "version": "repo-lines-v1:sha256:fd39534b08b389f9b1602bd7b05b229b5dc206711b8807a200326b181bbb717f:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDliMWUyMmM2OGVhZDA0NWRlZWJlZDM1YTMyZjRlNjExOTYxZjA2Njg4MGQ5ZmU5ZDRkMjdkMzgxODdiNTBlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmNiNmE5Y2Y2NWYyZjE3ZGNhOTVjNzMzNmQ5ZWNmNjI2NWZlMTg3NWI1YjZlOWZiZDcyODhhYmU2YmQ4NGU3MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDBlZTg3ZDBiZDk0YWU1Yjk1M2U1ZjU3NTEwYmExNzFhMjMxNmY3MWRkYTQ5NjI4ZDUyNzFmYjcwYTFlYzQ1NCJ9"
+          "resource": "repo://agent/schedules/store.py#L60-L61",
+          "version": "repo-lines-v1:sha256:fd39534b08b389f9b1602bd7b05b229b5dc206711b8807a200326b181bbb717f:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDliMWUyMmM2OGVhZDA0NWRlZWJlZDM1YTMyZjRlNjExOTYxZjA2Njg4MGQ5ZmU5ZDRkMjdkMzgxODdiNTBlNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmNiNmE5Y2Y2NWYyZjE3ZGNhOTVjNzMzNmQ5ZWNmNjI2NWZlMTg3NWI1YjZlOWZiZDcyODhhYmU2YmQ4NGU3MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDViNWRiMDM3MzQyOGU1YWU4NGUwZjQ0MzA4Y2I4MmRiMmE3ZWRiMTAwNThlZTQwZmRjZDczYWFjYzEzNWViMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDBlZTg3ZDBiZDk0YWU1Yjk1M2U1ZjU3NTEwYmExNzFhMjMxNmY3MWRkYTQ5NjI4ZDUyNzFmYjcwYTFlYzQ1NCJ9"
         }
       ]
     },
@@ -396,7 +396,7 @@
         },
         {
           "resource": "repo://tests/agent/test_session_cost.py",
-          "version": "repo-file-v1:sha256:3ab42942575068fe94e5c542f448315fbfe0f62a2be5f6224b46994942a70b61"
+          "version": "repo-file-v1:sha256:55ed8659aad2d3a9a78a7c2b3d478d8fd882779723945f980db05db08cdc1ed4"
         },
         {
           "resource": "repo://tests/github/test_baby_sit_webhook.py",
@@ -415,6 +415,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-05T16:54:23.398Z"
+    "at": "2026-10-07T15:19:51.431Z"
   }
 }

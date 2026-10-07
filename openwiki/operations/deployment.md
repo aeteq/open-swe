@@ -44,10 +44,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-07T15:19:51.431Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Development, Deployment, and Serving
@@ -87,6 +87,7 @@ sequenceDiagram
   Boot->>Listeners: Start analytics worker pool
   Boot->>Listeners: Start transcript listener
   Boot->>Listeners: Start sandbox-bridge listener
+  Boot->>Listeners: Start UI invalidation hub
   Note over Listeners: failures log warnings only
   Boot->>Ready: LangGraph runtime opens all graphs
 ```
@@ -98,7 +99,7 @@ The FastAPI lifespan startup runs in this order:
 3. **Admin sync:** Admin flags are synced from `CONFIGURED_ADMINS` into the user table.
 4. **Analytics activation:** Workspace records are loaded and reporting metadata is initialized.
 5. **Background workers:** A pooled analytics event worker starts (reads the Store, writes to Postgres).
-6. **Listeners:** Transcript and sandbox-bridge listeners start (handle multi-replica notifications).
+6. **Listeners:** Transcript, sandbox-bridge, and UI invalidation listeners start (handle multi-replica notifications).
 7. **Ready:** LangGraph runtime opens all registered graphs and serves requests.
 
 Failures in imports, analytics, listeners, or worker startup (steps 2–6) do not prevent the server from running; they log warnings and continue. The dashboard and API remain available, but affected features may degrade.
@@ -294,7 +295,7 @@ Alternatively, build with `VITE_DASHBOARD_API_BASE_URL` set to the backend origi
 
 ## Frontend build and caching
 
-The pnpm workspace comprises four packages: `ui` (dashboard), `desktop` (Electron app), `cli` (command-line tool), and `tests/e2e`. Turborepo orchestrates per-package tasks:
+The pnpm workspace comprises five packages: `bridge-client` (bridge protocol), `ui` (dashboard), `desktop` (Electron app), `cli` (command-line tool), and `tests/e2e`. Turborepo orchestrates per-package tasks:
 
 - `dev`: runs the dev server (no cache)
 - `build`: builds the package (cached, outputs `.output/**`, `.vercel/output/**`, `build/**`)
@@ -302,7 +303,7 @@ The pnpm workspace comprises four packages: `ui` (dashboard), `desktop` (Electro
 - `test`: runs unit tests (no cache)
 - `check`: runs checks (no cache)
 
-Build cache inputs include `DASHBOARD_API_URL`, `VERCEL`, `E2E_HARNESS`, and `VITE_*` variables, so changing them invalidates cached builds. Root `lint` (oxlint) and `format`/`format:check` (oxfmt) run directly, not as Turborepo tasks.
+Build cache inputs include `DASHBOARD_API_URL`, `SOURCE_COMMIT`, `VERCEL`, `E2E_HARNESS`, and `VITE_*` variables, so changing them invalidates cached builds. Root `lint` (oxlint) and `format`/`format:check` (oxfmt) run directly, not as Turborepo tasks.
 
 ### Building the dashboard
 
@@ -334,7 +335,7 @@ make desktop    # terminal 2: local Electron app
 make web        # terminal 3 (optional): web dashboard on :3000
 ```
 
-The desktop process defaults to `http://localhost:2024`, or accepts `--backend-url` / `OPEN_SWE_BACKEND_URL`. Resolution order: command line → environment → saved configuration → development default.
+The desktop process defaults to `http://localhost:2024`, or accepts `--backend-url` / `OPEN_SWE_BACKEND_URL`. The app uses an isolated `Open SWE Development` Electron profile, so the dev app can run beside an installed `Open SWE` app without sharing its login session, backend configuration, projects, or single-instance lock. Resolution order: command line → environment → saved configuration → development default.
 
 **For packaging:**
 
@@ -378,6 +379,7 @@ Multiple replicas of the same deployment share a Postgres database and Redis ins
 - **Transcripts:** The transcript listener subscribes to Store writes across all replicas
 - **Sandbox bridges:** The bridge listener waits for cross-replica sandbox operations (file I/O, networking)
 - **Analytics worker:** Reads from the Store and writes to Postgres
+- **UI invalidations:** The hub broadcasts updates to connected dashboard clients across all replicas
 
 If a listener fails to start, the replica continues; affected features degrade (threads driven from other replicas may not receive updates) but the replica remains operational.
 

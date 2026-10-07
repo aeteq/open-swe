@@ -3,9 +3,6 @@ type: tool catalog and authorization model
 title: Tool Catalog and Authorization
 description: How Open SWE exports curated tools, wires graph-specific and deferred tool surfaces, and enforces authorization and mode-specific controls. Use this page when safely adding or changing an agent capability.
 tags: [tools, agent, authorization, integrations, dynamic-tools, automation, reviewer]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-63ebc853556c1b852ed80aff
     resource: repo://agent/analyzer.py
@@ -31,7 +28,10 @@ sources:
     resource: repo://agent/tools/automations.py
   - id: openwiki-source-dcf576fc340e5f1a2bc3f5f4
     resource: repo://agent/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-07T15:19:51.431Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Tool Catalog and Authorization
@@ -79,7 +79,7 @@ The final list depends on trusted run context:
 - A desktop `local_run` receives only `http_request`, `fetch_url`, and `web_search`. A `stop_summary` run initially receives only Slack thread reading and reply. In both cases, integration groups are not collected.
 - Slack operations are removed unless trusted Slack context enables them. This filtering occurs after the mode-specific list is chosen.
 - Slack DM mode excludes `slack_add_reaction` via `DM_EXCLUDED_TOOLS` to avoid clutter on user messages.
-- Slack channel-ask mode excludes thread-bound operations (`slack_add_reaction`, `slack_attach_html`, `slack_move_thread`) and incident management via `SLACK_ASK_EXCLUDED_TOOLS`, but retains write capabilities for answering in the channel.
+- Slack channel-ask mode excludes thread-bound operations (`slack_add_reaction`, `slack_attach_html`, `slack_move_thread`) and incident management via `SLACK_ASK_EXCLUDED_TOOLS`, but retains write capabilities for answering in the channel. Slack by-the-way mode additionally excludes `slack_start_new_thread`.
 - Personal user-settings tools are removed when no credential login is verified (no personal identity in the thread).
 - Human review tools are removed when Slack bot context is unavailable. Expedited review tools (`expedite_pr_approval`, `merge_expedited_pr`) are removed when disabled or when Slack bot context is unavailable.
 - Incident-session tools are added if an incident is in scope; when incident management is automatic (not explicitly requested), additional mutations are excluded via `INCIDENT_AUTOMATIC_EXCLUDED_TOOLS`.
@@ -123,7 +123,7 @@ Models that accept in-conversation tool addition (Anthropic's `tool_addition` an
 | Main | Context-dependent static tools, eligible dynamic groups, and applicable Deep Agents built-ins. |
 | Reviewer | `fetch_review_diff`; finding creation, update, listing, publication, resolution, and reply (`add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, `reply_to_finding_thread`); plus `web_search`, `fetch_url`, and `http_request`. It does not receive `open_pull_request`. |
 | Analyzer | Only `save_review_style_prompt` and `read_finding_outcomes`, supporting repository review-style guidance. |
-| PR chat | `read_repo_file`, `search_repo_code`, `list_review_findings`, `web_search`, and `fetch_url`, with a read-only virtual-file surface. |
+| PR chat | `read_repo_file`, `search_repo_code`, `list_review_findings`, `web_search`, `fetch_url`, `propose_review_comment`, and `propose_pr_review`, with a read-only virtual-file surface. |
 
 PR chat intentionally has no sandbox. It excludes shell and write built-ins (`execute`, `write_file`, `edit_file`, `delete`), and its delegated subagent allowlists only `read_file`, `ls`, `glob`, and `grep`. The chat preparation middleware acquires a repository-scoped GitHub App installation token for the GitHub-backed read tools; PR overview, diff, and findings are supplied as virtual `/pr/` files by the review-chat API.
 
@@ -133,6 +133,8 @@ Graph wiring is a convenience and least-privilege measure, not the sole authoriz
 
 Automation operations repeat their authorization with `require_admin`, which checks the runtime identity. They wrap the dashboard schedule service and return structured `{ok: false, error: ...}` responses for authorization and service failures. Creation records the verified admin identity; update preserves omitted fields while rejecting simultaneous clear/set values for repository or Slack destination; test triggering is allowed for paused automations. The delete tool's contract requires user confirmation before permanent removal.
 
+The `@access` decorator implements tool-side authorization as an independent check on a Policy object specifying where a tool may run (anywhere, private thread, admin_thread, or admin_surface), who can use it (anyone, owner, or admin), and optional result projection for sole writers. The decorator rechecks authorization at runtime, applies sole-writer projection when appropriate, and returns a refused error if the current run's Access mode does not permit the tool.
+
 This pattern is required for tools with sensitive side effects: validate trusted runtime identity and resource scope inside the tool, do not rely on model arguments or thread metadata, and turn anticipated operational failures into actionable tool results.
 
 ## Mode-specific tool gating
@@ -140,9 +142,10 @@ This pattern is required for tools with sensitive side effects: validate trusted
 Tool exclusion is applied per-mode after the static list is determined, using `ExcludeToolsMiddleware` to remove context-inappropriate tools after Deep Agents injects built-ins:
 
 - **Stop-summary mode** (`STOP_SUMMARY_EXCLUDED_TOOLS`) removes filesystem mutation (`write_file`, `edit_file`, `delete`), shell execution (`execute`), delegation (`task`), and `grep`, leaving only Slack read/reply tools available.
-- **Slack channel-ask mode** (`SLACK_ASK_EXCLUDED_TOOLS`) removes thread-bound Slack operations (`slack_add_reaction`, `slack_attach_html`, `slack_move_thread`) and incident management, but retains write capabilities for answering in the channel.
+- **Slack channel-ask mode** (`SLACK_ASK_EXCLUDED_TOOLS`) removes thread-bound Slack operations (`slack_add_reaction`, `slack_attach_html`, `slack_move_thread`) and incident management, but retains write capabilities for answering in the channel. Slack by-the-way mode additionally excludes `slack_start_new_thread`.
 - **Slack DM mode** (`DM_EXCLUDED_TOOLS`) removes `slack_add_reaction` to avoid clutter on user messages.
 - **Incident automatic mode** (`INCIDENT_AUTOMATIC_EXCLUDED_TOOLS`) removes mutable operations when an incident sweep runs without explicit request, preventing unintended side effects.
+- **PR chat** (`_EXCLUDED_TOOLS`) removes `execute`, `write_file`, `edit_file`, and `delete` to ensure read-only operation.
 
 ## Safely extending a tool
 

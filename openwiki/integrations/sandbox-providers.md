@@ -3,6 +3,9 @@ type: integration reference
 title: Sandbox Provider Integration
 description: How Open SWE selects and operates sandbox providers, binds them safely to threads, and handles LangSmith-specific provisioning, credentials, and execution behavior. Covers provider capabilities, local and desktop exceptions, reviewer preparation, and the extension contract.
 tags: [sandbox, integrations, providers, langsmith, configuration, extension]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-07T15:19:51.431Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -37,9 +40,6 @@ sources:
   - id: openwiki-source-6c4c3340e6bc2f86a0e54411
     resource: repo://tests/sandbox/test_local_integration.py
 generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-04T13:47:40.237Z
 ---
 
 # Sandbox Provider Integration

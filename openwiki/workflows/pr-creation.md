@@ -3,9 +3,6 @@ type: workflow
 title: Pull Request Creation
 description: How the agent creates and manages pull requests, including attributed tool creation, commit composition, branch pushing with workflow approval, and PR metadata recording.
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-bd55a0c7231ffb3eb9e8ded0
     resource: repo://agent/dashboard/agent_overrides.py
@@ -28,6 +25,9 @@ sources:
   - id: openwiki-source-25a50e8385de61204afe1bcf
     resource: repo://agent/webhooks/common.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Pull Request Creation

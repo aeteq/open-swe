@@ -3,9 +3,6 @@ type: contributor guide
 title: Open SWE Codebase Guide
 description: Start here to set up Open SWE, choose the entrypoint and owner for a safe change, and run focused validation. Links route contributors to the detailed architecture, workflow, integration, operations, and testing guides.
 tags: [open-swe, contributor-guide, development, langgraph, testing]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-328bde9e94017848bb09ba23
     resource: repo://agent/api/app.py
@@ -45,7 +42,10 @@ sources:
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-generated: { by: "openwiki/0.4.2", at: "2026-10-01T15:12:02.643Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-07T15:19:51.431Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Open SWE Codebase Guide
@@ -112,7 +112,7 @@ Interactive coding and review triggers converge on durable run creation via `dis
 - A missing sandbox may be recreated, but do **not** silently replace an unreachable main-agent sandbox: it could contain uncommitted work. Reviewer and scout code may opt into replacement because they recreate their checkout for each run.
 - The reviewer has no commit, push, or PR-opening tools. PR chat is also sandbox-less and excludes shell and file mutation; it receives `/pr/` virtual files and uses a repository-scoped GitHub App token for GitHub-backed reads.
 - `dispatch_agent_run` is the shared Slack, Linear, GitHub, and dashboard creation contract for `agent` or `reviewer`. Its default multitask strategy is `interrupt`, and callers must choose either a prebuilt input or content/context/identities—not both.
-- FastAPI pins a single event loop before queue construction, validates sandbox and local-development model configuration at startup, and closes cached models at shutdown. Credentialed CORS is added only for configured origins; `*` is rejected.
+- FastAPI pins a single event loop before queue construction, validates sandbox and local-development model configuration at startup, and configures credentialed CORS for configured dashboard origins only, rejecting a wildcard origin.
 
 ## Choose the detailed guide
 
