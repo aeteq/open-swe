@@ -14,7 +14,7 @@
     "."
   ],
   "http": {
-    "app": "agent.webapp:app"
+	  "app": "agent.webapp:app"
   },
   "checkpointer": {
     "ttl": {
