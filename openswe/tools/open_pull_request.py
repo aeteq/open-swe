@@ -10,7 +10,6 @@ import httpx2
 from langgraph.config import get_config
 from langgraph.prebuilt import InjectedState
 from langgraph_sdk import get_client
-from openswe.notion.notifications import record_pull_request
 
 from openswe.act_as.gate import require_consent
 from openswe.analytics.usage import record_agent_pr_usage
@@ -23,6 +22,7 @@ from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import derive_pr_state
 from openswe.github.pull_requests import AGENT_OPENED_LINK_SOURCE, PullRequest, ThreadLink
 from openswe.github.token import GitHubUserAuthRequired
+from openswe.notion.notifications import record_pull_request
 from openswe.run_config import RunConfig
 from openswe.slack.client import (
     get_active_slack_thread,

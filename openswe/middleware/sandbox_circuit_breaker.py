@@ -6,12 +6,12 @@ from collections.abc import Mapping
 from typing import Any
 
 from langgraph_sdk import get_client
-from openswe.notion.notifications import post_notion_comment
 
 from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
 from openswe.github.thread_token import resolve_thread_github_token
 from openswe.linear.notifications import post_linear_notification
+from openswe.notion.notifications import post_notion_comment
 from openswe.run_config import RunConfig
 from openswe.slack.client import (
     LANGGRAPH_URL,

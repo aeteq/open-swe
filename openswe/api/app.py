@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from openswe.notion.routes import router as notion_webhook_router
 
 from openswe.api.health import router as health_router
 from openswe.api.request_ids import add_request_ids
@@ -16,6 +15,7 @@ from openswe.config import ENV
 from openswe.dashboard import router as dashboard_router
 from openswe.github.routes import router as github_webhook_router
 from openswe.linear.routes import router as linear_webhook_router
+from openswe.notion.routes import router as notion_webhook_router
 from openswe.openai_responses.routes import router as sandbox_openai_router
 from openswe.sandboxes.tool_routes import router as sandbox_tool_router
 from openswe.slack.routes import router as slack_webhook_router
