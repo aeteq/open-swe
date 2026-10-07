@@ -14,7 +14,7 @@ from typing import Self
 import httpx2
 from pydantic import JsonValue, ValidationError
 
-from agent.notion.models import (
+from openswe.notion.models import (
     BlockList,
     CommentList,
     NotionBlock,
@@ -25,8 +25,8 @@ from agent.notion.models import (
     PageList,
     PageMarkdown,
 )
-from agent.notion.settings import notion_settings
-from agent.utils.http import DEFAULT_HTTP_TIMEOUT
+from openswe.notion.settings import notion_settings
+from openswe.utils.http import DEFAULT_HTTP_TIMEOUT
 
 logger = logging.getLogger(__name__)
 

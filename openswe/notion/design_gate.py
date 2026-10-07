@@ -4,9 +4,9 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
-from agent.notion.client import NOTION_ERRORS, NotionAPIError, NotionClient
-from agent.notion.properties import page_title, status_name
-from agent.notion.settings import NotionSettings
+from openswe.notion.client import NOTION_ERRORS, NotionAPIError, NotionClient
+from openswe.notion.properties import page_title, status_name
+from openswe.notion.settings import NotionSettings
 
 logger = logging.getLogger(__name__)
 

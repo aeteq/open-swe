@@ -6,10 +6,10 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import ValidationError
 
-from agent.notion import webhook as service
-from agent.notion.models import WebhookEvent
-from agent.notion.settings import notion_settings
-from agent.webhooks import common
+from openswe.notion import webhook as service
+from openswe.notion.models import WebhookEvent
+from openswe.notion.settings import notion_settings
+from openswe.webhooks import common
 
 logger = logging.getLogger(__name__)
 

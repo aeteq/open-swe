@@ -2,9 +2,10 @@ import logging
 from importlib import resources
 from pathlib import Path
 
+from openswe.notion.settings import notion_settings
+
 from openswe.bridge.constants import BridgeClient
 from openswe.config import ENV
-from openswe.notion.settings import notion_settings
 from openswe.prompts import prompt
 from openswe.utils.authorship import (
     OPEN_SWE_BOT_EMAIL,

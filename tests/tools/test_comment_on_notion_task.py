@@ -2,9 +2,9 @@ import sys
 
 import pytest
 
-import agent.tools.comment_on_notion_task  # noqa: F401
+import openswe.tools.comment_on_notion_task  # noqa: F401
 
-tool = sys.modules["agent.tools.comment_on_notion_task"]
+tool = sys.modules["openswe.tools.comment_on_notion_task"]
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def posted(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str]]:
 
 
 def _config(monkeypatch: pytest.MonkeyPatch, configurable: dict[str, object]) -> None:
-    monkeypatch.setattr("agent.run_config.get_config", lambda: {"configurable": configurable})
+    monkeypatch.setattr("openswe.run_config.get_config", lambda: {"configurable": configurable})
 
 
 async def test_comments_on_the_task_that_started_the_run(

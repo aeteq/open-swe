@@ -60,6 +60,8 @@ class _DisableInheritedMiddleware(AgentMiddleware):
         return self._name
 
 
+from openswe.notion.settings import notion_settings
+
 from openswe.analytics.usage import record_agent_invocation_usage
 from openswe.bridge.cli_result import cli_result
 from openswe.bridge.constants import BridgeClient
@@ -151,7 +153,6 @@ from openswe.model_request import (
     infer_requested_model,
     model_selection_trace,
 )
-from openswe.notion.settings import notion_settings
 from openswe.openai_responses.client_tools import CLIENT_OWNED_SERVER_TOOLS
 from openswe.prompt import construct_system_prompt
 from openswe.prompts import apply_tool_descriptions, load_prompt

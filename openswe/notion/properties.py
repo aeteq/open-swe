@@ -5,9 +5,9 @@ from urllib.parse import unquote
 
 from pydantic import JsonValue
 
-from agent.notion.models import NotionDataSource, NotionPage, PropertyValue, RichText
-from agent.notion.settings import normalize_notion_id
-from agent.utils.repo import extract_repo_from_text
+from openswe.notion.models import NotionDataSource, NotionPage, PropertyValue, RichText
+from openswe.notion.settings import normalize_notion_id
+from openswe.utils.repo import extract_repo_from_text
 
 logger = logging.getLogger(__name__)
 

@@ -18,6 +18,7 @@ from typing import Any
 
 from langchain_core.messages import convert_to_messages
 from langgraph_sdk.client import LangGraphClient
+from openswe.notion.notifications import post_notion_comment
 
 from openswe.agent_cost import finalize_agent_invocation_usage
 from openswe.config import ENV
@@ -26,7 +27,6 @@ from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
 from openswe.invocation import resolve_invocation_id, with_invocation_id
 from openswe.linear.notifications import post_linear_notification
-from openswe.notion.notifications import post_notion_notification
 from openswe.review.findings import REVIEWER_THREAD_KIND
 from openswe.review.publish import settle_review_check_run
 from openswe.review.style_jobs import settle_review_style_run

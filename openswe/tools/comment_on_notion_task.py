@@ -1,8 +1,8 @@
 import logging
 from typing import TypedDict
 
-from agent.notion.notifications import post_notion_comment
-from agent.run_config import RunConfig
+from openswe.notion.notifications import post_notion_comment
+from openswe.run_config import RunConfig
 
 logger = logging.getLogger(__name__)
 

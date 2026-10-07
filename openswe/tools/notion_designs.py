@@ -1,9 +1,9 @@
 import logging
 from typing import TypedDict
 
-from agent.notion.client import NOTION_ERRORS
-from agent.notion.designs import DesignPublishError, design_template, publish_design
-from agent.run_config import RunConfig
+from openswe.notion.client import NOTION_ERRORS
+from openswe.notion.designs import DesignPublishError, design_template, publish_design
+from openswe.run_config import RunConfig
 
 logger = logging.getLogger(__name__)
 

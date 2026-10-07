@@ -9,16 +9,16 @@ from dataclasses import dataclass
 
 from pydantic import JsonValue
 
-from agent.notion.client import (
+from openswe.notion.client import (
     NOTION_ERRORS,
     JsonObject,
     markdown_to_rich_text,
     notion_client,
     notion_writer,
 )
-from agent.notion.models import NotionDataSource, NotionPage
-from agent.notion.properties import page_property, relation_ids
-from agent.notion.settings import NotionSettings, notion_settings
+from openswe.notion.models import NotionDataSource, NotionPage
+from openswe.notion.properties import page_property, relation_ids
+from openswe.notion.settings import NotionSettings, notion_settings
 
 logger = logging.getLogger(__name__)
 

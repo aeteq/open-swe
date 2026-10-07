@@ -6,7 +6,7 @@ page must not fail to parse because of a property type this module never uses.
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent.notion.settings import normalize_notion_id
+from openswe.notion.settings import normalize_notion_id
 
 
 class _NotionModel(BaseModel):

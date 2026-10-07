@@ -15,7 +15,7 @@ from langchain_core.messages.content import create_text_block
 from langgraph_sdk import get_client
 from pydantic import JsonValue
 
-from agent.input_messages import (
+from openswe.input_messages import (
     RunInput,
     RunMessage,
     SystemIdentity,
@@ -23,13 +23,13 @@ from agent.input_messages import (
     system_input,
     system_introduction,
 )
-from agent.notion.blocks import render_page_body
-from agent.notion.client import NOTION_ERRORS, NotionClient, notion_client
-from agent.notion.design_gate import DesignDoc, gate_comment, linked_designs, unapproved
-from agent.notion.models import NotionComment, NotionPage, NotionUser, WebhookEvent
-from agent.notion.notifications import post_notion_comment, set_task_status
-from agent.notion.pending import forget_assigner, pending_assigner, remember_assigner
-from agent.notion.properties import (
+from openswe.notion.blocks import render_page_body
+from openswe.notion.client import NOTION_ERRORS, NotionClient, notion_client
+from openswe.notion.design_gate import DesignDoc, gate_comment, linked_designs, unapproved
+from openswe.notion.models import NotionComment, NotionPage, NotionUser, WebhookEvent
+from openswe.notion.notifications import post_notion_comment, set_task_status
+from openswe.notion.pending import forget_assigner, pending_assigner, remember_assigner
+from openswe.notion.properties import (
     date_text,
     page_identifier,
     page_title,
@@ -41,12 +41,12 @@ from agent.notion.properties import (
     status_name,
     text_value,
 )
-from agent.notion.settings import NotionSettings, normalize_notion_id, notion_settings
-from agent.prompts import prompt
-from agent.source_context import NotionPageRef, SourceContext
-from agent.thread_ids import notion_discussion_thread_id, notion_page_thread_id
-from agent.users import User
-from agent.webhooks import common
+from openswe.notion.settings import NotionSettings, normalize_notion_id, notion_settings
+from openswe.prompts import prompt
+from openswe.source_context import NotionPageRef, SourceContext
+from openswe.thread_ids import notion_discussion_thread_id, notion_page_thread_id
+from openswe.users import User
+from openswe.webhooks import common
 
 logger = logging.getLogger(__name__)
 

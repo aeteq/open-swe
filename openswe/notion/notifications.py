@@ -9,10 +9,10 @@ import logging
 
 from pydantic import JsonValue
 
-from agent.notion.client import NOTION_ERRORS, notion_client, notion_writer
-from agent.notion.models import NotionDataSource, NotionPage
-from agent.notion.properties import people_ids, status_name, status_patch, url_patch
-from agent.notion.settings import NotionSettings, notion_settings
+from openswe.notion.client import NOTION_ERRORS, notion_client, notion_writer
+from openswe.notion.models import NotionDataSource, NotionPage
+from openswe.notion.properties import people_ids, status_name, status_patch, url_patch
+from openswe.notion.settings import NotionSettings, notion_settings
 
 logger = logging.getLogger(__name__)
 

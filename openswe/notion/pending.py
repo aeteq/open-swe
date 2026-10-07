@@ -8,8 +8,8 @@ import logging
 
 from pydantic import BaseModel
 
-from agent.notion.settings import normalize_notion_id
-from agent.store import TypedStore, now_iso
+from openswe.notion.settings import normalize_notion_id
+from openswe.store import TypedStore, now_iso
 
 logger = logging.getLogger(__name__)
 

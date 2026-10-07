@@ -3,8 +3,8 @@
 import logging
 from dataclasses import dataclass, field
 
-from agent.notion.client import NotionClient
-from agent.notion.models import NotionBlock, RichText
+from openswe.notion.client import NotionClient
+from openswe.notion.models import NotionBlock, RichText
 
 logger = logging.getLogger(__name__)
 

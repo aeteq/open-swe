@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 
-from agent.config import ENV
+from openswe.config import ENV
 
 _TRAILING_ID_RE = re.compile(
     r"([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"

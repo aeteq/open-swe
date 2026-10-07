@@ -31,7 +31,7 @@ from pydantic_core import PydanticSerializationError, to_jsonable_python
 
 from openswe.invocation import resolve_invocation_id
 from openswe.openai_responses.client_tools import ClientToolSpec
-from openswe.source_context import GitHubIssueRef, LinearIssueRef, SlackThreadRef
+from openswe.source_context import GitHubIssueRef, LinearIssueRef, NotionPageRef, SlackThreadRef
 
 logger = logging.getLogger(__name__)
 
