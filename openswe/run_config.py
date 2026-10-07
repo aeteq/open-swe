@@ -115,6 +115,7 @@ class RunConfig(BaseModel):
     # Where the run came from
     slack_thread: SlackThreadRef | None = None
     linear_issue: LinearIssueRef | None = None
+    notion_page: NotionPageRef | None = None
     github_issue: GitHubIssueRef | None = None
     github_pr_or_issue: GitHubPROrIssueRef | None = None
 

@@ -151,6 +151,7 @@ from openswe.model_request import (
     infer_requested_model,
     model_selection_trace,
 )
+from openswe.notion.settings import notion_settings
 from openswe.openai_responses.client_tools import CLIENT_OWNED_SERVER_TOOLS
 from openswe.prompt import construct_system_prompt
 from openswe.prompts import apply_tool_descriptions, load_prompt
@@ -192,8 +193,10 @@ from openswe.tools import (
     auto_assign_human_reviewer,
     background_execute,
     background_task,
+    comment_on_notion_task,
     configure_repository,
     create_automation,
+    create_notion_design,
     create_sandbox_file_download_url,
     delete_automation,
     delete_organization_skill,
@@ -203,6 +206,7 @@ from openswe.tools import (
     expedite_pr_approval,
     expose_port,
     fetch_url,
+    get_notion_design_template,
     get_thread,
     http_request,
     link_pull_request,
@@ -615,6 +619,9 @@ def _is_subagent_excluded_tool(name: str) -> bool:
     return name.startswith("slack_") or name in {
         "background_execute",
         "background_task",
+        "comment_on_notion_task",
+        "create_notion_design",
+        "get_notion_design_template",
         "submit_thread_feedback",
         "submit_review_assessment_feedback",
         "get_thread",
@@ -816,6 +823,22 @@ def _slack_tools_enabled(cfg: RunConfig) -> bool:
     if _slack_ask_mode(cfg):
         return bool(cfg.slack_thread.channel_id.strip())
     return bool(cfg.slack_thread.channel_id.strip() and cfg.slack_thread.thread_ts.strip())
+
+
+def _notion_task_run(cfg: RunConfig) -> bool:
+    return cfg.source == "notion" and cfg.notion_page is not None and bool(cfg.notion_page.id)
+
+
+def _notion_design_tools(cfg: RunConfig) -> tuple[Any, ...]:
+    """Design publishing for an assigned task, never for a question asked in a comment."""
+    if not _notion_task_run(cfg) or cfg.notion_page is None or cfg.notion_page.is_mention:
+        return ()
+    settings = notion_settings()
+    if not settings.documents_data_source_id:
+        return ()
+    if settings.design_template_id:
+        return (create_notion_design, get_notion_design_template)
+    return (create_notion_design,)
 
 
 def _initial_reply_surface(cfg: RunConfig) -> ReplySurface:
@@ -1778,6 +1801,8 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         schedule_thread_wakeup,
         listen_events,
         list_event_types,
+        *((comment_on_notion_task,) if _notion_task_run(cfg) else ()),
+        *_notion_design_tools(cfg),
         manage_code_channel,
         manage_incident,
         slack_add_reaction,

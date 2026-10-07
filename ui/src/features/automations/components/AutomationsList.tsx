@@ -62,13 +62,13 @@ export function AutomationsList({
       <div className="mx-auto w-full max-w-4xl px-6 py-8 max-md:pt-16">
         <h1 className="text-base font-medium text-foreground">Automations</h1>
         <p className="mt-1 text-xs text-muted-foreground">
-          Run Open SWE on a schedule or on GitHub, Slack, and Linear events.
-          Each run starts a fresh agent thread.{" "}
+          Run Javis on a schedule or on GitHub, Slack, and Linear events. Each
+          run starts a fresh agent thread.{" "}
           {!canManage && "Workspace admins manage automation setup."}
         </p>
         {canManage && (
           <p className="mt-3 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-            Automations can also be listed and managed through Open SWE. Start a
+            Automations can also be listed and managed through Jarvis. Start a
             new thread, turn on Admin next to the model picker, then ask the
             agent to make the change.
           </p>
@@ -183,8 +183,8 @@ function EmptyState({ canManage }: { canManage: boolean }) {
         No automations yet
       </h3>
       <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-        Run Open SWE on a schedule or on GitHub, Slack, and Linear events —
-        review code, triage new issues, or investigate an alert.
+        Run Jarvis on a schedule or on GitHub, Slack, and Linear events — review
+        code, triage new issues, or investigate an alert.
       </p>
       {canManage && (
         <Link
