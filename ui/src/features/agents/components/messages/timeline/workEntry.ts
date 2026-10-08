@@ -253,7 +253,7 @@ export function liveActivityLabel(
   repoPath?: string
 ): string {
   for (let index = chunks.length - 1; index >= 0; index -= 1) {
-    const chunk = chunks[index]
+    let chunk = chunks[index]
     if (!chunk) continue
 
     if (chunk.kind === "reasoning") return "Thinking…"
@@ -270,6 +270,16 @@ export function liveActivityLabel(
       return "Preparing response…"
     }
     if (chunk.kind === "todo") return "Planning next steps…"
+
+    if (chunk.status === "completed") {
+      const activeTool = chunks.findLast(
+        (candidate): candidate is ToolExecutionChunk =>
+          candidate.kind === "tool-execution" &&
+          (candidate.status === "in_progress" || candidate.status === "pending")
+      )
+      if (!activeTool) return "Thinking…"
+      chunk = activeTool
+    }
 
     if (chunk.status === "pending") return "Waiting for approval…"
     if (chunk.status === "error") return "Recovering from an error…"

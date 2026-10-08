@@ -8,8 +8,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent.notion import routes
-from agent.notion.models import WebhookEvent
+from openswe.notion import routes
+from openswe.notion.models import WebhookEvent
 
 SECRET = "secret_verification_token"
 

@@ -8,9 +8,9 @@ import httpx2
 import pytest
 from pydantic import JsonValue
 
-from agent.notion import client as client_module
-from agent.notion.client import NotionClient
-from agent.notion.settings import normalize_notion_id
+from openswe.notion import client as client_module
+from openswe.notion.client import NotionClient
+from openswe.notion.settings import normalize_notion_id
 
 JARVIS = "3e6d872b-594c-8176-bb78-000243d8cbe3"
 INTEGRATION_BOT = "3e6c0b65-a473-8143-b8d4-0027ca778cb6"

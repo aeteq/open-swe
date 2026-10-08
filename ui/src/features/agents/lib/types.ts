@@ -1,3 +1,5 @@
+import type { TaskEventMetadata } from "./structuredInputMessages"
+
 export type Author = "user" | "agent" | "system" | "tool"
 
 export type ChunkKind =
@@ -43,6 +45,7 @@ export type AgentTriggerKind =
   | "reviewer"
   | "analyzer"
   | "ci_autofix"
+  | "slack_bot"
 
 export interface TodoItem {
   content: string
@@ -216,6 +219,7 @@ export interface Message {
   structuredSenderNote?: string
   structuredSenderIsBot?: boolean
   structuredSurface?: string
+  taskEvent?: TaskEventMetadata
   /** Id of the user message that opened this agent run and keys its diff artifact. */
   turnKey?: string
   /** Timestamp of the first message in an agent turn; used to derive work duration. */
@@ -488,7 +492,13 @@ export interface AgentSubagentSummary {
   endedAt: number | null
 }
 
+export type TaskMembership =
+  | { role: "coordinator"; taskId: string }
+  | { role: "worker"; taskId: string; coordinatorThreadId: string | null }
+
 export interface AgentThread {
+  taskMembership?: TaskMembership
+  taskWorkers?: Array<AgentThread>
   ownerLogin?: string | null
   visibility?: "public" | "private"
   id: string
@@ -515,6 +525,8 @@ export interface AgentThread {
   origin?: AgentSource | string
   threadCategory?: AgentThreadCategory | string
   triggerKind?: AgentTriggerKind | string
+  /** The allowed Slack bot that started the thread; the dashboard cannot steer it. */
+  triggeringBot?: { key: string; name: string } | null
   automationId?: string | null
   automationName?: string | null
   automationActionPosted?: boolean
