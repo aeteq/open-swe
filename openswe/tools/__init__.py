@@ -195,8 +195,8 @@ if TYPE_CHECKING:
     )
     from openswe.tools.background_execute import background_execute
     from openswe.tools.background_task import background_task
-    from openswe.tools.connect_managed_tools import connect_managed_tools
     from openswe.tools.comment_on_notion_task import comment_on_notion_task
+    from openswe.tools.connect_managed_tools import connect_managed_tools
     from openswe.tools.create_sandbox_file_download_url import create_sandbox_file_download_url
     from openswe.tools.expedite_pr_approval import expedite_pr_approval
     from openswe.tools.expose_port import expose_port
