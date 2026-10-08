@@ -78,7 +78,7 @@ const NAV: Array<NavGroup> = [
     items: [
       {
         to: "/review",
-        label: "Code review",
+        label: "Jarvis Review",
         icon: IoGitPullRequestOutline,
         childPrefix: "/review/repositories/",
       },

@@ -39,7 +39,7 @@ export function OnboardingDialog() {
               </Dialog.Title>
             </div>
             <Dialog.Description className="text-xs text-muted-foreground">
-              Connect Slack so that when you tag Open SWE, it can resolve your
+              Connect Slack so that when you tag Jarvis, it can resolve your
               GitHub account. We use the email Slack verifies, which also lets
               Linear mentions resolve to you.
             </Dialog.Description>
