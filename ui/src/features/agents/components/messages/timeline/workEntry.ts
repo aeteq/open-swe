@@ -241,7 +241,7 @@ function toolActivityVerb(chunk: ToolExecutionChunk): string {
     case "linear":
     case "notion":
       return "Sending update"
-    case "service-connection":
+    case "managed-tools":
       return "Offering connection"
     case "other":
       return describeWorkEntry(chunk).heading

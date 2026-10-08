@@ -207,13 +207,12 @@ declare global {
       onUpdateState: (
         callback: (state: DesktopUpdateState) => void
       ) => () => void
+      onLocalThreadsChanged: (callback: () => void) => () => void
       onProjectsChanged: (
         callback: (projects: Array<DesktopProject>) => void
       ) => () => void
       openExternal: (url: string) => Promise<boolean>
-      connectService: (
-        provider: "slack" | "notion" | "langsmith"
-      ) => Promise<boolean>
+      connectService: (provider: "slack" | "langsmith") => Promise<boolean>
       resolveLocalProjectPath: (input: {
         localSessionId: string
         path: string

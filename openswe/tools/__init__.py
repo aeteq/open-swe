@@ -8,6 +8,7 @@ _TOOL_MODULES = {
     "auto_assign_human_reviewer": ".request_human_review",
     "background_execute": ".background_execute",
     "background_task": ".background_task",
+    "connect_managed_tools": ".connect_managed_tools",
     "comment_on_notion_task": ".comment_on_notion_task",
     "create_automation": ".automations",
     "create_notion_design": ".notion_designs",
@@ -19,6 +20,7 @@ _TOOL_MODULES = {
     "expose_port": ".expose_port",
     "fetch_review_diff": ".fetch_review_diff",
     "fetch_url": ".fetch_url",
+    "get_human_review_status": ".request_human_review",
     "get_notion_design_template": ".notion_designs",
     "get_thread": ".threads",
     "http_request": ".http_request",
@@ -49,7 +51,6 @@ _TOOL_MODULES = {
     "report_platform_issue": ".report_platform_issue",
     "request_human_review": ".request_human_review",
     "request_pr_review": "openswe.slack.tools.request_pr_review",
-    "request_service_connection": ".request_service_connection",
     "reply_to_finding_thread": ".reply_to_finding_thread",
     "resolve_finding_thread": ".resolve_finding_thread",
     "delete_organization_skill": ".organization_skills",
@@ -89,6 +90,7 @@ __all__ = [
     "auto_assign_human_reviewer",
     "background_execute",
     "background_task",
+    "connect_managed_tools",
     "comment_on_notion_task",
     "create_automation",
     "create_notion_design",
@@ -100,6 +102,7 @@ __all__ = [
     "expose_port",
     "fetch_review_diff",
     "fetch_url",
+    "get_human_review_status",
     "get_notion_design_template",
     "get_thread",
     "http_request",
@@ -130,7 +133,6 @@ __all__ = [
     "report_platform_issue",
     "request_human_review",
     "request_pr_review",
-    "request_service_connection",
     "reply_to_finding_thread",
     "resolve_finding_thread",
     "publish_workspace",
@@ -194,6 +196,7 @@ if TYPE_CHECKING:
     from openswe.tools.background_execute import background_execute
     from openswe.tools.background_task import background_task
     from openswe.tools.comment_on_notion_task import comment_on_notion_task
+    from openswe.tools.connect_managed_tools import connect_managed_tools
     from openswe.tools.create_sandbox_file_download_url import create_sandbox_file_download_url
     from openswe.tools.expedite_pr_approval import expedite_pr_approval
     from openswe.tools.expose_port import expose_port
@@ -221,9 +224,9 @@ if TYPE_CHECKING:
         assign_human_reviewer,
         auto_assign_human_reviewer,
         dismiss_human_review_request,
+        get_human_review_status,
         request_human_review,
     )
-    from openswe.tools.request_service_connection import request_service_connection
     from openswe.tools.resolve_finding_thread import resolve_finding_thread
     from openswe.tools.save_plan import save_plan
     from openswe.tools.save_user_instructions import save_user_instructions
