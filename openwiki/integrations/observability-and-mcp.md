@@ -3,9 +3,6 @@ type: integration and observability architecture
 title: Observability, Tracing, and MCP
 description: LangSmith tracing and cost collection, analytics event capture, invocation and session cost tracking, MCP connections and Notion integration, and full-transcript recording for debugging and replay.
 tags: [observability, tracing, mcp, analytics, langsmith, notion, credentials, oauth, costs, transcript]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-d2bd9c9ce8ccfbe9c55e6d30
     resource: repo://agent/agent_cost.py
@@ -42,6 +39,9 @@ sources:
   - id: openwiki-source-7c60191e42b8e30b62935af1
     resource: repo://agent/utils/thread_participants.py
 generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Observability, Tracing, and MCP

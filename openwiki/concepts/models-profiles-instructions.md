@@ -32,10 +32,10 @@ sources:
     resource: repo://agent/utils/model.py
   - id: openwiki-source-bd05fb2fcc2066f4d449df18
     resource: repo://agent/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-07T15:19:51.431Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Models, Profiles, and Instructions
@@ -63,22 +63,21 @@ All team default resolvers use a valid saved pair first, then same-provider reco
 
 Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]`. (Note: the instance record is sometimes called "team settings" for historical reasons—the pre-workspaces architecture had no separate workspace records.) Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
 
-Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, and PR/CI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
+Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, PR/CI preferences, and model-routing and UI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart TD
   Team["Team main and subagent pairs"]
-  Profile{"Stored thread model<br/>exists?"}
+  Profile{"Stored thread model exists?"}
   ApplyProfile["No: check profile"]
   UseStored["Yes: use stored"]
-  ProfileApply{"Valid profile<br/>main pair?"}
+  ProfileApply{"Valid profile main pair?"}
   UseTeam["No: use team"]
   UseProfile["Yes: use profile"]
-  Explicit{"Explicit run pair<br/>provided?"}
+  Explicit{"Explicit run pair provided?"}
   Replace["Yes: replace pairs"]
-  Persist["Persist pairs<br/>to thread"]
-  Gate["Gate Fable,<br/>build models"]
+  Persist["Persist pairs to thread"]
+  Gate["Gate Fable, build models"]
   
   Team --> Profile
   Profile -->|"yes"| UseStored
@@ -97,7 +96,7 @@ flowchart TD
 
 *Caption: Model selection precedence from team defaults through stored thread snapshot to explicit per-run override.*
 
-`get_agent` seeds hosted runs from the team pairs. It reads a sender profile only if the thread has no stored main model; a valid profile main pair also becomes the subagent pair unless a valid profile subagent pair is supplied. Stored settings then take precedence. Finally, a valid `configurable.agent_model_id` plus `agent_effort` replaces both pairs and is persisted. `agent_settings` lives in thread metadata, is cached for five minutes, accepts only its typed fields, and reads or writes fail soft; malformed legacy metadata becomes an empty snapshot.
+`build_agent` is the factory that seeds hosted runs from team defaults. It reads a sender profile only if the thread has no stored main model; a valid profile main pair also becomes the subagent pair unless a valid profile subagent pair is supplied. Stored thread settings then take precedence. Finally, a valid `cfg.agent_model_id` plus `agent_effort` (from explicit per-run override) replaces both pairs and is persisted. `agent_settings` lives in thread metadata via `store_thread_settings`, is cached for five minutes by `load_thread_settings`, accepts only its typed fields via `ThreadSettings`, and reads or writes fail soft; malformed legacy metadata becomes an empty snapshot via `normalize_thread_settings`.
 
 For selection-only callers, `resolve_agent_model_id` applies supported per-thread id, then valid profile id, then team default. Dashboard run creation uses the full pair in the order team, profile, request. A deprecated request intentionally leaves the team default, rather than allowing the profile to take effect. If dashboard input contains images, a text-only resolved selection is replaced with `default_vision_model_pair()`; direct image-content construction rejects a missing or text-only model with HTTP 422.
 

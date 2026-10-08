@@ -3,9 +3,6 @@ type: architecture-component
 title: Middleware and Failure Boundaries
 description: Ordering-sensitive middleware around the coding agent and reviewer model and tool loops. Explains preparation, policy, retries, deadlines, completion hooks, and how failures become safe user-visible outcomes.
 tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
 sources:
   - id: openwiki-source-e1f102c9268ae755c7487b1e
     resource: repo://agent/middleware/deliver_event_matches.py
@@ -46,6 +43,9 @@ sources:
   - id: openwiki-source-b074bf11145a0ff6206cec7b
     resource: repo://tests/sandbox/test_sandbox_retry.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Middleware and Failure Boundaries

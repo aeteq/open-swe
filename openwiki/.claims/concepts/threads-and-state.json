@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:fd3425f0a58fe1800f90f93d8bd61c8df2368d8574ba6070fd60949e109cb574",
+  "pageVersion": "sha256:e688d03b926d7eea6ad62680d5f955b125987ed07bd4616fdbfad2472130e66b",
   "claims": [
     {
       "id": "claim_59daaaa8396044a0ab47378f78878e79",
@@ -17,8 +17,8 @@
       "statement": "Thread ids are derived either as URL-namespaced UUIDv5 (Slack, PR-comment, reviewer, review-style, baby-sit-lock) via uuid.uuid5(NAMESPACE_URL, key), or as a SHA-256-derived UUID (Linear and GitHub issue ids) via _sha256_uuid.",
       "evidence": [
         {
-          "resource": "repo://agent/thread_ids.py#L33-L40",
-          "version": "repo-lines-v1:sha256:a5a73b352db24429b141dde70e721a9019477d442486fc88e803d0f896189103:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGFkODcxOTA4M2M1OGE5YjJjNDJhODg0YTFmYTRkNDRiZDZmMjcwNzE2Zjc4ZWIyMmZmMjgxZjNlNzFkYzUyMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTk4YjA2M2Q5YjQ3ZTY1Mzc5NjI1NTcyY2NlMTk3NjY5ZDU3NjdlMTJjMThiZTA3NTY1MmI4Y2Q5ODFjZThkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGM1ZmJiYjJhZTA4MTIyOTc2MmU0YzMyY2YxYWVkOWNiZTc5YTMxZWRiMjlhMDcxNWU3ZmEzY2ExOTM5NzUwNSJ9"
+          "resource": "repo://agent/thread_ids.py#L33-L39",
+          "version": "repo-lines-v1:sha256:21523c6c65881d364f26798fc993790b24fa71cf0c08c9e7ae5f64d1eceb9818:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGFkODcxOTA4M2M1OGE5YjJjNDJhODg0YTFmYTRkNDRiZDZmMjcwNzE2Zjc4ZWIyMmZmMjgxZjNlNzFkYzUyMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzdkYTQ2ZmE1ZjFkMTdiNGJhMTNlYmFlYWFhMTA2NzMzMzcyMzlkMzk2YWVmM2FlYjg2ZDBhODkzZDczMTRjOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTk4YjA2M2Q5YjQ3ZTY1Mzc5NjI1NTcyY2NlMTk3NjY5ZDU3NjdlMTJjMThiZTA3NTY1MmI4Y2Q5ODFjZThkNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjAwMWZmOTNiMzdiNWI2NWM4YWZmOTk2ZWFjZDEwNTllM2EzZTk2NTBiZGYwNDliNWNlNzEwZmVmZmZlMmZkMCJ9"
         }
       ]
     },
@@ -219,8 +219,8 @@
       "statement": "ensure_sandbox_for_thread reuses a cached backend or reconnects with sandbox_id from thread metadata, creating a sandbox only when neither exists; an unreachable existing agent sandbox raises rather than being silently replaced, while a deleted sandbox is replaced.",
       "evidence": [
         {
-          "resource": "repo://agent/sandboxes/lifecycle.py#L382-L416",
-          "version": "repo-lines-v1:sha256:51963ede046bd95fdca04e522b762379be925d44963ca381f0b422585ecdef7c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmODdhYzZjOWY4NmZlNGE1ZDExOGQ3YjQ5NzNkZjU5NjVhN2ZkNzMzZTI3MmY5ZGVhYTkyYTdmMmM0YmUzY2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2YTcxNTI1NzJlZTg0ZjEwOTA2Yzc0YjlmMmE5MjQzNGRkYWIwZTNjNDI4MTNiMDRlNTk3ZWZjZWM5NTFiMjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3ODY2NWE0YmU4NTg4NWI3YmNlNmUzY2RhNmNiZGQ3OWJlY2ZjN2Q4ZjdjOTcwYWQ5NTdjMDk4ZWFkNDdiZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0NTg4ZjNlYjZiMDk3ODE5NjJjMGYyNGE0MTBiZjA5MmQwYWY2ZDYzMGUxMGU1Mzg1ZmZmOGQ4ZGU3OGE3MzgifQ"
+          "resource": "repo://agent/sandboxes/lifecycle.py#L349-L494",
+          "version": "repo-lines-v1:sha256:ca7f743778718e947d849848a57eb873ac68547c8708d3fe9873fbc398acb592:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQ2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0Zjg3YWM2YzlmODZmZTRhNWQxMThkN2I0OTczZGY1OTY1YTdmZDczM2UyNzJmOWRlYWE5MmE3ZjJjNGJlM2NiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5NzJhODYxNTk4ZDlhZGY1YzlmMmFlODRlMzhkYjZmYTZjMmEzNDExZTA0YjQwN2I5Y2JiNWQ3NzIwMGZmNDBiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2Nzg2NjVhNGJlODU4ODViN2JjZTZlM2NkYTZjYmRkNzliZWNmYzdkOGY3Yzk3MGFkOTU3YzA5OGVhZDQ3YmY0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwZDIyMDc1OGRlMWMwZWVhZTM2Nzc5M2U3ODk5NWZjNDEyMGMxODc5OGZmMjY3NThkNmYyMGI2YTcwMTVlMDliIn0"
         }
       ]
     },
@@ -229,8 +229,8 @@
       "statement": "The thread is bound to its sandbox_id in metadata only after the sandbox is created and initialized, then the backend is published to the per-thread proxy cache, so a run that dies earlier leaves no half-built id for the next run to adopt.",
       "evidence": [
         {
-          "resource": "repo://agent/sandboxes/lifecycle.py#L444-L484",
-          "version": "repo-lines-v1:sha256:b63a5aaea4adf8efe77a227f861c5d2b036d1988163ccdb29f13d7c23e7da069:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM4NTg5MTcwN2FjN2UyZDdkZjAyNTM1MjQ1ZDAzYTIwYmZlZWQyZmI3ZjJjOGM3MTRjNmExNzQ0NTFlMDIzMzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0MTI1MDJlMmIwZjMwNDNiNDU1NzlmYzA0MjBjMWExZmZmNjAzY2E2NzNjYzcwMmE4MjdmZWFmZWUyMDgyMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAxNGMyNTNiNWZmMzA4ZjZkOTE2MTE2NzJmNzVlMTExN2RiZThiOGY3ZGYyM2M2ZmE5NjEwMGQyOTVmOTI1MTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJhNDI5NTIyNzg1NTRhNWI5N2JkZWFiZWVlOThhZTRkYTVmMmEwMWM2ZWY3N2QxMTNkNGI1ZjAwNGY0NTc4YWIifQ"
+          "resource": "repo://agent/sandboxes/lifecycle.py#L470-L488",
+          "version": "repo-lines-v1:sha256:880cad29e5ae941f84cb6f9d61afd249d40c40a7ab42c8a0d74969b893ea0fa7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzOTBjM2M3ODRkMDYzZTQ3Yzk4MDBlNDAzZmYwNjIzYjFlNGI3NzVmNDM2YjJhNzQzMTUwZWI5OTYyOGM0NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlNGVkNDY4YmJmMDczY2YwNmMyY2UzNWNiOWNhYTdkZWViZmUxZTY2MzE5ZGUzZGIzNjYyYTdlYmQ3MjAxOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkZDg2MTJiOTNiODBiMDI3NjAxNDgxYzdlZWFlNDhjMWI5ZDdmMWQwYjBkOTYxMDZhY2ExMjQ5MDkxNTk2NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRjYmU3ZjFkMTZmZWY5YjllMGJmYmM1MTI4ZmQ2NzgwMDMwNjk1M2NiMWJjMTgyMWQ5MjJhYTRlODk3NmJiMTEifQ"
         }
       ]
     },
@@ -377,8 +377,8 @@
       "statement": "agent/threads/creation.py is the only place LangGraph threads are created, and every thread people can open must have a non-empty, stripped title; this enforces an invariant that prevents untitled conversations.",
       "evidence": [
         {
-          "resource": "repo://agent/threads/creation.py#L1-L55",
-          "version": "repo-lines-v1:sha256:33a8ea57e155cd62dc94cbece8da9ea3c7f7a3ad1023761f11648e3c33b8b52b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0NDdkYzcxNGJmYmJjM2EwNzU4MWJmOGMwMDAxNjZiZDc5MjQ3MDAzNDdhOWUxNTc1M2JkNzNlN2QyMDIwYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhNzRkNWYyODRmM2ZiMjQzZGNmZjBkZjg5NWQxMzRkY2EyNWYyNjkwODJlMmQ4OGQ5MDFmNjAwNTc3M2QyODgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://agent/threads/creation.py#L1-L59",
+          "version": "repo-lines-v1:sha256:1248ba2c3004a1af5f5ac5db0a4b9823b9d5f840b2922e85fdb6de7977d53e60:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0NDdkYzcxNGJmYmJjM2EwNzU4MWJmOGMwMDAxNjZiZDc5MjQ3MDAzNDdhOWUxNTc1M2JkNzNlN2QyMDIwYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5ZGNlM2I0NDhhNzY3OWViZjY5Yzc5NTY0ZmY1YjEyOGVjNTQzYWI2M2NiZGI2NWI0ODJlZmUzYmQ1N2QxZjkifQ"
         }
       ]
     },
@@ -413,6 +413,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-05T16:54:23.398Z"
+    "at": "2026-10-07T15:19:51.431Z"
   }
 }

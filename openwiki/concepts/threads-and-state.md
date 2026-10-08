@@ -44,10 +44,10 @@ sources:
     resource: repo://agent/utils/thread_settings.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+    at: 2026-10-07T15:19:51.431Z
 ---
 
 # Threads, Durable Runs, and State
