@@ -4,42 +4,42 @@ title: Review and Style Analysis Graphs
 description: Architecture of the isolated reviewer and review-style analyzer graphs, including repository preparation, durable finding reconciliation and publication, per-repository style persistence, and continual analysis scheduling.
 tags: [reviewer, analyzer, code-review, findings, review-style, langgraph, sandbox, github]
 sources:
-  - id: openwiki-source-63ebc853556c1b852ed80aff
-    resource: repo://agent/analyzer.py
-  - id: openwiki-source-8f8da8ebd37830cfae55d76c
-    resource: repo://agent/review/analyzer_cron.py
-  - id: openwiki-source-f2ef7b73c8002cd7b756ad30
-    resource: repo://agent/review/findings.py
-  - id: openwiki-source-33d4d2e6efc682b86ebf1624
-    resource: repo://agent/review/publish.py
-  - id: openwiki-source-290b6c9567021d70bc012c7c
-    resource: repo://agent/review/reconcile.py
-  - id: openwiki-source-e0831f51028e19f266889975
-    resource: repo://agent/review/style_guidance.py
-  - id: openwiki-source-92590907348b7bf56e1762fa
-    resource: repo://agent/review/style_jobs.py
-  - id: openwiki-source-31ac80d273943055d537bae8
-    resource: repo://agent/review/styles.py
-  - id: openwiki-source-276ab38291eb5741b4c2141c
-    resource: repo://agent/reviewer.py
-  - id: openwiki-source-f821cbba108557a41969274b
-    resource: repo://agent/tools/add_finding.py
-  - id: openwiki-source-c451a6086ffd6238062ba879
-    resource: repo://agent/tools/publish_review.py
-  - id: openwiki-source-e5e6d929a61c7ec900b63781
-    resource: repo://agent/tools/read_finding_outcomes.py
-  - id: openwiki-source-7373bada04b526afa9becd11
-    resource: repo://agent/tools/save_review_style.py
-  - id: openwiki-source-ff16fde3cd496fd0b8de20da
-    resource: repo://agent/utils/analyzer_skills.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+  - id: openwiki-source-9b527e24b573880a306ac5b0
+    resource: repo://openswe/analyzer.py
+  - id: openwiki-source-812ee034de9635574394bbde
+    resource: repo://openswe/review/analyzer_cron.py
+  - id: openwiki-source-85f325a37c97d6000b6e6a23
+    resource: repo://openswe/review/findings.py
+  - id: openwiki-source-77c518a8a4572e59e2d374ee
+    resource: repo://openswe/review/publish.py
+  - id: openwiki-source-f47abef99c7b9c6cdca43421
+    resource: repo://openswe/review/reconcile.py
+  - id: openwiki-source-0d97385e1ec5efadd37c04fc
+    resource: repo://openswe/review/style_guidance.py
+  - id: openwiki-source-405a5dc41768d5a8086f4621
+    resource: repo://openswe/review/style_jobs.py
+  - id: openwiki-source-eb9e695bef31bca8f88b0c2b
+    resource: repo://openswe/review/styles.py
+  - id: openwiki-source-96bcad07b4fe7078402bc2b8
+    resource: repo://openswe/reviewer.py
+  - id: openwiki-source-96907ca866d8ca4c8369bc1b
+    resource: repo://openswe/tools/add_finding.py
+  - id: openwiki-source-7cec199cafafc864b85fba49
+    resource: repo://openswe/tools/publish_review.py
+  - id: openwiki-source-4e31dc31e6a9e482478928fb
+    resource: repo://openswe/tools/read_finding_outcomes.py
+  - id: openwiki-source-4e57d630bcf4183c2e7c14e3
+    resource: repo://openswe/tools/save_review_style.py
+  - id: openwiki-source-6c0778eb47df8418c590e93e
+    resource: repo://openswe/utils/analyzer_skills.py
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
+generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-05T16:54:23.398Z
-generated: { by: "openwiki/0.4.2", at: "2026-09-28T16:33:19.776Z" }
+    at: 2026-10-08T15:19:10.971Z
 ---
 
 # Review and Style Analysis Graphs

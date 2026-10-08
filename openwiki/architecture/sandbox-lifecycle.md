@@ -3,32 +3,30 @@ type: architecture lifecycle
 title: Thread Sandbox Lifecycle
 description: How a thread acquires, persists, reconnects to, and deliberately replaces its sandbox. Covers provider selection, proxy-backed credentials, recovery safety, and operational lifecycle controls.
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
+sources:
+  - id: openwiki-source-3e4d955c2e907c017e3302d0
+    resource: repo://openswe/desktop.py
+  - id: openwiki-source-5491be991f9727afe1f3163d
+    resource: repo://openswe/github/proxy.py
+  - id: openwiki-source-1b32e9f41fa7e64702b380f6
+    resource: repo://openswe/sandboxes/lifecycle.py
+  - id: openwiki-source-c1e3814c4caa0f4227587d10
+    resource: repo://openswe/sandboxes/paths.py
+  - id: openwiki-source-d16a45e9fc6aa80a3708c88c
+    resource: repo://openswe/sandboxes/providers/langsmith.py
+  - id: openwiki-source-5b3f60be6fd7ddbdf61f37ad
+    resource: repo://openswe/sandboxes/providers/local.py
+  - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
+    resource: repo://openswe/sandboxes/providers/registry.py
+  - id: openwiki-source-c5766699cee46f671b69bf81
+    resource: repo://openswe/sandboxes/repo_prep.py
+  - id: openwiki-source-63c74145043dac21719006df
+    resource: repo://openswe/sandboxes/retry.py
+  - id: openwiki-source-2dbb6fddd1531095bb57d08e
+    resource: repo://openswe/sandboxes/state.py
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
-sources:
-  - id: openwiki-source-8c60a9544ea26006748dd7a3
-    resource: repo://agent/desktop.py
-  - id: openwiki-source-5ec5369df7ad45c41aa9c1a5
-    resource: repo://agent/github/proxy.py
-  - id: openwiki-source-9d5775155057d8f8c3a08e3e
-    resource: repo://agent/middleware/refresh_github_proxy.py
-  - id: openwiki-source-6fd11c8bb15f5eb94b765440
-    resource: repo://agent/sandboxes/lifecycle.py
-  - id: openwiki-source-31cdc3533d50e7ed84c89652
-    resource: repo://agent/sandboxes/paths.py
-  - id: openwiki-source-2dedcea02c5aa03c54d81c32
-    resource: repo://agent/sandboxes/providers/langsmith.py
-  - id: openwiki-source-0746ff3f107493deffefb33b
-    resource: repo://agent/sandboxes/providers/local.py
-  - id: openwiki-source-49bfbb811c25e99235121924
-    resource: repo://agent/sandboxes/providers/registry.py
-  - id: openwiki-source-c2e0c61bef110853a29c63a8
-    resource: repo://agent/sandboxes/repo_prep.py
-  - id: openwiki-source-267a662990890ab782a8bf32
-    resource: repo://agent/sandboxes/retry.py
-  - id: openwiki-source-3f4feeeb872e0d43c9b850c8
-    resource: repo://agent/sandboxes/state.py
+    at: 2026-10-08T15:19:10.971Z
 generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
 ---
 

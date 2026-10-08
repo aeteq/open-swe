@@ -4,38 +4,38 @@ title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
 tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
 sources:
-  - id: openwiki-source-09b129ff728dd4990ea2f25e
-    resource: repo://agent/dashboard/agent_instructions.py
-  - id: openwiki-source-bd55a0c7231ffb3eb9e8ded0
-    resource: repo://agent/dashboard/agent_overrides.py
-  - id: openwiki-source-abba304194f5a40187cffde3
-    resource: repo://agent/dashboard/options.py
-  - id: openwiki-source-d9f679c15adbf4b3f612d406
-    resource: repo://agent/dashboard/profiles.py
-  - id: openwiki-source-9bf84d0c3d7e3b3001405497
-    resource: repo://agent/dashboard/user_instructions.py
-  - id: openwiki-source-0a6d03ee63c0e527ce21bf77
-    resource: repo://agent/dashboard/workspace_settings.py
-  - id: openwiki-source-cb4e403499865fd6b797127c
-    resource: repo://agent/input_messages.py
-  - id: openwiki-source-10938886c8b24d0cdc72ad9e
-    resource: repo://agent/prompt.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
-  - id: openwiki-source-e081118d2ce6ecdbd524a5ee
-    resource: repo://agent/threads/runs.py
-  - id: openwiki-source-5cd6c19c6bd276f57c96412c
-    resource: repo://agent/utils/authorship.py
-  - id: openwiki-source-f0db445078d7a8158aa93724
-    resource: repo://agent/utils/gateway.py
-  - id: openwiki-source-56ade344fdbe7d47c84f008f
-    resource: repo://agent/utils/model.py
-  - id: openwiki-source-bd05fb2fcc2066f4d449df18
-    resource: repo://agent/utils/thread_settings.py
+  - id: openwiki-source-b944dafe6742f31d7ab88e70
+    resource: repo://openswe/dashboard/agent_instructions.py
+  - id: openwiki-source-d7869f38ea59b91aa236ee00
+    resource: repo://openswe/dashboard/agent_overrides.py
+  - id: openwiki-source-8edaced2842e8bdf5ec72158
+    resource: repo://openswe/dashboard/options.py
+  - id: openwiki-source-4cb48d234248941982c6537f
+    resource: repo://openswe/dashboard/profiles.py
+  - id: openwiki-source-8daea241628a4b2824246dad
+    resource: repo://openswe/dashboard/user_instructions.py
+  - id: openwiki-source-775d5704fff1c9b4f3e91941
+    resource: repo://openswe/dashboard/workspace_settings.py
+  - id: openwiki-source-836966ba5e0c4d710801c9a9
+    resource: repo://openswe/input_messages.py
+  - id: openwiki-source-c950a10d3272291deaffd090
+    resource: repo://openswe/prompt.py
+  - id: openwiki-source-919e16feae379651f2cbc1c9
+    resource: repo://openswe/server.py
+  - id: openwiki-source-5c84530a3d0edb1fb15187f1
+    resource: repo://openswe/threads/runs.py
+  - id: openwiki-source-b0386020bdef12612e5b005e
+    resource: repo://openswe/utils/authorship.py
+  - id: openwiki-source-cbab46b11893a9efc599e687
+    resource: repo://openswe/utils/gateway.py
+  - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
+    resource: repo://openswe/utils/model.py
+  - id: openwiki-source-1962e84a7cbf37fcca83381c
+    resource: repo://openswe/utils/thread_settings.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-07T15:19:51.431Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
 ---
 
 # Models, Profiles, and Instructions

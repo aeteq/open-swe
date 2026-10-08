@@ -3,38 +3,38 @@ type: "Reference"
 title: "Context and Prompt Engineering"
 description: "Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources."
 tags: ["context-assembly", "prompt-engineering", "system-prompt", "dynamic-context"]
-sources:
-  - id: openwiki-source-63ebc853556c1b852ed80aff
-    resource: repo://agent/analyzer.py
-  - id: openwiki-source-c48b309c5ca416cf623f0866
-    resource: repo://agent/dispatch.py
-  - id: openwiki-source-cb4e403499865fd6b797127c
-    resource: repo://agent/input_messages.py
-  - id: openwiki-source-de97adb0acb9dec0664a44b6
-    resource: repo://agent/middleware/prepare_run.py
-  - id: openwiki-source-6a91255d02f2954f4233c8bb
-    resource: repo://agent/middleware/subdir_agents.py
-  - id: openwiki-source-10938886c8b24d0cdc72ad9e
-    resource: repo://agent/prompt.py
-  - id: openwiki-source-bd742ea78dddfc337d180ad6
-    resource: repo://agent/resources/prompts/system/main.md.jinja
-  - id: openwiki-source-394d6294837a89d0a0d2e110
-    resource: repo://agent/resources/prompts/system/repo-instructions.md.jinja
-  - id: openwiki-source-753505815b60492d5f842ab5
-    resource: repo://agent/resources/prompts/system/workspace-instructions.md.jinja
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
-  - id: openwiki-source-db8a5812295508f44c54b439
-    resource: repo://agent/source_context.py
-  - id: openwiki-source-e87cc1621a76b813197038ed
-    resource: repo://agent/threads/recent_context.py
-  - id: openwiki-source-67ffc2016995f2003206500d
-    resource: repo://agent/utils/agents_md.py
-  - id: openwiki-source-ff16fde3cd496fd0b8de20da
-    resource: repo://agent/utils/analyzer_skills.py
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
+sources:
+  - id: openwiki-source-9b527e24b573880a306ac5b0
+    resource: repo://openswe/analyzer.py
+  - id: openwiki-source-1685d34aae8025be9332f45a
+    resource: repo://openswe/dispatch.py
+  - id: openwiki-source-836966ba5e0c4d710801c9a9
+    resource: repo://openswe/input_messages.py
+  - id: openwiki-source-052a9a68c52dca5bb8277219
+    resource: repo://openswe/middleware/prepare_run.py
+  - id: openwiki-source-16e333a939d057e31c63690d
+    resource: repo://openswe/middleware/subdir_agents.py
+  - id: openwiki-source-c950a10d3272291deaffd090
+    resource: repo://openswe/prompt.py
+  - id: openwiki-source-1c7c5f1a7efc26b4594613d2
+    resource: repo://openswe/resources/prompts/system/main.md.jinja
+  - id: openwiki-source-96a93a0c40b165a7c789d81b
+    resource: repo://openswe/resources/prompts/system/repo-instructions.md.jinja
+  - id: openwiki-source-186b38ac0b4224d3604d01b6
+    resource: repo://openswe/resources/prompts/system/workspace-instructions.md.jinja
+  - id: openwiki-source-919e16feae379651f2cbc1c9
+    resource: repo://openswe/server.py
+  - id: openwiki-source-76820c5856f1479d850c1ab9
+    resource: repo://openswe/source_context.py
+  - id: openwiki-source-5d8b1cb7551116affdb348f3
+    resource: repo://openswe/threads/recent_context.py
+  - id: openwiki-source-6cab3229da0697cc82ed6224
+    resource: repo://openswe/utils/agents_md.py
+  - id: openwiki-source-6c0778eb47df8418c590e93e
+    resource: repo://openswe/utils/analyzer_skills.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 ---
 

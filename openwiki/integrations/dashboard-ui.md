@@ -4,38 +4,38 @@ title: Dashboard and Desktop Clients
 description: The dashboard's FastAPI API, React/TanStack Start serving and proxy boundary, authenticated product capabilities, and the Electron client's supervised local-project execution model.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
 sources:
-  - id: openwiki-source-328bde9e94017848bb09ba23
-    resource: repo://agent/api/app.py
-  - id: openwiki-source-412c2c84023da365b8201b9f
-    resource: repo://agent/dashboard/__init__.py
-  - id: openwiki-source-04f1d39360e23b075eaca9f3
-    resource: repo://agent/dashboard/auth_routes.py
-  - id: openwiki-source-68232aadafb64efa8bf106e5
-    resource: repo://agent/dashboard/deps.py
-  - id: openwiki-source-5460c3972fe61bb256d07994
-    resource: repo://agent/dashboard/oauth.py
-  - id: openwiki-source-61ace7d4952db9ddb8316aeb
-    resource: repo://agent/dashboard/routes.py
-  - id: openwiki-source-8c60a9544ea26006748dd7a3
-    resource: repo://agent/desktop.py
-  - id: openwiki-source-4dd0e3b41526d159078a3d7b
-    resource: repo://agent/review/routes.py
-  - id: openwiki-source-bcdbf9656d4045712d8041c3
-    resource: repo://agent/schedules/routes.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
-  - id: openwiki-source-82825a65559de3e8581a123a
-    resource: repo://agent/threads/handlers.py
-  - id: openwiki-source-eacf03704e0535f30594d663
-    resource: repo://agent/threads/listing.py
-  - id: openwiki-source-7e34667f01351599d23e4443
-    resource: repo://agent/threads/summary.py
-  - id: openwiki-source-2125456467ee589819c93414
-    resource: repo://agent/threads/terminal.py
-  - id: openwiki-source-6e64b1ccdb133daeb8f4d1d4
-    resource: repo://agent/utils/dashboard_ui.py
   - id: openwiki-source-f94f5d5d16b6aac2f4bc309c
     resource: repo://desktop/src/backend-supervisor.cjs
+  - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
+    resource: repo://openswe/api/app.py
+  - id: openwiki-source-e4bce0ee35cec33ca72293f7
+    resource: repo://openswe/dashboard/__init__.py
+  - id: openwiki-source-6128627021aa8b6393710ab1
+    resource: repo://openswe/dashboard/auth_routes.py
+  - id: openwiki-source-c6809bf047de06f004194bd4
+    resource: repo://openswe/dashboard/deps.py
+  - id: openwiki-source-50d64b46ab06b6436266b4d0
+    resource: repo://openswe/dashboard/oauth.py
+  - id: openwiki-source-7fc33e4789861923a6f12e78
+    resource: repo://openswe/dashboard/routes.py
+  - id: openwiki-source-3e4d955c2e907c017e3302d0
+    resource: repo://openswe/desktop.py
+  - id: openwiki-source-d4133df2d22c7f7c9b56d1fc
+    resource: repo://openswe/review/routes.py
+  - id: openwiki-source-7ee154e2a5d8a9f6403ac301
+    resource: repo://openswe/schedules/routes.py
+  - id: openwiki-source-919e16feae379651f2cbc1c9
+    resource: repo://openswe/server.py
+  - id: openwiki-source-1b56c0378ee7dbe5ac66ab32
+    resource: repo://openswe/threads/handlers.py
+  - id: openwiki-source-eedbca98a88c0fad1cac9934
+    resource: repo://openswe/threads/listing.py
+  - id: openwiki-source-a21a5bab5cd5ef26a5d5e360
+    resource: repo://openswe/threads/summary.py
+  - id: openwiki-source-59a48f28b14dd2fa02f2e8c3
+    resource: repo://openswe/threads/terminal.py
+  - id: openwiki-source-33b1621aff91e24fa4b85e3f
+    resource: repo://openswe/utils/dashboard_ui.py
   - id: openwiki-source-cee8c9d42a08db69733a075f
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-3b0d59e2570cb537382d8c12
@@ -45,7 +45,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
 ---
 
 # Dashboard and Desktop Clients

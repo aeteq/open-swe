@@ -4,50 +4,48 @@ title: Configuration and Startup Validation
 description: Explains Open SWE's lazy environment registry, persisted administrator settings, model and sandbox selection, secrets, and the validation that can stop a server from starting.
 tags: [configuration, operations, environment-variables, startup-validation, sandbox, models, security]
 sources:
-  - id: openwiki-source-328bde9e94017848bb09ba23
-    resource: repo://agent/api/app.py
-  - id: openwiki-source-068d65a84c760eb8d555055e
-    resource: repo://agent/completion.py
-  - id: openwiki-source-b05c9910677cf23a9325276c
-    resource: repo://agent/config.py
-  - id: openwiki-source-5460c3972fe61bb256d07994
-    resource: repo://agent/dashboard/oauth.py
-  - id: openwiki-source-0a6d03ee63c0e527ce21bf77
-    resource: repo://agent/dashboard/workspace_settings.py
-  - id: openwiki-source-c48b309c5ca416cf623f0866
-    resource: repo://agent/dispatch.py
-  - id: openwiki-source-eb53b48336d1b5fc0816441a
-    resource: repo://agent/encryption.py
-  - id: openwiki-source-6fd11c8bb15f5eb94b765440
-    resource: repo://agent/sandboxes/lifecycle.py
-  - id: openwiki-source-2dedcea02c5aa03c54d81c32
-    resource: repo://agent/sandboxes/providers/langsmith.py
-  - id: openwiki-source-49bfbb811c25e99235121924
-    resource: repo://agent/sandboxes/providers/registry.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
-  - id: openwiki-source-f0db445078d7a8158aa93724
-    resource: repo://agent/utils/gateway.py
-  - id: openwiki-source-56ade344fdbe7d47c84f008f
-    resource: repo://agent/utils/model.py
-  - id: openwiki-source-8b2e0e45c6159bcb1b873246
-    resource: repo://agent/workspaces/store.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+  - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
+    resource: repo://openswe/api/app.py
+  - id: openwiki-source-913527bc7b548b4bf81f6a35
+    resource: repo://openswe/completion.py
+  - id: openwiki-source-b3a1e5fc7fe45f62e902bef9
+    resource: repo://openswe/config.py
+  - id: openwiki-source-50d64b46ab06b6436266b4d0
+    resource: repo://openswe/dashboard/oauth.py
+  - id: openwiki-source-775d5704fff1c9b4f3e91941
+    resource: repo://openswe/dashboard/workspace_settings.py
+  - id: openwiki-source-1685d34aae8025be9332f45a
+    resource: repo://openswe/dispatch.py
+  - id: openwiki-source-b11ec0af4e40439361058935
+    resource: repo://openswe/encryption.py
+  - id: openwiki-source-1b32e9f41fa7e64702b380f6
+    resource: repo://openswe/sandboxes/lifecycle.py
+  - id: openwiki-source-d16a45e9fc6aa80a3708c88c
+    resource: repo://openswe/sandboxes/providers/langsmith.py
+  - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
+    resource: repo://openswe/sandboxes/providers/registry.py
+  - id: openwiki-source-cbab46b11893a9efc599e687
+    resource: repo://openswe/utils/gateway.py
+  - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
+    resource: repo://openswe/utils/model.py
+  - id: openwiki-source-7b35cf61ea1491240ef4c804
+    resource: repo://openswe/workspaces/store.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
 ---
 
 # Configuration and Startup Validation
 
 Open SWE has two configuration planes:
 
-- **Deployment configuration** is declared centrally in `agent/config.py` and normally supplied through environment variables (including the `.env` file named by `langgraph.json`). It covers connectivity, credentials, provider selection, UI URLs, and deployment defaults.
+- **Deployment configuration** is declared centrally in `openswe/config.py` and normally supplied through environment variables (including the `.env` file named by `langgraph.json`). It covers connectivity, credentials, provider selection, UI URLs, and deployment defaults.
 - **Administrator settings** are instance-wide records in LangGraph Store. They change selected behavior without a redeploy, notably team-wide review/model settings. Workspace-level settings (base snapshot, custom resource sizing) are stored per-workspace. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
 
-This page describes ownership and failure behavior rather than listing every variable. `agent/config.py` is the complete variable catalog; [deployment](deployment.md) provides installation procedures. See [models, profiles, and instructions](../concepts/models-profiles-instructions.md), [auth and security](../concepts/auth-and-security.md), and [sandbox providers](../integrations/sandbox-providers.md) for their respective domains.
+This page describes ownership and failure behavior rather than listing every variable. `openswe/config.py` is the complete variable catalog; [deployment](deployment.md) provides installation procedures. See [models, profiles, and instructions](../concepts/models-profiles-instructions.md), [auth and security](../concepts/auth-and-security.md), and [sandbox providers](../integrations/sandbox-providers.md) for their respective domains.
 
 ## Configuration ownership and value semantics
 
@@ -57,11 +55,11 @@ The canonical name takes precedence over aliases. Deprecated aliases are central
 
 ### Deployment topology
 
-`langgraph.json` registers six graphs (`agent`, `reviewer`, `analyzer`, `review-scout`, `chat`, and `scheduler`) and mounts `agent.webapp:app` as the platform HTTP application for dashboard and webhook routes. Its checkpointer uses delete-based TTL cleanup: a 60-minute sweep and a default TTL of 43200 minutes (30 days). The file names `.env` as its environment file.
+`langgraph.json` registers six graphs (`agent`, `reviewer`, `analyzer`, `review-scout`, `chat`, and `scheduler`) and mounts `openswe.webapp:app` as the platform HTTP application for dashboard and webhook routes. Its checkpointer uses delete-based TTL cleanup: a 60-minute sweep and a default TTL of 43200 minutes (30 days). The file names `.env` as its environment file.
 
 ## Startup lifecycle and failures
 
-The FastAPI composition entrypoint is `agent.api.app:create_app`. It pins the process to a single event loop before queue work is constructed and again in lifespan startup. The lifespan validates the configured sandbox provider, local-development model credentials, and GitHub login authorization; then yields only if all succeed. On shutdown it closes the database connection and stops background workers.
+The FastAPI composition entrypoint is `openswe.api.app:create_app`. It pins the process to a single event loop before queue work is constructed and again in lifespan startup. The lifespan validates the configured sandbox provider, local-development model credentials, and GitHub login authorization; then yields only if all succeed. On shutdown it closes the database connection and stops background workers.
 
 ```mermaid
 flowchart TD
@@ -127,7 +125,7 @@ Run-completion replies require both a secret and a usable delivery URL. `RUN_COM
 
 ## Operating guidance
 
-1. Declare new environment variables in `agent/config.py`, including whether they are secret and any alias/deprecation relationship; consume them through `ENV` rather than a new direct environment read.
+1. Declare new environment variables in `openswe/config.py`, including whether they are secret and any alias/deprecation relationship; consume them through `ENV` rather than a new direct environment read.
 2. Treat environment values as deployment defaults and credentials. Use the dashboard's persisted settings only for the explicitly supported instance-wide choices (team settings) and workspace-level choices (base snapshot, custom sizing), and account for their fail-soft Store reads when designing changes.
 3. Before rollout, exercise lifespan startup with the selected sandbox and model configuration. In local development, set an explicit `http://localhost...` `DASHBOARD_BASE_URL` to activate model-key validation.
 4. Configure `COMPLETION_WEBHOOK_URL` as the public HTTPS `.../webhooks/run-complete` URL together with `RUN_COMPLETE_WEBHOOK_SECRET` if completion/failure replies are required.

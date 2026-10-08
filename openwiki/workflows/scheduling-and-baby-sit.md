@@ -4,32 +4,32 @@ title: Scheduling, Background Work, and CI Monitoring
 description: How the model-free scheduler routes cron and delayed work into recurring automations, reconciliation, cost refreshes, background-task monitoring, and opt-in pull-request CI recovery.
 tags: [scheduler, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, cost-refresh]
 sources:
-  - id: openwiki-source-d2bd9c9ce8ccfbe9c55e6d30
-    resource: repo://agent/agent_cost.py
-  - id: openwiki-source-d87936e6d54eab24f7479af1
-    resource: repo://agent/baby_sit.py
-  - id: openwiki-source-26c2c4725a171eaf524f2ad7
-    resource: repo://agent/background_tasks.py
-  - id: openwiki-source-838cdb388dc01d838e2807cc
-    resource: repo://agent/bundled_skills/baby-sit/SKILL.md
-  - id: openwiki-source-068d65a84c760eb8d555055e
-    resource: repo://agent/completion.py
-  - id: openwiki-source-3d1c7beecd605173281a3bf6
-    resource: repo://agent/github/routes.py
-  - id: openwiki-source-d2c2e4ba7449d086f84f8ccd
-    resource: repo://agent/reconcile.py
-  - id: openwiki-source-3e15117ace082a39e1f130d8
-    resource: repo://agent/scheduler.py
-  - id: openwiki-source-19dd52d603eb15a9bf38885d
-    resource: repo://agent/schedules/store.py
-  - id: openwiki-source-75a22f97d6fc2af5a1a279e7
-    resource: repo://agent/session_cost.py
-  - id: openwiki-source-c3b12b5693b6aa5458b6b53a
-    resource: repo://agent/tools/manage_baby_sit.py
-  - id: openwiki-source-9a9aaf4b265831fa9c7e3bd2
-    resource: repo://agent/tools/schedule_thread_wakeup.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+  - id: openwiki-source-dcac5237c97d18021dd8e1b7
+    resource: repo://openswe/agent_cost.py
+  - id: openwiki-source-987be1dce6e9ba720855c2ed
+    resource: repo://openswe/baby_sit.py
+  - id: openwiki-source-fdc3c445764dd84ca904d0bf
+    resource: repo://openswe/background_tasks.py
+  - id: openwiki-source-272cbcb523fcd8d6a71223ad
+    resource: repo://openswe/bundled_skills/baby-sit/SKILL.md
+  - id: openwiki-source-913527bc7b548b4bf81f6a35
+    resource: repo://openswe/completion.py
+  - id: openwiki-source-d0edf7555209b3e6418b5c5f
+    resource: repo://openswe/github/routes.py
+  - id: openwiki-source-34d496899c8a38f20f349e4f
+    resource: repo://openswe/reconcile.py
+  - id: openwiki-source-685dc33e7199aa1f6e402f7a
+    resource: repo://openswe/scheduler.py
+  - id: openwiki-source-8a63971e6f57fbbd7583054b
+    resource: repo://openswe/schedules/store.py
+  - id: openwiki-source-84f99988450cd60ecc31ec89
+    resource: repo://openswe/session_cost.py
+  - id: openwiki-source-1518aef580ca27ce698e343b
+    resource: repo://openswe/tools/manage_baby_sit.py
+  - id: openwiki-source-f49481fb34a251dc31b8f17a
+    resource: repo://openswe/tools/schedule_thread_wakeup.py
   - id: openwiki-source-8328043d526fe7293c1c1950
     resource: repo://scripts/purge_wakeup_crons.py
   - id: openwiki-source-69340fb3707cf818280a8db0
@@ -44,10 +44,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
 ---
 
 # Scheduling, Background Work, and CI Monitoring
@@ -58,7 +58,7 @@ The principal consumers are dashboard schedules, stale-run reconciliation, defer
 
 ## Scheduler dispatch
 
-`agent/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler deterministically:
+`openswe/scheduler.py` compiles a one-node `StateGraph` (`START → launch → END`), exposed as `scheduler` through `langgraph.json`. `_launch` reads `task` from the state first and then `config.configurable`, invoking exactly one handler deterministically:
 
 ```mermaid
 flowchart TD
@@ -81,7 +81,7 @@ A producer owns creation, tagging, and removal of its cron or delayed run. In pa
 
 ### Dashboard recurring runs
 
-`agent/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
+`openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds. A dashboard tick has no recognized task, so it falls through to `launch_scheduled_agent_run(schedule_id)`.
 
 The launch path loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently.
 
