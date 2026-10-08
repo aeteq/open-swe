@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 from pydantic import JsonValue
 
-from agent.notion import notifications
-from agent.notion import webhook as service
-from agent.notion.models import WebhookEvent
-from agent.thread_ids import notion_discussion_thread_id, notion_page_thread_id
+from openswe.notion import notifications
+from openswe.notion import webhook as service
+from openswe.notion.models import WebhookEvent
+from openswe.thread_ids import notion_discussion_thread_id, notion_page_thread_id
 from tests.conftest import FakeStore
 from tests.notion.fakes import (
     ALICE,

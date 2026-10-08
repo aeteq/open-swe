@@ -3,12 +3,12 @@ import sys
 import pytest
 from pydantic import JsonValue
 
-import agent.tools.notion_designs  # noqa: F401
-from agent.notion.designs import DesignPublishError, design_template, publish_design
-from agent.notion.settings import normalize_notion_id, page_id_from_reference
+import openswe.tools.notion_designs  # noqa: F401
+from openswe.notion.designs import DesignPublishError, design_template, publish_design
+from openswe.notion.settings import normalize_notion_id, page_id_from_reference
 from tests.notion.fakes import DOCS_DS, JARVIS, TASKS_DS, FakeNotion, task_page
 
-tool = sys.modules["agent.tools.notion_designs"]
+tool = sys.modules["openswe.tools.notion_designs"]
 
 TASK = "1111aaaa-0000-0000-0000-000000000001"
 EXISTING_DOC = "2222bbbb-0000-0000-0000-000000000001"
@@ -157,7 +157,7 @@ async def test_tool_only_publishes_for_an_assigned_task(
     configurable: dict[str, object] = {"source": "notion" if notion_page else "slack"}
     if notion_page:
         configurable["notion_page"] = notion_page
-    monkeypatch.setattr("agent.run_config.get_config", lambda: {"configurable": configurable})
+    monkeypatch.setattr("openswe.run_config.get_config", lambda: {"configurable": configurable})
 
     result = await tool.create_notion_design("App providers", "Body")
 

@@ -127,7 +127,7 @@ function RepositoriesOwnerPage() {
           ? "Choose which repositories run Jarvis Review automatically. All installed repositories remain available for on-demand reviews."
           : "Automatic review settings are read-only for non-admins."
       }
-      backTo={{ to: "/review", label: "Back to Jarvis Review" }}
+      backTo={{ to: "/review", label: "Back to Code review" }}
     >
       <section className="space-y-3">
         <div className="flex items-center justify-between">

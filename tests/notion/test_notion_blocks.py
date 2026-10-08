@@ -3,8 +3,8 @@
 import pytest
 from pydantic import JsonValue
 
-from agent.notion import blocks
-from agent.notion.blocks import render_page_body
+from openswe.notion import blocks
+from openswe.notion.blocks import render_page_body
 from tests.notion.fakes import FakeNotion, paragraph
 
 PAGE = "page-1"

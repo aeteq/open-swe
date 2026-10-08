@@ -3,8 +3,8 @@
 import pytest
 from pydantic import JsonValue
 
-from agent.notion.models import NotionDataSource, NotionPage
-from agent.notion.properties import (
+from openswe.notion.models import NotionDataSource, NotionPage
+from openswe.notion.properties import (
     page_identifier,
     property_was_updated,
     repo_config,
