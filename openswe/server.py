@@ -155,6 +155,8 @@ from openswe.notion.settings import notion_settings
 from openswe.openai_responses.client_tools import CLIENT_OWNED_SERVER_TOOLS
 from openswe.prompt import construct_system_prompt
 from openswe.prompts import apply_tool_descriptions, prompt
+from openswe.review_guide.middleware import ReviewGuideMiddleware
+from openswe.review_guide.sessions import ReviewGuideSession
 from openswe.run_config import RunConfig
 from openswe.runtime.constants import (
     DEFAULT_LLM_MAX_TOKENS,
@@ -180,10 +182,10 @@ from openswe.sandboxes.state import (
 )
 from openswe.sandboxes.tool_access import tools_base_url, tools_endpoint_configured
 from openswe.sandboxes.tool_runtime import ToolSurface, save_tool_context
-from openswe.skill_store.store import ORGANIZATION_SKILLS_NAMESPACE, SKILLS_NAMESPACE
+from openswe.skill_store.backend import skills_backend
 from openswe.slack.dm import is_concierge_thread, is_dm_channel
 from openswe.thread_title import TITLE_GENERATION_MAX_TOKENS, schedule_thread_title_generation
-from openswe.threads.blobs import blob_namespace
+from openswe.threads.blobs import ThreadBlobs, blob_namespace
 from openswe.threads.oswe_thread import PREFER_TOOLS_IN_SANDBOX_KEY, OsweThread
 from openswe.threads.recent_context import RecentContextAudience, recent_thread_context_section
 from openswe.threads.summary import DASHBOARD_SOURCE
@@ -192,6 +194,7 @@ from openswe.tools import (
     auto_assign_human_reviewer,
     background_execute,
     background_task,
+    code_channel_set_view,
     comment_on_notion_task,
     configure_repository,
     connect_managed_tools,
@@ -232,6 +235,7 @@ from openswe.tools import (
     report_platform_issue,
     request_human_review,
     request_pr_review,
+    request_rollout_check,
     save_organization_skill,
     save_plan,
     save_user_instructions,
@@ -250,9 +254,11 @@ from openswe.tools import (
     slack_read_channel_messages,
     slack_read_thread_messages,
     slack_reply,
+    slack_start_review_channel,
     start_thread,
     submit_thread_feedback,
     suggest_task,
+    switch_to_performance_model,
     trigger_automation,
     update_automation,
     web_search,
@@ -266,6 +272,7 @@ from openswe.tools.manage_feature_flags import manage_feature_flags
 from openswe.tools.manage_review_approval_mode import manage_review_approval_mode
 from openswe.tools.propose_pr_review import propose_pr_review
 from openswe.tools.propose_review_comment import propose_review_comment
+from openswe.tools.review_walkthrough import walkthrough_tools
 from openswe.tools.sandbox_preference import CURL_REPLACED_TOOLS, SANDBOX_ONLY_TOOLS
 from openswe.tools.submit_review_assessment_feedback import submit_review_assessment_feedback
 from openswe.tools.task_threads import (
@@ -330,15 +337,21 @@ DEEP_AGENT_EXCLUDED_TOOLS = frozenset({"grep"})
 STOP_SUMMARY_EXCLUDED_TOOLS = DEEP_AGENT_EXCLUDED_TOOLS | frozenset(
     {"delete", "edit_file", "execute", "task", "write_file"}
 )
+# A review walkthrough's prepare run reads the diff and queues chunks; it changes nothing.
+GUIDE_PREFETCH_EXCLUDED_TOOLS = frozenset({"delete", "edit_file", "task", "write_file"})
+# Each posts to the reader and ends the walkthrough's turn as surely as a final reply.
+GUIDE_REPLY_TOOLS = frozenset({"show_chunk", "show_queued", "show_other", "end_walkthrough"})
 # A `/oswe` request has a channel but no Slack thread, so only the tools that act
 # on one are out of reach. Everything else, writes included, stays available.
 SLACK_ASK_EXCLUDED_TOOLS = DEEP_AGENT_EXCLUDED_TOOLS | frozenset(
     {
+        "code_channel_set_view",
         "manage_code_channel",
         "manage_incident",
         "slack_add_reaction",
         "slack_attach_html",
         "slack_move_thread",
+        "slack_start_review_channel",
     }
 )
 SLACK_BY_THE_WAY_EXCLUDED_TOOLS = SLACK_ASK_EXCLUDED_TOOLS | frozenset({"slack_breakout_thread"})
@@ -515,6 +528,7 @@ async def _resolve_user_custom_instructions(login: str | None) -> str | None:
 
 INCIDENT_AUTOMATIC_EXCLUDED_TOOLS: frozenset[str] = frozenset(
     {
+        "code_channel_set_view",
         "manage_code_channel",
         "manage_incident",
         "slack_add_reaction",
@@ -534,6 +548,7 @@ INCIDENT_AUTOMATIC_EXCLUDED_TOOLS: frozenset[str] = frozenset(
         "get_human_review_status",
         "manage_baby_sit",
         "listen_events",
+        "request_rollout_check",
         "manage_thread",
         "link_pull_request",
         "open_pull_request",
@@ -544,6 +559,7 @@ INCIDENT_AUTOMATIC_EXCLUDED_TOOLS: frozenset[str] = frozenset(
         "slack_move_thread",
         "slack_post_message",
         "slack_breakout_thread",
+        "slack_start_review_channel",
         "publish_workspace",
         "refresh_workspace_start",
         "configure_repository",
@@ -610,10 +626,12 @@ def _is_subagent_excluded_tool(name: str) -> bool:
         "submit_thread_feedback",
         "submit_review_assessment_feedback",
         "get_thread",
+        "code_channel_set_view",
         "manage_code_channel",
         "manage_incident",
         "list_threads",
         "listen_events",
+        "request_rollout_check",
         "manage_thread",
         "read_incident",
         "read_only_sql",
@@ -1380,6 +1398,10 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         incident_session = await load_incident_session(config)
         cfg.slack_thread = incident_session.slack_thread
         configurable["slack_thread"] = cfg.slack_thread.dump()
+    guide = await ReviewGuideSession.get(thread_id)
+    if guide is not None and guide.closed:
+        guide = None
+    guide_prefetch = guide is not None and cfg.review_guide_prefetch
     profile_login = await resolve_github_login(as_json_object(config))
     credential_login = None
     credential_scope_known = False
@@ -1692,6 +1714,7 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
 
     slack_tools = [
         manage_code_channel,
+        code_channel_set_view,
         manage_incident,
         slack_add_reaction,
         slack_attach_html,
@@ -1703,6 +1726,7 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         slack_read_thread_messages,
         slack_reply,
         slack_breakout_thread,
+        slack_start_review_channel,
     ]
     static_tools = [
         http_request,
@@ -1727,6 +1751,7 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         *([task_status, message_task_thread, control_worker] if task_coordination else []),
         *((start_thread,) if _slack_concierge_run(cfg) else ()),
         manage_baby_sit,
+        switch_to_performance_model,
         expedite_pr_approval,
         merge_expedited_pr,
         request_human_review,
@@ -1747,11 +1772,13 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         recreate_sandbox,
         report_platform_issue,
         schedule_thread_wakeup,
+        request_rollout_check,
         listen_events,
         list_event_types,
         *((comment_on_notion_task,) if _notion_task_run(cfg) else ()),
         *_notion_design_tools(cfg),
         manage_code_channel,
+        code_channel_set_view,
         manage_incident,
         slack_add_reaction,
         slack_attach_html,
@@ -1764,6 +1791,7 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         slack_read_thread_messages,
         slack_reply,
         slack_breakout_thread,
+        slack_start_review_channel,
         submit_thread_feedback,
         suggest_task,
         submit_review_assessment_feedback,
@@ -1817,6 +1845,10 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
             for tool in static_tools
             if _registered_tool_name(tool) not in INCIDENT_AUTOMATIC_EXCLUDED_TOOLS
         ]
+    if guide is not None:
+        walkthrough = walkthrough_tools(guide.mode, prefetch=guide_prefetch)
+        # A prepare run works ahead of the reader in the background, so nothing it holds posts.
+        static_tools = walkthrough if guide_prefetch else [*static_tools, *walkthrough]
     static_tools = apply_tool_descriptions(
         static_tools,
         {
@@ -1842,6 +1874,8 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         if slack_ask_mode
         else DEEP_AGENT_EXCLUDED_TOOLS | INCIDENT_AUTOMATIC_EXCLUDED_TOOLS
         if incident_automatic
+        else DEEP_AGENT_EXCLUDED_TOOLS | GUIDE_PREFETCH_EXCLUDED_TOOLS
+        if guide_prefetch
         else DEEP_AGENT_EXCLUDED_TOOLS
     )
     sandbox_only_tools = (
@@ -1883,20 +1917,15 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
         # their repository. Keep the agent's scratch files out of it.
         skill_routes.update(await desktop_artifact_routes(thread_id))
     else:
-        skill_routes[ORGANIZATION_SKILLS_ROUTE] = ReadOnlyBackend(
-            StoreBackend(namespace=lambda _runtime: (ORGANIZATION_SKILLS_NAMESPACE,))
-        )
+        skill_routes[ORGANIZATION_SKILLS_ROUTE] = skills_backend(None)
         skill_sources = [ORGANIZATION_SKILLS_ROUTE, BUNDLED_SKILLS_ROUTE]
         if credential_login:
-            skill_routes[USER_SKILLS_ROUTE] = ReadOnlyBackend(
-                StoreBackend(
-                    namespace=lambda _runtime, login=credential_login: (SKILLS_NAMESPACE, login)
-                )
-            )
+            skill_routes[USER_SKILLS_ROUTE] = skills_backend(credential_login)
             skill_sources.insert(0, USER_SKILLS_ROUTE)
-        # Offloaded images live in the store so they can be read without the sandbox.
+        # Offloaded images live in PostgreSQL so they can be read without the sandbox.
         skill_routes[BLOBS_ROUTE] = StoreBackend(
-            namespace=lambda _runtime, thread_id=thread_id: blob_namespace(thread_id)
+            store=ThreadBlobs(thread_id),
+            namespace=lambda _runtime, thread_id=thread_id: blob_namespace(thread_id),
         )
     agent_backend = CompositeBackend(default=backend, routes=skill_routes)
     main_model = _make_model_or_defer(model_id, use_gateway=use_gateway, **model_kwargs)
@@ -1983,7 +2012,7 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
             "default": model_id,
         },
         routing_mode=model_routing_mode,
-        requested_model_factory=requested_model_factory if requested_models else None,
+        requested_model_factory=requested_model_factory,
     )
     subagent_model = _make_model_or_defer(
         subagent_model_id,
@@ -2066,6 +2095,15 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
                         bridge_client=bridge_client,
                         prefer_tools_in_sandbox=prefer_tools_in_sandbox,
                     ),
+                    *(
+                        [
+                            ReviewGuideMiddleware(
+                                thread_id=thread_id, approve_ts=cfg.review_guide_approve_ts
+                            )
+                        ]
+                        if guide is not None
+                        else []
+                    ),
                     TranscriptMiddleware(),
                     *([client_tools] if client_tools else []),
                     *(
@@ -2105,12 +2143,21 @@ async def build_agent(config: RunnableConfig, *, tool_surface: ToolSurface | Non
                         if stop_summary_mode
                         else [check_message_queue_before_model, deliver_event_matches_before_model]
                     ),
-                    RequireUserReplyMiddleware(
-                        _registered_tool_name(slack_reply),
-                        _registered_tool_name(slack_no_reply_needed),
-                        initial_surface=(
-                            _initial_reply_surface(cfg) if reply_tool_offered else WEB_REPLY_SURFACE
-                        ),
+                    *(
+                        []
+                        if guide_prefetch
+                        else [
+                            RequireUserReplyMiddleware(
+                                _registered_tool_name(slack_reply),
+                                _registered_tool_name(slack_no_reply_needed),
+                                initial_surface=(
+                                    _initial_reply_surface(cfg)
+                                    if reply_tool_offered
+                                    else WEB_REPLY_SURFACE
+                                ),
+                                replies=GUIDE_REPLY_TOOLS if guide is not None else frozenset(),
+                            )
+                        ]
                     ),
                     *(
                         [RequireCliResultMiddleware(_registered_tool_name(cli_result))]
