@@ -20795,10 +20795,6 @@
         "summary": "Linear Webhook"
       }
     },
-    "/webhooks/rollout": {
-      "post": {
-        "description": "Verify a deployment event, record it, and acknowledge it.",
-        "operationId": "rollout_webhook_webhooks_rollout_post",
     "/webhooks/notion": {
       "get": {
         "description": "Health check for the Notion webhook endpoint.",
@@ -20808,7 +20804,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RolloutAccepted"
                   "additionalProperties": {
                     "type": "string"
                   },
@@ -20820,7 +20815,6 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Rollout Webhook"
         "summary": "Notion Webhook Verify"
       },
       "post": {
@@ -20843,6 +20837,25 @@
           }
         },
         "summary": "Notion Webhook"
+      }
+    },
+    "/webhooks/rollout": {
+      "post": {
+        "description": "Verify a deployment event, record it, and acknowledge it.",
+        "operationId": "rollout_webhook_webhooks_rollout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolloutAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Rollout Webhook"
       }
     },
     "/webhooks/run-complete": {
