@@ -4,50 +4,50 @@ title: Threads, Durable Runs, and State
 description: How Open SWE identifies durable LangGraph conversations, constructs follow-up inputs, owns thread metadata and Store records, and preserves sandbox continuity across product surfaces.
 tags: [threads, state, langgraph, durability, checkpoints, sandbox, slack, integrations]
 sources:
-  - id: openwiki-source-921ec88ab63280d28b3dddb5
-    resource: repo://agent/chat.py
-  - id: openwiki-source-068d65a84c760eb8d555055e
-    resource: repo://agent/completion.py
-  - id: openwiki-source-c48b309c5ca416cf623f0866
-    resource: repo://agent/dispatch.py
-  - id: openwiki-source-cb4e403499865fd6b797127c
-    resource: repo://agent/input_messages.py
-  - id: openwiki-source-3d2b76242daeddb328ca8564
-    resource: repo://agent/invocation.py
-  - id: openwiki-source-f2ef7b73c8002cd7b756ad30
-    resource: repo://agent/review/findings.py
-  - id: openwiki-source-24b1722c4aacbce0b06350ae
-    resource: repo://agent/run_config.py
-  - id: openwiki-source-6fd11c8bb15f5eb94b765440
-    resource: repo://agent/sandboxes/lifecycle.py
-  - id: openwiki-source-41a696e92db10ba3dc9c66b0
-    resource: repo://agent/slack/client.py
-  - id: openwiki-source-92871ba83020d97558f679b2
-    resource: repo://agent/slack/code_channels.py
-  - id: openwiki-source-e747dfa76de43823582b8bab
-    resource: repo://agent/slack/tools/manage_code_channel.py
-  - id: openwiki-source-4ffd3d31ffb2d798faaaad59
-    resource: repo://agent/slack/webhook.py
-  - id: openwiki-source-db8a5812295508f44c54b439
-    resource: repo://agent/source_context.py
-  - id: openwiki-source-e7e51eafe569197d9f0f4de2
-    resource: repo://agent/store.py
-  - id: openwiki-source-2df3763659a7f9d1944f28e7
-    resource: repo://agent/thread_ids.py
-  - id: openwiki-source-e5994648cf6eef7bfa70e240
-    resource: repo://agent/threads/creation.py
-  - id: openwiki-source-79be4c606a697afbf6efb749
-    resource: repo://agent/utils/thread_ops.py
-  - id: openwiki-source-7c60191e42b8e30b62935af1
-    resource: repo://agent/utils/thread_participants.py
-  - id: openwiki-source-bd05fb2fcc2066f4d449df18
-    resource: repo://agent/utils/thread_settings.py
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+  - id: openwiki-source-70b814b26d317c2b15c4a4fb
+    resource: repo://openswe/chat.py
+  - id: openwiki-source-913527bc7b548b4bf81f6a35
+    resource: repo://openswe/completion.py
+  - id: openwiki-source-1685d34aae8025be9332f45a
+    resource: repo://openswe/dispatch.py
+  - id: openwiki-source-836966ba5e0c4d710801c9a9
+    resource: repo://openswe/input_messages.py
+  - id: openwiki-source-41b3f3ac3c45b0e2ff376c3d
+    resource: repo://openswe/invocation.py
+  - id: openwiki-source-85f325a37c97d6000b6e6a23
+    resource: repo://openswe/review/findings.py
+  - id: openwiki-source-e9b2ac0cf383e184a317d349
+    resource: repo://openswe/run_config.py
+  - id: openwiki-source-1b32e9f41fa7e64702b380f6
+    resource: repo://openswe/sandboxes/lifecycle.py
+  - id: openwiki-source-49cd80b1b712410f02d313d6
+    resource: repo://openswe/slack/client.py
+  - id: openwiki-source-7f665eda03d736dd3db8c67c
+    resource: repo://openswe/slack/code_channels.py
+  - id: openwiki-source-5cbe93451d362668e53e314b
+    resource: repo://openswe/slack/tools/manage_code_channel.py
+  - id: openwiki-source-72370931d61f0a7232adcf12
+    resource: repo://openswe/slack/webhook.py
+  - id: openwiki-source-76820c5856f1479d850c1ab9
+    resource: repo://openswe/source_context.py
+  - id: openwiki-source-c5e061972b62c56ca429a531
+    resource: repo://openswe/store.py
+  - id: openwiki-source-53ea9aa9c1bc2a186e16ba04
+    resource: repo://openswe/thread_ids.py
+  - id: openwiki-source-5e89303bbff1b32492ae2b1c
+    resource: repo://openswe/threads/creation.py
+  - id: openwiki-source-996097a4d0a674613168d766
+    resource: repo://openswe/utils/thread_ops.py
+  - id: openwiki-source-183593e64b0a8affdce9abac
+    resource: repo://openswe/utils/thread_participants.py
+  - id: openwiki-source-1962e84a7cbf37fcca83381c
+    resource: repo://openswe/utils/thread_settings.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
 ---
 
 # Threads, Durable Runs, and State
@@ -58,11 +58,11 @@ The boundary matters when changing an integration: a webhook, dashboard action, 
 
 ## Thread creation enforces a title
 
-Threads are created through `agent.threads.creation.create_thread`, which is the only place LangGraph threads are created. Every thread people can open must have a title; the module enforces this invariant by requiring a non-empty, stripped title string. Titles are stored in thread metadata and remain unchanging from the opening activity unless explicitly updated. System-named threads use `ensure_titled_thread` to create or keep titles current.
+Threads are created through `openswe.threads.creation.create_thread`, which is the only place LangGraph threads are created. Every thread people can open must have a title; the module enforces this invariant by requiring a non-empty, stripped title string. Titles are stored in thread metadata and remain unchanging from the opening activity unless explicitly updated. System-named threads use `ensure_titled_thread` to create or keep titles current.
 
 ## Identity is a persistence contract
 
-`agent/thread_ids.py` is the single home for deterministic thread-id derivation. Its exact keys and namespaces are persisted routing contracts: separate processes re-derive IDs from external identifiers, so changing a formula makes existing threads unreachable through their normal entrypoints.
+`openswe/thread_ids.py` is the single home for deterministic thread-id derivation. Its exact keys and namespaces are persisted routing contracts: separate processes re-derive IDs from external identifiers, so changing a formula makes existing threads unreachable through their normal entrypoints.
 
 | Conversation or purpose | Derivation | Stable key |
 | --- | --- | --- |
@@ -108,7 +108,7 @@ Participant logins and emails use key-per-person maps such as `{"octocat": true}
 
 Thread-level settings are a separate metadata snapshot under `agent_settings`. On the first run, model, effort, subagent model/effort, and repository instructions are chosen for the thread; sender identity, personal instructions, and PR preferences remain per-message. Later profile edits do not change the snapshot unless a caller explicitly stores a replacement, such as a model override. Reads cache for five minutes and reads/writes fail soft, so settings storage cannot prevent a run. Strict normalization drops invalid or obsolete settings rather than retaining arbitrary profile data.
 
-The LangGraph Store is not thread metadata. `agent/store.py` is the sanctioned wrapper for namespaced key/value access: a missing item returns `None`, whereas other HTTP failures propagate. This makes an outage observably different from an empty record. `TypedStore` validates records through a Pydantic model; `get` fails for an unreadable requested record, while listings log and skip malformed records so one old record does not take down a listing.
+The LangGraph Store is not thread metadata. `openswe/store.py` is the sanctioned wrapper for namespaced key/value access: a missing item returns `None`, whereas other HTTP failures propagate. This makes an outage observably different from an empty record. `TypedStore` validates records through a Pydantic model; `get` fails for an unreadable requested record, while listings log and skip malformed records so one old record does not take down a listing.
 
 ## Follow-up input and run configuration
 

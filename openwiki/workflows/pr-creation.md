@@ -1,36 +1,34 @@
 ---
 type: workflow
-title: Pull Request Creation
-description: How the agent creates and manages pull requests, including attributed tool creation, commit composition, branch pushing with workflow approval, and PR metadata recording.
+title: Pull Request Creation and Workflow Approval
+description: How the agent creates and manages pull requests with attributed authorship, commits squashing, workflow-file change approval, and metadata recording.
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
-sources:
-  - id: openwiki-source-bd55a0c7231ffb3eb9e8ded0
-    resource: repo://agent/dashboard/agent_overrides.py
-  - id: openwiki-source-62ab631c89da95ae5fc9b808
-    resource: repo://agent/github/squash_message.py
-  - id: openwiki-source-3d6d2704e3f7fa58a6207393
-    resource: repo://agent/middleware/pr_creation_guard.py
-  - id: openwiki-source-c53f5f816c45a89d9453ccd6
-    resource: repo://agent/middleware/workflow_push_guard.py
-  - id: openwiki-source-856ade03ef31ac38e1347f7c
-    resource: repo://agent/server.py
-  - id: openwiki-source-ed9809a543500e4a0b811342
-    resource: repo://agent/slack/tools/request_pr_review.py
-  - id: openwiki-source-cd4be7e4548ea1ab6197c2f8
-    resource: repo://agent/threads/workflow_approval_api.py
-  - id: openwiki-source-69dcfa94efda17a95fac346a
-    resource: repo://agent/threads/workflow_approval.py
-  - id: openwiki-source-d9f2a513cf28971a9676bf89
-    resource: repo://agent/tools/open_pull_request.py
-  - id: openwiki-source-25a50e8385de61204afe1bcf
-    resource: repo://agent/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-05T16:54:23.398Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
+    at: 2026-10-08T15:19:10.971Z
+sources:
+  - id: openwiki-source-6ba47e09f2a30f358f5d7a36
+    resource: repo://openswe/github/squash_message.py
+  - id: openwiki-source-8028ebab3ac3beac1691bf84
+    resource: repo://openswe/middleware/pr_creation_guard.py
+  - id: openwiki-source-d618115330c9c5a6ad6a6eec
+    resource: repo://openswe/middleware/workflow_push_guard.py
+  - id: openwiki-source-919e16feae379651f2cbc1c9
+    resource: repo://openswe/server.py
+  - id: openwiki-source-d0f35aaf03e13e2fb9037d2b
+    resource: repo://openswe/slack/tools/request_pr_review.py
+  - id: openwiki-source-e67efdf2f809c51f0e5295bc
+    resource: repo://openswe/threads/workflow_approval_api.py
+  - id: openwiki-source-72d0aa1e1b6096510f34c65b
+    resource: repo://openswe/threads/workflow_approval.py
+  - id: openwiki-source-d0e9c3328773f849efaa3a49
+    resource: repo://openswe/tools/open_pull_request.py
+  - id: openwiki-source-3087256f0cd599176fba3c38
+    resource: repo://openswe/webhooks/common.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
 ---
 
-# Pull Request Creation
+# Pull Request Creation and Workflow Approval
 
 The pull request creation workflow ensures that code is delivered through GitHub with the triggering user's attribution, workflow-file changes are approved before pushing, and all PR metadata connects back to the originating Slack thread, Linear ticket, or dashboard plan. The core flow is **commit → push (with workflow approval) → open_pull_request → record metadata**.
 
@@ -82,7 +80,7 @@ Before a branch can be pushed, `WorkflowPushGuardMiddleware` inspects standalone
 
 2. **Check approval state:** Look up the fingerprint in the thread's `workflow_push_approvals` metadata. An approved fingerprint allows the push only after rewriting it to an explicit `<head_sha>:refs/heads/<branch>` refspec for safety.
 
-3. **Request approval if needed:** If the fingerprint is not approved, create a pending record, post a Slack interactive message (only if the record hasn't been notified), and block the push with `WorkflowPushApprovalRequired`. The thread owner can approve or reject via Slack or the web UI.
+3. **Request approval if needed:** If the fingerprint is not approved, create a pending record, post a Slack interactive message (only if the record hasn't been notified yet), and block the push with `WorkflowPushApprovalRequired`. The thread owner can approve or reject via Slack or the web UI.
 
 4. **Track history:** The per-thread `workflow_push_approvals` store keeps the 20 most recent records. Approved and rejected entries are terminal; any workflow-file change generates a new fingerprint and requires fresh approval.
 
@@ -179,7 +177,7 @@ co-authored-by: <person name> <email>
 ...
 ```
 
-All distinct co-authors from the PR description and commit messages are deduplicated and included as trailers. If synthesis fails, GitHub's default squash message is used instead.
+All distinct co-authors from the PR description and commit messages are deduplicated and included as trailers. If synthesis fails, GitHub's default squash message is used instead. Merge commits (commits with multiple parents) are excluded from headline scanning to preserve clarity.
 
 ## Attribution footer and model marking
 
@@ -238,6 +236,10 @@ Approval records are stored under the `workflow_push_approvals` key in thread me
   ...
 }
 ```
+
+## PR review requests
+
+`request_pr_review` is a Slack-exposed tool that initiates a separate reviewer agent run for an existing PR. It parses the PR URL into a `GitHubPrRef`, resolves the active Slack thread and triggering user from run config, and delegates to the GitHub webhook's `trigger_pr_review_from_ref`. This is a distinct handoff from PR creation and is not part of the creation workflow.
 
 ## Focused verification
 

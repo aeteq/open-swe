@@ -3,43 +3,41 @@ type: integration reference
 title: Sandbox Provider Integration
 description: How Open SWE selects and operates sandbox providers, binds them safely to threads, and handles LangSmith-specific provisioning, credentials, and execution behavior. Covers provider capabilities, local and desktop exceptions, reviewer preparation, and the extension contract.
 tags: [sandbox, integrations, providers, langsmith, configuration, extension]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-07T15:19:51.431Z
 sources:
-  - id: openwiki-source-328bde9e94017848bb09ba23
-    resource: repo://agent/api/app.py
-  - id: openwiki-source-b05c9910677cf23a9325276c
-    resource: repo://agent/config.py
-  - id: openwiki-source-6fd11c8bb15f5eb94b765440
-    resource: repo://agent/sandboxes/lifecycle.py
-  - id: openwiki-source-92118671e3d396d6804d8f9c
-    resource: repo://agent/sandboxes/providers/daytona.py
-  - id: openwiki-source-de402a49ebddbc7dfd6e029a
-    resource: repo://agent/sandboxes/providers/e2b.py
-  - id: openwiki-source-2dedcea02c5aa03c54d81c32
-    resource: repo://agent/sandboxes/providers/langsmith.py
-  - id: openwiki-source-0746ff3f107493deffefb33b
-    resource: repo://agent/sandboxes/providers/local.py
-  - id: openwiki-source-0f48a3dcf38220dbcd5d9d0e
-    resource: repo://agent/sandboxes/providers/modal.py
-  - id: openwiki-source-49bfbb811c25e99235121924
-    resource: repo://agent/sandboxes/providers/registry.py
-  - id: openwiki-source-c9c9a42cf879f76a6fb780f9
-    resource: repo://agent/sandboxes/providers/runloop.py
-  - id: openwiki-source-d1484acd34e71448e75b9559
-    resource: repo://agent/sandboxes/read_only_backend.py
-  - id: openwiki-source-c2e0c61bef110853a29c63a8
-    resource: repo://agent/sandboxes/repo_prep.py
-  - id: openwiki-source-267a662990890ab782a8bf32
-    resource: repo://agent/sandboxes/retry.py
-  - id: openwiki-source-8010c6e64af5a375d8d3b70b
-    resource: repo://docs/CUSTOMIZATION.md
+  - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
+    resource: repo://openswe/api/app.py
+  - id: openwiki-source-b3a1e5fc7fe45f62e902bef9
+    resource: repo://openswe/config.py
+  - id: openwiki-source-1b32e9f41fa7e64702b380f6
+    resource: repo://openswe/sandboxes/lifecycle.py
+  - id: openwiki-source-ac289677ed2c2c7d2436d024
+    resource: repo://openswe/sandboxes/providers/daytona.py
+  - id: openwiki-source-5d9c36f48ae657b2e73411eb
+    resource: repo://openswe/sandboxes/providers/e2b.py
+  - id: openwiki-source-d16a45e9fc6aa80a3708c88c
+    resource: repo://openswe/sandboxes/providers/langsmith.py
+  - id: openwiki-source-5b3f60be6fd7ddbdf61f37ad
+    resource: repo://openswe/sandboxes/providers/local.py
+  - id: openwiki-source-b00a933bb60c0ef13ec9e872
+    resource: repo://openswe/sandboxes/providers/modal.py
+  - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
+    resource: repo://openswe/sandboxes/providers/registry.py
+  - id: openwiki-source-c53320967c7601e515b66c5b
+    resource: repo://openswe/sandboxes/providers/runloop.py
+  - id: openwiki-source-b7352e4d3dbf0b763a297a54
+    resource: repo://openswe/sandboxes/read_only_backend.py
+  - id: openwiki-source-c5766699cee46f671b69bf81
+    resource: repo://openswe/sandboxes/repo_prep.py
+  - id: openwiki-source-63c74145043dac21719006df
+    resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-7c557728721b38cad5fe3518
     resource: repo://tests/sandbox/test_langsmith_sandbox_config.py
   - id: openwiki-source-6c4c3340e6bc2f86a0e54411
     resource: repo://tests/sandbox/test_local_integration.py
-generated: { by: "openwiki/0.4.2", at: "2026-09-22T13:11:45.998Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-08T15:19:10.971Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
 ---
 
 # Sandbox Provider Integration
@@ -126,8 +124,8 @@ When preparation succeeds, `materialize_trusted_skills()` copies `.agents/skills
 
 Add a provider as a registry extension:
 
-1. Implement `agent/sandboxes/providers/<name>.py` with `create_<name>_sandbox(sandbox_id: str | None = None)`. It must reconnect when given an id, create otherwise, and return a `SandboxBackendProtocol`. A factory may be synchronous or `async def`.
-2. Add `"<name>": ("agent.sandboxes.providers.<name>", "create_<name>_sandbox")` to `SANDBOX_FACTORIES` in `agent/sandboxes/providers/registry.py`.
+1. Implement `openswe/sandboxes/providers/<name>.py` with `create_<name>_sandbox(sandbox_id: str | None = None)`. It must reconnect when given an id, create otherwise, and return a `SandboxBackendProtocol`. A factory may be synchronous or `async def`.
+2. Add `"<name>": ("openswe.sandboxes.providers.<name>", "create_<name>_sandbox")` to `SANDBOX_FACTORIES` in `openswe/sandboxes/providers/registry.py`.
 3. Define credential validation and failure classification. In particular, do not mask a reconnect failure by returning an empty replacement: persistent working trees make unreachable and deleted states materially different.
 4. Test factory creation/reconnection and registry dispatch. Decide explicitly whether provider-specific capabilities such as reset, snapshots, resource overrides, proxy credential refresh, and browser tooling are unsupported or need an equivalent implementation.
 
