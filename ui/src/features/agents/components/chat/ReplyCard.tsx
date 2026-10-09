@@ -142,12 +142,12 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
           className="shrink-0 text-icon-tertiary"
           aria-hidden
         />
-        <span>{headerLabel(isLinear, chunk.status)}</span>
+        <span>{headerLabel(chunk.toolKind, chunk.status)}</span>
       </div>
       {body && (
         <div className="overflow-hidden rounded-xl border border-subtle bg-surface-level-2">
           <div className="max-h-[250px] overflow-auto px-space-3 py-space-2 text-sm text-primary">
-            {isLinear ? (
+            {isMarkdown ? (
               <Markdown content={body} />
             ) : blocks ? (
               renderSlackBlocks(blocks)
