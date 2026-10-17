@@ -3,9 +3,6 @@ type: architecture-component
 title: Middleware Stack and Request Processing
 description: Ordering-sensitive middleware around the coding agent and reviewer model and tool loops. Catalogs all middleware, their ordering, responsibilities, and how they shape agent behavior across models, tools, and state.
 tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails, PrepareRunState]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
 sources:
   - id: openwiki-source-41baa38c611462fcbcd00a78
     resource: repo://openswe/middleware/deliver_event_matches.py
@@ -45,7 +42,10 @@ sources:
     resource: repo://openswe/server.py
   - id: openwiki-source-10026b2dd7b7368bb04e27f0
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Middleware Stack and Request Processing
@@ -139,6 +139,12 @@ These middleware enforce constraints and drive completion:
 
 - **`WorkspaceSkillsMiddleware`** (conditional, non-local, org admins)  
   Exposes workspace-configured skills to the agent.
+
+- **`ReviewGuideMiddleware`** (conditional, only if review guide present)  
+  Provides reply-tool options and state for structured PR review workflows.
+
+- **`ClientToolsMiddleware`** (conditional, only if client tools configured)  
+  Exposes client-configured tools to the agent with a fallback handler.
 
 ### Model-call boundary and error handling
 

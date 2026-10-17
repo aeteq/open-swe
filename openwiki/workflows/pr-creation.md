@@ -5,7 +5,7 @@ description: How the agent creates and manages pull requests with attributed aut
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+    at: 2026-10-17T12:03:09.529Z
 sources:
   - id: openwiki-source-6ba47e09f2a30f358f5d7a36
     resource: repo://openswe/github/squash_message.py
@@ -25,7 +25,7 @@ sources:
     resource: repo://openswe/tools/open_pull_request.py
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 ---
 
 # Pull Request Creation and Workflow Approval
@@ -68,7 +68,7 @@ Pull request creation is deliberately centralized in `open_pull_request` to pres
 - **Slack/Linear/dashboard sources:** Look up the user's current OAuth token by their configured GitHub login.
 - **GitHub-triggered runs:** Use the GitHub App installation token (`open-swe[bot]`).
 - **Unmapped users or bot-only deployments:** Fall back to the app token.
-- **No token available:** Return a `no_github_token` failure instead of proceeding.
+- **No token available:** Raise `GitHubUserAuthRequired` error rather than proceeding.
 
 If a user's token has been revoked, the preflight returns `github_user_auth_revoked` with a link to re-authenticate.
 

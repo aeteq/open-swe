@@ -34,10 +34,10 @@ sources:
     resource: repo://openswe/utils/model.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Models, Profiles, and Instructions
@@ -46,13 +46,13 @@ A hosted agent run resolves a valid `(model_id, effort)` pair and a thread-stabl
 
 ## Model registry and stale selections
 
-`SUPPORTED_MODELS` is the curated selectable-model registry. Each `ModelOption` contains the provider-prefixed id, label, allowed `efforts`, `default_effort`, image capability, and, where applicable, whether it may be saved as a default. `SUPPORTED_MODEL_IDS` is the membership set used during resolution. Effort is not a global enum: for example, Kimi K3 accepts only `low`, `high`, and `max`; Gemini 3.8 Flash uses `minimal` through `high`. Always validate a pair with `model_supports_effort`, and validate multimodal input with `model_supports_images`.
+`SUPPORTED_MODELS` is the curated selectable-model registry. Each `ModelOption` contains the provider-prefixed id, label, allowed `efforts`, `default_effort`, image capability, and, where applicable, whether it may be saved as a default. `SUPPORTED_MODEL_IDS` is the membership set used during resolution. `NON_DEFAULT_MODEL_IDS` is a frozen set of model ids that have `can_be_default: False` and cannot be selected as workspace or profile defaults (e.g., Fable models must be explicitly opted into at the workspace level before users can choose them). Effort is not a global enum: for example, Kimi K3 accepts only `low`, `high`, and `max`; Gemini 3.8 Flash uses `minimal` through `high`. Always validate a pair with `model_supports_effort`, and validate multimodal input with `model_supports_images`.
 
-The dashboard's `/options` response does not mutate this registry. It returns copied records enriched with context-window information, preferring explicit Codex overrides, then a LangChain provider profile, then a small fallback table. It removes Fable choices when the workspace switch is off and gates returned defaults as well.
+The dashboard's `/options` response does not mutate this registry. It returns copied records enriched with context-window information from `model_profile_context_window()`, preferring explicit Codex overrides via `CODEX_CONTEXT_WINDOW_OVERRIDES`, then a LangChain provider profile loaded from the provider's profile module, then a fallback table `_PROFILE_CONTEXT_WINDOW_FALLBACKS`. It removes Fable choices when the workspace switch is off and gates returned defaults as well.
 
 ### Defaults and recovery
 
-`default_model_pair()` is the deployment-level terminal default. It reads `LLM_MODEL_ID` and `LLM_REASONING_EFFORT`, with a credential-sensitive built-in model id and default effort as fallbacks. The selected default must be a supported, default-eligible model and support its effort; otherwise it raises `ValueError` rather than constructing an arbitrary model. Local development startup separately validates the credential required by the configured default.
+`default_model_pair()` is the deployment-level terminal default. It reads `LLM_MODEL_ID` and `LLM_REASONING_EFFORT`, with credential-sensitive built-in defaults (Anthropic's Opus if the API key is available and OpenAI's is not; otherwise OpenAI's GPT-6.1 Sol) and `DEFAULT_MODEL_EFFORT` as fallbacks. The selected default must be a supported, default-eligible model (not in `NON_DEFAULT_MODEL_IDS`) and support its effort; otherwise it raises `ValueError` rather than constructing an arbitrary model. Local development startup separately validates the credential required by the configured default.
 
 A selection that has fallen out of the registry is handled differently from one explicitly listed in `DEPRECATED_MODEL_IDS`:
 
@@ -63,9 +63,9 @@ All team default resolvers use a valid saved pair first, then same-provider reco
 
 ## Precedence, roles, and thread lifecycle
 
-Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]` (historically called "team settings" in the pre-workspaces architecture). Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
+Team settings are a single LangGraph Store record keyed `"default"` in the `["team_settings"]` namespace. Reads overlay non-null stored fields over hardcoded defaults from `_default_settings()` and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default (defaulting to OpenAI's GPT-6 Luna at low reasoning effort, or Anthropic's Opus on an Anthropic-only deployment).
 
-Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, PR/CI preferences, and model-routing and UI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
+Profiles in the `["profiles"]` namespace carry a main pair, optional subagent pair, default repository and branch preferences, PR/CI preferences, and model-routing and UI preferences. Profile writes are separate from encrypted OAuth records in the `["oauth_tokens"]` namespace, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft via `load_profile()`, while dashboard profile reads deliberately surface store failures via `get_profile()`.
 
 ```mermaid
 flowchart TD
@@ -102,30 +102,30 @@ flowchart TD
 
 For selection-only callers, `resolve_agent_model_id` applies supported per-thread id, then valid profile id, then team default. Dashboard run creation uses the full pair in the order team, profile, request. A deprecated request intentionally leaves the team default, rather than allowing the profile to take effect. If dashboard input contains images, a text-only resolved selection is replaced with `default_vision_model_pair()`; direct image-content construction rejects a missing or text-only model with HTTP 422.
 
-Fable is a workspace-wide ZDR gate. A Fable option cannot be saved as a normal default, and disabling Fable rewrites submitted Fable team defaults to a non-Fable Anthropic fallback. `gate_fable_model` is also applied after snapshot resolution to main, subagent, and title models, and by dashboard resolution and option listing. Thus a stale snapshot cannot cause a disabled Fable model to be advertised or constructed.
+Fable is a workspace-wide ZDR gate. A Fable option cannot be saved as a normal default (it is in `NON_DEFAULT_MODEL_IDS`), and disabling Fable via `fable_enabled: False` rewrites submitted Fable team defaults to a non-Fable Anthropic fallback via `fable_disabled_fallback()`. `gate_fable_model` is also applied after snapshot resolution to main, subagent, and title models, and by dashboard resolution and option listing. Thus a stale snapshot cannot cause a disabled Fable model to be advertised or constructed.
 
 ## Provider construction, reasoning, gateway, and runtime fallback
 
-`provider_model_kwargs` translates the resolved effort at the provider boundary: OpenAI receives `reasoning` and uses `summary: "auto"` except for `none`; Anthropic receives adaptive, summarized `thinking` and an `effort`; Gemini 3 family models receive `thinking_level`; Fireworks receives `model_kwargs.reasoning_effort`; and Baseten receives `reasoning_effort` only for `low`, `high`, or `max`.
+`provider_model_kwargs` translates the resolved effort at the provider boundary: OpenAI receives `reasoning` as a dict with `effort` and `summary: "auto"` except for `none`; Anthropic receives `thinking` (type `"adaptive"`, display `"summarized"`) and an `effort` field; Gemini 3+ family models receive `thinking_level`; Fireworks receives `model_kwargs["reasoning_effort"]`; and Baseten receives `reasoning_effort` only for `low`, `high`, or `max`.
 
-`make_model` constructs through `init_chat_model` with six retries and a 600-second timeout for shipped provider prefixes. OpenAI defaults to the Responses API with `store=False`, `output_version="responses/v1"`, and included encrypted reasoning; if gateway routing is not applied and no `OPENAI_API_KEY` exists, desktop OAuth can provide the model instead. Baseten is configured as OpenAI-compatible and, without gateway routing, requires `BASETEN_API_KEY` and its service URL. Models are cached by model id, requested gateway value, max tokens, frozen kwargs, and event-loop id.
+`make_model` constructs through `init_chat_model` with six retries (via `DEFAULT_MAX_RETRIES`) and a 600-second timeout for shipped provider prefixes. It applies provider-specific request defaults from `model_request_defaults()`, preserving timeout overrides for long-context or high-effort requests (e.g., Gemini 4 Argon uses 900 seconds). OpenAI defaults to the Responses API with `store=False`, `output_version="responses/v1"`, and included encrypted reasoning via `_configure_openai_responses_kwargs()`; if gateway routing is not applied and no `OPENAI_API_KEY` exists, desktop OAuth can provide the model instead. Baseten is configured as OpenAI-compatible and, without gateway routing, requires `BASETEN_API_KEY` and its service URL. Models are cached by model id, requested gateway value, max tokens, frozen kwargs, and event-loop id.
 
-Gateway enablement is tri-state: a `True` or `False` team value wins, while `None` inherits `LANGSMITH_GATEWAY_ENABLED` (or the presence of a dedicated gateway key if that variable is unset). When routing is possible, gateway overrides replace direct base URL and API key, and select whether OpenAI uses Responses. A non-routable provider or absent LangSmith key is logged and remains direct rather than failing the run.
+Gateway enablement is tri-state: a `True` or `False` team value wins, while `None` inherits `LANGSMITH_GATEWAY_ENABLED` (or the presence of a dedicated gateway key if that variable is unset) via `resolve_gateway_enabled()`. When routing is possible, `gateway_overrides()` supplies base URL and API key overrides, and selects whether OpenAI uses Responses (controlled by `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES`, defaulting to `True` to support reasoning models with tool calls). A non-routable provider or absent LangSmith key is logged and remains direct rather than failing the run.
 
-Provider request routing is distinct from runtime model fallback. `ModelFallbackMiddleware` uses `LLM_FALLBACK_MODEL_ID` when set; otherwise Anthropic primaries fall back to OpenAI and OpenAI primaries to Anthropic. Google, local, and self-hosted providers have no automatic cross-provider fallback.
+Provider request routing is distinct from runtime model fallback. `ModelFallbackMiddleware` uses `LLM_FALLBACK_MODEL_ID` when set; otherwise Anthropic primaries fall back to OpenAI and OpenAI primaries to Anthropic. Google, local, and self-hosted providers have no automatic cross-provider fallback via `fallback_model_id_for()`.
 
 ## Instruction sources and authority
 
-Repository custom instructions are workspace-admin-authored records in `["agent_instructions"]`, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
+Repository custom instructions are workspace-admin-authored records in the `["agent_instructions"]` namespace, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions** in `_render_repo_instructions_section()`, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
 
-Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
+Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text via `_resolve_user_custom_instructions()` and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block via `as_person()` in `authorship.py`. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
 
 Prompt authority is explicit:
 
 1. A repository `AGENTS.md`, if present, overrides prompt defaults with the same authority as the system prompt.
 2. Repository-specific custom instructions are mandatory but yield to `AGENTS.md`.
-3. Workspace-level instructions yield to repository instructions and `AGENTS.md`.
-4. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
+3. Workspace-level instructions (rendered via `_render_workspace_section()`) yield to repository instructions and `AGENTS.md`.
+4. Sender-level personal instructions (via `standing_instructions`) yield to repository instructions and `AGENTS.md`.
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.
 
@@ -133,11 +133,11 @@ In particular, user instructions are not shared thread instructions and must not
 
 Each role (agent, reviewer, chat) has a main model and optional subagent model. The subagent model is used for research, code search, and context-gathering subtasks, while the main model handles the user-facing response. A profile can override both pairs independently; when a profile provides only a main model, it becomes the subagent model unless an explicit subagent override exists.
 
-When `model_routing_enabled` is true at the workspace or user level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests.
+When `model_routing_enabled` is true at the workspace or user level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Fast uses GPT-6 Luna at high effort; balanced uses GPT-6.1 Sol at medium effort; performance uses GPT-6 Astra at low effort. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests.
 
 ## Prompt loading, instruction caching, and rendering
 
-Prompts are Jinja2 templates and static Markdown files loaded from `agent/resources/prompts/` via the `prompt()` function in `agent/prompts.py`. Templates end with `.md.jinja` and accept keyword arguments that become Jinja variables. The main system prompt is constructed in `construct_system_prompt`, which assembles sections for working environment, dashboard context, source guidance, repository scope, collaboration, external comments, repository instructions, workspace settings, and recent thread context. Each section is conditionally rendered and only included if its content is non-empty.
+System prompts are Jinja2 templates and static Markdown files loaded from `agent/resources/prompts/` via the `prompt()` function. Templates end with `.md.jinja` and accept keyword arguments that become Jinja variables. The main system prompt is constructed in `construct_system_prompt`, which assembles sections for working environment, dashboard context, source guidance, repository scope, collaboration, external comments, repository instructions, workspace settings, and recent thread context. Each section is conditionally rendered and only included if its content is non-empty.
 
 Repository custom instructions are rendered into a dedicated section via `_render_repo_instructions_section`. Workspace instructions are rendered via `_render_workspace_section` and include org-level guidelines and workspace-specific repos. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block in `agent/input_messages.py`. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
 

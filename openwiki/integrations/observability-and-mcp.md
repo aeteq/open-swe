@@ -12,6 +12,10 @@ sources:
     resource: repo://openswe/api/tracing.py
   - id: openwiki-source-8e86bc5c07d70c0696441776
     resource: repo://openswe/mcp/instance.py
+  - id: openwiki-source-6db7b33a8f25326a89817057
+    resource: repo://openswe/mcp/models.py
+  - id: openwiki-source-67faae85e3ecd320e29f3e28
+    resource: repo://openswe/mcp/records.py
   - id: openwiki-source-573a0cf072c076b2dd72dbbd
     resource: repo://openswe/mcp/runtime.py
   - id: openwiki-source-75b8c8788feef409fe98f64c
@@ -37,7 +41,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Observability, Tracing, and MCP

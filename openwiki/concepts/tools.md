@@ -3,9 +3,6 @@ type: tool catalog and authorization model
 title: Tools and Tool Access
 description: How tools are defined, registered, dynamically loaded, and exposed to agents; tool categories (sandbox, integration, review, etc.), authorization policies, and mode-specific controls.
 tags: [tools, agent, authorization, integrations, dynamic-tools, automation, reviewer, access-control, mcp]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
 sources:
   - id: openwiki-source-70b814b26d317c2b15c4a4fb
     resource: repo://openswe/chat.py
@@ -29,7 +26,10 @@ sources:
     resource: repo://openswe/tools/automations.py
   - id: openwiki-source-1a477779016142ec6f3dc601
     resource: repo://openswe/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 ---
 
 # Tools and Tool Access
@@ -75,7 +75,7 @@ Deep Agents separately supplies filesystem and delegation tools: `read_file`, `w
 - **Event operations** (`listen_events`, `list_event_types`)
 - **Optional Notion integrations** (`comment_on_notion_task`, design tools)
 - **SQL query** (`read_only_sql`)
-- **Store operations** (`read_store_item`)
+- **Store operations** (internal database reads)
 - **Sandbox downloads** (`output_iframe`, `create_sandbox_file_download_url`, `expose_port`, when enabled)
 - **Design and review tools** (`propose_review_comment`, `propose_pr_review`)
 - **Feature flags and review policy** (`manage_feature_flags`, `manage_review_approval_mode`, `manage_review_repos`)
@@ -139,7 +139,7 @@ Tool exclusion is applied per-mode using `ExcludeToolsMiddleware` to remove cont
 - **Stop-summary mode** removes filesystem mutation (`write_file`, `edit_file`, `delete`), shell execution (`execute`), delegation (`task`), and `grep`, leaving only Slack read/reply tools.
 - **Slack channel-ask mode** removes thread-bound Slack operations (`slack_add_reaction`, `slack_attach_html`, `slack_move_thread`, `slack_start_review_channel`), incident management (`manage_code_channel`, `manage_incident`), and `grep`, but retains write capabilities. By-the-way mode additionally excludes `slack_breakout_thread`.
 - **Slack DM mode** removes `slack_add_reaction` to avoid clutter on user messages.
-- **Incident automatic mode** removes mutable operations (`code_channel_set_view`, `manage_code_channel`, `manage_incident`, `slack_reply`, and others) when an incident sweep runs without explicit user request, preventing unintended side effects.
+- **Incident automatic mode** removes mutable operations (including `code_channel_set_view`, `manage_code_channel`, `manage_incident`, `slack_reply`, `slack_post_message`, `slack_move_thread`, task delegation, background execution, HTTP requests, PR mutations, human review operations, automation operations, and incident management) when an incident sweep runs without explicit user request, preventing unintended side effects.
 - **PR chat** removes `execute`, `write_file`, `edit_file`, and `delete` to ensure read-only operation over GitHub-backed read tools.
 
 ## Safely extending a tool
