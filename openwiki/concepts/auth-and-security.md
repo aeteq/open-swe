@@ -14,6 +14,8 @@ sources:
     resource: repo://openswe/credential_scope.py
   - id: openwiki-source-31bc4bba3dc364743082e410
     resource: repo://openswe/dashboard/admin.py
+  - id: openwiki-source-6128627021aa8b6393710ab1
+    resource: repo://openswe/dashboard/auth_routes.py
   - id: openwiki-source-50d64b46ab06b6436266b4d0
     resource: repo://openswe/dashboard/oauth.py
   - id: openwiki-source-4cb48d234248941982c6537f
@@ -44,16 +46,18 @@ sources:
     resource: repo://openswe/slack/oauth.py
   - id: openwiki-source-b5fe0e0520028e80429116d3
     resource: repo://openswe/tools/admin_gate.py
+  - id: openwiki-source-1d8440f14c85812310a67572
+    resource: repo://openswe/users/authorization.py
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
   - id: openwiki-source-3a1539e01daa921ba15e9617
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
     resource: repo://tests/dashboard/test_github_token_auth.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries
@@ -151,7 +155,7 @@ Session cookies are `HttpOnly`. The API uses `Secure; SameSite=None` only for HT
 
 ### Membership, desktop, and automation entrypoints
 
-`ALLOWED_GITHUB_ORGS` is a shared comma-separated allowlist. With entries, a login must be an active member of at least one organization; membership is checked through that organization's App installation with `members: read`, and missing installation/token, HTTP/parsing error, or inactive/non-member result fails closed with 403. With no entries, login intentionally fails open for compatibility and logs once per process that all GitHub accounts may log in and read surfaced threads.
+`ALLOWED_GITHUB_ORGS` and `ALLOWED_GITHUB_USERS` are comma-separated allowlists. With entries in either, a login must be listed in `ALLOWED_GITHUB_USERS` or be an active member of at least one organization in `ALLOWED_GITHUB_ORGS`; membership is checked through that organization's App installation with `members: read`, and missing installation/token, HTTP/parsing error, or inactive/non-member result fails closed with 403. With no entries in either list, login intentionally fails open for compatibility and logs once per process that all GitHub accounts may log in and read surfaced threads.
 
 Desktop login avoids placing a browser session on the loopback redirect. The callback instead sends a 120-second signed handoff code containing inert identity claims and the app's S256 PKCE challenge to a fixed `127.0.0.1` callback. The desktop exchange mints a session only after a constant-time verifier check. Cloud terminal tickets are separate 60-second JWTs, validated for fixed audience and the requested `thread_id`.
 

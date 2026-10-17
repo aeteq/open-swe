@@ -2,14 +2,15 @@
 type: workflow
 title: Inbound Invocation to Durable Run
 description: How GitHub, Slack, Linear, dashboard, desktop, and scheduled automation inputs are admitted, attributed, routed to a thread, dispatched as durable LangGraph runs, and handled at completion.
-tags: [invocation, webhooks, dashboard, slack, linear, github, durable-runs, automation]
+tags: [invocation, webhooks, slack, linear, github, durable-runs, automation, completion]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
 sources:
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
   - id: openwiki-source-913527bc7b548b4bf81f6a35
     resource: repo://openswe/completion.py
-  - id: openwiki-source-3e4d955c2e907c017e3302d0
-    resource: repo://openswe/desktop.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
   - id: openwiki-source-d0edf7555209b3e6418b5c5f
@@ -26,6 +27,8 @@ sources:
     resource: repo://openswe/scheduler.py
   - id: openwiki-source-8a63971e6f57fbbd7583054b
     resource: repo://openswe/schedules/store.py
+  - id: openwiki-source-495c786db57f684c1095e1a4
+    resource: repo://openswe/slack/records.py
   - id: openwiki-source-c1d629bf5196269b73880148
     resource: repo://openswe/slack/routes.py
   - id: openwiki-source-72370931d61f0a7232adcf12
@@ -36,15 +39,12 @@ sources:
     resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 ---
 
 # Inbound Invocation to Durable Run
 
-Open SWE accepts work from signed integration callbacks (GitHub, Slack, Linear), an authenticated dashboard (including its desktop client), and scheduler ticks. These sources deliberately converge at the same LangGraph thread/run boundary, but retain source context and structured sender identities so the graph can act with the right repository, user credential, response surface, and history. See [Auth and security](../concepts/auth-and-security.md) for access policy, [Threads and state](../concepts/threads-and-state.md) for persistence, and [Follow-up messages](follow-up-messages.md) for mid-run behavior.
+Open SWE accepts work from signed integration callbacks (GitHub, Slack, Linear), an authenticated dashboard (including its desktop client), and scheduler ticks. These sources deliberately converge at the same LangGraph thread/run boundary, but retain source context and structured sender identities so the graph can act with the right repository, user credential, response surface, and history. See [Auth and security](/openwiki/concepts/auth-and-security.md) for access policy, [Threads and state](/openwiki/concepts/threads-and-state.md) for persistence, and [Follow-up messages](follow-up-messages.md) for mid-run behavior.
 
 ## Common lifecycle
 
@@ -70,7 +70,7 @@ sequenceDiagram
 
 This shows the shared path: integration routes acknowledge after inexpensive admission checks, while dashboard commands proxy directly after enrichment. Webhook routes return `202 Accepted` immediately and process the event in the background; dashboard commands are synchronous proxies that return the response from LangGraph.
 
-`create_app` composes dashboard, plan, and workflow-approval routers with Linear, Slack, GitHub, Notion, and health/completion routers. It rejects a wildcard dashboard CORS origin when credentials are enabled, and its lifespan validates sandbox and local-development model configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
+The FastAPI application composes dashboard, plan, and workflow-approval routers with Linear, Slack, GitHub, Notion, and health/completion routers. It rejects a wildcard dashboard CORS origin when credentials are enabled, and its lifespan validates sandbox and local-development model configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
 
 ## Admission and asynchronous webhook work
 
@@ -86,11 +86,11 @@ Slack first obtains channel context. Operations are permitted only in DMs or cha
 
 ### Slack
 
-The route resolves the Slack location before it schedules work. `resolve_slack_thread_id` prefers an explicit stored location mapping, then matching thread metadata, then the deterministic Slack-derived id. Conflicting metadata matches raise `SlackThreadMappingError`; the route tells the user it will not guess. A Slack worker fetches profile, thread history, channel context, mappings, and optional images, then records `SourceContext.slack_thread`, repository, user, title, environment, and plan mode in thread metadata/configurable state. A first message can select an environment with `env:<name>`; later turns retain the stored environment because the sandbox has already been chosen.
+The route resolves the Slack location before it schedules work. `resolve_slack_thread_id` prefers an explicit stored location mapping, then matching thread metadata search results, then the deterministic Slack-derived id. Conflicting metadata matches raise `SlackThreadMappingError`; the route tells the user it will not guess. A Slack worker fetches profile, thread history, channel context, mappings, and optional images, then records `SourceContext.slack_thread`, repository, user, title, environment, and plan mode in thread metadata/configurable state. A first message can select an environment with `env:<name>`; later turns retain the stored environment because the sandbox has already been chosen.
 
 Slack runs require a valid GitHub credential for the mapped triggering user unless the deployment is in bot-token-only mode, because coding work opens pull requests as that user. An unlinked or revoked credential produces an account-link/re-login prompt instead of dispatching. The worker serializes channel, people/bots, historical messages, operational context, and the current request into typed input.
 
-Slack explicitly mentions and code-channel interactions use `multitask_strategy='interrupt'`, which halts an active run and resumes the agent with full history plus the new message. Ordinary follow-ups use `enqueue`, which preserves a queued-message order rather than interrupting. Message edits are queued rather than independently dispatched, so an edit corrects the existing conversation.
+Slack explicitly mentioned messages and code-channel interactions use `multitask_strategy='interrupt'`, which halts an active run and resumes the agent with full history plus the new message. Ordinary follow-ups use `enqueue`, which preserves a queued-message order rather than interrupting. Message edits are queued rather than independently dispatched, so an edit corrects the existing conversation.
 
 ### Linear
 
@@ -108,7 +108,7 @@ A coding PR-comment run recovers an Open SWE-created branch's embedded UUID; oth
 
 The dashboard proxies `run.start` commands to LangGraph after validating JSON, access, and thread state. A missing thread is allowed only for `run.start`, which lazily creates and stamps it as an interactive dashboard thread. It attributes the command to the authenticated GitHub user, resolves model/effort from team, profile, and request overrides, normalizes repository configuration, records participants and metadata, and replaces caller-provided raw messages with typed web input. Image input has strict type, count, size, and model-capability checks.
 
-The desktop client uses this dashboard invocation path with `source="desktop"`; downstream desktop execution permits only an allowlisted local project or a worktree under its configured worktree root. Desktop runs specify a `local_project_path` that the agent backend validates against the allowlist and worktrees directory before opening a shell backend.
+The desktop client uses this dashboard invocation path with `source="desktop"`. Downstream execution permits only an allowlisted local project or a worktree under its configured worktree root.
 
 A dashboard follow-up to an active thread is persisted in the message queue, not immediately started as another dashboard run. Stop cancels every pending/running run on the thread rather than trusting cached latest-run metadata; if messages were queued, it starts a new empty-input durable run to drain them. Interactive posting is denied on admin or automation threads to non-admins, while surfaced-source threads are readable to authenticated organization members.
 

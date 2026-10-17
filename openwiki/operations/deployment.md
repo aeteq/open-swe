@@ -3,9 +3,6 @@ type: operations-guide
 title: Development, Deployment, and Serving
 description: Deploy Open SWE as a single LangGraph service across multiple topologies — local development with Docker PostgreSQL, standalone Docker, LangGraph Platform, Electron desktop, and multiple replicas. Covers environment setup, dashboard mounting, webhook exposure, authentication modes, checkpointer durability, and health checks.
 tags: [deployment, development, docker, langgraph, dashboard, webhooks, desktop, postgresql, operations, migrations, checkpointer]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
 sources:
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
@@ -15,8 +12,6 @@ sources:
     resource: repo://docs/INSTALLATION.md
   - id: openwiki-source-2d11873424257deb506bd9cd
     resource: repo://examples/ngrok/webhooks-only.yml
-  - id: openwiki-source-b76f79b6cfae139d1784a43a
-    resource: repo://langgraph.desktop.json
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -49,7 +44,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Development, Deployment, and Serving
@@ -63,11 +61,9 @@ See [Configuration](../configuration.md) for the complete environment variable r
 
 ### Manifest and runtime versions
 
-Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api>=0.15.0rc1,<0.16` and `langgraph-runtime-inmem>=0.35.0rc1,<0.36` (set in `pyproject.toml`). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the five registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
+Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api>=0.16.0,<0.17` and `langgraph-runtime-inmem>=0.36.0,<0.37` (set in `pyproject.toml`). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the five registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
 
 For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.15.1-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
-
-The desktop build uses a separate trimmed manifest `langgraph.desktop.json` (Python 3.14, API version 0.13.3) that exposes only the `agent` graph, disables the built-in UI, and configures a local auth handler (`openswe.local_auth:auth`) with Studio auth disabled plus a local checkpointer, so the app owns a private loopback LangGraph server for local-only agent work.
 
 ### Startup sequence
 
@@ -354,11 +350,11 @@ Alternatively, build with `VITE_DASHBOARD_API_BASE_URL` set to the backend origi
 
 The pnpm workspace comprises five packages: `bridge-client` (bridge protocol), `ui` (dashboard), `desktop` (Electron app), `cli` (command-line tool), and `tests/e2e`. Turborepo orchestrates per-package tasks:
 
-- `dev`: runs the dev server (no cache)
+- `dev`: runs the dev server (no cache, persistent)
 - `build`: builds the package (cached, outputs `.output/**`, `.vercel/output/**`, `build/**`)
 - `typecheck`: type checks the code (no cache)
 - `test`: runs unit tests (no cache)
-- `check`: runs checks (no cache)
+- `check`: runs checks (no cache, non-persistent)
 
 Build cache inputs include `DASHBOARD_API_URL`, `SOURCE_COMMIT`, `VERCEL`, `E2E_HARNESS`, and `VITE_*` variables, so changing them invalidates cached builds. Root `lint` (oxlint) and `format`/`format:check` (oxfmt) run directly, not as Turborepo tasks.
 
@@ -371,18 +367,15 @@ The dashboard build (`make build-dashboard` or `pnpm --filter open-swe-dashboard
 
 ## Desktop client
 
-The experimental Electron client bundles the compiled dashboard and a local LangGraph backend. It supports both cloud-connected and local-only modes:
+The experimental Electron client bundles the compiled dashboard and connects to an Open SWE backend to enable local development:
 
 **Cloud mode:** Packaged builds ask for an organization backend URL on first launch and store it in the app's local user data. The bundled UI proxies `/dashboard/api/*` requests to that selected backend, so the browser never calls the raw LangGraph API or sees a LangSmith API key. GitHub login creates the same signed dashboard session used by the web UI.
 
-**Local mode:** A private loopback LangGraph server (running `langgraph.desktop.json`) supports **This Mac** local-agent work:
+**Local development mode:** The app can run against a local backend (e.g., `make dev` on `:2024`), enabling **This Mac** agent work:
 
-- `langgraph.desktop.json` exposes only the `agent` graph
-- Disables the built-in UI
-- Uses a local auth handler (`openswe.local_auth:auth`) with Studio auth disabled
-- Uses a local checkpointer
-
-Local threads use the same streaming protocol, graph, tools, and middleware assembly as cloud threads; only the filesystem backend and unavailable cloud integrations differ. Local mode can be used without GitHub sign-in but is limited to local projects and threads.
+- The desktop app's bridge connects local projects to threads running on the backend
+- Local threads use the same streaming protocol, graph, tools, and middleware assembly as cloud threads; only the filesystem backend and unavailable cloud integrations differ
+- The app requires a backend with PostgreSQL and Redis to support sandbox operations
 
 **For source development:**
 
@@ -412,7 +405,7 @@ make install-checkout          # install/update current checkout without git cha
 
 The installation script is macOS-only and:
 
-1. Checks for Node 24, `ditto`, `uv`, and a pnpm/corepack launcher
+1. Checks for `node`, `ditto`, `uv`, and a pnpm/corepack launcher (Node.js 22 or later is required)
 2. Packs the application with `pnpm --dir desktop run pack`
 3. Stages the `.app` to `<target>.installing.$$` (atomic move)
 4. Terminates the existing app (if running)

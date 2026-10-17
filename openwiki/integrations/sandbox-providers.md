@@ -3,9 +3,6 @@ type: integration reference
 title: Sandbox Providers and Backends
 description: Selects and operates sandbox providers, handles thread binding and reconnection, documents LangSmith configuration, credentials, and execution behavior, plus local and desktop exceptions. Covers provider extension points and operations.
 tags: [sandbox, providers, langsmith, configuration, extension, lifecycle]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
 sources:
   - id: openwiki-source-b3a1e5fc7fe45f62e902bef9
     resource: repo://openswe/config.py
@@ -32,6 +29,9 @@ sources:
   - id: openwiki-source-63c74145043dac21719006df
     resource: repo://openswe/sandboxes/retry.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Sandbox Providers and Backends

@@ -5,12 +5,10 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+    at: 2026-10-17T12:03:09.529Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-  - id: openwiki-source-3e4d955c2e907c017e3302d0
-    resource: repo://openswe/desktop.py
   - id: openwiki-source-813c25f6bac2408de322a1f5
     resource: repo://openswe/graphs/agent.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
@@ -25,9 +23,11 @@ sources:
     resource: repo://openswe/runtime/execution.py
   - id: openwiki-source-1b32e9f41fa7e64702b380f6
     resource: repo://openswe/sandboxes/lifecycle.py
+  - id: openwiki-source-5b3f60be6fd7ddbdf61f37ad
+    resource: repo://openswe/sandboxes/providers/local.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 ---
 
 # Coding Agent Assembly and Execution
@@ -46,7 +46,7 @@ The factory then binds the graph using `bindable_config(config)`, which strips `
 
 `profile_login` is the person who triggered the run; it controls authorization and credentialed integrations. In contrast, model choices and repository instructions are stored in thread settings—initially seeded from a profile but then retained by the thread—so a later participant does not silently replace durable decisions.
 
-The factory creates a cached `SandboxBackendProxy` and starts its reconnect task immediately, before resolving the rest of the graph. For desktop runs, the reconnect callback returns a `LocalShellBackend` via `create_desktop_backend`; for hosted runs, it calls `ensure_sandbox_for_thread` with the workspace slug, which resolves the sandbox environment from thread metadata, refreshes proxy credentials, or creates and binds a new sandbox. The lifecycle deliberately raises for an unreachable existing sandbox rather than replacing potentially uncommitted work; a deleted sandbox is replaced because retaining its stale id would permanently block the thread.
+The factory creates a cached `SandboxBackendProxy` and starts its reconnect task immediately, before resolving the rest of the graph. For desktop runs, the reconnect callback returns a `LocalShellBackend` via `create_local_sandbox` from `openswe/sandboxes/providers/local.py`; for hosted runs, it calls `ensure_sandbox_for_thread` with the workspace slug, which resolves the sandbox environment from thread metadata, refreshes proxy credentials, or creates and binds a new sandbox. The lifecycle deliberately raises for an unreachable existing sandbox rather than replacing potentially uncommitted work; a deleted sandbox is replaced because retaining its stale id would permanently block the thread.
 
 ## Model and effort routing
 
@@ -57,7 +57,7 @@ Main-agent and subagent model/effort pairs resolve by precedence:
 3. **Stored thread settings** (persisted after each run and refreshed across participants).
 4. **Per-run agent_model_id and agent_effort**, only if both are canonical `SUPPORTED_MODEL_IDS` and pass `model_supports_effort` validation.
 
-Resolved pairs are persisted to thread settings for hosted runs before Fable gating, so a deployment-wide enablement decision applies on every run rather than freezing into thread settings. Provider-specific keyword arguments are computed separately for main, subagent, and title models. Construction failures defer to an error model, allowing the graph to compile and reporting provider setup failure at model-call time. A fallback middleware is installed only if its model id differs from the primary model.
+Resolved pairs are persisted to thread settings before Fable gating, so a deployment-wide enablement decision applies on every run rather than freezing into thread settings. Provider-specific keyword arguments are computed separately for main, subagent, and title models. Construction failures defer to an error model, allowing the graph to compile and reporting provider setup failure at model-call time. A fallback middleware is installed only if its model id differs from the primary model.
 
 Desktop runs skip thread-settings lookup and use workspace defaults directly; Slack `/oswe` questions use the triggering user's default model and disable adaptive routing.
 
@@ -67,7 +67,7 @@ Desktop runs skip thread-settings lookup and use workspace defaults directly; Sl
 
 The factory supplies `create_deep_agent` an empty static system prompt and relies on `PrepareAgentRunMiddleware` to render the per-thread prompt dynamically in its `abefore_agent` hook.
 
-`construct_system_prompt` builds the main-agent system prompt in a fixed order: working environment, dashboard/source context, plan guidance, self-awareness, default repository, optional repository scope, repository setup and task execution, optional Corridor guidance, dependency and untrusted-comment guidance, commit/PR guidance, repository instructions, workspace instructions, optional admin-environment guidance, and shared-base guidance. Sender identity, attribution, standing user instructions, and participant context are intentionally excluded from this durable system prompt to avoid rewriting cached history.
+`construct_system_prompt` builds the main-agent system prompt in a fixed order: working environment (local or sandbox-aware), dashboard/source context, plan guidance, self-awareness, default repository, optional repository scope, repository setup and task execution, optional Corridor guidance, dependency and untrusted-comment guidance, commit/PR guidance, repository instructions, workspace instructions, optional admin-environment guidance, and shared-base guidance. Sender identity, attribution, standing user instructions, and participant context are intentionally excluded from this durable system prompt to avoid rewriting cached history.
 
 For hosted runs, preparation resolves the GitHub token, sandbox work directory, sender identity, instruction context, and thread participants. It adds the resulting sender context as a separate generated message after a human input, allowing the model to distinguish between user input and infrastructure context. A sandbox-unreachable failure posts a user-facing notification before being re-raised.
 
@@ -111,18 +111,19 @@ The only configured subagent is the general-purpose Deep Agents subagent. It rec
 - **Model**: The subagent model and effort pair, constructed independently of the parent.
 - **Tools**: Static tools filtered to exclude parent-only tools (save_user_settings, background_execute, Slack-specific tools, etc.) and subagent guards.
 - **Skills**: The same ordered skill_sources as the parent.
+- **Mode**: `fork`, meaning it branches and collects results back into the parent message thread.
 - **Middleware**: Independently compiled so parent middleware never wraps it:
-  - `_DisableInheritedMiddleware` disables RequireUserReplyMiddleware (subagents do not reply to users) and parent-specific routing middleware.
+  - `_DisableInheritedMiddleware` disables RequireUserReplyMiddleware (subagents do not reply to users) and parent-specific routing middleware (model selection, message queue checks).
   - `_SubagentToolGuard` rejects parent-only tool calls with a user-friendly message.
   - AnthropicPromptCachingMiddleware for prompt caching.
   - TranscriptMiddleware for call logging.
   - Incident and workspace-skills middleware when applicable.
   - Full dynamic-tool middleware if parent has integration tools.
-  - GuardMiddleware (PullRequestCreationGuardMiddleware for hosted runs, none for desktop).
+  - GuardMiddleware: PullRequestCreationGuardMiddleware (unconditionally) and WorkflowPushGuardMiddleware.
   - ConversationOffloadingMiddleware for history summarization.
   - Model guards: SanitizeOpenAIResponsesMiddleware, ModelErrorMiddleware, ModelCallTimeoutMiddleware.
 
-The subagent's `mode` is `fork`, meaning it branches and collects results back into the parent message thread. Its description includes a suffix requiring Slack communication to be relayed through the parent.
+The subagent's description includes a suffix requiring Slack communication to be relayed through the parent.
 
 ## Middleware assembly and ordering
 
@@ -198,95 +199,31 @@ sequenceDiagram
         
         Factory->>Sandbox: Start SandboxBackendProxy
         activate Sandbox
-        Sandbox-->>Factory: Sandbox ready
+        Sandbox->>Sandbox: Connect or create sandbox
+        Sandbox-->>Factory: Backend ready
+        deactivate Sandbox
         
-        Factory->>Factory: Resolve models & effort
-        Factory->>Factory: Load settings & authorization
-        Factory->>Factory: Build skills CompositeBackend
+        Factory->>Factory: Resolve models (main, subagent)
+        Factory->>Factory: Load MCP tools (async)
+        Factory->>Factory: Compile skills routes
         Factory->>Factory: Curate static tools
-        Factory->>Factory: Load MCP/dynamic tools
-        Factory->>Factory: Assemble subagent config
+        Factory->>Factory: Build middleware stack (outermost to innermost)
         
-        Factory->>Graph: create_deep_agent(models, tools, middleware, subagents, backend, skills)
-        Graph-->>Factory: Pregel graph
+        Factory->>Graph: create_deep_agent(model, tools, middleware)
+        Factory->>Graph: Bind stripped config
+        Graph-->>Factory: Compiled Pregel
         
-        Factory-->>Server: Bound graph with config
-    end
-    
-    Server->>Graph: invoke(input, config)
-    activate Graph
-    
-    Graph->>State: Load checkpointed state
-    
-    loop Until graph step
-        Graph->>Graph: Run middleware before_agent (Layer 1-3 outermost)
+        Factory-->>Server: Pregel with full assembly
         
-        Graph->>Graph: PrepareAgentRunMiddleware: render prompt, sender context
-        State->>State: Checkpoint run_prepared_for
-        
-        Graph->>Graph: Run middleware before_model (Layer 4-5)
-        Graph->>Graph: ModelSelectionMiddleware: route or use main model
-        Graph->>Graph: ModelCallTimeoutMiddleware: set deadline
-        
-        Graph->>Model: awrap_model_call(request)
+        Server->>State: Invoke graph with config
+        activate State
+        State->>Graph: Execute outermost middleware
+        State->>Model: Model call (via innermost ModelCallTimeoutMiddleware)
         activate Model
-        Model-->>Graph: response
+        Model-->>State: Response
         deactivate Model
-        
-        Graph->>Graph: Run middleware after_model (innermost to outermost)
-        
-        alt Tool call in response
-            Graph->>Graph: Parse tool requests
-            Graph->>Graph: ToolErrorMiddleware, ExcludeToolsMiddleware, etc.
-            Graph->>Graph: DynamicToolMiddleware: ensure tool loaded
-            
-            Graph->>Sandbox: Execute tool
-            activate Sandbox
-            Sandbox-->>Graph: tool result
-            deactivate Sandbox
-            
-            Graph->>State: Append tool result to messages
-        else No tool
-            Graph->>Graph: Extract final response
-            Graph->>State: Append assistant message
-        end
-    end
-    
-    deactivate Sandbox
-    Graph-->>Server: Final state + output
-    deactivate Graph
-    
-    Server-->>Client: Response with completion
+        State->>State: Execute remaining middleware layers
+        State->>Graph: Subagent delegation (if needed)
+        State-->>Server: Final response
+        deactivate State
 ```
-
-## Change guidance and extension points
-
-Treat `_get_agent` and `build_agent` (internal aliases used historically) as the customization seam for:
-
-- Sandbox providers and reconnect strategies
-- Model policy, routing, and fallback configuration
-- Parent tool surfaces and tool-access gates
-- Skills routes and skill backends
-- Subagent composition, middleware, and boundaries
-- Middleware ordering and guard configuration
-
-Preserve these contracts:
-
-- **Execution gate**: Do not bypass the `__is_for_execution__` check; graph discovery must remain cheap.
-- **Authority model**: `profile_login` drives authorization; thread settings freeze durable decisions. Do not silence model/settings changes between participants.
-- **Subagent boundary**: Parent middleware does not wrap subagents. A parent-only guard (e.g., PullRequestCreationGuardMiddleware) does not secure a separately compiled subagent. Add subagent guards in `_subagent_guard_middleware`.
-- **Middleware order**: Order is part of the contract, not an implementation detail. Timeouts must be innermost so fallback escalation works correctly.
-
-## Focused tests
-
-- `tests/agent/test_agent_assembly_context.py` checks backend/skills routing, desktop and stop-summary tool surfaces, parent-only tools, subagent guards, and middleware order.
-- `tests/agent/test_factory_tool_loading.py` verifies concurrent eager loading of MCP tools and integration tool caching.
-- `tests/models/test_agent_subagent_models.py` covers independent profile subagent overrides and Fable availability gating.
-
-## Related architecture
-
-- [Middleware Stack and Interceptors](middleware-stack.md) — detailed middleware reference, responsibilities, and ordering rationale.
-- [Sandbox Lifecycle](sandbox-lifecycle.md) — backend creation, reconnection, and persistence.
-- [Models & Profiles & Instructions](../concepts/models-profiles-instructions.md) — model selection, effort levels, and prompt layers.
-- [Tools](../concepts/tools.md) — tool surfaces, authorization, and dynamic loading.
-- [Context Engineering](../workflows/context-engineering.md) — how sender and thread context flow through preparation.

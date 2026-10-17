@@ -1,11 +1,9 @@
 ---
 type: integration
 title: Dashboard and Desktop Clients
-description: The dashboard's FastAPI API, React/TanStack Start serving and proxy boundary, authenticated product capabilities, and the Electron client's supervised local-project execution model.
+description: The dashboard's FastAPI API, React/TanStack Start serving and proxy boundary, authenticated product capabilities, and the Electron client's experimental local-project execution model.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, electron, langgraph]
 sources:
-  - id: openwiki-source-f94f5d5d16b6aac2f4bc309c
-    resource: repo://desktop/src/backend-supervisor.cjs
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
   - id: openwiki-source-e4bce0ee35cec33ca72293f7
@@ -18,8 +16,6 @@ sources:
     resource: repo://openswe/dashboard/oauth.py
   - id: openwiki-source-7fc33e4789861923a6f12e78
     resource: repo://openswe/dashboard/routes.py
-  - id: openwiki-source-3e4d955c2e907c017e3302d0
-    resource: repo://openswe/desktop.py
   - id: openwiki-source-d4133df2d22c7f7c9b56d1fc
     resource: repo://openswe/review/routes.py
   - id: openwiki-source-7ee154e2a5d8a9f6403ac301
@@ -48,10 +44,10 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Dashboard and Desktop Clients
@@ -83,10 +79,10 @@ graph TB
         PythonDev["FastAPI loopback"]
     end
     
-    subgraph Desktop["Electron local mode"]
+    subgraph Desktop["Electron experimental"]
         Renderer["Renderer process<br/>open-swe://app"]
-        DesktopProxy["Local-graph proxy<br/>bearer token auth"]
-        LocalBackend["Supervised backend<br/>127.0.0.1:random"]
+        DesktopProxy["Local proxy<br/>bearer token auth"]
+        RemoteBackend["Configured<br/>backend"]
     end
     
     Browser -->|relative /dashboard/api/*| Nitro
@@ -97,16 +93,14 @@ graph TB
     ViteDev -->|proxy| PythonDev
     
     Renderer -->|/dashboard/api/**| DesktopProxy
-    Renderer -->|/local-graph/**| DesktopProxy
-    DesktopProxy -->|configured backend| PythonAPI
-    DesktopProxy -->|loopback| LocalBackend
+    DesktopProxy -->|configured| RemoteBackend
     
     style Nitro fill:#e1f5ff
     style BackendProxy fill:#e1f5ff
     style ViteDev fill:#fff3e0
     style DesktopProxy fill:#f3e5f5
 ```
-Diagram: dashboard architecture showing production Nitro proxy, development Vite flow, and Electron desktop routing with loopback backend supervision.
+Diagram: dashboard architecture showing production Nitro proxy, development Vite flow, and Electron desktop routing.
 
 ```mermaid
 sequenceDiagram
@@ -186,15 +180,13 @@ The production proxy retains OAuth redirects with `redirect: "manual"`, forwards
 
 The dashboard displays agent runs using the LangGraph v3 protocol stream, which carries both state snapshots and intermediate event frames. The thread detail view embeds a stream provider that opens `/threads/{id}/stream` to receive events as the run progresses. Events include tool invocations, state updates, and checkpoint markers, allowing the UI to show real-time progress, tool calls with inputs and outputs, and retrieval windows.
 
-Subagent visibility is determined by the run's manifest: tool events exposing subagent thread IDs are rendered as clickable references in the main thread UI, allowing users to navigate into nested invocations. Tool events carry the full tool schema, input parameters, and parsed output, enabling the UI to render domain-specific visualizations (e.g., file diffs for code review tools, artifact previews for generation tools). On desktop runs, the UI avoids exposing actual tool results containing credentials or artifacts; instead it renders locally-scoped results that come from the supervised backend and are safe to display in the browser.
+Subagent visibility is determined by the run's manifest: tool events exposing subagent thread IDs are rendered as clickable references in the main thread UI, allowing users to navigate into nested invocations. Tool events carry the full tool schema, input parameters, and parsed output, enabling the UI to render domain-specific visualizations (e.g., file diffs for code review tools, artifact previews for generation tools).
 
-## Electron local client and execution boundary
+## Electron experimental client
 
-The experimental Electron package bundles the compiled UI at `open-swe://app`. It proxies dashboard API traffic to a user-configured compatible backend and `/local-graph` traffic to a private loopback graph. This separation prevents the renderer from receiving LangSmith credentials or using a raw LangGraph API. Packaged builds have no hosted backend default; changing the configured backend clears that deployment's local session data. The desktop package builds the UI and packages both it and the local backend runtime.
+The experimental Electron package bundles the compiled UI at `open-swe://app` and proxies dashboard API traffic to a user-configured compatible backend. This separation prevents the renderer from receiving server credentials or using a raw LangGraph API. Packaged builds have no hosted backend default; changing the configured backend clears that deployment's local session data. The desktop package builds the UI and packages both it and a local backend runtime (when available).
 
-`BackendSupervisor` starts the local graph lazily and shares the in-progress readiness promise. It reserves a `127.0.0.1` port, creates a random bearer token, verifies required project/worktree paths, and starts `uv run langgraph dev` with `langgraph.desktop.json` in development or the bundled Python runtime/configuration when packaged. It passes the token, project allowlist, worktree directory, and an out-of-project artifact location to the child. Startup polls the authenticated loopback root for up to 60 seconds and includes retained child logs in failures. The stable renderer configuration is `{ apiUrl: "/local-graph", graphId: "agent" }`; the proxy strips renderer cookies, injects the bearer token, and does not expose the actual port. Shutdown clears supervisor state, sends `SIGTERM`, and escalates to `SIGKILL` after five seconds.
-
-A `source == "desktop"` run selects `LocalShellBackend`, not a cloud sandbox. `local_project_path` must resolve to an existing allowlisted project directory or a desktop-managed worktree. The local factory uses local model defaults and state-backed user skills, disables cloud sandbox file downloads, and routes `large_tool_results` and conversation history into sanitized per-thread artifact directories outside the project. This preserves the graph protocol while limiting filesystem authority to the selected project and preventing agent scratch files from appearing in its working tree.
+Desktop login follows the PKCE handoff pattern: the browser runs the GitHub OAuth flow with a `desktop_handoff` challenge and loopback port; the callback returns a code bound to that challenge instead of a session cookie; the desktop loopback exchanging the code verifier receives a session token that the app stores locally without exposing it to the browser.
 
 ## Focused verification
 
@@ -202,7 +194,7 @@ Dashboard thread tests cover image/model compatibility; `run.start` creation met
 
 Real-time UI invalidation tests should verify that a topic replay correctly reconstructs stale subscriptions on reconnect, that unauthorized topics are filtered before subscription, and that the stream coalesces frames within a sub-second window. Review UI tests should confirm that concurrent analyzer requests are rejected with 409, that a saved prompt can transition a terminal run to completed, and that review findings are correctly filtered by authorization.
 
-Desktop changes should retain the loopback token boundary, health polling, proxy cookie stripping, and termination escalation; UI proxy changes must preserve individual `Set-Cookie` headers and un-followed OAuth redirects. Run stream tests should verify that tool events expose subagent thread IDs, that desktop runs strip credentials from tool results, and that checkpoint events enable offline recovery.
+Desktop changes should retain any loopback token boundary, health polling, and proxy cookie stripping; UI proxy changes must preserve individual `Set-Cookie` headers and un-followed OAuth redirects. Run stream tests should verify that tool events expose subagent thread IDs and that checkpoint events enable offline recovery.
 
 ## Related
 

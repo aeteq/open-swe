@@ -3,9 +3,10 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
 sources:
-  - id: openwiki-source-b76f79b6cfae139d1784a43a
-    resource: repo://langgraph.desktop.json
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
@@ -16,8 +17,6 @@ sources:
     resource: repo://openswe/dashboard/__init__.py
   - id: openwiki-source-7fc33e4789861923a6f12e78
     resource: repo://openswe/dashboard/routes.py
-  - id: openwiki-source-3e4d955c2e907c017e3302d0
-    resource: repo://openswe/desktop.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
   - id: openwiki-source-d0edf7555209b3e6418b5c5f
@@ -44,14 +43,7 @@ sources:
     resource: repo://openswe/webapp.py
   - id: openwiki-source-23775c3de52f3ab95a13cb8b
     resource: repo://README.md
-  - id: openwiki-source-4eb06f8c7641cb7107e39ca8
-    resource: repo://ui/src/router.tsx
-  - id: openwiki-source-c7a3ad58e4b4017484c1e326
-    resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 ---
 
 # Runtime and Product Architecture
@@ -145,7 +137,7 @@ A graph factory is ephemeral, but thread execution context is durable: LangGraph
 
 The cloud manifest currently pins Python 3.14 and LangGraph API version >~=0.15.0rc1. Its checkpointer TTL uses `delete`, sweeps every 60 minutes, and defaults to 43,200 minutes. The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
 
-`langgraph.desktop.json` intentionally registers only the main agent graph, uses `openswe.local_auth:auth` with Studio authentication disabled, and disables the bundled UI. A desktop run is identified by `configurable.source == "desktop"`. Its requested `local_project_path` must resolve to an existing directory that is either in `OPEN_SWE_LOCAL_PROJECTS_FILE` or beneath `OPEN_SWE_LOCAL_WORKTREES_DIR`; otherwise it is rejected. The local backend inherits only a small shell environment allowlist (`HOME`, `LANG`, `LC_ALL`, `PATH`, `SHELL`, `TMPDIR`). Desktop scratch routes put large tool results and conversation history outside the project so they are not swept into `git add -A`.
+A separate desktop manifest registers only the main agent graph, uses a local auth handler with Studio authentication disabled, and disables the bundled UI. A desktop run is identified by `configurable.source == "desktop"`. Its requested `local_project_path` must resolve to an existing directory that is either in a configured projects file or beneath a configured worktrees directory; otherwise it is rejected. The local backend inherits only a small shell environment allowlist. Desktop scratch routes put large tool results and conversation history outside the project so they are not swept into `git add -A`.
 
 The `ui/` application is a TanStack Router React client with routes for agent sessions and threads, local sessions, plans, automations, skills, reviews and styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes and selects `cloud` or `local` streaming transport from the active route. Router `basepath` follows Vite's build base, allowing the bundle to run below a configured mount prefix.
 

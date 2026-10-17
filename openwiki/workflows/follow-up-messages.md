@@ -3,6 +3,9 @@ type: workflow
 title: Follow-up Messages and Interruption
 description: Message queues for live handoffs, multitask strategies for follow-up dispatch, run completion webhooks, and emergency stop mechanics that coordinate concurrent work without losing user input.
 tags: [follow-up, message-queue, middleware, completion-webhook, baby-sit, background-tasks, stop, multitask-strategy, interrupt, enqueue]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-17T12:03:09.529Z
 sources:
   - id: openwiki-source-987be1dce6e9ba720855c2ed
     resource: repo://openswe/baby_sit.py
@@ -32,10 +35,7 @@ sources:
     resource: repo://openswe/threads/runs.py
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 ---
 
 # Follow-up Messages and Interruption
@@ -96,19 +96,19 @@ sequenceDiagram
 
 At every model boundary, the middleware performs three sequential operations:
 
-1. **Consume a batched autofix event** from `("autofix", thread_id) / "pending_event"` (if present). It deletes the event and prepends a system instruction to re-check CI and review comments before finishing, rather than launching a separate run. This allows baby-sit status changes to be handled within the active run.
+1. **Read and clear the message queue** from the store thread queues. The middleware deletes the entire record *before* conversion, preventing a subsequent invocation during the asynchronous conversion (e.g., image fetches) from injecting the same batch twice. A snapshot of the queued messages is taken first, so any follow-ups appended while the conversion is in flight are preserved for the next model call.
 
-2. **Read and clear the message queue** from `("queue", thread_id) / "pending_messages"`. The middleware deletes the entire record *before* conversion, preventing a subsequent invocation during the asynchronous conversion (e.g., image fetches) from injecting the same batch twice. A snapshot of the queued messages is taken first, so any follow-ups appended while the conversion is in flight are preserved for the next model call.
-
-3. **Convert queued messages to input blocks** and append them to the model's state:
+2. **Convert queued messages to input blocks** and append them to the model's state:
    - Ordinary queued blocks become a system message attributed to `system:thread-queue` on the automation surface.
    - A dashboard payload (identified by `source: "dashboard"`) produces a dashboard-handoff system message followed by a human message attributed to its supplied sender on the web surface.
    - Dynamic identity context is emitted only when its hash is not already visible to the model. The visibility calculation honors summarization cutoffs, so context retained only in historical state is re-introduced.
    - Each structured envelope is its own message because the transcript parser expects one `<input-message>` envelope per message. Plain text blocks may be merged before serialization.
 
+3. **Isolate failures**: Failed queue reads or image processing are logged and allow the model call to proceed rather than aborting the run. A failed queue read still flushes previously assembled content blocks, ensuring partial content is not lost.
+
 ### Image handling and error resilience
 
-For payloads with image URLs, the middleware resolves the thread's configured model once. If the model does not support vision, it omits those fetched images and adds a warning to the text; supplied image blocks are retained. Failures reading images or the queue are logged and allow the model call to proceed rather than aborting the run. A failed queue read still flushes any autofix instruction already assembled, ensuring partial content is not lost.
+For payloads with image URLs, the middleware resolves the thread's configured model once. If the model does not support vision, it omits those fetched images and adds a warning to the text; supplied image blocks are retained. Failures reading images or the queue are logged and allow the model call to proceed rather than aborting the run. A failed queue read still flushes any previously assembled content blocks, ensuring partial content is not lost.
 
 ## Run completion and follow-up dispatch
 
@@ -118,11 +118,11 @@ Every durable dispatch attaches a completion webhook only when both `RUN_COMPLET
 
 The completion webhook handler (`handle_run_completion`) processes terminal runs:
 
-- **Success**: Clears any consecutive-failure counter, schedules a private feedback prompt five minutes later (unless the run was automated), and for Slack runs with an invocation ID, schedules deferred session-cost enrichment. Returns the code-channel session to `active`.
+- **Success**: Clears any consecutive-failure counter, and for Slack runs with an invocation ID, schedules deferred session-cost enrichment. Returns the code-channel session to `active`.
 - **Error or timeout**: Posts a best-effort failure reply with run-scoped idempotence (per run ID, with fallback to thread-level tracking for older/manual payloads without a run ID). Limits consecutive failure replies to prevent loops. Never blocks run creation.
 - **Interrupted**: Intentionally ignored—with `multitask_strategy="interrupt"`, an interruption is expected and healthy, not a failure.
 
-Run-completion replies are best-effort and never block run creation. A missing webhook or a completion that arrives out of order has no side effects beyond deferred feedback and cost enrichment.
+Run-completion replies are best-effort and never block run creation. A missing webhook or a completion that arrives out of order has no side effects beyond deferred cost enrichment.
 
 If a successful run (not a follow-up-pickup run) left pending messages in the store, `dispatch_pending_follow_ups` dispatches an empty-input follow-up run to pick them up when no run is already pending, allowing stored work to reach the agent without losing it to an idle timeout.
 
@@ -155,7 +155,7 @@ The `:x:` reaction on a Slack message triggers immediate stop processing:
 2. Verify the thread metadata matches the Slack channel and thread timestamp (mismatch is rejected).
 3. Claim the event ID for delivery deduplication.
 4. Enumerate and cancel every pending and running run for the thread by thread ID (not `latest_run_id`, so the stop button works for runs this browser never started).
-5. Clear deferred-work records: delete pending messages and autofix events from the store.
+5. Clear deferred-work records: delete pending messages from the store.
 6. Update thread metadata with `latest_run_status="interrupted"` and `stop_requested_at_ms`.
 7. Dispatch a read-only stop-summary run that permits only thread inspection and summary output.
 

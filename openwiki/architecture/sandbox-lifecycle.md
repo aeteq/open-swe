@@ -4,8 +4,6 @@ title: Thread Sandbox Lifecycle
 description: How a thread acquires, persists, reconnects to, and deliberately replaces its sandbox. Covers provider selection, proxy-backed credentials, recovery safety, and operational lifecycle controls.
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
 sources:
-  - id: openwiki-source-3e4d955c2e907c017e3302d0
-    resource: repo://openswe/desktop.py
   - id: openwiki-source-5491be991f9727afe1f3163d
     resource: repo://openswe/github/proxy.py
   - id: openwiki-source-1b32e9f41fa7e64702b380f6
@@ -24,17 +22,15 @@ sources:
     resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-17T12:03:09.529Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-15T13:12:32.024Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-04T13:47:40.237Z" }
+    at: 2026-10-17T12:03:09.529Z
 ---
 
 # Thread Sandbox Lifecycle
 
 A normal agent thread has one durable sandbox binding: the sandbox contains its checkout and uncommitted working tree across runs. The binding is deliberately split between durable thread metadata and a worker-local handle. This distinction lets a later run on another worker reconnect, while avoiding exposing a partially initialized sandbox to tools.
-
-Desktop runs are different: the agent factory supplies a `LocalShellBackend` rooted in an allowlisted project or a desktop-created worktree, rather than invoking the thread sandbox lifecycle. Desktop artifact routes put internal large-result and conversation-history files outside the project so they cannot be accidentally included in `git add -A`.
 
 Related: [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
 
@@ -62,9 +58,9 @@ The local provider is development-only: it runs commands directly on the host wi
 
 ```mermaid
 flowchart TD
-  Start["ensure_sandbox_for_thread"] --> CheckBridge{"Bridge sandbox ID"}
-  CheckBridge -->|"yes"| ConnectBridge["Connect to bridge backend"]
-  CheckBridge -->|"no"| Cached{"Live cached backend"}
+  Start["ensure_sandbox_for_thread"] --> Bridge{"Bridge sandbox ID"}
+  Bridge -->|"yes"| ConnectBridge["Connect to bridge backend"]
+  Bridge -->|"no"| Cached{"Live cached backend"}
   Cached -->|"yes"| Refresh["Reapply identity and refresh proxy"]
   Cached -->|"no"| Bound{"Metadata sandbox ID"}
   Bound -->|"yes"| Reconnect["Reconnect using provider"]
