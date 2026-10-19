@@ -2,13 +2,8 @@
 type: configuration concept
 title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
-tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable, prompt-caching]
 sources:
-  - id: openwiki-source-70b814b26d317c2b15c4a4fb
-    resource: repo://openswe/chat.py
   - id: openwiki-source-b944dafe6742f31d7ab88e70
     resource: repo://openswe/dashboard/agent_instructions.py
   - id: openwiki-source-d7869f38ea59b91aa236ee00
@@ -25,6 +20,12 @@ sources:
     resource: repo://openswe/input_messages.py
   - id: openwiki-source-c950a10d3272291deaffd090
     resource: repo://openswe/prompt.py
+  - id: openwiki-source-1c7c5f1a7efc26b4594613d2
+    resource: repo://openswe/resources/prompts/system/main.md.jinja
+  - id: openwiki-source-96bcad07b4fe7078402bc2b8
+    resource: repo://openswe/reviewer.py
+  - id: openwiki-source-eadc99dda4c97fd34c8996cc
+    resource: repo://openswe/runtime/constants.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
@@ -37,7 +38,10 @@ sources:
     resource: repo://openswe/utils/model.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 ---
 
 # Models, Profiles, and Instructions
@@ -65,7 +69,7 @@ All team default resolvers use a valid saved pair first, then same-provider reco
 
 Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]` (historically called "team settings" in the pre-workspaces architecture). Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
 
-Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, PR/CI preferences, and model-routing and UI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
+Profiles in `["profiles"]` carry settings that were historically per-user model selection but are now primarily workspace/feature flags and repository preferences (default repo, branch, PR preferences, model routing, UI settings). Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
 
 ```mermaid
 flowchart TD
@@ -114,6 +118,10 @@ Gateway enablement is tri-state: a `True` or `False` team value wins, while `Non
 
 Provider request routing is distinct from runtime model fallback. `ModelFallbackMiddleware` uses `LLM_FALLBACK_MODEL_ID` when set; otherwise Anthropic primaries fall back to OpenAI and OpenAI primaries to Anthropic. Google, local, and self-hosted providers have no automatic cross-provider fallback.
 
+### Token budgets and reasoning configuration
+
+Max-output tokens are globally configured via `DEFAULT_LLM_MAX_TOKENS` (64,000 tokens) and `DEFAULT_LLM_REASONING` ({`effort`: "medium", `summary`: "auto"} for OpenAI). These values are applied uniformly to main agent, subagent, and title-generation model requests via `provider_model_kwargs`. Reasoning effort is always resolved first based on the selected model's supported efforts, then mapped to provider-specific kwargs.
+
 ## Instruction sources and authority
 
 Repository custom instructions are workspace-admin-authored records in `["agent_instructions"]`, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
@@ -129,19 +137,35 @@ Prompt authority is explicit:
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.
 
+## System prompt rendering and template composition
+
+Prompts are Jinja2 templates and static Markdown files loaded from `openswe/resources/prompts/` via the `prompt()` function in `openswe/prompts`. The main system prompt is constructed in `construct_system_prompt`, which accepts context variables and assembles them into sections:
+
+- Working environment (hosted sandbox or local checkout)
+- Dashboard context (environment, dashboard URL, artifact links)
+- Source guidance (GitHub, Slack, Linear, schedule, etc.)
+- Repository scope and organization boundaries
+- Default repository and repository setup instructions
+- Collaboration section (PR coauthorship, attribution)
+- External comments handling
+- Repository custom instructions (rendered into a dedicated section via `_render_repo_instructions_section`)
+- Workspace instructions and organization guidelines (rendered via `_render_workspace_section`)
+- Recent thread context (if available)
+- Admin workspace or user-visibility restrictions
+- Sole-writer mode
+- Sandbox file download permissions
+
+Each section is conditionally included if its content is non-empty. Repository custom instructions and workspace instructions are rendered into distinct sections only when present. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
+
+## Instruction caching and multi-turn efficiency
+
+Instruction caching leverages Anthropic's prompt caching middleware (`AnthropicPromptCachingMiddleware`), configured with a 1-hour TTL on all graph models. This middleware enables efficient multi-turn conversations by caching the stable portions of the system prompt and instructions, reducing token consumption and latency for subsequent turns in the same thread. The cache key is computed from the compiled system prompt and instruction sections, allowing stable caching across reruns of the same thread configuration.
+
 ## Model pair concept and adaptive routing
 
 Each role (agent, reviewer, chat) has a main model and optional subagent model. The subagent model is used for research, code search, and context-gathering subtasks, while the main model handles the user-facing response. A profile can override both pairs independently; when a profile provides only a main model, it becomes the subagent model unless an explicit subagent override exists.
 
 When `model_routing_enabled` is true at the workspace or user level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests.
-
-## Prompt loading, instruction caching, and rendering
-
-Prompts are Jinja2 templates and static Markdown files loaded from `agent/resources/prompts/` via the `prompt()` function in `agent/prompts.py`. Templates end with `.md.jinja` and accept keyword arguments that become Jinja variables. The main system prompt is constructed in `construct_system_prompt`, which assembles sections for working environment, dashboard context, source guidance, repository scope, collaboration, external comments, repository instructions, workspace settings, and recent thread context. Each section is conditionally rendered and only included if its content is non-empty.
-
-Repository custom instructions are rendered into a dedicated section via `_render_repo_instructions_section`. Workspace instructions are rendered via `_render_workspace_section` and include org-level guidelines and workspace-specific repos. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block in `agent/input_messages.py`. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
-
-Instruction caching leverages Anthropic's prompt caching middleware (`AnthropicPromptCachingMiddleware`), configured with a 1-hour TTL on all graph models. This middleware enables efficient multi-turn conversations by caching the stable portions of the system prompt and instructions, reducing token consumption and latency for subsequent turns in the same thread.
 
 ## Change and test guide
 

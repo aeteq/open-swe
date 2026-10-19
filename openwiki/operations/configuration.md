@@ -3,9 +3,6 @@ type: operations reference
 title: Configuration and Environment
 description: Explains Open SWE's lazy environment registry, persisted team and workspace settings, model and sandbox selection, secrets, and the boot-time validation that determines whether a server starts.
 tags: [configuration, operations, environment-variables, startup-validation, sandbox, models, security, workspace-settings]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -35,7 +32,10 @@ sources:
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 ---
 
 # Configuration and Environment
@@ -55,7 +55,7 @@ The canonical name wins over aliases. Deprecated names and aliases are registere
 
 ### Deployment topology
 
-`langgraph.json` registers the agent, reviewer, review-scout, chat, and scheduler graphs and mounts `openswe.webapp:app` (FastAPI) as the HTTP application. The checkpointer uses a delete-based TTL strategy with a 60-minute sweep interval and 43200-minute default TTL (30 days). The file declares `.env` as the environment file.
+`langgraph.json` registers the agent, reviewer, and review-scout graphs and mounts `openswe.webapp:app` (FastAPI) as the HTTP application. The checkpointer uses a delete-based TTL strategy with a 60-minute sweep interval and 43200-minute default TTL (30 days). The file declares `.env` as the environment file.
 
 ## Startup lifecycle and validation
 
@@ -82,7 +82,7 @@ flowchart TD
 
 ### Validation details
 
-**GitHub login gate**: Startup fails when neither `OPEN_SWE_LOCAL_AUTH_TOKEN` is set nor either `ALLOWED_GITHUB_ORGS` or `ALLOWED_GITHUB_USERS` is non-empty. The deployment must gate dashboard access.
+**GitHub login gate**: Startup fails when neither `ALLOWED_GITHUB_ORGS` nor `ALLOWED_GITHUB_USERS` is non-empty. The deployment must gate dashboard access by specifying at least one allowlist.
 
 **Sandbox configuration**: Validation is provider-specific. For `SANDBOX_TYPE=langsmith`, it checks numeric resource fields (`DEFAULT_SANDBOX_*_BYTES`, `DEFAULT_SANDBOX_*_SECONDS`), numeric TTL fields (rejecting negative values for idle or delete-after-stop), and `SANDBOX_CREATE_EXTRA_JSON` (rejecting non-JSON or non-object). An unsupported provider name is rejected only when `create_sandbox` is called, not at startup.
 

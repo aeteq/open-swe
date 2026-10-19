@@ -1,41 +1,7 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:faef6ab26b75923e76168f782f67c8d8d53d6e46cb65138cf2b5ffe4a7186832",
+  "pageVersion": "sha256:8accb3cf0ababd4191716c1ad19a583d5f7711e8f07a1fd02a912f0042a8fb5f",
   "claims": [
-    {
-      "id": "claim_851e23a08e794421a0ac06c407e8a9d0",
-      "statement": "The scheduler graph (openswe/scheduler.py) is a single-node StateGraph (START -> launch -> END) registered as the `scheduler` assistant in langgraph.json, and its `_launch` node deterministically routes one cron/run tick to the handler matching the incoming `task`, invoking no LLM.",
-      "evidence": [
-        {
-          "resource": "repo://langgraph.json#L10-L10",
-          "version": "repo-lines-v1:sha256:74e6933a0b2c59a70988019758a54f79f221148744ff2a1e0fdeab17e944d72b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzRlNjkzM2EwYjJjNTlhNzA5ODgwMTk3NThhNTRmNzlmMjIxMTQ4NzQ0ZmYyYTFlMGZkZWFiMTdlOTQ0ZDcyYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzRlNjkzM2EwYjJjNTlhNzA5ODgwMTk3NThhNTRmNzlmMjIxMTQ4NzQ0ZmYyYTFlMGZkZWFiMTdlOTQ0ZDcyYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGZhNGNlNzNjMjE2ZDkyNWI4YWQ0YWNiOTQzMTI2Mjg2ZWQ3MGIwZmY0ODQyMThkODY4NjkxYjYyMTk3NzI3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzExZWNmZTY1ZGNhMTdjNDFlMDNhODJmZTljY2VhNzg4OWJiNWY0ZjdhNzljNjIzNGI4MjZmOWUzZTBlMzI2MiJ9"
-        },
-        {
-          "resource": "repo://openswe/scheduler.py#L119-L124",
-          "version": "repo-lines-v1:sha256:7eae2ce6201a24683071e835499d09005df0c8d0d8d38acb46978c32062d294d:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTFiY2JhZTI0ZDczZmVlYWJiNzg5YTZiZDQxNDk5N2VhYjBmMjdhYzJiMzcxYWZiMWU5YmNmY2Y4YTVhZTRhMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAwYzZiNjMzOTU0MGM4YWE3YzZlNmYyOTI0MjA3NWZiNGRiNjhlYjM3ZWZhMGJkMTUxZWRkZGUwN2E5MjJiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGEyMTY4YjdjOTMxNWVmYTY5MmFmOGI2ZDFlNmIyNjIyNjliODZhNzJjYmMwODEzM2M5ZDIyMjg1NWFiNjg5OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
-        }
-      ]
-    },
-    {
-      "id": "claim_3682bb8bd72d486a95134e55f8c79184",
-      "statement": "The scheduler's `_launch` routes `task` values `reconcile`, `baby_sit`, `background_tasks`, `session_cost`, `agent_cost`, `thread_feedback`, workspace refresh (full and incremental), announcements, expedited review, and human-review deadlines to their handlers, plus falls through to `launch_scheduled_agent_run(schedule_id)` when no task matches.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/scheduler.py#L61-L104",
-          "version": "repo-lines-v1:sha256:78397c197be6ef897100d78d902b7c9aeced41ddc60655426a93cb3a1ac8725d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyMTc1NWE0NzlkNzgxYTY2NDkzYTBkMTI3Y2IyYmU5MzE4YTk5ZjZlZWQ3ZmY3MGMyYmE0NTU2MTk4OTk2YTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYWIxNjJkMGM5NmZmMWM0NmM0MDk5NWE2ZDFkNWQxZDg4M2YxMjgxMjAzOGYwMjU0YThkNDBiZTg1ZjY4NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNjEzNWZiNWRmMDMzNjRkN2FlNjMzNGMxZGMzMWVjMjVkMTY5MjQ1MTU3Y2UxMjk3NGY2NDRjMDQ0ZjViNmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_d9afc0d3df954f499b1b1e919b41a09c",
-      "statement": "When a scheduler tick is missing its required key (watch_key, thread_id, request_id, schedule_id, or other task-specific field), `_launch` returns a `missing_*` status result instead of raising, so a malformed tick degrades to a no-op rather than crashing the cron.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/scheduler.py#L65-L104",
-          "version": "repo-lines-v1:sha256:1ae5b326091eda20e78f3a899649520eca0c9238517e1b1ce4fefce116a06821:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxODRmMWE1MjJkMzNmMjQ0ZWQxMGMxNWNmNDI4NTczZjAwODFmM2JlYmMyM2NmNzEzYzJmY2Q3YmFmMTM2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiYWIxNjJkMGM5NmZmMWM0NmM0MDk5NWE2ZDFkNWQxZDg4M2YxMjgxMjAzOGYwMjU0YThkNDBiZTg1ZjY4NDkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlNTYwNWM5NWVlOGZjNGMwYTI5NzdlMzEwNjViZmNjNDIwNzk2MDJhM2JhMGQ2NzI0ODI0MTdhZjhkMDAyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhM2I3ZDNlZDZmMTMyMDIwNTgwNzQzMzk4NDY2YWMxMWVhYzNkMzAyOGZjMTcyZmI3ZGQ4ZGE3YWUxOTZjMDAifQ"
-        }
-      ]
-    },
     {
       "id": "claim_57e56d5d78ff40fab76d5cf2f12301e8",
       "statement": "Dashboard-managed recurring agent schedules validate cron strings with normalize_cron_schedule, which requires a five-field expression and range-checks each field (supporting steps, ranges, and lists) before a schedule is stored.",
@@ -115,34 +81,6 @@
       ]
     },
     {
-      "id": "claim_ba1fe3d1c54a452eadc1ec95d624c9e6",
-      "statement": "start_watch registers each watch's per-watch LangGraph cron via _ensure_watch_job, which idempotently reuses an existing cron tagged kind=baby_sit_watch (deleting duplicates) or creates one, and rolls back the store row and partial cron if cron creation fails for a brand-new watch.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/baby_sit.py#L264-L272",
-          "version": "repo-lines-v1:sha256:b0f9e368d5c2b08cb7bfa763688af7bfd8be1a74f74f6fca410bd57b8661b86f:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI3MzZhOGMzZWRlYzAzYTZkM2Y2MzRhOTI0ZTQ4OWI1YzA1NjFkMjlhMTgwOWZhMTc3ODI0NDIwOGY5MmQxMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGU4MDAxM2RjZWUyM2UwYTA4Y2QxOTc0NjNjN2M2OWY3MGY5YWExNGJmYmY1NzdlMmI5MDExNWQyYzBiZTMwMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTBmMjJmMzExZDYzZmZiMTgxMjIzNzNkNGI1NDhkNzE0OTBlMWNkZWY2M2ZlODkwODVkZDYzMDMxODdiNDYxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2I1ODA4NDMzNjRiZmEzMDk5OTI4MzkyMzhjNDc0ZWU5MzkxNDYxMmM3NmJiZGRkZjBlNzM0ZjJiOTE1NTc5NiJ9"
-        },
-        {
-          "resource": "repo://openswe/baby_sit.py#L325-L337",
-          "version": "repo-lines-v1:sha256:504a11d932d274ce1e8ed5bdce0c917aadc24bc6ede49dccd525785fdc207239:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDMyZmU1ZTlmYzBiMzQ1NjAzNDgxZmUxMjliMmJiYzY0ZTNlMmZhZDc3ZTRjZWQxNmQ3YWU3YTg3ZjgwMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzYjIyMzQzZTljNzU1OTIzM2RjNDZkY2VhNTg5OTY1OGY2Yzg2YTczMTRmYTQ2MjA5OGYyOTI4YWY2YWQzZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5OTg0MmZjMzk1Yjk5YWE3MGQzOWM0Mzk5NTRiYmUwYjNjNDViMjM5NDE0YTlhYTExMGY2YjRiMTIxNjJmYmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4MjNjNGJhYzcwYWZiZjhlZGNlYTZmY2IxNWRkMWM3Y2JiOThiN2E5ZTIwYjAzM2FmMmY0ODE0YTU4MzhiYjkifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_e9c34bd6972d4dedb308576ab1dfddad",
-      "statement": "The per-watch baby_sit cron fires on the fixed */10 * * * * schedule against the scheduler assistant, providing a deterministic ~10-minute fallback that dispatches no agent run (returns statuses like pending or duplicate) while CI state is unchanged, so it consumes no model tokens for unchanged state.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/baby_sit.py#L268-L269",
-          "version": "repo-lines-v1:sha256:cf142bf18f3053483746f0e4a9484ff92e6d36c6073fd6e48d614963204426da:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjVkOTQ0ZDUyOWFjMjhmOWE5MzQ4ZDhjZmE0MDNkZTAyYjA3OGM2NmYyNmQ2NjZkOTA3YjI2YTYwMmIzYThkOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2YxNjM2YTc3N2JlODFkZWRkNWVkM2I5OWIxYjU3OWFmMWE1Y2JlZDc4ZDUyNjUxNjU0ZmRjNjQ1NmU5ZGIzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDc2NDRhYmE4NjBlMThkZWE1NjIwZTIyZGJhZjFmNzIyNDM4NDYyNmZkMzU0ZTQ0MjNiNmE2OTdjYTczNmE3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjhhOGUwNmU3YjQ3YzA5Y2IyMGEyNmIxYmUxOGE4MmVkZjk0OTgyMjRjMGJkZmY1MDNiOWJlMjExMzg2ZDg2NSJ9"
-        },
-        {
-          "resource": "repo://openswe/baby_sit.py#L47-L47",
-          "version": "repo-lines-v1:sha256:072d8b1f54b6c4d2670b6fcf9a0664a2f5660f8bdfc3739fb7c870ce104fce5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWE3MWZmOTEwZGMyMTAwZjcwZDk3Y2ZkN2U0N2Q2MTkwNDVmZjU5OWU1MWZmZmQ0NmEwYzRkZmYwZDVkOWU2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2U2ZmJkMWViNDk4ODhiYzgyMzk2NGM3MWJmMDBiYmJhNGE4YWE2NzY3NDJiOGIyZjFjMTYyMDkyZjRkZjBhNyJ9"
-        }
-      ]
-    },
-    {
       "id": "claim_10f9b9d9504d4326878ee6787877feee",
       "statement": "Signed GitHub CI webhooks trigger immediate watch evaluation: the webhook route verifies the X-Hub-Signature-256 HMAC before processing, and handle_ci_webhook ignores non-failing payloads, matches active watches by head SHA or branch, and de-duplicates by webhook delivery_id.",
       "evidence": [
@@ -158,7 +96,7 @@
     },
     {
       "id": "claim_258388f81d144c17a3f0b35a8d6132af",
-      "statement": "Both the webhook trigger and the cron trigger funnel into _evaluate_watch under a per-key short-lived lock thread, so at most one evaluation of a given watch runs at a time and concurrent triggers dispatch a failure only once.",
+      "statement": "Both the webhook trigger and the job trigger funnel into _evaluate_watch under a per-key short-lived lock thread, so at most one evaluation of a given watch runs at a time and concurrent triggers dispatch a failure only once.",
       "evidence": [
         {
           "resource": "repo://openswe/baby_sit.py#L528-L532",
@@ -200,7 +138,7 @@
     },
     {
       "id": "claim_6c4674d0afec48a5831d8e58ac56a598",
-      "statement": "Flaky reruns are capped per head SHA at MAX_RETRIES_PER_HEAD (3), and record_retry increments the durable retry count (rejecting the call when the head changed or the cap is reached) while posting the flaky-CI Slack alert only on the first occurrence of a given check/URL for that head via alert_keys dedupe.",
+      "statement": "Flaky reruns are capped per head SHA at MAX_RETRIES_PER_HEAD (3), and record_retry increments the durable retry count (rejecting the call when the head changed or the cap is reached) while posting the flaky-CI alert only on the first occurrence of a given check/URL for that head via alert_keys dedupe.",
       "evidence": [
         {
           "resource": "repo://openswe/baby_sit.py#L48-L48",
@@ -237,38 +175,22 @@
       ]
     },
     {
-      "id": "claim_b335ccfb86c5453db4c8198f9b8cba67",
-      "statement": "background_tasks provides model-free monitoring: ensure_background_task_polling idempotently registers a kind=background_tasks cron on the every-minute (* * * * *) schedule bound to a thread, and monitor_background_tasks claims each terminal task atomically, dispatches a completion message to the originating thread, and deletes its own cron once no task is running or pending so monitoring self-terminates.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/background_tasks.py#L36-L70",
-          "version": "repo-lines-v1:sha256:0ad31a4d438269f451a8f8ef7e36824018ef8dd3a7b85144ff6bafae89ba71a9:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUxM2Y2YTczYzU2YjIwMzVkYWI3ZTU3NTRkN2RhYjMxZTQwMDIwMDEyYTg2N2M3NWQyNjE5NDBlODAzNTJjNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4ZWFhMWYzZTI5Y2NmM2E2MTUyY2QxOGVjNzhkOGZlMDc3NjlhM2E0ZDA0NTQ0ZDgyMTI5MTFkNDk5ZDZkZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQwMWNiM2ExMzEzNWUyNjk1MmRmNmEzYmNlM2QyNGZiMDlmN2ZmM2QyMzJiMzlkMjcxMDgxMTdmZTczZjE0ZmMifQ"
-        }
-      ]
-    },
-    {
-      "id": "claim_b782232a63d740d2b12bd7c4b1f4ad01",
-      "statement": "schedule_thread_wakeup schedules a one-shot re-trigger of the current agent thread (1 minute to 24 hours) as a single-fire cron against the `agent` assistant carrying an end_time ~90s past the fire so it never re-fires, and passes through selected config keys with a default polling prompt.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/tools/schedule_thread_wakeup.py#L231-L269",
-          "version": "repo-lines-v1:sha256:1bfd30b9e169d98ce142b1d6d361acb228d9cfbae659f1acdc99b48088230b8f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ3MDA4ZDc1MzFiN2NiYmFlY2JjMmY2ZjFiMGEwNWY5YWFkOWFhODIwODQ2NjY2ODgxOTIyZjk2NzViMmRmNGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZhYWQ0MmNmMjMwM2E4MDRlMmYyNTQ4NzUyNzM4YjAyZThjZWI3ODRiYjM2YTcxMWM1ZjljZjFkNDIxNmE1MDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRhYTQzMjQ3ZmMxYWJmYzEzZGIzYTVhYTM4YmIxNDQ3NjUxYWU2N2RiMzc2MzIzMWYzMDA1YzhjMmNlYmM3ZWUifQ"
-        }
-      ]
-    },
-    {
       "id": "claim_05f435d1fbb94a6fa95bbb358dd546b0",
       "statement": "Thread wakeups are budget-limited to at most _MAX_WAKEUPS_BETWEEN_USER_MESSAGES (10) between human messages, keyed to the latest human-message generation so the budget resets on a new human message but not on system-kind messages.",
       "evidence": [
         {
+          "resource": "repo://openswe/threads/wake_budget.py#L1-L61",
+          "version": "repo-lines-v1:sha256:6be143aaa101b7e2d8d63bafe7e81fb75cfc346fdd5388c3078e574fd7b457d1:eyJzZWxlY3RlZExpbmVDb3VudCI6NjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwOTVmYzg0ZDEyM2RjNDQzZGJkZTVlMjg4N2RhZTJjNDBhNjQyMjM1ZDVhMGZjMTEzMzJlYjlhMTQ1N2Q2NzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljYmQyN2FhY2VhMDRjYmI2ZWRkNWZlY2ZjNzBkZTY4NzFhODFlYWVmYmU2Zjg3MmQxNGZlMmI1YTRjYjE0NGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
           "resource": "repo://openswe/tools/schedule_thread_wakeup.py#L97-L138",
-          "version": "repo-lines-v1:sha256:1411be9ffbc86a07405524b7bd334c7d2da61ee265ab029f8bd98ef60237ece7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2YWQwNTJjNDRiOTUzZjBkODMyODZhMmRkZGVjMjE4NWU3ZjE4OWRiMGU0ZjUwMmM2ZjA2ZjM0NzU4NDU0YTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MDY0ZjAxMWNjOTI5ZmEzOTg2NDk5NWZiNWQ5ZGI2NGYyZGFlNGI2ZjVkODZhM2I4MTM3OGI3NGQ1OTY1N2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIyYWM3ODAwM2JlNjZmYzM5ZGI0MGI2ZTZjY2E1MjE1NjEwNjY1ZDJlYzY5OTM5MmM1NjMyZWE3OTExYzcyMDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlNmRjMTg2YjlhMDQzMjQ3OGJhZTU0YmI1OTVhMDA5MTFjZDhhMTI1MGNhOGVhNWVhOTczMjIxZTg4NDNlZjIifQ"
+          "version": "repo-lines-v1:sha256:df802ceabac738ba7fd79b1b1f00cc71ae0c1b4eaa645f5f9582decb46d04656:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0YTU0OGM5NzQzY2ZjZjc4M2QzMTg2ZjgyODNiODY2YzcxMGYzZTNlN2FlYTU1NGUyNzE0OWZlZGRjN2NjZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzOGZmNDhjNDNmZGMwZGY2ZGQ5NWM5YTY1YmU3Y2ViMmMwZDNkM2RmZDU3MmFhNzZmZGE4ZTM5OTFiYzgxOTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkZWRlZjM2YWJlNDE4YzQ1Yzk3ZjE1NmVhMTdmYTRlNDUzZDFhYWY1YjI0NmRkNTdmOGI3NWQ4YTRjNzc4OTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmNTIyNDhiYjQwZTA3NzE3ZDg5OGQ0MWE0N2E4MmI3YTEzZDZiNTdiZDI4OTI0MmFmN2FkMzdiZmQwYzUxN2IifQ"
         }
       ]
     },
     {
       "id": "claim_04bf4fbad17146ee815bd6c59042eba5",
-      "statement": "Because a fired wakeup cron's row is never deleted by firing, schedule_thread_wakeup opportunistically purges expired thread_wakeup crons (matched conservatively on kind plus a past end_time) before creating a new one.",
+      "statement": "Because a fired wakeup job's row is never deleted by the queue, schedule_thread_wakeup opportunistically purges expired thread_wakeup jobs (matched conservatively on kind plus a past end_time) before creating a new one.",
       "evidence": [
         {
           "resource": "repo://openswe/tools/schedule_thread_wakeup.py#L220-L229",
@@ -288,21 +210,21 @@
     },
     {
       "id": "claim_e94b6da7eaff490a8e367d35f6a5e49f",
-      "statement": "Agent-usage cost refresh uses the scheduler's `agent_cost` task to fetch a run-only LangSmith cost and persist it to the dashboard usage record; unavailable or failed retrieval/persistence advances through the same fixed five-delay retry budget and then terminates.",
+      "statement": "Agent-usage cost refresh uses the job queue's `agent_cost` job to fetch a run-only LangSmith cost and persist it to the dashboard usage record; unavailable or failed retrieval/persistence advances through the same fixed five-delay retry budget and then terminates.",
       "evidence": [
         {
           "resource": "repo://openswe/agent_cost.py#L113-L178",
           "version": "repo-lines-v1:sha256:441a7f81b4e51020e7c66e87fb427d50f3bfbddd44576d220cc916d2ceae51fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMjE1ODU1YjUxMmE4MzA2MzgzZTAzNDgyNTI3NzAyY2Q3YTU5N2UxZjQwOTc1OTEyYmIyYTE4N2ZiOWQ0M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzYTg3ZTdmNjA0ZjRiOTkxYTRhNDI0OTdmNzBjZmI2ZDRjZDhlMjI5OWQ5NjIyNzM2NDk0NmU2NjA5ZmM4NzIifQ"
         },
         {
-          "resource": "repo://openswe/scheduler.py#L90-L91",
-          "version": "repo-lines-v1:sha256:709c05ccbffdde35fd2585e1c292c3577748b52456d01cc066208e5efbdd3015:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWU1ZTAzN2VhMzI2NTFiOTViNzExMWUwMDQ1YzVhZWZlYzAzNjFlY2ZhNWUwOTk2N2M3YjNlNzM3MmNlMWJlMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGU2YWFmYjQxOTc1ZTNhNDUzNTkyOGFmNzRkODRkMzA3MTRhZGQxYjBmMTFhMDQ2NmRjODkwMjU5Y2Q5MmQzOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjYwYzVmYjYyMzRhY2M2ZjBhNDFjMzA2ZmRjYWRiOGEyODI3NjljNzc1NmUxNGIwY2Y1NGZmNjVmNmY4MGM4ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmZlNzY4M2YzOGY4MDgyZjFiNzZjODU5M2Q3NDM0N2M2MmY3Yjg4ZDZjYzdmZDg2YzczMDM4OTMzZDcxNDE4MiJ9"
+          "resource": "repo://openswe/jobs/kinds.py#L137-L139",
+          "version": "repo-lines-v1:sha256:bd40b798ef173297c12050b3da148972c027cce5cad22b962455ddba12a21f11:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVlZThhNDExNzc3ZWY2MmFhNjlmMGJmOTRiYzM3MTk0NjNmNDAyNWEzNGFmMmYzNWFkMDkwYmQ2OGIyMmU1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRmMjRiNmQwNzNhN2FjZmZjNmNjOGNjMzczNDkzNTQzNDZhNDljYzE1NWQ2YTE5ZjRlZDRmNjMwMTlkMmIyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODQ5MDQyZTkyYTRkNWY0M2E2MWRiY2MyMzU5OGNiMjgxMGFlMmZiODE3NDRjOWY5ZWU0NGMxNmYwZTMyMjE5NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWRiOTZiMzRmY2M3Mjc4NTUyNWZiOTk3ZDNkNzMzZDk1YjFjNmRlYTZjZjJkNDA0NGM4ZmJkYTcyNDI4NzlmNyJ9"
         }
       ]
     },
     {
       "id": "claim_1369de679b694f9f8b7514adbc2f3ec5",
-      "statement": "The purge_wakeup_crons operational script supports a dry run and deletion mode for expired `thread_wakeup` crons, resolving the deployment URL from `--url` or `LANGGRAPH_URL` and credentials from `LANGGRAPH_API_KEY` or `LANGSMITH_API_KEY`.",
+      "statement": "The purge_wakeup_crons operational script supports a dry run and deletion mode for expired `thread_wakeup` jobs, resolving the deployment URL from `--url` or `LANGGRAPH_URL` and credentials from `LANGGRAPH_API_KEY` or `LANGSMITH_API_KEY`.",
       "evidence": [
         {
           "resource": "repo://scripts/purge_wakeup_crons.py#L1-L50",
@@ -312,7 +234,7 @@
     },
     {
       "id": "claim_7dd6fd2a700e4fbba244a381443d9b94",
-      "statement": "Focused tests cover scheduler routing and baby-sit lifecycle/concurrency/deduplication, signed CI routing, stale-run pagination and failure isolation, bounded cost refreshes, and wakeup validation, correlation, limits, and cleanup.",
+      "statement": "Focused tests cover job queue routing and registration, baby-sit lifecycle/concurrency/deduplication, signed CI routing, stale-run pagination and failure isolation, bounded cost refreshes, and wakeup validation, correlation, limits, and cleanup.",
       "evidence": [
         {
           "resource": "repo://tests/agent/test_agent_cost.py",
@@ -336,13 +258,105 @@
         },
         {
           "resource": "repo://tests/tools/test_schedule_thread_wakeup.py",
-          "version": "repo-file-v1:sha256:a6d0c28f5453a047fc63f7ccea4445f4aaa831594c0a5975c2dbeb7dc8f9c0c7"
+          "version": "repo-file-v1:sha256:334a2e82e4e3b11b99ba43cd404cb71c4085d610b14a5eba4e33cd6408e80590"
+        }
+      ]
+    },
+    {
+      "id": "claim_1f3ae975b49648a0b83348863fc8b8c7",
+      "statement": "The job queue (openswe/jobs/queue.py) stores work as Job records with kind, payload, due_at, cron, attempts, and claim_token; a one-shot job is deleted after completion, while a cron job is moved to its next fire time via Job.finish() after completion or Job.retry_later() after failure.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/jobs/queue.py#L49-L143",
+          "version": "repo-lines-v1:sha256:155c3e3da8570d16f5445720625c8980b574124a97daee7b19666928a022141d:eyJzZWxlY3RlZExpbmVDb3VudCI6OTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwYTEyNzQyYzdlODBiMzcwMWQ2OWRhMGY3ZTVlY2M5MzVjN2MyNWUyZjk0N2NlMGU4OTI1ZDIzNGRkMDU5MTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdlMjBmYjcyODJjNTdjYzVjYzY2YmE1MjBmYTU5Yjg5YjY5ODBhOGIwYjhmZmRjZmM4ODZlOWUzNjg3ZGVmZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyMjA2ZTExZDRhOWE0ODQzM2Y0YmYyNmM0OTI4MmYxZmVmMjVhMGY5NzRiYmZhN2IzNmM5YjZmNGY4YzAyMmMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_b4569dde7800466b8ddab6ee11d55ae0",
+      "statement": "Job handlers are registered on WORKER via @WORKER.register(kind) or @_sandbox_work(kind) decorator, which automatically retries transient sandbox errors; openswe/jobs/kinds.py registers handlers for all job kinds and imports them at startup.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/jobs/kinds.py#L1-L190",
+          "version": "repo-lines-v1:sha256:0187fa1f4695e0b31f721f491790375b26c121b9bf759086a1135b107e65f350:eyJzZWxlY3RlZExpbmVDb3VudCI6MTkwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3OWNkZDRkODcxY2U0Y2VjNjI5YWZjMmMyMGUyNDNkMzVjNGZhNjRlOWU4NzI4NmIzMjI5YTY5OTY2ODAxYzgzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJmZTRiOTZiMTFiZTMxYTc3NDAzYmQ1MTEyNjk2YzI2OGY5MTZiYjRmMzRlNjdiNmJmODE5MWFhNmQyN2Q0MzM3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_247c1b9b93544fe4a78bd229cea36cbb",
+      "statement": "The job queue replaced the scheduler StateGraph assistant; startup imports legacy Agent Server crons via import_agent_server_crons, moving each cron onto its owner's job queue cron via adopt_agent_server_cron, after which the original cron is deleted.",
+      "evidence": [
+        {
+          "resource": "repo://langgraph.json#L1-L46",
+          "version": "repo-lines-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmIwOGZkYTFhY2I5NTdiNjExNmJkMzc4MTFhMWZlNDFhMDE2MTFjMDYzMWVkYmY3ODZkNjg4OWEyN2E1NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://openswe/jobs/cron_import.py#L1-L124",
+          "version": "repo-lines-v1:sha256:567f0a23d8787def4297cca46f5d0e943faec4338746f5439539e78b9aa282b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI0LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJjM2NlM2QxNzhiM2E1MjI1MmE0NjBjNjUzYTdhOTFhODhjZTJmNTdjMjU2NDhmMDhkMTNjNWVkYTkxOWY0MTE3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5MzIzNjg4NTE4YWEyNTZiMGVmZTZhMTdmNTgyNjg1ZDlkY2JhZGI0NDZlNzI4ZGY0NzEwNTc2ZDNlMmZjYTFjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_599715c4ba644f1d939a507b39f102cc",
+      "statement": "Every job kind in the queue maps to one handler: baby_sit → evaluate_watch, background_tasks → monitor_background_tasks, thread_wakeup → run_thread_wakeup, session_cost → run_session_cost_refresh, agent_cost → run_agent_cost_refresh, agent_schedule → launch_scheduled_agent_run, workspace_refresh → run_workspace_refresh_tick, announcements → deliver_announcement, human_review_deadline → run_deadline, reconcile → reconcile_stale_runs, thread_status_reconcile → reconcile_busy_threads.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/jobs/kinds.py#L47-L175",
+          "version": "repo-lines-v1:sha256:e4e7e135b965e93ae4ebed5f636bf96dab5a6d103cc99de9e78aa0edfd56151f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIyMWUwYmY3M2E2YmQ2YWY5MjFkZWRmYTIzYjAxYzZiMzdiYjA1MDkzMDkwN2RmMjdjOTEyM2VkMmYxNWIyYTJmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlNWMxYzQ2MmUyYTM5ZDc0NzU5ZjVlMWIxMjZmNzY4M2EyYjczMDExOGUxOGY1MTIyYjA4Y2VkZWViNjUwZTIzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MDYzZGNmNDEzMTA4YzljY2FiN2M3YTNmMjk5NjJjMjQyZjk4ZmRlOWIxZTBmZWEzODY4MjQwZjM3ZDAxMGE5In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_31886da63de44450a97804da94ef180d",
+      "statement": "start_watch registers each watch's per-watch baby_sit job via _ensure_watch_job, which idempotently reuses an existing job or creates one with kind=baby_sit, and rolls back the store row and partial job if job creation fails for a brand-new watch.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/baby_sit.py#L264-L272",
+          "version": "repo-lines-v1:sha256:b0f9e368d5c2b08cb7bfa763688af7bfd8be1a74f74f6fca410bd57b8661b86f:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI3MzZhOGMzZWRlYzAzYTZkM2Y2MzRhOTI0ZTQ4OWI1YzA1NjFkMjlhMTgwOWZhMTc3ODI0NDIwOGY5MmQxMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGU4MDAxM2RjZWUyM2UwYTA4Y2QxOTc0NjNjN2M2OWY3MGY5YWExNGJmYmY1NzdlMmI5MDExNWQyYzBiZTMwMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTBmMjJmMzExZDYzZmZiMTgxMjIzNzNkNGI1NDhkNzE0OTBlMWNkZWY2M2ZlODkwODVkZDYzMDMxODdiNDYxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2I1ODA4NDMzNjRiZmEzMDk5OTI4MzkyMzhjNDc0ZWU5MzkxNDYxMmM3NmJiZGRkZjBlNzM0ZjJiOTE1NTc5NiJ9"
+        },
+        {
+          "resource": "repo://openswe/baby_sit.py#L325-L337",
+          "version": "repo-lines-v1:sha256:504a11d932d274ce1e8ed5bdce0c917aadc24bc6ede49dccd525785fdc207239:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDMyZmU1ZTlmYzBiMzQ1NjAzNDgxZmUxMjliMmJiYzY0ZTNlMmZhZDc3ZTRjZWQxNmQ3YWU3YTg3ZjgwMjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzYjIyMzQzZTljNzU1OTIzM2RjNDZkY2VhNTg5OTY1OGY2Yzg2YTczMTRmYTQ2MjA5OGYyOTI4YWY2YWQzZjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE5OTg0MmZjMzk1Yjk5YWE3MGQzOWM0Mzk5NTRiYmUwYjNjNDViMjM5NDE0YTlhYTExMGY2YjRiMTIxNjJmYmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4MjNjNGJhYzcwYWZiZjhlZGNlYTZmY2IxNWRkMWM3Y2JiOThiN2E5ZTIwYjAzM2FmMmY0ODE0YTU4MzhiYjkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_6b026ef7b7d24f3ba913f58e4a667194",
+      "statement": "The per-watch baby_sit job fires on the fixed */10 * * * * UTC schedule against the job queue, providing a deterministic ~10-minute fallback that dispatches no agent run (returns statuses like pending or duplicate) while CI state is unchanged, so it consumes no model tokens for unchanged state.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/baby_sit.py#L268-L269",
+          "version": "repo-lines-v1:sha256:cf142bf18f3053483746f0e4a9484ff92e6d36c6073fd6e48d614963204426da:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjVkOTQ0ZDUyOWFjMjhmOWE5MzQ4ZDhjZmE0MDNkZTAyYjA3OGM2NmYyNmQ2NjZkOTA3YjI2YTYwMmIzYThkOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2YxNjM2YTc3N2JlODFkZWRkNWVkM2I5OWIxYjU3OWFmMWE1Y2JlZDc4ZDUyNjUxNjU0ZmRjNjQ1NmU5ZGIzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDc2NDRhYmE4NjBlMThkZWE1NjIwZTIyZGJhZjFmNzIyNDM4NDYyNmZkMzU0ZTQ0MjNiNmE2OTdjYTczNmE3YyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjhhOGUwNmU3YjQ3YzA5Y2IyMGEyNmIxYmUxOGE4MmVkZjk0OTgyMjRjMGJkZmY1MDNiOWJlMjExMzg2ZDg2NSJ9"
+        },
+        {
+          "resource": "repo://openswe/baby_sit.py#L47-L47",
+          "version": "repo-lines-v1:sha256:072d8b1f54b6c4d2670b6fcf9a0664a2f5660f8bdfc3739fb7c870ce104fce5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWE3MWZmOTEwZGMyMTAwZjcwZDk3Y2ZkN2U0N2Q2MTkwNDVmZjU5OWU1MWZmZmQ0NmEwYzRkZmYwZDVkOWU2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2U2ZmJkMWViNDk4ODhiYzgyMzk2NGM3MWJmMDBiYmJhNGE4YWE2NzY3NDJiOGIyZjFjMTYyMDkyZjRkZjBhNyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_ea10c514a5e7455c9cb57feeb91c19d0",
+      "statement": "background_tasks provides model-free monitoring: ensure_background_task_polling idempotently registers a kind=background_tasks job on the every-minute (* * * * *) schedule bound to a thread, and monitor_background_tasks claims each terminal task atomically, dispatches a completion message to the originating thread, and deletes its own job once no task is running or pending so monitoring self-terminates.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/background_tasks.py#L36-L70",
+          "version": "repo-lines-v1:sha256:4900ed414c6826e870fc07bbe3cd80b093a8057b578611e30cc15b7cffd94b38:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwYTFiZjVlYjQyNGU2MTA0NGJmYTYzOWZjOTY3MjNiNmRiZmNmOGQ2NWE1MzFmOGVmYzI3MDQzOTI3Yjg1YzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYzU3NjA5M2RmN2FlODYyNTNiMDIzNDViYzc0OTJkZjUyNDY0NjVkNjQyMTlkOTA1NmNhYjY5MTAyY2FiNzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1YzFjNDYyZTJhMzlkNzQ3NTlmNWUxYjEyNmY3NjgzYTJiNzMwMTE4ZTE4ZjUxMjJiMDhjZWRlZWI2NTBlMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_819ea02cdcb149ad9c76a41a3c21b98d",
+      "statement": "schedule_thread_wakeup schedules a one-shot re-trigger of the current agent thread (1 minute to 24 hours) as a single-fire job via the queue carrying an end_time ~90s past the fire so it never re-fires, and passes through selected config keys with a default polling prompt.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/tools/schedule_thread_wakeup.py#L231-L269",
+          "version": "repo-lines-v1:sha256:6f8f4934c121986d458c733fc2f49b44feba5c900b65cd0914f8e4667da9d4a0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU3YTM4NmZiODYzMDA0YmYzNDA2Njc1MDU5YWQ3MWU5M2RjMDU0NTI2Y2NkZDg4ZGZmZjZlN2MwYmRiM2I0ODUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxMDFiMGFiYjNiNGFjYjUwNDNlN2FjMjBiYTdhMGY4YTIxMGQ2MjllN2Q4ZjExNmQ4ZGUwMGJlMThjMDg5YzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMyYTliNjMxNTgwNTZjYTBiZWUzZTdlM2QxZGQ5MGQ2NmE5ODk3NWRjNjRlNDA4Zjk0MGE2NjVlOTM1YzlkNGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmNGYyZDQ5YTFmNDMxNmQ3ZmQ4ZTA0ODAwYjM1MTRhNTc4ZGVhMTU5NjI0NzE5Mzg2ZDk2ZTA0OGI0MWNiOGUifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-18T12:31:08.965Z"
+    "at": "2026-10-19T15:23:56.456Z"
   }
 }

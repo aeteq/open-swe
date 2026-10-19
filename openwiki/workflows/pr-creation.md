@@ -3,6 +3,9 @@ type: workflow
 title: Pull Request Creation and Workflow Approval
 description: How the agent creates and manages pull requests with attributed authorship, commits squashing, workflow-file change approval, and metadata recording.
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 sources:
   - id: openwiki-source-6ba47e09f2a30f358f5d7a36
     resource: repo://openswe/github/squash_message.py
@@ -18,14 +21,15 @@ sources:
     resource: repo://openswe/threads/workflow_approval_api.py
   - id: openwiki-source-72d0aa1e1b6096510f34c65b
     resource: repo://openswe/threads/workflow_approval.py
+  - id: openwiki-source-c9a8190d306068f278351395
+    resource: repo://openswe/tools/expedite_pr_approval.py
+  - id: openwiki-source-10f514087310b57450d5ce4e
+    resource: repo://openswe/tools/merge_expedited_pr.py
   - id: openwiki-source-d0e9c3328773f849efaa3a49
     resource: repo://openswe/tools/open_pull_request.py
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 ---
 
 # Pull Request Creation and Workflow Approval
@@ -76,15 +80,29 @@ If a user's token has been revoked, the preflight returns `github_user_auth_revo
 
 Before a branch can be pushed, `WorkflowPushGuardMiddleware` inspects standalone `git push origin <refspec>` commands (including `git -C`, `cd ... &&`, and `--set-upstream` variants). If the push touches `.github/workflows/` files:
 
-1. **Compute a diff fingerprint:** The middleware inspects the repository, computes the changed-path range (against the remote branch or merge base), captures the binary diff, generates a preview, and records file/addition/deletion statistics. A SHA-256 fingerprint of this payload becomes the approval key.
+### Diff inspection and fingerprinting
 
-2. **Check approval state:** Look up the fingerprint in the thread's `workflow_push_approvals` metadata. An approved fingerprint allows the push only after rewriting it to an explicit `<head_sha>:refs/heads/<branch>` refspec for safety.
+The middleware inspects the repository to compute the workflow change payload:
 
-3. **Request approval if needed:** If the fingerprint is not approved, create a pending record, post a Slack interactive message (only if the record hasn't been notified yet), and block the push with `WorkflowPushApprovalRequired`. The thread owner can approve or reject via Slack or the web UI.
+1. **Validate context:** Check that the push is to the current branch on the remote, and that the current HEAD resolves to a valid commit SHA.
+2. **Compute base:** If the remote branch exists, use it; otherwise use the remote HEAD (origin/main or equivalent) and merge-base.
+3. **Extract changed paths:** Run `git diff` against the base, scoped to `.github/workflows/`, capturing the full binary diff and diff statistics (files, additions, deletions).
+4. **Inspect inherited changes:** When a branch merges a feature branch with workflow changes, detect whether those changes were authored on the feature or inherited from its parent. Record `inherited_from` branch name if applicable.
+5. **Build fingerprint:** Serialize the repo, branch, base/head SHAs, diff content, and remote refspec into JSON; compute SHA-256 to create an approval key.
 
-4. **Track history:** The per-thread `workflow_push_approvals` store keeps the 20 most recent records. Approved and rejected entries are terminal; any workflow-file change generates a new fingerprint and requires fresh approval.
+### Approval state lookup and blocking
 
-Pushes without workflow-file changes proceed untouched. Commands with unsafe syntax (shell operators, pipes, or backticks) are left to normal execution, not inspected.
+1. **Check approval state:** Look up the fingerprint in the thread's `workflow_push_approvals` metadata. An approved fingerprint allows the push to proceed after rewriting it to an explicit `<head_sha>:refs/heads/<branch>` refspec for safety.
+
+2. **Request approval if needed:** If the fingerprint is not approved, create a pending record, post a Slack interactive message (only if the record hasn't been notified yet), and block the push with `WorkflowPushApprovalRequired`.
+
+3. **Track history:** The per-thread `workflow_push_approvals` store keeps the 20 most recent records. Approved and rejected entries are terminal; any workflow-file change generates a new fingerprint and requires fresh approval.
+
+**Pushes without workflow-file changes proceed untouched.** Commands with unsafe syntax (shell operators, pipes, or backticks) are left to normal execution, not inspected.
+
+### Lease-protected pushes
+
+When `--force-with-lease` is used, the middleware cannot safely inspect the push without risking a race condition (the remote HEAD might change during inspection). It raises `WorkflowPushInspectionError` with guidance to push the current branch to the same branch on origin with a regular (non-lease) force or without force, then retry inspection.
 
 ### Approval inherited from base branch
 
@@ -121,7 +139,7 @@ Unless the body already contains a `## References` section, the tool optionally 
 
 Source references are only included when GitHub confirms the destination repository is **private**. For public repositories, private conversation links are never added. Lookup failures or uncertain visibility prevent the references from being appended, failing closed to avoid information leakage.
 
-### Linking and resolving threads
+## Linking and resolving threads
 
 Set `resolves_thread=True` on a PR intended to finish the agent's work. PR lifecycle webhooks locate agent threads by the persisted PR URL and check whether all tracked PRs (in the thread's `pull_requests` metadata) are closed or merged. If so:
 
@@ -181,7 +199,7 @@ co-authored-by: <person name> <email>
 ...
 ```
 
-All distinct co-authors from the PR description and commit messages are deduplicated and included as trailers. If synthesis fails, GitHub's default squash message is used instead. Merge commits (commits with multiple parents) are excluded from headline scanning to preserve clarity.
+All distinct co-authors from the PR description and commit messages are deduplicated and included as trailers. Merge commits (commits with multiple parents) are excluded from headline scanning to preserve clarity. If synthesis fails, GitHub's default squash message is used instead.
 
 ## Attribution footer and model marking
 
@@ -240,6 +258,29 @@ Approval records are stored under the `workflow_push_approvals` key in thread me
   ...
 }
 ```
+
+## Slack approval notifications
+
+When a workflow-file push requires approval, the middleware posts an interactive Slack message to the thread with:
+
+- A human-readable summary of which workflow files changed
+- Diff statistics (file count, addition/deletion counts)
+- A link to review the diff in the web UI
+- An approval ID (fingerprint) for tracking
+- Approval buttons to accept or reject the changes
+
+The notification is posted only once per pending record (tracked by the `notified` flag). If a reviewer approves via Slack, an agent follow-up is dispatched with instructions to retry the push; if rejected, the push remains blocked.
+
+## Expedited PR approval and merging
+
+For small pull requests that meet eligibility criteria, the `expedite_pr_approval` tool posts a Slack approval card where team members can quickly review and approve the PR. Once enough reviewers approve on the card, the `merge_expedited_pr` tool can merge the PR directly without waiting for GitHub CI or full review.
+
+Key details:
+
+- **Eligibility:** PR must be below a configured line-change threshold and contain only file types/paths that are approved for expedited review.
+- **Exclusions:** Changes can be explicitly excluded from eligibility assessment if they appear in the repository's `APPROVALS.md` file.
+- **Approval mapping:** When a Slack reviewer approves the card, their approval is recorded as a GitHub review on the PR, attributing it to their GitHub account.
+- **Audit trail:** Expedited decisions are recorded in audit logs with the approval card reference and any excluded hunks.
 
 ## PR review requests
 

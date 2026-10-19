@@ -6,16 +6,24 @@ tags: [observability, tracing, mcp, analytics, langsmith, credentials, costs, tr
 sources:
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py
+  - id: openwiki-source-b33953eb42f05d2f41b0a5da
+    resource: repo://openswe/analytics/segment.py
   - id: openwiki-source-b23248ea29f610c9e611ae8c
     resource: repo://openswe/analytics/usage.py
   - id: openwiki-source-1c10d1b4bdf51f06452acf76
     resource: repo://openswe/api/tracing.py
   - id: openwiki-source-8e86bc5c07d70c0696441776
     resource: repo://openswe/mcp/instance.py
+  - id: openwiki-source-bcad329e419936bbe20b5ee9
+    resource: repo://openswe/mcp/oauth.py
   - id: openwiki-source-67faae85e3ecd320e29f3e28
     resource: repo://openswe/mcp/records.py
   - id: openwiki-source-573a0cf072c076b2dd72dbbd
     resource: repo://openswe/mcp/runtime.py
+  - id: openwiki-source-563ab1621a41c1ea51c9968f
+    resource: repo://openswe/mcp/server.py
+  - id: openwiki-source-1bb7e3d3e685fc7afc4840c7
+    resource: repo://openswe/mcp/token_store.py
   - id: openwiki-source-75b8c8788feef409fe98f64c
     resource: repo://openswe/mcp/user.py
   - id: openwiki-source-1175dd137a24de0ce785a4c1
@@ -36,10 +44,10 @@ sources:
     resource: repo://openswe/utils/errors.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+    at: 2026-10-19T15:23:56.456Z
 ---
 
 # Observability, Tracing, and MCP
@@ -65,6 +73,8 @@ Every agent run is traced to [LangSmith](https://www.langsmith.com) for inspecti
 - **Middleware trace policies**: `openswe/middleware/trace.py` provides `OpenSWEMiddleware`, a base class for all agent middleware that enforces `SCRUBBED_TRACE_POLICY`, which omits input payloads from traces to protect sensitive data. The `scrub_middleware_inputs` helper applies this policy to any traceable middleware before registration.
 
 - **Trace URL generation**: `openswe/utils/langsmith.py:get_langsmith_trace_url` builds LangSmith dashboard URLs for embedding in dashboard context blocks and for user review. It resolves the tenant ID and project ID once per workspace and caches them; it returns `None` if LangSmith is not configured. This provides a best-effort link that works even if tracing is misconfigured; it does not fail the run.
+
+- **Datadog environment configuration**: `openswe/api/tracing.py:configure_datadog_environment` sets the Datadog tracer's environment label from `OPENSWE_ENV` so request/span events are forwarded to Datadog for operational observability. This is optional and does not block runs if the library is unavailable.
 
 LangSmith integration requires `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` environment variables, with optional `LANGSMITH_TENANT_ID` to bypass discovery.
 
@@ -94,6 +104,10 @@ The refresh function `run_agent_cost_refresh` queries LangSmith thread stats to 
 - **`record_agent_invocation_cost`**: Emits the `run.cost_recorded` event when cost becomes available.
 
 Events are queued via `openswe/analytics/emitter.py` with fail-soft semantics: failures to persist analytics never block the run. Events carry an opaque `workspace_id` for multi-tenant attribution and are stored in an outbox table for asynchronous delivery.
+
+### Usage delivery via Segment
+
+`openswe/analytics/segment.py` delivers an optional, stream of usage events to Segment.io for cost tracking and operational analytics, redacting tool content and page identifiers. It identifies users by GitHub login and resolves per-workspace costs for billing attribution. Delivery is async, optional, and never blocks runs.
 
 ## Transcript recording
 
@@ -126,11 +140,17 @@ MCP connections are organized in a three-tier hierarchy: **instance** (globally 
 
 Each tier exposes its own admin UI route for creation, validation, token refresh, and discovery. A connection is a reusable MCP server reference with a name, URL, transport (streamable_http or SSE), optional headers (including OAuth token URLs and client secrets), and an optional allowlist of tool names to expose. Stored tokens are encrypted at rest with `openswe.encryption`.
 
+### OAuth and token management
+
+`openswe/mcp/oauth.py` implements OAuth 2.0 client credentials flow for MCP connections. The `_ClientCredentialsAuth` class manages token lifecycle: acquiring tokens on demand, caching them until expiry minus a safety margin, and automatically refreshing after rejection on 401 responses. Tokens are cached per-connection, so credential rotation immediately invalidates old tokens and prevents token leakage across MCP servers.
+
+`openswe/mcp/token_store.py` persists OAuth client registrations and generated tokens in PostgreSQL under `mcp_oauth_entry` rows, keyed by collection and entry name. Each row stores a JSON entry document with plaintext fields (e.g., `client_id`, `scope`) and sealed fields (everything else) encrypted with `TOKEN_ENCRYPTION_KEY`. The store is multi-replica-safe: every request can answer any OAuth step since state lives in the database. Entries expire and are swept asynchronously so stale registrations do not accumulate.
+
 ## Tool loading and availability
 
 The server loads MCP tools during agent assembly for non-summary, non-local runs with a known credential scope. It loads the three tiers via `load_mcp_tools(*sources)` in `openswe/mcp/runtime.py`, which walks each source's connection list, discovers tool definitions, and builds runnable tools. The `DynamicToolMiddleware` exposes only tool *names* initially and defers the MCP handshake (which may fail, timeout, or be expensive) until the agent explicitly calls `load_integration_tools` and requests to use them. This lazy strategy avoids blocking the first model call when MCP availability is uncertain.
 
-Tool loaders use a stale-while-revalidate TTL cache (300 seconds for most tiers, 600 for expensive operations) and enforce a per-load timeout. An exception, timeout, or missing credentials returns an empty tool list rather than failing the run. Reads on the tool-loading path are fail-soft: if the Store backend is unreachable, the run continues without those tools, whereas dashboard status reads surface Store failures.
+Tool loaders use a stale-while-revalidate TTL cache (10 minutes for most tiers, up to 24 hours max age) and enforce a per-load timeout. An exception, timeout, or missing credentials returns an empty tool list rather than failing the run. Reads on the tool-loading path are fail-soft: if the Store backend is unreachable, the run continues without those tools, whereas dashboard status reads surface Store failures.
 
 ```mermaid
 graph TD
@@ -162,6 +182,16 @@ Summary-stop and local/desktop runs skip optional tool loading. The tool loader 
 
 The operational invariant is that optional tool loss reduces available tools, not the ability to start or complete a run. If all MCPs are unavailable, the agent continues without them.
 
+## Agent MCP server (outbound tool exposure)
+
+`openswe/mcp/server.py` exposes the Open SWE agent's own tools as a remote MCP server for external MCP clients (Claude Code, Claude.ai, Cursor). A person connects an MCP client to `/oswe/mcp` and signs in with GitHub through the dashboard's GitHub App. Each request:
+
+1. Resolves the signed-in GitHub identity via JWT token claims.
+2. Instantiates a `ToolCaller` for that identity, which enumerates the person's available tools (sandbox, MCP, managed tools, etc.).
+3. Lists and runs tools that the person's admin status and integration MCPs permit.
+
+The catalog follows each person's credentials and admin status without any session state, so MCP clients see up-to-date tool availability after login. Tool calls are recorded via the same analytics pipeline as sandbox and dashboard calls.
+
 ## Operational safeguards and observability invariants
 
 The combination of these systems enforces key invariants:
@@ -171,6 +201,7 @@ The combination of these systems enforces key invariants:
 - **Trace isolation**: Middleware trace policies omit sensitive input payloads from traces, and trace resource naming happens at the middleware boundary so platform-level APM can properly instrument routes.
 - **Cost attribution**: Session costs and invocation costs are tracked independently with bounded-retry scheduling, ensuring cost data eventually reaches Slack replies and analytics even if LangSmith is temporarily unavailable.
 - **Error recovery**: Model-call errors are classified and recorded on the thread so upstream systems and human operators can decide recovery strategies without relying on exception message inspection.
+- **Credential isolation**: OAuth tokens and authentication headers are encrypted at rest, cached per-connection to prevent cross-MCP leakage, and refreshed automatically on server rejection.
 
 ## Focused verification
 

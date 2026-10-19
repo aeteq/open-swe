@@ -5,10 +5,16 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+    at: 2026-10-19T15:23:56.456Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+  - id: openwiki-source-987be1dce6e9ba720855c2ed
+    resource: repo://openswe/baby_sit.py
+  - id: openwiki-source-913527bc7b548b4bf81f6a35
+    resource: repo://openswe/completion.py
+  - id: openwiki-source-1685d34aae8025be9332f45a
+    resource: repo://openswe/dispatch.py
   - id: openwiki-source-813c25f6bac2408de322a1f5
     resource: repo://openswe/graphs/agent.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
@@ -25,7 +31,9 @@ sources:
     resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+  - id: openwiki-source-5c84530a3d0edb1fb15187f1
+    resource: repo://openswe/threads/runs.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 ---
 
 # Coding Agent Assembly and Execution
@@ -113,6 +121,7 @@ The only configured subagent is the general-purpose Deep Agents subagent. It rec
   - `_SubagentToolGuard` rejects parent-only tool calls with a user-friendly message.
   - AnthropicPromptCachingMiddleware for prompt caching.
   - TranscriptMiddleware for call logging.
+  - ExcludeToolsMiddleware for shell-search exclusions.
   - Incident and workspace-skills middleware when applicable.
   - Full dynamic-tool middleware if parent has integration tools.
   - GuardMiddleware (PullRequestCreationGuardMiddleware for hosted runs, none for desktop).
@@ -171,6 +180,10 @@ The parent middleware list is ordered outermost to innermost, making order part 
 - ModelCallTimeoutMiddleware (innermost: deadline covers provider call, escalates to fallback)
 
 The innermost timeout measures the actual provider call and can escalate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside ToolErrorMiddleware.
+
+## Interrupt and multitask strategy
+
+By default, a new message halts the current run by setting its status to `interrupted` and then resumes with the full history. This provides immediate responsiveness to user input. Background work and follow-up operations (e.g., `/baby-sit`, `/enqueue`, incident escalation, human review, task completion, scheduled wakeups) can opt into `multitask_strategy="enqueue"` instead, which leaves a busy thread alone: the new run waits in the queue behind the current model call and takes its turn on the next checkpoint.
 
 ## Execution flow
 

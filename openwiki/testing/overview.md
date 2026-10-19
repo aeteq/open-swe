@@ -3,6 +3,9 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Test organization, fixture strategies, E2E setup, and focused validation patterns for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 sources:
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
@@ -16,8 +19,14 @@ sources:
     resource: repo://tests/agent/test_agent_assembly_context.py
   - id: openwiki-source-f0a6e7dc03522b2682f88655
     resource: repo://tests/conftest.py
+  - id: openwiki-source-069ae2b497200c26ef2dc134
+    resource: repo://tests/e2e/fake_llm.py
+  - id: openwiki-source-8317f526f4e30c2659c8614e
+    resource: repo://tests/e2e/fakes.py
   - id: openwiki-source-c484c171a84d342028bf0794
     resource: repo://tests/e2e/global-setup.ts
+  - id: openwiki-source-aefe409f90608437573cbad3
+    resource: repo://tests/e2e/harness.py
   - id: openwiki-source-859f98720585f4648f0f7b2e
     resource: repo://tests/e2e/playwright.config.ts
   - id: openwiki-source-4b944ec14a3d793a6f771403
@@ -38,10 +47,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -81,9 +87,13 @@ make typecheck
 - **`_reset_ttl_cache`** (autouse): Clears the process-global TTL cache before and after each test, preventing cached team settings from leaking between tests. Also clears the langgraph_api in-process cache when not running against a PostgreSQL backend.
 - **`_reset_sandbox_registries`** (autouse): Clears `SANDBOX_BACKENDS` and `SANDBOX_CONNECTIONS` (process globals) to prevent one test's sandbox from answering for another's thread.
 - **`_default_enable_auto_review`** (autouse): Stubs `is_review_repo_enabled` to return `True` for every repository because the dashboard opt-in list is empty without a live Store. Tests targeting the auto-review gate must override it with a stricter policy.
+- **`_offline`** (autouse): Refuses real network requests; MockTransport, ASGITransport and local fakes still work. Tests that need HTTP use inline async httpx clients or fixtures like `slack_api`.
 - **`registry_db`** and **`registry_db_if_available`**: Isolated PostgreSQL schemas for pull-request and repository rows; required for tests using the real database code path. Set `TEST_ANALYTICS_POSTGRES_URI` to enable.
 - **`slack_api`**: A mock Slack API server for tests driving real Slack endpoints without credentials.
 - **`allowed_bot`**: Seeds a test Slack bot configuration; requires the `registry_db` fixture.
+- **`user_records`**: Routes every `UserRecords` access to an in-memory table for the test.
+- **`grant_tool_access`**: Resolves every gated tool call to `Access(**fields)` for the test.
+- **`memory_event_claims`**: In-memory claims without PostgreSQL (claims held forever, never lapsing).
 
 ### System-boundary test locations and patterns
 
@@ -133,17 +143,42 @@ pnpm --dir desktop run test
 
 ## End-to-end: Playwright with controlled boundaries
 
-The E2E suite proves production integration without relying on live SaaS. It runs the real agent through `langgraph dev`, real webhook routes, tools, middleware, local sandbox provider, and real git against a seeded local bare remote. Only the LLM and external SaaS HTTP endpoints are faked; everything else is production code.
+The E2E suite proves production integration without relying on live SaaS. It runs the real agent code end-to-end with real Deep Agents, real tools, real middleware, and real LangGraph checkpoints. Only the LLM and external SaaS HTTP boundaries are faked; everything else is production code.
 
-### E2E architecture and fakes
+### E2E philosophy: real agent, faked only at boundaries
 
-- **Real pieces**: Webhook routes, agent graph, deepagents loop, tools, middleware, real local sandbox provider, real git, real browser UI, real dashboard server rendering.
-- **Faked boundaries**: LLM (scripted `BaseChatModel` in `fake_llm.py`), GitHub and Slack HTTP endpoints, token mint and installation lookups, LangSmith snapshot service.
-- **Controlled state**: In-memory PR/Slack stores (`fakes.py`) that serve the mock UIs and enforce eligibility rules; seeded local bare remote that the agent clones and pushes.
+The E2E suite exercises the **whole happy path** end-to-end:
 
-The harness overlays the real `agent.webapp` with fake endpoints, mock UIs at `/mock/{slack,github}`, and control routes (`/control/reset`, `/control/login`, `/control/github-event`) that let the test driver compose requests and inspect state. It signs simulated Slack Events API deliveries before posting them to the real webhook route.
+1. A user posts a message to a **mock Slack** thread.
+2. The **real agent** runs on Managed Deep Agents (`mda/`): its deepagents loop on the real MDA dev server, its tools and middleware execute on the real `langgraph dev` backend.
+3. The agent implements a change in a **local temp-dir sandbox** (real sandbox provider), pushes a branch, and opens a PR on a **fake GitHub**.
+4. It posts the PR link back to the **same Slack thread** — visible in the mock UI.
 
-### Browser E2E: real dashboard and full flow
+Only these boundaries are faked:
+
+- **LLM**: A scripted `BaseChatModel` (`fake_llm.py`) that emits a fixed tool sequence, allowing deterministic test scenarios without actual model calls.
+- **External SaaS HTTP endpoints**: GitHub and Slack REST APIs, GitHub OAuth token mint, and LangSmith snapshot service.
+- **Token lookups**: GitHub App installation and token mint, `api.github.com/user` identity.
+
+Everything else is production code:
+
+- Webhook routes, agent graph, deepagents loop, tools, middleware, real local sandbox provider, real git, real browser UI, real dashboard server rendering.
+- In-memory PR/Slack stores (`fakes.py`) serve as the single source of truth; the mock UIs render them, and tests assert on them.
+- Seeded local bare remote that the agent clones and pushes to.
+
+### E2E test flow
+
+The E2E test harness (`harness.py`) overlays the real `openswe.webapp` with fake endpoints, mock UIs, and control routes:
+
+1. **Test setup** via `/control` endpoints: reset harness state, seed user credentials, issue session cookies.
+2. **User posts to `/fake-slack`**: the mock Slack UI sends a signed message to the real webhook route.
+3. **Webhook routes to the real app**: `process_slack_mention` runs for real, dispatching the run to LangGraph.
+4. **Agent runs on Managed Deep Agents**: the real agent executes with the scripted fake LLM for tool selection.
+5. **Tools execute for real**: `open_pull_request` hits the fake GitHub, `slack_reply` hits the fake Slack.
+6. **Agent posts `/fake-slack` reply**: the thread is updated with the PR link.
+7. **Test asserts on fake store state**: the in-memory PR/Slack stores hold exactly what the real agent produced.
+
+### E2E architecture: real dashboard and full flow
 
 The browser suite drives the **actual built `ui/` React application**—not a mock—served same-origin from the harness so the session cookie and `/dashboard/api/*` calls work without CORS. Global setup (`global-setup.ts`) builds the real dashboard once (cached unless `E2E_FORCE_UI_BUILD=1`), starts its Nitro server on `E2E_UI_PORT` (default 3100), and the harness proxies page requests to it. This exercises real server rendering—the root session gate, the redirect, hydration—instead of a static shell.
 
@@ -160,13 +195,26 @@ The browser configuration runs serially with one worker, ignores `desktop.spec.t
 
 ### Desktop E2E: Electron local-agent flow
 
-The desktop spec (`tests/desktop.spec.ts`) separately resets harness state, clones the seeded local bare remote into an isolated temporary project, installs a harness-issued `osw_session` cookie, invokes the local-agent request, and verifies both the local project edit and fake-GitHub PR fields. It explicitly traces the Electron context, attaches screenshots for unified and completed views, and removes temporary state unless `E2E_KEEP_TMP` is set.
+The desktop spec (`tests/desktop.spec.ts`) separately resets harness state, clones the seeded local bare remote into an isolated temporary project, installs a harness-issued `osw_session` cookie, invokes the local-agent request, and verifies both the local project edit and fake-GitHub PR fields.
 
 ```bash
 pnpm run test:e2e:desktop
 ```
 
+The desktop spec:
+
+1. Resets the shared harness state via `/control/reset`.
+2. Clones the seeded fake-GitHub remote into an isolated temp directory.
+3. Issues a session cookie via `/control/login`.
+4. Launches Electron with the local project, session cookie, and isolated git config.
+5. Types a message into the local-agent composer.
+6. Waits for the agent to complete and verify the edit was made locally and the PR was opened on fake-GitHub.
+7. Explicitly traces the Electron context and attaches screenshots for the unified and completed views.
+8. Cleans up temporary state unless `E2E_KEEP_TMP` is set.
+
 The desktop configuration selects only `desktop.spec.ts`, raises timeouts to 180 seconds, uses a separate output directory, and disables automatic Playwright media recording because the spec explicitly records an Electron trace.
+
+### Playwright configuration and artifacts
 
 Recording costs real time on every spec, so browser tests keep a **trace** (DOM-snapshot timeline + network + console + source) and a **video** only for a failed attempt; failures also get a screenshot. Set `E2E_ARTIFACTS=1` to capture both unconditionally, which is what you want when a spec passes but does the wrong thing. The Desktop test records an Electron trace and a success screenshot. Artifacts land in `test-results/<test>/` and `playwright-report/`:
 
@@ -186,3 +234,35 @@ uv run langgraph dev --config tests/e2e/langgraph.e2e.json --port 2024 \
   --no-browser --allow-blocking --no-reload
 # open http://127.0.0.1:2024/mock/slack  and  /mock/github
 ```
+
+### Fake LLM: scripted agent behavior
+
+The fake LLM (`fake_llm.py`) is the only faked piece of the agent. It is a `BaseChatModel` subclass that drives the real deepagents loop with a fixed sequence of tool calls:
+
+1. Execute a shell script that creates a feature branch and adds a file.
+2. Call `open_pull_request` with the real tool to create a PR on fake-GitHub.
+3. Read the actual PR URL from the preceding tool result.
+4. Call `slack_reply` with the real tool to post the PR link back to the thread.
+
+This allows deterministic test scenarios where the agent's model decisions are scripted but all tools and middleware run for real.
+
+### Fake stores and mock UIs
+
+In-memory stores (`fakes.py`) hold PR and Slack state and serve as the single source of truth:
+
+- **PR store**: PR files carry a real per-file `patch`, so eligibility checks that read the diff see what GitHub would return.
+- **Slack store**: Thread messages, ephemeral replies, and views are stored in memory.
+- **Local bare remote**: A seeded git repository that the agent clones and pushes to.
+
+The mock UIs (`static/slack.html`, `static/github.html`) are minimal JavaScript that render the fake stores, allow test interaction, and display agents' output. The dashboard is **not** mocked — it's the real `ui/` app served same-origin.
+
+### E2E harness architecture
+
+The harness (`harness.py`) mounts the real `openswe.webapp` application plus:
+
+- **Fake GitHub REST API** (`/fake-gh/...`): Implements PR creation, file reads for diff eligibility, and check-run settlement.
+- **Fake Slack API** (`/fake-slack/...`): Implements message posting and user lookups.
+- **Mock UIs** (`/mock/slack`, `/mock/github`): Render the fake stores for test interaction.
+- **Control endpoints** (`/control/*`): Allow test setup via reset, login, and signed webhook delivery.
+
+Nothing in the harness touches agent logic — it only stands in for the SaaS boundaries and renders their state back as a user-facing UI.

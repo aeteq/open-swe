@@ -3,6 +3,9 @@ type: architecture-component
 title: Middleware Stack and Request Processing
 description: Ordering-sensitive middleware around the coding agent and reviewer model and tool loops. Catalogs all middleware, their ordering, responsibilities, and how they shape agent behavior across models, tools, and state.
 tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails, PrepareRunState]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 sources:
   - id: openwiki-source-41baa38c611462fcbcd00a78
     resource: repo://openswe/middleware/deliver_event_matches.py
@@ -42,10 +45,7 @@ sources:
     resource: repo://openswe/server.py
   - id: openwiki-source-10026b2dd7b7368bb04e27f0
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 ---
 
 # Middleware Stack and Request Processing
@@ -321,17 +321,18 @@ The reviewer graph installs a markedly leaner middleware stack than the coding a
 | 2 | AnthropicPromptCachingMiddleware |
 | 3 | ModelCallLimitMiddleware |
 | 4 | ToolErrorMiddleware |
-| 5 | refresh_github_proxy_before_model |
-| 6 | check_message_queue_before_model |
-| 7 | SanitizeFireworksMessagesMiddleware |
-| 8 | SanitizeOpenAIResponsesMiddleware |
-| 9 | SanitizeThinkingBlocksMiddleware |
-| 10 | RepairOrphanedToolCallsMiddleware |
-| 11 | StableToolResultOrderMiddleware |
-| 12 | ModelRetryMiddleware (TimeoutError only) |
-| 13 | ModelErrorMiddleware |
-| 14 | ModelCallTimeoutMiddleware |
-| 15 | settle_review_check_on_exit (after-agent hook) |
+| 5 | ExcludeToolsMiddleware |
+| 6 | refresh_github_proxy_before_model |
+| 7 | check_message_queue_before_model |
+| 8 | SanitizeFireworksMessagesMiddleware |
+| 9 | SanitizeOpenAIResponsesMiddleware |
+| 10 | SanitizeThinkingBlocksMiddleware |
+| 11 | RepairOrphanedToolCallsMiddleware |
+| 12 | StableToolResultOrderMiddleware |
+| 13 | ModelRetryMiddleware (TimeoutError only) |
+| 14 | ModelErrorMiddleware |
+| 15 | ModelCallTimeoutMiddleware |
+| 16 | settle_review_check_on_exit (after-agent hook) |
 
 **Key differences from coding agent:**
 

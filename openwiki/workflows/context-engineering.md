@@ -1,8 +1,8 @@
 ---
 type: workflow
 title: Context and Prompt Engineering
-description: Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources.
-tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions]
+description: Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources and sandbox configurations.
+tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions, sandbox-prep]
 sources:
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
@@ -20,8 +20,12 @@ sources:
     resource: repo://openswe/resources/prompts/system/repository-setup.md.jinja
   - id: openwiki-source-342facea842feb2c43fd9e53
     resource: repo://openswe/review/approvals.py
+  - id: openwiki-source-7c13d425176a823e794798f2
+    resource: repo://openswe/review/diff.py
   - id: openwiki-source-eb9e695bef31bca8f88b0c2b
     resource: repo://openswe/review/styles.py
+  - id: openwiki-source-96bcad07b4fe7078402bc2b8
+    resource: repo://openswe/reviewer.py
   - id: openwiki-source-c5766699cee46f671b69bf81
     resource: repo://openswe/sandboxes/repo_prep.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
@@ -32,15 +36,15 @@ sources:
     resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-6cab3229da0697cc82ed6224
     resource: repo://openswe/utils/agents_md.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+    at: 2026-10-19T15:23:56.456Z
 ---
 
 # Context and Prompt Engineering
 
-Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
+Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent. For reviews, the middleware also pre-materializes the repository and diff before any model inference.
 
 ```mermaid
 sequenceDiagram
@@ -86,13 +90,49 @@ An introduction uses XML serialization of the entity definition. `build_input_me
 
 The type is intentionally tolerant of distributed writers. All context models allow unknown fields and `dump()` uses `exclude_unset=True`, preserving unrecognized data through a read-enrich-write cycle instead of inventing defaults. `parse()` accepts only mappings and returns an empty context—with a warning on validation failure—rather than failing a run on malformed historical metadata.
 
-## Prompt preparation and instruction ordering
+## Prepare middleware: checkpoint and lazy resolution
 
-The graph factory creates a deep agent with an initially empty system prompt. `PrepareAgentRunMiddleware` performs setup before the agent: it obtains the sandbox/work directory, resolves the environment and sender information, schedules thread-title work, writes run metadata, and produces `rendered_system_prompt` plus separate sender-context messages. It deliberately does not splice sender metadata into a historical user message, because changing cached history would make later invocations send a different transcript.
+Prepare middleware runs once per invocation before the agent's first model call. It performs sandbox and environment setup, resolves credentials and workspace config, and renders the system prompt with all layer material. The main agent and reviewer use separate subclasses that share idempotence logic.
 
-`BasePrepareRunMiddleware` fingerprints the latest message and relevant configuration by computing a SHA256 hash of a JSON payload containing the middleware name, message fingerprint, and config fingerprint. Once its before-agent update is checkpointed, a resumed attempt with the same fingerprint skips preparation; a later invocation prepares fresh credentials, prompt, and context. Preparation must therefore be idempotent, and a sandbox failure is surfaced and re-raised rather than silently continuing without a workspace.
+### Idempotence and fingerprinting
+
+`BasePrepareRunMiddleware` checkpoints idempotent setup by computing a SHA256 fingerprint of the middleware class name, the latest message's content/id/type, and run-specific config fingerprint (repo, invocation ID, model choices, etc.). Once its before-agent update is checkpointed under `run_prepared_for`, a resumed attempt with the same fingerprint skips preparation; a later invocation prepares fresh credentials, prompt, and context. Preparation must therefore be idempotent, and a sandbox failure is surfaced and re-raised rather than silently continuing without a workspace.
 
 For every model call, the middleware combines the rendered prompt with any existing system message using `awrap_model_call`. The main prompt states that repository custom instructions and workspace instructions are mandatory, while `AGENTS.md` overrides them on conflict; sender-level standing instructions yield to repository instructions and `AGENTS.md`.
+
+### Main-agent preparation (PrepareAgentRunMiddleware)
+
+`PrepareAgentRunMiddleware` executes in `_prepare` and produces several key outputs:
+
+- **Sandbox resolution**: determines the sandbox backend and resolves the `work_dir`, the per-run checkout directory passed to all filesystem/shell tools
+- **Environment and identity**: fetches GitHub token, resolves the triggering user's GitHub identity, loads workspace settings, and computes model-selection routing
+- **Participant context**: fetches the thread's participant list filtered by deduplication rules; constructs separate sender-context messages (not spliced into cached history) with identity, workspace-admin status, git configuration, and user-level instructions
+- **Rendered system prompt**: calls `construct_system_prompt` with all context variables: repo info, task title, user instructions, workspace settings, tool descriptions, effort level, and any repository-specific preferences
+- **Recent thread context**: optionally includes a digest of the sender's recent threads for orientation (audience-filtered by Slack channel and workspace)
+
+Return state includes `rendered_system_prompt` (merged into the agent's system message by `awrap_model_call`), `work_dir`, sender-context messages, model/effort selection, and metadata updates.
+
+### Reviewer preparation (PrepareReviewerRunMiddleware)
+
+Reviewer preparation is deterministic and parallelized. It fetches the PR diff, computes the diff line-set used for finding anchor validation, checks out the repository at the PR head, and materializes trusted skills from the base revision.
+
+**Diff acquisition and validation:**
+- `fetch_pr_diff` retrieves the unified diff from GitHub REST API using the base..head range, the same diff used for inline review comment validation
+- `compute_diff_line_set` parses the diff and builds a `{file: {"RIGHT": {new_lines}, "LEFT": {old_lines}}}` mapping used by `add_finding` and `publish_review` to validate that findings anchor to lines actually in the diff
+
+**Repository checkout:**
+- Reviewer cannot assume a sandbox clone exists; instead uses `prepare_review_repo` to clone-or-fetch the repo (with blob-less `--filter=blob:none` to reduce size) and check out the PR head via `git checkout --force`
+- Checkout includes fetching base SHA and PR head SHA concurrently to cover both same-repo and fork PRs, with strict verification that `HEAD` matches the intended SHA
+- Returns `True` only if the repo is prepped and checked out; `False` leaves sandbox usable (review works off the fetched diff)
+
+**Trusted skills:**
+- Prevents PR authors from injecting instructions into the reviewer prompt by materializing SKILL.md files from the PR base revision (not the PR head, which the author controls)
+- `materialize_trusted_skills` extracts skill directories (`.agents/skills` or `.claude/skills`) via `git archive` at the trusted base SHA into a separate `.review-skills` directory outside the checkout
+- Mounts extracted paths for routing to `SkillsMiddleware`; individual extraction failures do not prevent skill wiring or the review
+
+## Prompt preparation and instruction ordering
+
+The graph factory creates a deep agent with an initially empty system prompt. `BasePrepareRunMiddleware` and its subclasses perform setup before the agent is first called.
 
 ### Instruction precedence in the main agent
 
@@ -131,7 +171,7 @@ The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` 
 
 ### Reviewer: trusted skills from base revision
 
-The reviewer materializes trusted skills from the PR base revision (via `materialize_trusted_skills`) into a separate `.review-skills` directory outside the checkout. This prevents a PR author from injecting instructions into the reviewer prompt by adding or editing a `SKILL.md`. Skills are sourced from `.agents/skills` or `.claude/skills` relative to the repository root, extracted via `git archive` at the trusted base SHA. The extracted paths are then routed to `SkillsMiddleware` for mounting. If extraction fails for a skill directory, the reviewer continues without it; a single missing directory does not prevent skill wiring or the review.
+The reviewer materializes trusted skills from the PR base revision via `materialize_trusted_skills` into a separate `.review-skills` directory outside the checkout. This prevents a PR author from injecting instructions into the reviewer prompt by adding or editing a `SKILL.md`. Skills are sourced from `.agents/skills` or `.claude/skills` relative to the repository root, extracted via `git archive` at the trusted base SHA. The extracted paths are then routed to `SkillsMiddleware` for mounting. If extraction fails for a skill directory, the reviewer continues without it; a single missing directory does not prevent skill wiring or the review.
 
 ## Sender context and participation
 

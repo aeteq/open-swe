@@ -3,15 +3,28 @@ type: tool catalog and authorization model
 title: Tools and Tool Access
 description: How tools are defined, registered, dynamically loaded, and exposed to agents; tool categories (sandbox, integration, review, etc.), authorization policies, and mode-specific controls.
 tags: [tools, agent, authorization, integrations, dynamic-tools, automation, reviewer, access-control, mcp]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 sources:
-  - id: openwiki-source-70b814b26d317c2b15c4a4fb
-    resource: repo://openswe/chat.py
+  - id: openwiki-source-573a0cf072c076b2dd72dbbd
+    resource: repo://openswe/mcp/runtime.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
     resource: repo://openswe/middleware/dynamic_tools.py
   - id: openwiki-source-1c036e99d40740776a65df4f
     resource: repo://openswe/middleware/exclude_tools.py
+  - id: openwiki-source-54936c5fc8d4f07851a05349
+    resource: repo://openswe/middleware/tool_error_handler.py
+  - id: openwiki-source-f5fd151a29ddfe34f3c355b6
+    resource: repo://openswe/openai_responses/client_tools.py
+  - id: openwiki-source-3554a18b9529d3d118344e34
+    resource: repo://openswe/prompts.py
+  - id: openwiki-source-7a02c62499495310b04f21ef
+    resource: repo://openswe/review/chat.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
+  - id: openwiki-source-e9b2ac0cf383e184a317d349
+    resource: repo://openswe/run_config.py
   - id: openwiki-source-cc9c77c1e30f40e9c07d39bc
     resource: repo://openswe/sandboxes/tool_access.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
@@ -26,10 +39,7 @@ sources:
     resource: repo://openswe/tools/automations.py
   - id: openwiki-source-1a477779016142ec6f3dc601
     resource: repo://openswe/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 ---
 
 # Tools and Tool Access
@@ -38,11 +48,11 @@ Open SWE does not treat the tools package as a universal capability grant. A too
 
 ## Tool catalog structure
 
-`openswe.tools` is the curated export facade. The module exports `_TOOL_MODULES`, a flat map of public tool names to their implementation modules. Lazy imports are cached so each access loads once; several public names can share a single implementation, such as all automation operations drawing from `.automations`.
+`openswe.tools` is the curated export facade. The module maps all public tool names to their implementation modules in `_TOOL_MODULES`—a flat dict where each name maps to either a relative module (e.g., `".add_finding"` for `openswe.tools.add_finding`) or an absolute path (e.g., `"openswe.slack.tools.reply"`). Multiple public names can share one implementation (e.g., `create_automation`, `update_automation`, `trigger_automation`, and `delete_automation` all map to `".automations"`). Lazy imports are cached at the module level so each tool loads once per runtime, and `__all__` exports the full public interface for static type checking.
 
 Exporting a name from the catalog only makes it importable; each graph factory supplies its own list to `create_deep_agent`. This decouples availability from registration.
 
-Deep Agents separately supplies filesystem and delegation tools: `read_file`, `write_file`, `edit_file`, `delete`, `ls`, `glob`, `grep`, `execute`, and `task`. `DEEP_AGENT_TOOL_NAMES` reserves these names, preventing static or dynamic integrations from colliding with them. The main graph hides `grep` by default; stop-summary mode additionally hides the mutating filesystem and shell tools.
+Deep Agents separately supplies filesystem and delegation tools: `read_file`, `write_file`, `edit_file`, `delete`, `ls`, `glob`, `grep`, `execute`, and `task`. These built-in tool names are reserved by `DEEP_AGENT_TOOL_NAMES`, preventing static or dynamic integrations from colliding with them. The main graph hides `grep` by default; stop-summary mode additionally hides the mutating filesystem and shell tools.
 
 ## Tool visibility by graph
 
@@ -50,7 +60,7 @@ Deep Agents separately supplies filesystem and delegation tools: `read_file`, `w
 | --- | --- |
 | **Main agent** | Context-dependent static tools, eligible dynamic groups (MCPs, workspace skills), and Deep Agents built-ins. Resolves access policies and excludes tools based on run mode. |
 | **Reviewer** | Finding operations (`add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, `reply_to_finding_thread`), `fetch_review_diff`, plus `web_search`, `fetch_url`, and `http_request`. Does not include PR creation or modification. |
-| **PR chat** | `read_repo_file`, `search_repo_code`, `list_review_findings`, `web_search`, `fetch_url`, `propose_review_comment`, and `propose_pr_review`, with read-only GitHub-backed tools and virtual-file `/pr/` context seeded by the dashboard. Has **no sandbox** and excludes shell and write built-ins. |
+| **PR chat** | `list_review_findings`, `web_search`, `fetch_url`, `propose_review_comment`, and `propose_pr_review`, with read-only GitHub-backed tools and virtual-file `/pr/` context seeded by the dashboard. Has **no sandbox** and excludes shell and write built-ins. |
 
 ## Main coding agent assembly
 
@@ -90,6 +100,7 @@ Tool inclusion depends on **runtime context**:
 - **Human review tools** are removed when Slack bot context is unavailable. Expedited review tools are removed when disabled or when Slack bot context is unavailable.
 - **Incident-session tools** are added if an incident is in scope; automatic incident sweeps additionally exclude mutations.
 - **Subagents** receive the applicable static list except `save_user_settings` and tools that require the parent agent context (Slack thread-bound operations, background operations, notion tasks, thread/event listeners, etc.). Separately compiled subagent graphs receive the parent's dynamic integration middleware but do not inherit parent middleware exclusions.
+- **Client tools** (OpenAI Responses): tools passed via `RunConfig.client_tools` replace server implementations of the same name. The server excludes `CLIENT_OWNED_SERVER_TOOLS` so only the client's version runs.
 
 ## Deferred integration tool loading
 
@@ -112,11 +123,19 @@ Models that support in-conversation tool addition (Anthropic's `tool_addition` a
 - **Anthropic** (`tool_addition`): `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5`, `claude-sonnet-5-5`
 - **OpenAI Responses API** (`additional_tools`): `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna`
 
-## Sandbox tool access
+## MCP tool wrapping
 
-Sandboxed shell and file operations access tools through a capability-based bridge. When a sandbox is created, the system issues a JWT capability (`ToolAccess`) bearing the thread id and sandbox id, signed with `DASHBOARD_JWT_SECRET`. The sandbox receives a `$TOOLS_PORT` bridge URL and environment variables to call back into the dashboard's tool endpoints. Tool calls from the sandbox are authenticated by verifying the JWT, checking thread visibility, and confirming the sandbox is bound to that thread. This keeps secrets (credentials, long-lived tokens) out of the sandbox; only short-lived, bearer-token capabilities cross the boundary.
+MCP servers expose tools via the Model Context Protocol. The `openswe.mcp.runtime` module converts MCP tool definitions into LangChain `StructuredTool` instances via `_MCPTool`, a custom subclass of `StructuredTool` that ensures tool calls are async-only (raising `NotImplementedError` for sync invocations). 
 
-For desktop runs, tool URLs are written to `/tmp/open-swe-tools-url` by the provisioning step. For hosted LangSmith sandboxes, proxy rules directly wire the capability into the runtime environment.
+When an MCP tool is invoked, the wrapper (`_wrap_tool`) performs a fresh connection authorization check on each call, verifies the MCP connection is still enabled and unchanged, checks that the tool is still allowed by the connection's settings, and then makes the actual remote call with a 30-second timeout. Errors are caught and normalized: tool exceptions are re-raised, and other errors are wrapped with a user-facing message (`"MCP call failed; check its connection and credentials"`). A tool's name is prefixed with `mcp_` and hashed to avoid collisions with other tools in the same graph.
+
+## Tool descriptions
+
+The `openswe.prompts` module renders human-readable tool descriptions from LangChain schemas. `apply_tool_descriptions` accepts a list of tools or functions, looks up each tool's name in the `tools/<name>.md` or `tools/<name>.md.jinja` resource directory, and applies the description to the tool. Jinja templates receive rendering context like `mcp=True` for MCP tools and model-specific substitutions; static files are used as-is. If no description is found, the tool keeps its original description. Tool schemas are built and cached once per process so that every run's model calls can reuse them without rebuilding, preserving prompt cache efficiency.
+
+## Tool validation
+
+`@tool`-decorated functions must have clear intent captured in a docstring (the description) and parameter annotations for their schema. Tool functions are required to be async (`async def`). A Pydantic schema is inferred from the function's parameters and type hints. Every tool is expected to have a `name` attribute and a `description` attribute; tools without these will fail schema conversion. Tools are lazily loaded from `_TOOL_MODULES` at runtime and cached, so malformed definitions are caught when first accessed, not at import time.
 
 ## Tool-side authorization and safe responses
 
@@ -128,9 +147,15 @@ Graph wiring is a convenience and least-privilege measure, not the sole authoriz
 
 The decorator rechecks authorization at runtime, applies projection when appropriate, and returns a refused error if the current run's `Access` mode does not permit the tool.
 
-`read_user_settings` derives verified participants from thread configuration and returns mapped profile settings, instructions, and redacted connection status metadata without tokens or credentials. It takes no caller-provided user, thread, or source identifier.
+`read_user_settings` derives verified participants from thread configuration and returns mapped profile settings, instructions, redacted integration connection statuses, and feature flag preferences without tokens or credentials. It takes no caller-provided user, thread, or source identifier.
 
 Automation operations repeat their authorization with `require_admin`, which checks the runtime identity or (for scheduled runs) whether a saved admin authorized the schedule. They wrap the dashboard schedule service and return structured `{ok: false, error: ...}` responses for authorization and service failures rather than propagating exceptions. Creation records the verified admin identity; update preserves omitted fields while rejecting simultaneous clear/set values for repository or Slack destination; triggering is allowed for paused automations.
+
+## Sandbox tool access
+
+Sandboxed shell and file operations access tools through a capability-based bridge. When a sandbox is created, the system issues a JWT capability (`ToolAccess`) bearing the thread id and sandbox id, signed with `DASHBOARD_JWT_SECRET`. The sandbox receives a `$TOOLS_PORT` bridge URL and environment variables to call back into the dashboard's tool endpoints. Tool calls from the sandbox are authenticated by verifying the JWT, checking thread visibility, and confirming the sandbox is bound to that thread. This keeps secrets (credentials, long-lived tokens) out of the sandbox; only short-lived, bearer-token capabilities cross the boundary.
+
+For desktop runs, tool URLs are written to `/tmp/open-swe-tools-url` by the provisioning step. For hosted LangSmith sandboxes, proxy rules directly wire the capability into the runtime environment.
 
 ## Mode-specific tool gating
 
@@ -142,13 +167,18 @@ Tool exclusion is applied per-mode using `ExcludeToolsMiddleware` to remove cont
 - **Incident automatic mode** removes mutable operations (`code_channel_set_view`, `manage_code_channel`, `manage_incident`, `slack_reply`, and others) when an incident sweep runs without explicit user request, preventing unintended side effects.
 - **PR chat** removes `execute`, `write_file`, `edit_file`, and `delete` to ensure read-only operation over GitHub-backed read tools.
 
+## Tool error handling
+
+`ToolErrorMiddleware` wraps all tool calls in try/except so that unhandled exceptions are returned as error `ToolMessage`s instead of crashing the agent run. Tool exceptions are normalized into structured payloads with `error`, `error_type`, `status`, and the tool's name. Transient sandbox errors (pre-command rejections) are caught and returned as retriable errors. Unreachable sandbox errors (connection failures after the command started) trigger a user notification and re-raise the error, since every later sandbox call would fail the same way. All other tool exceptions are logged and returned as error messages so the model can see the failure and self-correct.
+
 ## Safely extending a tool
 
 1. Implement an async tool in `openswe/tools/`, map it in `_TOOL_MODULES`, and add its type-checking export in `__all__`.
 2. Wire it only into the graph(s) that need it. Decide whether desktop, stop-summary, Slack, admin-thread, or subagent filtering applies.
 3. Reserve the name against Deep Agents built-ins and static/dynamic integration names. For expensive or credentialed integrations, use an `IntegrationGroup` and make loading failure recoverable.
 4. Declare access policies with `@access(Policy(...))` if the tool has sensitive side effects or must run in specific thread contexts. Derive actor and resource identity from trusted runtime context where possible. Keep secrets server-side and return redacted status/error data.
-5. Add focused behavior tests: catalog/graph composition and mode filtering, authorization denial, credential/scope handling, success and failure results, and mode-specific exclusion for each new mutation.
+5. Add a `tools/<name>.md` or `.md.jinja` description in the prompts resource directory so `apply_tool_descriptions` renders it for the model.
+6. Add focused behavior tests: catalog/graph composition and mode filtering, authorization denial, credential/scope handling, success and failure results, and mode-specific exclusion for each new mutation.
 
 ## Related pages
 

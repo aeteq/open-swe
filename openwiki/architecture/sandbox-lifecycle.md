@@ -2,10 +2,16 @@
 type: architecture lifecycle
 title: Thread Sandbox Lifecycle
 description: How a thread acquires, persists, reconnects to, and deliberately replaces its sandbox. Covers provider selection, proxy-backed credentials, recovery safety, and operational lifecycle controls.
-tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
+tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery, bridge]
 sources:
+  - id: openwiki-source-3436762fd1bce7c774640399
+    resource: repo://openswe/bridge/backend.py
+  - id: openwiki-source-6d39d9926d1a43e773b42f66
+    resource: repo://openswe/bridge/store.py
   - id: openwiki-source-5491be991f9727afe1f3163d
     resource: repo://openswe/github/proxy.py
+  - id: openwiki-source-a30a31b26ab162103a5ab0c1
+    resource: repo://openswe/middleware/sandbox_circuit_breaker.py
   - id: openwiki-source-1b32e9f41fa7e64702b380f6
     resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-c1e3814c4caa0f4227587d10
@@ -16,16 +22,24 @@ sources:
     resource: repo://openswe/sandboxes/providers/local.py
   - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
     resource: repo://openswe/sandboxes/providers/registry.py
+  - id: openwiki-source-b7352e4d3dbf0b763a297a54
+    resource: repo://openswe/sandboxes/read_only_backend.py
   - id: openwiki-source-c5766699cee46f671b69bf81
     resource: repo://openswe/sandboxes/repo_prep.py
   - id: openwiki-source-63c74145043dac21719006df
     resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+  - id: openwiki-source-cc9c77c1e30f40e9c07d39bc
+    resource: repo://openswe/sandboxes/tool_access.py
+  - id: openwiki-source-32a0046af79a63443d019547
+    resource: repo://openswe/sandboxes/tool_data.py
+  - id: openwiki-source-c369ed8dca93cdbaf02cdbb8
+    resource: repo://openswe/sandboxes/tool_runtime.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+    at: 2026-10-19T15:23:56.456Z
 ---
 
 # Thread Sandbox Lifecycle
@@ -40,7 +54,7 @@ Related: [Threads and state](../concepts/threads-and-state.md), [Auth and securi
 
 `SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `SANDBOX_CONNECTIONS` is keyed by *sandbox* ID rather than thread ID, so a thread rebound on another worker cannot be handed a stale connection from its previous worker. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object.
 
-The proxy is asynchronous. Synchronous backend methods fail with `NotImplementedError`; its `a*` methods resolve the current backend before delegating. If it has no target, resolution uses a registered reconnect callback, or falls back to the metadata ID and `create_sandbox`. A lock and shared startup task collapse concurrent first operations to one reconnect; `asyncio.shield` means cancellation of one waiter does not cancel shared startup. The proxy subclasses `BaseSandbox` so filesystem tooling recognizes capture-at-source support and can preserve the in-sandbox output cap. If an underlying backend lacks execute-offload support, the proxy explicitly falls back to ordinary execution. The `ready()` contract exposes `_aget_backend()` so callers can await a fully resolved backend without executing a command.
+The proxy is asynchronous-only. Synchronous backend methods fail with `NotImplementedError`; its `a*` methods resolve the current backend before delegating. If it has no target, resolution uses a registered reconnect callback, or falls back to the metadata ID and `create_sandbox`. A lock and shared startup task collapse concurrent first operations to one reconnect; `asyncio.shield` means cancellation of one waiter does not cancel shared startup. The proxy subclasses `BaseSandbox` so filesystem tooling recognizes capture-at-source support and can preserve the in-sandbox output cap. If an underlying backend lacks execute-offload support, the proxy explicitly falls back to ordinary execution. The `ready()` contract exposes `_aget_backend()` so callers can await a fully resolved backend without executing a command.
 
 ## Provider selection and provisioning
 
@@ -91,7 +105,7 @@ Recovery is intentionally data-preserving:
 - `SandboxUnreachableError` means this run could not connect or reconfigure a box. The next run may succeed against the same ID. The default behavior is to raise rather than replace: silently switching to an empty filesystem could discard uncommitted work while the agent still believes that work exists. A failure while creating a chosen replacement is normalized to `SandboxUnreachableError`, preserving the caller's recovery contract.
 - `allow_replacement=True` is reserved for the reviewer. Reviewer sandboxes hold only a checkout that `prepare_review_repo` clone-or-fetches and force-checks out to the PR head on every run, so an unreachable box can safely be replaced. Review threads persist per PR across pushes; refusing that replacement would permanently block subsequent reviews.
 
-A command-level failure is not automatically a sandbox failure. The tool error path distinguishes pre-command transient gateway failures, which tell the model to retry, and command error frames, which remain normal tool errors. A non-transient connection failure notifies the user once and terminates the run rather than repeatedly executing against a dead backend.
+A command-level failure is not automatically a sandbox failure. The tool error path distinguishes pre-command transient gateway failures, which tell the model to retry, and command error frames, which remain normal tool errors. The sandbox circuit-breaker notifies the user once when a non-transient connection failure occurs and terminates the run rather than repeatedly executing against a dead backend.
 
 ## LangSmith credential proxy
 
@@ -107,12 +121,30 @@ GitHub App tokens expire after one hour. `record_proxy_token_expiry` keeps worke
 
 The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. The new ID is persisted to thread metadata before replacing the cached proxy target. If metadata persistence fails, the existing cached proxy retains the old backend, leaving the new provider resource detached. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached.
 
+## Bridge backends and desktop integration
+
+A bridge is a long-running service on a developer's machine (Electron desktop, CLI, or custom) that answers sandbox requests from the cloud backend. Bridge sandboxes are identified by a metadata `sandbox_id` starting with a reserved prefix; their lifecycle differs from cloud sandboxes. When `ensure_sandbox_for_thread` detects a bridge ID, it skips provisioning and proxy configuration, connecting directly through `BridgeSandboxBackend.connect`. The bridge heartbeats periodically; if it stops answering, the sandbox is treated as unreachable but never replaced (the developer's checkout is irreplaceable). Bridge requests flow through a durable request queue in Postgres so no in-flight requests are lost if the HTTP handler and graph worker are on different machines. The CLI polls long-poll endpoints to claim and answer requests; each request moves `pending -> claimed -> done|failed` and notifies within its transaction.
+
 ## Repository paths and reviewer preparation
 
 Provider filesystems do not share a universal root. `resolve_sandbox_work_dir` first tries provider-exposed work-directory methods, then shell `pwd`, provider home/root methods, and finally `$HOME`; each candidate must exist and be writable. The resolved path is cached on the backend, and `resolve_repo_dir` appends a validated repository name. This keeps repository operations portable across provider wrappers.
 
 The reviewer prepares its repo before the first model call: it clones once or fetches an existing checkout, fetches the PR head and base as needed, force-checks out the requested head SHA, and verifies `HEAD`. Preparation is best-effort, returning `False` on failure so the review can proceed from its fetched diff. Reviewer skills are treated separately: skill directories are extracted from the trusted base reference into `.review-skills` outside the PR checkout, never loaded from attacker-controlled PR-head content.
 
+## Tool runtime and access control
+
+The tool runtime (`tool_runtime.py`) provides the machinery for sandbox tool invocation without invoking the model. Tools are surfaced through a `ToolSurface` that exposes a catalog and execution methods. Tool access is mediated through JWT-based capabilities stored in `sandbox_tool_context`: each thread holds securable configuration that the sandbox tool endpoints verify before executing. Tool URLs are provisioned into non-LangSmith sandboxes via environment variable and file; LangSmith sandboxes receive proxy rules instead, keeping tokens out of the sandbox environment.
+
+Tool data marshaling (`tool_data.py`) persists run configuration as a `ToolContext` in Postgres, keyed by thread ID. This allows tools invoked in the sandbox to look up their execution context. Tool parameters are validated against tool schemas before execution, and tool output is wrapped in standardized result messages.
+
+Read-only sandboxes for reviewers and other permission-restricted agents use `ReadOnlyBackend`, which delegates read operations (`ls`, `read`, `grep`, `glob`, `download`) but rejects mutations (`write`, `edit`, `delete`, `upload`). This is applied at the backend wrapper level so no execution-level access control is needed.
+
+## Sandbox circuit-breaker and failure notifications
+
+When a sandbox fails to connect or execute a command, the system distinguishes recoverable and permanent failures. Transient connection errors (WebSocket upgrade failures before the command frame was sent) are retried with exponential backoff, bounded at four attempts. Non-transient failures are surfaced as `SandboxUnreachableError` and trigger the sandbox circuit-breaker.
+
+The circuit-breaker (`middleware.sandbox_circuit_breaker`) notifies the user once when a non-transient connection failure occurs, posting a message to the channel the run was triggered from (Slack thread, GitHub PR/issue comment, Linear issue, or Notion page). The notification explains that the sandbox stopped responding, clarifies that Jarvis will not silently replace it (to avoid discarding uncommitted work), and instructs the user to retrigger to try again or start a new thread for a fresh box. For reviewers (allowed replacement), the message indicates that a replacement will be attempted.
+
 ## Focused verification
 
-The sandbox test suite exercises provider registry routing, startup settings, LangSmith proxy payloads and retries, thread binding order, gone/unreachable recovery, recreate handoff ordering, proxy token refresh scope, paths, reviewer preparation, and local-provider behavior. In particular, tests assert concurrent proxy callers reconnect only once, initialization failures publish no backend, metadata update failures retain the old target, and retryable gateway errors are retried only when the SDK guarantees no command ran.
+The sandbox test suite exercises provider registry routing, startup settings, LangSmith proxy payloads and retries, thread binding order, gone/unreachable recovery, recreate handoff ordering, proxy token refresh scope, paths, reviewer preparation, local-provider behavior, bridge request handling, and read-only backend enforcement. In particular, tests assert concurrent proxy callers reconnect only once, initialization failures publish no backend, metadata update failures retain the old target, retryable gateway errors are retried only when the SDK guarantees no command ran, and unreachable sandboxes are not replaced except for allowed callers.

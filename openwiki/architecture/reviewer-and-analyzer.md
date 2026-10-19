@@ -3,11 +3,24 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-19T15:23:56.456Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
   - id: openwiki-source-90b15fd6117126ebfe5b6b22
     resource: repo://openswe/graphs/reviewer.py
+  - id: openwiki-source-7f78050909c084a5110d4c49
+    resource: repo://openswe/middleware/settle_review_check.py
+  - id: openwiki-source-169564263f818f7bae30cd90
+    resource: repo://openswe/review_scout/graph.py
+  - id: openwiki-source-49793b56ebea74c92109819c
+    resource: repo://openswe/review_scout/launch.py
+  - id: openwiki-source-342facea842feb2c43fd9e53
+    resource: repo://openswe/review/approvals.py
+  - id: openwiki-source-7c13d425176a823e794798f2
+    resource: repo://openswe/review/diff.py
   - id: openwiki-source-85f325a37c97d6000b6e6a23
     resource: repo://openswe/review/findings.py
   - id: openwiki-source-77c518a8a4572e59e2d374ee
@@ -24,10 +37,7 @@ sources:
     resource: repo://openswe/tools/publish_review.py
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-13T15:44:17.388Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 ---
 
 # Reviewer Graph and Code Review
@@ -49,7 +59,7 @@ For an executable run, the factory selects reviewer and subagent models from exp
 - review lifecycle: `fetch_review_diff`, `add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, and `reply_to_finding_thread`;
 - read-only external helpers: `web_search`, `fetch_url`, and `http_request`.
 
-It permits one `reviewer` subagent. The parent assigns a disjoint file partition; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication.
+It permits one `reviewer` subagent that receives a disjoint file partition and returns only candidate defects. The subagent has neither finding nor publication tools—it cannot write to the findings store or invoke GitHub APIs. The parent reviewer remains responsible for all validation, persistence, and publication, making the subagent a pure analysis component.
 
 ### Run preparation, GitHub access, and context
 
@@ -114,6 +124,10 @@ On successful publication, the tool records review/comment/thread identities, re
 
 Callers must inspect the structured result: `success: true` with `review_id: null` and `skipped_empty_re_review: true` is a valid no-post outcome; `dry_run: true` is evaluation simulation. A numeric `review_id` confirms a real review. If GitHub reports an unresolved anchor, the tool filters invalid findings and retries once with valid anchors when possible; otherwise it returns `unresolvable_findings` and a remediation hint, avoiding blind retries. Missing durable thread state is similarly a structured do-not-retry result.
 
+### Review lifecycle middleware
+
+`settle_review_check_on_exit` is an after-agent middleware that closes a stalled review check run. When `publish_review` completes, it settles the check with the review outcome. If the run crashes, hits the model-call limit, loses the sandbox, or exits without publishing, the check would hang "in progress" on the PR indefinitely. This middleware closes it as `neutral` rather than `failure`—an incomplete review is a reviewer-infrastructure problem, not a code problem. A pending result field on the thread metadata allows a transient completion-PATCH failure to be recovered on exit.
+
 ## Review style customization
 
 Repositories can define a custom review style prompt through the dashboard. This prompt supplements the reviewer's main system prompt during preparation when `get_repo_custom_prompt` retrieves it from the `REVIEW_STYLES` store. The store lookup fails soft: a store blip omits style guidance rather than failing a PR review.
@@ -121,6 +135,28 @@ Repositories can define a custom review style prompt through the dashboard. This
 The `ReviewStyle` record holds a `custom_prompt`, approval mode (off/dry_run/approve), and audit timestamps. Callers update the prompt through `ReviewStyleStore.update_prompts`, which handles validation and UI topic invalidation.
 
 The analyzer graph that once synthesized these custom prompts per-repository has been removed. Custom prompts are now authored in the dashboard and persisted directly.
+
+## Approval policy and auto-approval
+
+Repositories define approval criteria in `.open-swe/APPROVALS.md` on the default branch. The file is read once per run with a fail-soft lookup, so a store blip omits approval guidance rather than failing a review. `approval_policy_for_review` returns the parsed criteria or `None` if approvals are disabled.
+
+The approval mode—off, dry_run (comment only), or approve (GitHub approval)—is configured on the repository's review style record and must be explicitly enabled per repository. This ensures code approval remains under human control and cannot be unintentionally automated. A run's approval assessment is computed per findings, severity, and historical preferences.
+
+## Review scout and capability discovery
+
+The review scout is an auxiliary graph (`openswe.review_scout.graph`) that runs on a separate thread per PR and plans a shared walkthrough: placing each changed line into a code-review chunk or into Other, recording summaries of human input from earlier comments. On new heads, it only plans uncovered lines, and when there are none it finishes without a model call.
+
+The walkthrough is an optional input to the reviewer's prompt. The scout runs in the background and the reviewer waits a bounded time (`SCOUT_WAIT_SECONDS = 600`) for results before reviewing without them. If the scout finishes later, the walkthrough is still stored for the review UI.
+
+Key scout mechanics:
+
+- **Chunk planning**: Groups changed lines by feature or semantic purpose, guided by human questions and code patterns.
+- **Cached incremental planning**: Re-triggered pushes only plan newly changed lines if the previous head is known and in the plan.
+- **Human input summary**: Records what reviewers, maintainers, and contributors asked in prior threads, extracting intent for the chunk context.
+- **Tool-driven walkthrough**: Uses `walkthrough_plan_chunk`, `walkthrough_split_hunks`, `walkthrough_move_to_other`, and `walkthrough_describe_other` to build the plan incrementally.
+- **Failure semantics**: If the scout run fails or times out, the reviewer continues without its guidance.
+
+The walkthrough output feeds into the reviewer's system prompt, allowing the LLM to understand context and human direction. The scout's planning is completely separate from the reviewer's findings and carries no authority over defect detection.
 
 ## Focused tests
 

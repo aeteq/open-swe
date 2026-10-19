@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:17a03aecccd95357a199b8a201f0e1de5e3373cb6a6ae36fff4d14b8de658b0f",
+  "pageVersion": "sha256:125565145631ca1dc8ab53287250ff02a104b443be7e472d626ac78116b29ea9",
   "claims": [
     {
       "id": "claim_1e087483ed7d4f6789eaef708ca65bca",
@@ -85,12 +85,12 @@
       "statement": "PullRequestCreationGuardMiddleware wraps execute/background_execute tool calls and blocks any shell command that would create a PR outside open_pull_request (gh pr create, gh api pulls POST/field, or curl POST to the pulls endpoint), including nested shell commands up to a bounded expansion depth, returning a non-recoverable pr_creation_fallback_blocked error so the real open_pull_request failure is surfaced.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/pr_creation_guard.py#L232-L239",
-          "version": "repo-lines-v1:sha256:5c288cbccea54f50dce2a792a6d10254d930d3f1320e7092f1a7e0ed5ed82b9d:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTQzNTgyYWRjMDgwNTdkNTNmOTFjMTZhZTZkODI0MDA2ZmZiOTEyMDQ0YWZlZjI0ODAxZjU4MDZhNzRhNTVhZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTBiMjFiZjg5NWZhZTJkNzM5MjBkOTMxNzhjZmQ1ODQxY2RmOGY5NTI0NTE2YzhhNTY1ODQzNmE0YWM0OGYzYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTRmOWMzNDYwMGE4NTFjMTljZGEyODc4YzNhNTNkZjBiMTNjOTVkMDdkNzljOTFjODE4ZWU5YmNjOTIyN2Q4YyJ9"
+          "resource": "repo://openswe/middleware/pr_creation_guard.py#L258-L289",
+          "version": "repo-lines-v1:sha256:41ed77f4230455deb2cde5406c6c700c7b292f996bddf97b7b2bf89e542fcb32:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmOTBjOTExZGY2ZmI1NTA4MWVkNWViYWE5MzlmNmJmN2U3ZmI1ZmM0ODk0YmViODY0N2RiNDI5YTdlMzQ4YTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwNTgzNmU5ZDEyZmRjM2RkNDViMjMzYTU4YmM3OGQwNzBiZjhkNDYwNjQyYzgzZjAxMjc3NjliNWQxOTA3M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU5ZTYzYmU0ZTZkOTM3ZGU1Mzg1NWJkOTU2ZDdlYThhN2E3MGNmYTRmYjBmNDM0ZTVmOTUwYzU2ZDQ4YWZkNzAifQ"
         },
         {
-          "resource": "repo://openswe/middleware/pr_creation_guard.py#L258-L289",
-          "version": "repo-lines-v1:sha256:51bb8b706ce2cfefe28c83dd25e9a5be368043e3330d99db53a07d3d236be313:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhMjgwZGE0MGNkMmQzMTE3ZjdjNjA4MWE3MTQ2OGUxZWNkZmExNWM0OTA2MDMxZjVlNjQ5NTI4ZDY4MmU3N2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/middleware/pr_creation_guard.py#L274-L303",
+          "version": "repo-lines-v1:sha256:e843aebeeb3365c193b66da0b0aa482e342c92b801565e30ba5df240e101dc20:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhMjgwZGE0MGNkMmQzMTE3ZjdjNjA4MWE3MTQ2OGUxZWNkZmExNWM0OTA2MDMxZjVlNjQ5NTI4ZDY4MmU3N2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -99,11 +99,11 @@
       "statement": "The PR-creation guard is installed in the main agent graph unconditionally and also in the general-purpose subagent's own middleware, while the workflow push guard is installed only in the main agent.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2153-L2154",
-          "version": "repo-lines-v1:sha256:d80956655e6faa8108c664f0f0596b0ad1cb7a9d08573f4915cb755c6e92e59b:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZWNhNDFlNmNmYTJkZTBmYWQxMzdjNDY3ZDUyZGY1OTA2NDE5NDQ3YjkyYjkwZDgzMTRiY2FlZmVkNzZlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTA4M2VkOTUxYTM3Mzg3NzY4NGZmZWQyM2E2MzUyYWE0MDA0MTY1ZDQ1NzM2MmJhZmM3NDM2YjRiZjYzM2I3ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWRiN2ZmMmRmMzI1OTljZWI3OGM5OTgyNDU1NGY2NTFkNWY3Mzg1ODk4Mzk3ZDViOWZiNmUzZGYyMjc3MGVmMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2M3OWU0OWUzMmNhMmQyM2VlZWJjYWU3MjA5YzJkZGM1YzhkNjdkYWU5MzM0Njc1NGUyMmE1ODhhZDI5Mjk4MSJ9"
+          "resource": "repo://openswe/server.py#L2173-L2173",
+          "version": "repo-lines-v1:sha256:a06eca41e6cfa2de0fad137c467d52df5906419447b92b90d8314bcaefed76eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZWNhNDFlNmNmYTJkZTBmYWQxMzdjNDY3ZDUyZGY1OTA2NDE5NDQ3YjkyYjkwZDgzMTRiY2FlZmVkNzZlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZWNhNDFlNmNmYTJkZTBmYWQxMzdjNDY3ZDUyZGY1OTA2NDE5NDQ3YjkyYjkwZDgzMTRiY2FlZmVkNzZlYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWRiN2ZmMmRmMzI1OTljZWI3OGM5OTgyNDU1NGY2NTFkNWY3Mzg1ODk4Mzk3ZDViOWZiNmUzZGYyMjc3MGVmMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWQ1MGY2NzZkOGY5MTM4YzkzYTQzNmVhYTAyZTBhYWZiZjgzMDE5OGJlMDU5YWUwMGE3NDZiODdhMGZhMDEyNCJ9"
         },
         {
-          "resource": "repo://openswe/server.py#L2212-L2212",
+          "resource": "repo://openswe/server.py#L2232-L2232",
           "version": "repo-lines-v1:sha256:fd02e5db72c145fc2036bf79458e495a82a97876811b83389ece79e9454dad49:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQwMmU1ZGI3MmMxNDVmYzIwMzZiZjc5NDU4ZTQ5NWE4MmE5Nzg3NjgxMWI4MzM4OWVjZTc5ZTk0NTRkYWQ0OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmQwMmU1ZGI3MmMxNDVmYzIwMzZiZjc5NDU4ZTQ5NWE4MmE5Nzg3NjgxMWI4MzM4OWVjZTc5ZTk0NTRkYWQ0OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGRkNDIyMGIyNTU1ZTc1ZDYyZDkzODlhYTdjMGQ5ZWEzOWQ5YmE2YWQzNmE4ZjYyOTdjYWViOWJkMTJiZTMyNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzVjN2JlMTA2ZjQyODQ3MTlkYWJkODQ1Y2ZkZjBkNDY3OGJmOTgxNTQwMDU4MzcxOGVkMjIyYjUyMzA1Y2U0YyJ9"
         }
       ]
@@ -113,12 +113,12 @@
       "statement": "WorkflowPushGuardMiddleware gates eligible standalone git push origin refspecs, rejects unsafe shell shapes from interpretation, inspects the sandbox repository to compute the workflow diff, preview, stats, and content fingerprint, and lets an eligible push proceed untouched when no .github/workflows files changed.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/workflow_push_guard.py#L334-L434",
-          "version": "repo-lines-v1:sha256:d6413e7833e8c7b2ffd4759b019e1e9bd0afa198f111944c7bd198e28bb98fde:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3MDYzNjE3ZDc1NDBiNDljN2Q5OWZkZGFhYzE3NWI2ZDQ3NTkxNjc0M2IxN2M5N2JhNzQ3MWQwN2RlMjFiMmQ4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzMGMxZjE4OGYxNDJlZDdhODI0NjgwYjIwNzE3MmM1NTE5YmM2MTRhNDhmZGE3Y2YxNjdlZGI4ZGRmNzk5NTZjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlNDEyYTQ0NDI5OTUyNzM4YjhjZDM5ZjBjNzJlZjQwYmVhMjNhNWIxYmVmNzQ4OTRhN2FmNzVjYWIwMWNkZDcxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI2MmVjNzRmNDJhOGNmMDZiYmNiZTZmMGZhZTA5NjdjNDA4ZmE0YmJjZmYxNGVhMWQzYTc3N2M1NmRmMzg0NDk0In0"
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L338-L447",
+          "version": "repo-lines-v1:sha256:4901b54a4063b742778ba0eae89984c6653c9df8818cb2c6cfaeb243d7ffee28:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4YTAxM2I3YmQ4NjBhM2YxNTQyY2FjYWMwMDIyYmZhOWE2OTUwNTA1ZTViYWMwNjM2ZDE2ZTBkNWVhNzcxMGQxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkZDkxNzJlZjZjOTRlZDE0YTFjODcxZmJiNzY2NjZlZjExZTU5MGQwNWFmMjE2NDc1NDg1ZTQ3NWE2MGI2NmIyIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjNDY4MmFjYzFlNGUxYjQxZTVhMjMyMWUxYTVlNjUxNzA5OWIwNWM5NmZhZGI1NWJhYjhmZjM3MWQ4MDljYTU5In0"
         },
         {
-          "resource": "repo://openswe/middleware/workflow_push_guard.py#L575-L587",
-          "version": "repo-lines-v1:sha256:70354bbd7197ab95b89dd529855e58bfd7ac464612b4c7733e9845930ed6c5e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMGRlMDJjY2Y0NjY1YWRmMjU5ZTMwODIzNWI0OTM3MTFiZjNmM2M5MzcyOTJmZmMzOWM1ZGVjZDUzMDhlYzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjMDIzMzYxMmQ3OGYyYTI4NjRjNTNhMTZhZDQ0ZTU0ZDIzODY1YTE3OWM0NTg5ODJhNjkyMDNiZjExMGMxMzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiNzIxYjQ0ZTk0NDJkM2I5MjYwODMwZTgyZTdiNTMwZmY4MjljOWMzYzc2ZjliYjBjYjI0M2ZlMzQ5YzE3OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2M2Y0NDM0OThmMjgyOWYzYmM4YTU2NmU3NDliMjNjY2QwY2Y1MzQ0YzM4OTA2MWIzYmQyMThmMzM0YjI2YzAifQ"
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L455-L552",
+          "version": "repo-lines-v1:sha256:eb6fbe411dff00929e1afb1d88afd2a2eb5ab19cba1b4b920e8ecf8f7ca0bc50:eyJzZWxlY3RlZExpbmVDb3VudCI6OTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwNjM2MTdkNzU0MGI0OWM3ZDk5ZmRkYWFjMTc1YjZkNDc1OTE2NzQzYjE3Yzk3YmE3NDcxZDA3ZGUyMWIyZDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU0MTJhNDQ0Mjk5NTI3MzhiOGNkMzlmMGM3MmVmNDBiZWEyM2E1YjFiZWY3NDg5NGE3YWY3NWNhYjAxY2RkNzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYyZWM3NGY0MmE4Y2YwNmJiY2JlNmYwZmFlMDk2N2M0MDhmYTRiYmNmZjE0ZWExZDNhNzc3YzU2ZGYzODQ0OTQifQ"
         }
       ]
     },
@@ -128,11 +128,11 @@
       "evidence": [
         {
           "resource": "repo://openswe/middleware/workflow_push_guard.py#L509-L568",
-          "version": "repo-lines-v1:sha256:468ecc8e265c874bef1733db18cbb181bb2795b468b5921a531a30a68ff795ed:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzMDFmMDliZTNlZDA2YjRjMGVhZWVmOGU4YTg0NTkzMDNlMjkyMTRiMjA4OTc2Y2Y2Y2M5NGZmNmUwMTI3MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQwMTFhYzI0YWMwNmUyMDIxMjQwMGQxNjdiN2UyYzI0ZmQwYjRmZTdjMjNlNjhlZGYzODhkOTY0YWUyMTMxMTkifQ"
+          "version": "repo-lines-v1:sha256:745c573cd9247872ad2c1d3f835ed3ce35144bd454149814cb97c55314407b57:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE0MjQ0ZmMwOTdmYWQ3NzljMzUxMTY2ZGFmM2MwMDRjMTU2MmRhNDZhODFlM2E2NzI1N2RiN2NkN2I2NmQ1YjUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBiYTAxMTQ4MTViNmNjZTE1YWMyMGIwNTlhZjczN2JhMzAxYTY4MmE1NGYyZjAzZTQyZDNmNjc4N2RiYzgxYjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIxZGM0NGJjZTljNzI5OWNjMDliMTA1YzQwN2IxMGRlMzVkZDFlODRmNmY2Njg0ZmMxNDNkZTA4MjhkYzJiYjIifQ"
         },
         {
-          "resource": "repo://openswe/middleware/workflow_push_guard.py#L541-L564",
-          "version": "repo-lines-v1:sha256:9c4b9b3c87b5270aa92ec81ee62bf8269ce41b302c45b6e1cfdce11816c4a58d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJiMWViNzI2M2MyYjEzNzY2OWM3MGMwNDQ0YTEwNDVmZTI0YmY3NTNhYjllMzZkYTg0ZmUyMmQyM2EzYWYwNDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY4ZjQyODllOTIyMDc3NmNmYjJjNDQ4NDg5MGFiNTNmOTRiZmVmMTQ5MDkzZThkY2Q4YjdlYzY0NjIxNmQwMzQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZkNjk3NjQwNmEyOGY5MjE5YzJmODU1NWQyMzdmNzY5YjlhOWFjZGY5MTZlMjM0OTk5ZDM2OTBlODllZjVkZGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ5OTM2NzY1ZTRiYjMxMjhhMDdkYmQ1NWIxMTRiMDQ4ZGRlMGQwZjdmMjJiOWU4OGRiMGY5ZTYzZmRjMTgxNTIifQ"
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L597-L624",
+          "version": "repo-lines-v1:sha256:e634747bf7b7232e31b040fd59c09637e5fccae3c98bdd1a1cdb05c9f0803976:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzYjBjZTI4YTZhYTQ5ZTM0NjE1ZjE1YTRkNzMzMzZkZjFjNDBkZWVkOWMzN2E3YjRmMzdkMWNiMTY2ZmI3ZGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmZjE5YWJhNGU2YzcyNDk5Y2NmZjViODFjMWE0YzFhOTg0ZDRkYTRlMGFmYzlhOGM3M2JlNTk3MzE1ZjMyOGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc4ZGJlMTU0MGRjMTkzMGJhNTRiMzI4YmFmOWY5OTc2NjZkNDI1Y2NhYWU4ZmVlZTYyZGFjZWQyODU4MWExMTQifQ"
         }
       ]
     },
@@ -152,11 +152,11 @@
       "evidence": [
         {
           "resource": "repo://openswe/threads/workflow_approval.py#L10-L15",
-          "version": "repo-lines-v1:sha256:6dd368fc5b0d73e2ce784c306ece7d8ca1d747f9775163edc2afb8c7fadb78ea:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQyODZhNDViZDcwODZkYzFlNWU4ZmZiZTJhYmQ4ZWVlMTMwMTkyMTRlZDU5MzdiZDYwYzYyMmM2MDA0ODM5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmEyMjI3NjAzNTQxZGE3NGFkNTMxZDE0ODZmNzVlNzRkZmI1OWUyMWFlZGQ1NDY3ZjdmNTBkYmJkY2QwYjQ5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODI4Zjk1NmQ5NDM4MTdkYTVjZjJjYzViMGYwYzYwYWI2ZWU2OGJmMTQzYmI0YzkwMjM1NDJjMDczZTI0ZTFmOSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNiYTZiYzU1NWZmYThkZWE2OWQ3ZjA4NjgxMzdmNTE3MzI2MTlmZmIxMzczZmI0NzgyODBmZjgxN2ZmNmIxOSJ9"
+          "version": "repo-lines-v1:sha256:6dd368fc5b0d73e2ce784c306ece7d8ca1d747f9775163edc2afb8c7fadb78ea:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQyODZhNDViZDcwODZkYzFlNWU4ZmZiZTJhYmQ4ZWVlMTMwMTkyMTRlZDU5MzdiZDYwYzYyMmM2MDA0ODM5YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmEyMjI3NjAzNTQxZGE3NGFkNTMxZDE0ODZmNzVlNzRkZmI1OWUyMWFlZGQ1NDY3ZjdmNTBkYmJkY2QwYjQ5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjM0OGJmMmY1MGE0YWIxZGJhMGRlZjhhYTdjYTFlNDcxNDAxZWM4MWM2NDM1MTMxOThjMmYxY2FhNjNlNGFmNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNiYTZiYzU1NWZmYThkZWE2OWQ3ZjA4NjgxMzdmNTE3MzI2MTlmZmIxMzczZmI0NzgyODBmZjgxN2ZmNmIxOSJ9"
         },
         {
-          "resource": "repo://openswe/threads/workflow_approval.py#L82-L91",
-          "version": "repo-lines-v1:sha256:86fb7b6cb1071774f98e3f88f6ae2d121e6fbed8607df58ac7e0488d99f82947:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYjI2MmE4ZTBlNWM5ZGFjMjNiMGNiZDAzZTg5MmE3MzczNThhNzgyZWU2OWYyM2RiOTRhY2NjNTMzZTMxOWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcwMWY4OTczNWExZGNkYmNiMThjZDQ3YmYzNGRiYTM4M2I1NzBkOWRiMjgyZDJhYzYxNzljYTk2MTE4YTQyNzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU4OWY4NjUwNTZiMjM2ZTI5NzQ0NTUxM2ZjZDRiYTNkZTUzMDU1NGZlYjc4OGQwNzk4MTY0ZGIwNmI0MTBkOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEwYjBkZjk2YWYwMDdkZmRjYjdkZTAyM2RhMWNkZWZiOGVlMDM4ODBhYjk2OWU5ZGZjNjlkN2Y0ZGYxNjQ2N2IifQ"
+          "resource": "repo://openswe/threads/workflow_approval.py#L180-L186",
+          "version": "repo-lines-v1:sha256:d1596ace20f48e97adfa63a76b132a7adfc189605548e595f27fae81b4293229:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmYzNWMxNDgyMTJmY2NiOGYwMTMwM2FjODFmOTI1ZTc0NmYyMDIzZjM4MjBlOWU2OGNkMGIzMDU5YjBjM2ZiMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2I3NzM4YjQ0MjdkYTIzYTk3NDYwMjE5YWM5MTRlM2YxMzk1ZTMyNGUwNDU1MDEwNTBjMjgwYmEwYjcxYTRkMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         }
       ]
     },
@@ -165,7 +165,7 @@
       "statement": "The workflow push guard only posts a Slack approval notification after a pending record is not already marked notified, and marks it notified only after the Slack post returns a message timestamp without an error.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/workflow_push_guard.py#L509-L538",
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L627-L656",
           "version": "repo-lines-v1:sha256:d012de94f50bf8eb17589c537ad75d3b7b59c5626dd3435a6ca775e23e1b4b53:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzMDFmMDliZTNlZDA2YjRjMGVhZWVmOGU4YTg0NTkzMDNlMjkyMTRiMjA4OTc2Y2Y2Y2M5NGZmNmUwMTI3MWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkZDQxYjA4MGFlMmI2OTg4MzkyMTE1NjZkMDBiZjMzOTRmM2Y1NDFjNDM4YTE0NjAyMTY4NzgyMDUzY2RhOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjU5OTcyNzkyODc2MmE3YmUxMzNhYjBjMDM5MmZmMGEyM2MwNjljMGYzYTk4ZGE1M2I0MTExNjJmNTE3MjY2NDIifQ"
         }
       ]
@@ -219,10 +219,54 @@
           "version": "repo-lines-v1:sha256:e21068eeb0c9857ff8c1e000b9aa1617237f4597233cb4053263995f7f7bc9ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MzNhNDIwNzQwYTNjODAyYjk5Mzc1MTRlNTAyYWE5ZDUzODhmZGY1NDg4NWE0MzY0ZWM4ODFhMmJiN2RmNzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNhZDYzYmQ4ZDk3NjVjMTc3OTJlNDhiOTk0ZThmY2E0Yjk0NTMyNjZlZmE4ZGQ2ZTBmNDhhMGM5YmQxN2FkOTgifQ"
         }
       ]
+    },
+    {
+      "id": "claim_e7f0d813e0384cdfa5228efcb6881c7f",
+      "statement": "ParsedGitPush safely inspects lease-protected pushes (--force-with-lease) by detecting the flag; if inspection is required, the .inspection_failed() method raises WorkflowPushInspectionError with guidance to retry with a regular or no force flag rather than risking race conditions.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L51-L79",
+          "version": "repo-lines-v1:sha256:e4973da4b688c1cdcab421050564256c2eb3dff4ca6a7297134f4b95cc671f07:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllZTZkOWNmNGUxNzUyNmMwY2RlZDg1MDM0NWQxNTBjZWUzN2QzYTRhMGM1ZjQ1MDA2ZDFlODVlOGE4OGVjZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIwYTMzNDg0NmY2MTU3YjBhYTdjNDgyNTA2YjBjNjk1NWRiZTU1NzY2MTlhY2UxZmNhMDE4N2UzYTFjNzRkZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2a7612220f2f4bd7a39eef8d68fddfa2",
+      "statement": "WorkflowPushGuardMiddleware detects workflow-file changes by running git diff --name-only against the merge-base or remote tracking branch, capturing the full binary diff, rendering a truncated preview, and computing addition/deletion statistics for the approval diff payload.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L495-L517",
+          "version": "repo-lines-v1:sha256:40cefa55c8a66fa3141653f9cc5f5602c19af7c20453a5b257b68bc3bfe93a7d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0OTUyZDBhYzcyMjQ3NWIyYzRiZTlkYjc2NjgzYWVjNDhkN2MxYTc3ZDRhYjQ5Y2Y3NjM3ODQ0ZWUxN2IyYzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjYWU1NmYyZTE1YWY5MmZjYTllYmM0MGQxZjE1Yzc1OTAxNWU2MzI2Mzc4YjliYzUwZGZiMWQ5NGYxOGE3ZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFmMzEyNTEzNzYzZDUyODQwNWI1ZmYzMDhhZjk1NTY3MjhiZTlhZGVmMDVlODA0NGRhZTAxODcwNGZhNGM1NzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY1MjZmZmM0MjE5ZTIwYWE2NzNjOWQzNWZmZmRkMDIxOTg4MmNlMDE2ZDEzZmE3YzkzYmNlN2EzZmJmOTY4MTAifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c785623817e74e02a11c4b3b4ad6a206",
+      "statement": "Expedite_pr_approval posts a Slack approval card for small PRs that meet eligibility criteria and optionally handles exclusions via APPROVALS.md in the target repository; once reviewers approve on the card, merge_expedited_pr can merge the PR directly by fetching and reading the HumanReviewRequest state.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/tools/expedite_pr_approval.py#L131-L160",
+          "version": "repo-lines-v1:sha256:41d6898132680183185eb99bd6b7fc72aaf55ec773c74b5791ba5334845bf68d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ODBkYmZkMDM1MzI1NzYyNDdlMDU5ZTY3MTU0ZGNkZjg2ZjBhMTA2MTU0MGUwYTUzZDNjOGUzMDFlZmNmZjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3NjJjOWFhZWI3ZWViMzdiNWU2OWUxOTM3NzcwYmQ2M2Y5N2M0Y2Q0YWQzNGZiMTdkYmNiNjMyNmRiMjBhOTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYxOTBjZDQ1MWZiY2IwZjFmMjVjYzQ2NzYzOTBkMzg5ZWE4OGVjY2QxMTQ3MGJjMzQwZmVmMzdmM2Q0YTBlNjciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0MTM2YmRjODNmMjM4ZDlkZmE3ZGQ3YWJjNzU4NTlhZWEzNTllYzcyZjkxNmI1NTAzOWJiZDYzOGFmNTc0ZWQifQ"
+        },
+        {
+          "resource": "repo://openswe/tools/merge_expedited_pr.py#L16-L41",
+          "version": "repo-lines-v1:sha256:bff4b4694177d7c1eaaec40d501b09fe9b3a1f889309a79df296e56f990d65b8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzZDhlYTllZDBhNDM0NmYwODU3YjQ1ODJjOTI3NmY3ZTVjYWM1ZTdlZTQ3YzU3MjY3NTk4NjdjODgxNjM2MDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkNGRhM2QyNWFlZDIwMGY1ZTY5YzVlNWM1YmJhYjA0OGM5ZmEyMzczNDI5YTkzMTYzZmYyY2MxNTYzZGQ1N2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_80f19e8e7ef6459fb2f7bee229a41011",
+      "statement": "Decide_workflow_push_approval records approval or rejection with the actor identity and timestamp in workflow_push_approvals, marking the status as approved or rejected and allowing dispatch of a follow-up agent message to retry the unchanged push on approval.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/threads/workflow_approval.py#L161-L177",
+          "version": "repo-lines-v1:sha256:072431f14cfdaa05062299f80c4172be360adf8c1918f8a256780de78c783b22:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlYjdjZDRjOTAwMzgzNWIzMTNiYzM4ZDdjN2E3YzA0YjdlYzQwMzUyNjA4ODJkNmM1ODFlYWY3NDMwMTA0NGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ZWNlNTQ2NGYxZDc3ZjJkYzFiNGYxNDQ1NDY0YmE2OTIxOGQwNjkyZjU0ZjY5ZjA4ZWQ1MTU1NTQ4ZDI3ZjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlZDMwNWEwYzFlOTk0ZjMyNTNlZjRhZGFjZmUwNzk3Y2FkYzJhMmFkNzFlMDgwZjJkZWRmZmUwZTg1YjU5N2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4ZTA0MmQxZWYxZTVjNGFkNTg3YWY0ODRkNzhmYmEzNTkyM2M4YzVlZWNhOTJlYjE4YzY4MWMzMmEzZmJmZjIifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-18T12:31:08.965Z"
+    "at": "2026-10-19T15:23:56.456Z"
   }
 }

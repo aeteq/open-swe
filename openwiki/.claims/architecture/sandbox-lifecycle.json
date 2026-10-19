@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:d63ae5a42fe3dfec8ac519a5d8190904627cfd2c1aecfcd9a141952282e5d540",
+  "pageVersion": "sha256:cc349ed35a821a3d477348bf1d76820a2c534243a8740ead5066669b88707928",
   "claims": [
     {
       "id": "claim_b84ca73fa9ca440eaddd035980a5842f",
@@ -215,10 +215,82 @@
           "version": "repo-lines-v1:sha256:b02d3e3ad7b1953ad0444d08110ea02ef8534cbc29b288ad0032f6cd70d78601:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZDMyOWI1ZjEyZTA0ZmRjMTcyZjZiOGFkOTE4YmYxZWEzOTVlZWFlOGQzZDA5ZDhiODkyYmY4OWEyOTMxM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NTBhNjIyOWY3MzM5OTJjYzdkMzIyZDQ1NGY2MmI1MDhmMTJlMGI4ODMxOWYyZjMxMTI1ZmNhZmY0NGY2NzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwMDA2MGJmNTNhNDMxZGI2NWMwMzg1ODBmYjlkZjlmNjY3OWM0YjRmMmJlOTcyNmIxZGE4YzUyNjBlM2ZlYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljN2FmZTg0ZDA3MmRjOGVmYTNhOTU2ZTRiNjNiOWFmNGFjOWJiZDIxY2RmZDYzODBmOWJkODM1MzdhOWUxODgifQ"
         }
       ]
+    },
+    {
+      "id": "claim_a0f28dbe81574634abe5eb183706aec4",
+      "statement": "Bridge sandboxes bypass provisioning and proxy configuration, connecting directly through `BridgeSandboxBackend.connect`; they are identified by a reserved `sandbox_id` prefix and heartbeat periodically to signal liveness.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/bridge/backend.py#L105-L143",
+          "version": "repo-lines-v1:sha256:46b86c31826d7906d7aca943ed9bb7be1df884c83345b963b146e4881a9dbabf:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2YjM0YzRjOGMwZjc3ZWZlMmEzZTZiNThjOTNjYzRiMmJlMzU5YjY2NTc2NDE0NTlmMmUyYWYxNjQxNjBkMTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhYTZkNGY1YmZmNjgwY2NjZWM2Y2NkYjNlZjQwOGYzNGQ2ZDk4ZGYzZjcyN2U1Y2YzM2Q2NjE5ZTIzNjg2YjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1YzFkOTg3OTkwYzUzZWE2Y2RkOWQ5YWQwMTQ3NzE2YTI3YjExZTcyN2U5ZDllOGY2Zjk2OTAwYzdmMDIyNzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkwZjE3YjA1NmZlY2RmMzMzZTA5OWQxZDM4ZDcyOWUzMGNmZTY0NmNkYTc2Y2VkMTJjNDZhODk4Y2U4Y2I4YzUifQ"
+        },
+        {
+          "resource": "repo://openswe/bridge/store.py#L91-L133",
+          "version": "repo-lines-v1:sha256:c63c97e7716cb12bd0dedd37f9cb5eae0db479a92f9b50dc00a8b82efda5f114:eyJzZWxlY3RlZExpbmVDb3VudCI6NDMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliYjY5YTljYmEzNjRiYjFhMjcwYTAyMDkzYTFjZDU5MTIxODQyYTg5YzVkNmY5NGMwOTMxODRlZDI3YTI4NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhNjUyYWU1ZmRmMmNhNGVmNzYyZDhjZTk5MGY2ZmRiM2FlOTE4ZDVmMGExMjMxYjM1NDExMDkwMWQ5ZGEwNGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzY2IzMTcxYWYxYmNlZGUyZjA0YTU1OWY5NWJkMjM2ZGFlMTZiY2Y3N2IzNGE0Y2Q5YWE0ZDA5MGI1ZTllYWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_5ddba928676241068a8181fd0837a217",
+      "statement": "Bridge requests flow through a Postgres request queue so no in-flight requests are lost when HTTP handler and graph worker are on different machines; requests move `pending -> claimed -> done|failed` with transaction-scoped notifications.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/bridge/store.py#L1-L70",
+          "version": "repo-lines-v1:sha256:91c756c6fcb80e3b3cbf97060cb11f09aef9979f1f62024a7f570f2f01ef19b2:eyJzZWxlY3RlZExpbmVDb3VudCI6NzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY1ZjM4MzJlODBiYTY2OGJlMGY1ZTNkNzY1OTA5MDUxNTIwMjhiMDIxMWQ3NWFhOTk5YTNlNmZiNWQwM2Y0YzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0MDc2MmM1MzQwYjg1NGUwNzZiOTljYjcxMjE0NTFlZDMzMGVkNGEyNWZiYzM0MWNjNWIxMTU0YThhNjEzMTYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a59c709be00e4b7b831509bb509e9234",
+      "statement": "Tool access is mediated through JWT-based capabilities stored in `sandbox_tool_context`, with tool URLs provisioned into non-LangSmith sandboxes and proxy rules injected into LangSmith sandboxes to keep tokens out of the sandbox environment.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/tool_access.py#L32-L134",
+          "version": "repo-lines-v1:sha256:9981057fa267b5db00a87a654763e7033fb1422f0292c54a08dda50ed6284598:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1MjMzYzE3MDNjOTM3NThiOGJlMWYxMGNjYzY4NDU4NWM3ZmY4MzU5NzE0NDUxZGNiNDMxODU0OTY2NGNlMTVmIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJjZGNhODFkZDU5YTQ2NGJkM2I4MGUyMjJhMTg5ZTUwM2YzODJlZjVkMDRiOWM5ZDNmODNhZjlkZDA1NDNjOTFkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkMzgyOTk5YzIzZmM3ZDhiZmI1OTYxNDdlZGUwMDg2ZWYwMzRjZTllNGZhMmYxNDBmMDg2NmE3NmU3NDMzZDY0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+        }
+      ]
+    },
+    {
+      "id": "claim_3a88936bfcd843b2bb3f9915f6f3ce7a",
+      "statement": "Tool data marshaling persists run configuration as a `ToolContext` in Postgres keyed by thread ID; tool parameters are validated against schemas before execution and output is wrapped in standardized result messages.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/tool_data.py#L1-L41",
+          "version": "repo-lines-v1:sha256:0cce223fd2bed72c5491cf185522db8ff018855bf6b1c34e29b1f204917125b0:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjY2NmMWVkMDRkODVmZmRkMDg0ZjRhOWZlMmMzNWJhZDdjMjJkMzgzNTNiYjBhZDc5ZGFmNWM4ZmE3MmVmMzMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxYTU1YmU1MjAyZDRlNjc3MGEyZTA4ZGUxNTEzNTFjNzM4YjFhNzA0MmUxY2UwNGVlMGUzNWY3ZTA5ZjI2NjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://openswe/sandboxes/tool_runtime.py#L146-L192",
+          "version": "repo-lines-v1:sha256:bff8963904115bef86322401c72666c581d5444842864f8bf1260182bdfb3cb6:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4MGYxMTU3ZTdkNTk3YmU1YmMyZGVhYmFlOTM5MmYzZDkwOThlM2EyNjVkOWQ2ODk2Yzc1MThmYmJlZjBhMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0Mzg4ZWY2OTc2OWMwZDY4MzU3ZWEwMmVlMmQ1NWExMjMxNWUyOGMzMTk1N2MzOTZiZmUwNWVkNDI3MTU1MDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxNTA4Njg4NjQ3ZDFjYTRlNjY2MTViYzVlNDJkM2ZiNzk0ZDBmOTkxMmQwZTFmMGE1NjJmYjA0OTg2ZWEwMWEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8855626888c140e8ab12fcb2a75c97af",
+      "statement": "Read-only sandboxes for reviewers and permission-restricted agents use `ReadOnlyBackend`, which delegates read operations but rejects mutations at the backend wrapper level.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/read_only_backend.py#L1-L63",
+          "version": "repo-lines-v1:sha256:0f8c33e79fdfade0bd7343cb13320acb26966a058180abd8081a71a44aa12251:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwMmM2ODZjNjZkMzExNTcyOGJhMWU4OWU3ZDdiMmM4MTczYmU5NmQzYTQ3ZTAxMDQxNWQyOTgyMjNiZDY1YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NTYzZjU1MTJjNmU5NTQ3NWNlNWEwMTU5NTZlZGViM2QwODYzZWM4YTEyOGJiNTA4OWI5YzIxMGY1Mzg5Y2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2389cfe2e6224a7cb6ab8755517c6c8e",
+      "statement": "The sandbox circuit-breaker notifies the user once when a non-transient connection failure occurs, posting to the channel the run was triggered from (Slack, GitHub, Linear, Notion) and explaining that the sandbox will not be silently replaced.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/middleware/sandbox_circuit_breaker.py#L109-L159",
+          "version": "repo-lines-v1:sha256:ef26bb56b00588d06c869a400c885bd4f2b0f08ec2446e1bf4b084fa31577602:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImExMmNmMTI5YjU1ZTE5ZjAwM2Y5NDVlMDgyNDgwM2I0NjIyMjE5OWZhODNkOTZjMmNlMTc4MDYxYzQzOGI2NTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1NTFjZDRjOTFmYmIyNTc5ZDU5MzJkZmE0MWZiYmFjYmRkMDg0YTViN2RlODk3YTYwZTAxMTEwYTdiMzQ5YmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MDE0OWUwNjlhZDY3ZWNjZjQ3MzY0NmZmMWM3NTAwNTBkMzI5ZDExMDAxOGRjNTc2Njg3OGVhZmExZDYwN2QiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://openswe/middleware/sandbox_circuit_breaker.py#L26-L62",
+          "version": "repo-lines-v1:sha256:159e162e08b1b147a4febed239be0fa93500f2bde2cea491ac18220c72950e0d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBjMmFmZWRmZDBjY2IyMDA5NDY3OGJiNjI5YTEwMGY0NDQ1NDg4ODllOTE0YWIxNWQ1M2RhZmNiYzNjMTg2Y2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYyMDA5N2U0YWE1MDA2OGJhMTU3ZjlhMjczOWZhZDg2OTk1ZTFlMGNkY2NkYWRjNTg5N2MyMDM0Yzc0ZDNlZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMzZTM2MTM2MDJhYTJlNTA3NzRmY2Q5MjJhNTUyYTY3NzZmY2RkNGM2ZjdkMGI3M2I3NjRhMzBhYzQwNTY1NTkifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-18T12:31:08.965Z"
+    "at": "2026-10-19T15:23:56.456Z"
   }
 }

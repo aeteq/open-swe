@@ -44,10 +44,10 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-19T15:23:56.456Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+    at: 2026-10-19T15:23:56.456Z
 ---
 
 # Dashboard and Desktop Clients
@@ -64,6 +64,7 @@ When a dashboard build is available, `agent.utils.dashboard_ui` mounts immutable
 
 The dashboard routes aggregate over 30 feature routers, including threads, reviews, schedules, skills, workspaces, profiles, and integrations (Slack, MCP). Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
 
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
 graph TB
     subgraph Deployment["Production deployment"]
