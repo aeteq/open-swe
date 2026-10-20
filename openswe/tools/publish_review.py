@@ -18,7 +18,7 @@ from openswe.github.thread_token import (
     invalidate_cached_github_token,
     resolve_thread_github_token,
 )
-from openswe.prompts import prompt
+from openswe.prompts import escape_for_data_block, prompt
 from openswe.review.approvals import approval_mode_for
 from openswe.review.assessment_feedback import PublishedAssessment
 from openswe.review.diff import compute_diff_line_set, fetch_pr_diff, is_range_in_diff
@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 
 # Each push re-runs the review, so findings would otherwise ping-pong forever.
 MAX_AUTHOR_HANDOFF_ROUNDS = 3
+_HANDOFF_DATA_TAGS = ("untrusted-review-finding",)
 
 
 async def _record_reviewer_usage(**kwargs: Any) -> None:
@@ -1037,6 +1038,15 @@ def _handoff_cap_notice() -> str:
     )
 
 
+# The reviewer writes findings after reading text anyone can put in the PR.
+def _finding_data(value: object) -> str:
+    return escape_for_data_block(str(value or ""), _HANDOFF_DATA_TAGS)
+
+
+def _one_line(value: object) -> str:
+    return _finding_data(" ".join(str(value or "").split()))
+
+
 def _handoff_finding(pr_url: str, finding: Finding) -> dict[str, str]:
     start, end = finding.get("start_line"), finding.get("end_line")
     if start is not None and end is not None and start != end:
@@ -1048,11 +1058,11 @@ def _handoff_finding(pr_url: str, finding: Finding) -> dict[str, str]:
     comment_ids = comment_ids_for_finding(finding)
     return {
         "severity": str(finding.get("severity") or ""),
-        "title": str(finding.get("title") or ""),
-        "file": str(finding.get("file") or ""),
+        "title": _one_line(finding.get("title")),
+        "file": _one_line(finding.get("file")),
         "lines": lines,
-        "description": str(finding.get("description") or ""),
-        "suggestion": str(finding.get("suggestion") or ""),
+        "description": _finding_data(finding.get("description")),
+        "suggestion": _finding_data(finding.get("suggestion")),
         "comment_url": f"{pr_url}#discussion_r{comment_ids[0]}" if comment_ids else "",
     }
 
