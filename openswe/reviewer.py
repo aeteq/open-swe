@@ -20,7 +20,7 @@ import logging
 import posixpath
 import re
 import warnings
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Final, NamedTuple, NotRequired, cast
 
 logger = logging.getLogger(__name__)
@@ -43,9 +43,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool
 
 from openswe.dashboard.options import gate_fable_model
+from openswe.dashboard.repo_access import repo_is_private
 from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
 from openswe.github.app import get_github_app_installation_token_with_expiry
 from openswe.github.thread_token import cache_github_token_for_thread
+from openswe.mcp.models import MCPToolProvenance
 from openswe.mcp.tiers import mcp_tools_for
 from openswe.middleware import (
     BasePrepareRunMiddleware,
@@ -1038,28 +1040,50 @@ async def resolve_reviewer_models(cfg: RunConfig) -> ReviewerModels:
     )
 
 
-# Read-only Notion MCP tools, by the names Notion's hosted server uses now and used
-# before. Every other tool a connection offers, which may write, stays off the reviewer.
-READ_ONLY_MCP_TOOLS: Final = frozenset(
-    {
-        "search",
-        "ai-search",
-        "fetch",
-        "get-comments",
-        "notion-search",
-        "notion-fetch",
-        "notion-get-comments",
-    }
-)
+# Read-only tools by connection name, then by the names Notion's hosted server uses now
+# and used before. Every other tool, which may write, stays off the reviewer: a generic
+# `fetch` from another connection could send requests with that connection's credentials.
+READ_ONLY_MCP_TOOLS: Final[Mapping[str, frozenset[str]]] = {
+    "notion": frozenset(
+        {
+            "search",
+            "ai-search",
+            "fetch",
+            "get-comments",
+            "notion-search",
+            "notion-fetch",
+            "notion-get-comments",
+        }
+    ),
+}
+
+
+def _read_only_mcp_tool(tool: BaseTool) -> bool:
+    metadata = tool.metadata or {}
+    provenance = metadata.get("mcp_provenance")
+    return isinstance(provenance, MCPToolProvenance) and metadata.get(
+        "mcp_tool_name"
+    ) in READ_ONLY_MCP_TOOLS.get(provenance.connection_name, frozenset())
 
 
 async def reviewer_mcp_tools(workspace: str) -> list[BaseTool]:
     """The instance and workspace MCP tools on the read-only allowlist, never a person's own."""
     return [
-        tool
-        for tool in await mcp_tools_for(None, workspace, None)
-        if (tool.metadata or {}).get("mcp_tool_name") in READ_ONLY_MCP_TOOLS
+        tool for tool in await mcp_tools_for(None, workspace, None) if _read_only_mcp_tool(tool)
     ]
+
+
+async def _reviews_private_repo(cfg: RunConfig) -> bool:
+    """Whether the reviewed repository is known to be private; unknown counts as public."""
+    if cfg.repo_private is not None:
+        return cfg.repo_private
+    if cfg.repo is None:
+        return False
+    full_name = f"{cfg.repo.owner}/{cfg.repo.name}"
+    private = await ttl_cache.cached(
+        f"reviewer:repo-private:{full_name}", 300, lambda: repo_is_private(full_name)
+    )
+    return private is True
 
 
 def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
@@ -1110,9 +1134,11 @@ async def build_reviewer_agent(
         ).with_config(bindable_config(config))
 
     models = await resolve_reviewer_models(cfg)
-    # Benchmark runs score the stock reviewer, without our workspace's connections.
+    # Benchmark runs score the stock reviewer, without our workspace's connections. Public
+    # repos never get them: anyone can steer a review there through the PR's text, and
+    # whatever it reads from private pages could end up in its public comments.
     mcp_tools: list[BaseTool] = []
-    if not cfg.is_eval:
+    if not cfg.is_eval and await _reviews_private_repo(cfg):
         async with aphase(thread_id, "factory.mcp_tools"):
             mcp_tools = await reviewer_mcp_tools(cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG)
     use_gateway = models.use_gateway

@@ -26,19 +26,32 @@ def test_reviewer_system_prompt_org_guidelines_precede_repo_style() -> None:
 async def test_reviewer_gets_only_read_only_shared_mcp_tools() -> None:
     from langchain_core.tools import StructuredTool
 
+    from openswe.mcp.models import MCPToolProvenance
+
     async def call() -> str:
         return ""
 
-    offered = [
-        StructuredTool.from_function(
+    def offered(connection: str, name: str) -> StructuredTool:
+        return StructuredTool.from_function(
             coroutine=call,
-            name=f"mcp_notion_{name}",
+            name=f"mcp_{connection}_{name}",
             description=name,
-            metadata={"mcp_tool_name": name},
+            metadata={
+                "mcp_tool_name": name,
+                "mcp_provenance": MCPToolProvenance(
+                    connection_name=connection, scope="workspace", overridden_scopes=[]
+                ),
+            },
         )
-        for name in ("fetch", "search", "create-pages", "update-page", "notion-create-comment")
+
+    catalog = [
+        *(
+            offered("notion", name)
+            for name in ("fetch", "search", "create-pages", "update-page", "notion-create-comment")
+        ),
+        offered("webfetch", "fetch"),
     ]
-    with patch.object(reviewer, "mcp_tools_for", AsyncMock(return_value=offered)) as load:
+    with patch.object(reviewer, "mcp_tools_for", AsyncMock(return_value=catalog)) as load:
         tools = await reviewer.reviewer_mcp_tools("default")
 
     load.assert_awaited_once_with(None, "default", None)

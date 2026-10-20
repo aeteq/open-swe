@@ -260,13 +260,16 @@ and remote coding-agent threads. Enabled connections provide baseline tools for
 all users, limited to the tools selected by an admin. Only admins can manage
 connections or reveal saved credentials.
 
-The PR reviewer also gets a fixed read-only subset of the instance and workspace
-connections' tools: Notion's `search`, `ai-search`, `fetch` and `get-comments`
-(and their older `notion-` names), listed in `READ_ONLY_MCP_TOOLS` in
-`openswe/reviewer.py`. It never gets any other MCP tool, even when a connection
-offers write tools, nor personal connections. With these tools, it fetches the
-Notion task or design a PR links and checks the change against it. Use a
-read-only Notion integration token for that connection.
+On private repositories, the PR reviewer also gets a fixed read-only subset of
+the instance and workspace connections' tools: from the connection named `notion`,
+Notion's `search`, `ai-search`, `fetch` and `get-comments` (and their older
+`notion-` names), listed in `READ_ONLY_MCP_TOOLS` in `openswe/reviewer.py`. It never
+gets any other MCP tool, even when a connection offers write tools, nor tools
+from personal connections. Reviews of public repositories, or of repositories whose
+visibility is unknown, get no MCP tools: anyone could steer such a review through
+the PR's text into private pages. With these tools, the reviewer fetches the Notion
+task or design a PR links and checks the change against it. Name the connection
+`notion` and use a read-only Notion integration token for it.
 
 1. Choose **Add MCP server** and enter a unique lowercase connection name, an
    HTTPS server URL, and its transport (**Streamable HTTP** or **SSE**).
