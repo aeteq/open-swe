@@ -109,6 +109,59 @@ async def test_opening_origin_fills_once_and_survives_later_saves() -> None:
     ) == ("claude-opus-5-5", "high", "run-1", "T1", "C1", "1.0", "1.5")
 
 
+async def test_reviews_with_findings_wake_the_opening_thread_until_the_round_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openswe.github.pull_request_status import PullRequestClient
+    from openswe.review.findings import new_finding
+    from openswe.tools.publish_review import MAX_AUTHOR_HANDOFF_ROUNDS, _hand_findings_to_author
+
+    dispatch = AsyncMock()
+    monkeypatch.setattr(pull_requests, "dispatch_agent_run", dispatch)
+    pull = MagicMock(comment=AsyncMock())
+    app_client = MagicMock()
+    app_client.return_value.__aenter__ = AsyncMock(return_value=pull)
+    app_client.return_value.__aexit__ = AsyncMock(return_value=None)
+    monkeypatch.setattr(PullRequestClient, "as_app", app_client)
+    await PullRequest(
+        owner="lc",
+        repo="repo",
+        number=7,
+        opening_head_sha="head",
+        threads=[
+            pull_requests.ThreadLink(
+                thread_id="author",
+                source=pull_requests.AGENT_OPENED_LINK_SOURCE,
+                wake_config={"source": "notion", "notion_page": {"id": "page"}},
+            )
+        ],
+    ).save()
+    finding = new_finding(
+        severity="medium",
+        confidence="high",
+        category="docs",
+        file="APPROVALS.md",
+        start_line=3,
+        end_line=3,
+        description="Too broad",
+        sha="head",
+    )
+
+    for review_id in range(1, MAX_AUTHOR_HANDOFF_ROUNDS + 3):
+        reviewed = await _pr().link_review(
+            reviewer_thread_id="rev", github_review_id=review_id, finding_count=1
+        )
+        await _hand_findings_to_author(reviewed, review_url=reviewed.url, findings=[finding])
+
+    assert dispatch.await_count == MAX_AUTHOR_HANDOFF_ROUNDS
+    thread_id, _, configurable = dispatch.await_args.args
+    assert thread_id == "author"
+    assert configurable["source"] == "notion"
+    assert configurable["notion_page"] == {"id": "page"}
+    assert configurable["pr_number"] == 7
+    pull.comment.assert_awaited_once()
+
+
 async def test_backfill_promotes_the_oldest_thread_and_skips_reviewer_threads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
