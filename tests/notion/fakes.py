@@ -189,11 +189,13 @@ class FakeNotion:
         filter_ = body["filter"]
         assert isinstance(filter_, dict)
         if "or" in filter_:
+            alternatives = filter_["or"]
+            assert isinstance(alternatives, list)
             return [
                 page
                 for page in self.pages.values()
                 if page["parent"]["data_source_id"] == TASKS_DS  # type: ignore[index]
-                and any(self._matches(page, c) for c in filter_["or"])  # type: ignore[arg-type,union-attr]
+                and any(isinstance(c, dict) and self._matches(page, c) for c in alternatives)
             ]
         conditions = filter_["and"]
         doc_id = normalize_notion_id(str(conditions[0]["relation"]["contains"]))  # type: ignore[index]
