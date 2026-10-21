@@ -18,6 +18,7 @@ from openswe.github.thread_token import (
     invalidate_cached_github_token,
     resolve_thread_github_token,
 )
+from openswe.human_review.standard import request_after_ai_review
 from openswe.prompts import escape_for_data_block, prompt
 from openswe.review.approvals import approval_mode_for
 from openswe.review.assessment_feedback import PublishedAssessment
@@ -68,7 +69,7 @@ from openswe.review.publish import (
 )
 from openswe.review.reconcile import reconcile_findings_with_review_threads
 from openswe.run_config import RunConfig
-from openswe.slack.client import post_slack_thread_reply
+from openswe.slack.client import GitHubPrRef, post_slack_thread_reply
 from openswe.utils.dashboard_links import dashboard_review_url
 from openswe.utils.langsmith import get_langsmith_trace_url
 
@@ -698,6 +699,10 @@ async def _publish_review_async(
             ],
         )
 
+    # A push mid-run re-enters the first review's run with re_review still unset.
+    first_review = not is_re_review and not get_thread_last_reviewed_sha(
+        await get_thread_metadata(thread_id)
+    )
     await set_reviewer_thread_metadata(thread_id, last_reviewed_sha=head_sha)
     await _record_reviewer_usage(
         thread_id=thread_id,
@@ -719,6 +724,9 @@ async def _publish_review_async(
         summary=check_summary,
     )
 
+    if first_review:
+        await _request_human_review(pull_request, head_sha=head_sha, summary=summary)
+
     result: dict[str, Any] = {
         "success": True,
         "review_id": review_id,
@@ -733,6 +741,22 @@ async def _publish_review_async(
             "call update_finding to fix or resolve them."
         )
     return result
+
+
+async def _request_human_review(pull_request: PullRequest, *, head_sha: str, summary: str) -> None:
+    """Ask a person to review on repositories that opted in; the published review stands regardless."""
+    pr_ref = GitHubPrRef(
+        owner=pull_request.owner,
+        repo=pull_request.repo,
+        number=pull_request.number,
+        url=pull_request.url,
+    )
+    try:
+        await request_after_ai_review(pr_ref, head_sha=head_sha, summary=summary)
+    except Exception:
+        logger.exception(
+            "Could not request a human review after the AI review", extra={"pr_url": pr_ref.url}
+        )
 
 
 async def _open_swe_already_reviewed(

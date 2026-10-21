@@ -364,6 +364,42 @@ async def request_review(
         return _failure("Open SWE cannot reach this repository's GitHub App installation.")
 
 
+async def request_after_ai_review(
+    pr_ref: GitHubPrRef, *, head_sha: str, summary: str
+) -> AutoAssignResult | None:
+    """After Open SWE's first review, post a card and pick a human reviewer, if the repository opted in.
+
+    ``None`` when nothing was requested: the repository did not opt in, a request is
+    already open, or the pull request cannot be put up for review.
+    """
+    try:
+        async with PullRequestClient.as_app(pr_ref.owner, pr_ref.repo, pr_ref.number) as pull:
+            settings = await RepoSettings.fetch(pull.repo, ref=head_sha)
+            if settings.assign_human_reviewer != "after_ai_review":
+                return None
+            if await HumanReviewRequest.active_for(pr_ref.owner, pr_ref.repo, pr_ref.number):
+                return None
+            result = await _request_review(
+                pr_ref, pull, Origin(), channel="", inline_summary=summary
+            )
+    except GitHubAppUnavailable:
+        logger.warning(
+            "No GitHub App token to request a human review after the AI review",
+            extra={"pr_url": pr_ref.url},
+        )
+        return None
+    if not result.success or result.reused:
+        logger.info(
+            "No human review requested after the AI review",
+            extra={"pr_url": pr_ref.url, "error": result.error, "reused": result.reused},
+        )
+        return None
+    request = await HumanReviewRequest.get(UUID(result.request_id))
+    if request is None:
+        return None
+    return await start_auto_assign(request, asked=True)
+
+
 async def _request_review(
     pr_ref: GitHubPrRef,
     pull: PullRequestClient,
