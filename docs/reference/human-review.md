@@ -56,14 +56,17 @@ To request a human reviewer automatically after Open SWE's AI review, opt in wit
 { "reviewChannel": "#eng-reviews", "assignHumanReviewer": "after_ai_review" }
 ```
 
-The values are `after_ai_review` and `off` (the default). After the first AI review
+The values are `after_ai_review` and `off` (the default). Only the default branch's
+settings count here, so a pull request cannot opt itself in or out. After an AI review
 of a pull request publishes, whether or not Open SWE approved it, Open SWE posts a
 standard card with the review's summary and immediately picks a reviewer the same way
-as when nobody signs up, requesting their review on GitHub. Re-reviews never post
-one, nor does a pull request that already has an open request or cannot be put up
-for review. The card needs a review channel, so an opted-in repository must also set
-`reviewChannel` (or rules that match the changed files). An invalid value makes the
-whole file invalid, which drops the review channels too.
+as when nobody signs up, requesting their review on GitHub. This happens once per pull
+request: a pull request that has ever had a review request of any kind gets no new one.
+A pull request that cannot be put up for review yet (a draft, conflicts, failing
+required checks) is tried again after each later AI review. The GitHub review request
+belongs to the card, so an opted-in repository must also set `reviewChannel` (or rules
+that match the changed files); without a channel nothing is requested. An invalid
+value makes the whole file invalid, which drops the review channels too.
 
 Workspace admins can override the two-hour auto-assignment wait through
 `PUT /dashboard/api/workspaces/{workspace}/settings` with

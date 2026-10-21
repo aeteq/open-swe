@@ -420,7 +420,8 @@ async def _publish_review_async(
             token=token,
             findings=findings,
         )
-        await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
+        pull_request = PullRequest(owner=owner, repo=repo, number=pr_number)
+        await pull_request.link_review(
             reviewer_thread_id=thread_id, head_sha=head_sha, finding_count=0
         )
         await set_reviewer_thread_metadata(thread_id, last_reviewed_sha=head_sha)
@@ -443,6 +444,7 @@ async def _publish_review_async(
             title=check_title,
             summary=check_summary,
         )
+        await _request_human_review(pull_request, summary=summary)
         return {
             "success": True,
             "review_id": None,
@@ -699,10 +701,6 @@ async def _publish_review_async(
             ],
         )
 
-    # A push mid-run re-enters the first review's run with re_review still unset.
-    first_review = not is_re_review and not get_thread_last_reviewed_sha(
-        await get_thread_metadata(thread_id)
-    )
     await set_reviewer_thread_metadata(thread_id, last_reviewed_sha=head_sha)
     await _record_reviewer_usage(
         thread_id=thread_id,
@@ -724,8 +722,7 @@ async def _publish_review_async(
         summary=check_summary,
     )
 
-    if first_review:
-        await _request_human_review(pull_request, head_sha=head_sha, summary=summary)
+    await _request_human_review(pull_request, summary=summary)
 
     result: dict[str, Any] = {
         "success": True,
@@ -743,7 +740,7 @@ async def _publish_review_async(
     return result
 
 
-async def _request_human_review(pull_request: PullRequest, *, head_sha: str, summary: str) -> None:
+async def _request_human_review(pull_request: PullRequest, *, summary: str) -> None:
     """Ask a person to review on repositories that opted in; the published review stands regardless."""
     pr_ref = GitHubPrRef(
         owner=pull_request.owner,
@@ -752,7 +749,7 @@ async def _request_human_review(pull_request: PullRequest, *, head_sha: str, sum
         url=pull_request.url,
     )
     try:
-        await request_after_ai_review(pr_ref, head_sha=head_sha, summary=summary)
+        await request_after_ai_review(pr_ref, summary=summary)
     except Exception:
         logger.exception(
             "Could not request a human review after the AI review", extra={"pr_url": pr_ref.url}

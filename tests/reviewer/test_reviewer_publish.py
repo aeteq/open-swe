@@ -300,58 +300,6 @@ async def test_publish_review_skips_findings_already_published() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("is_re_review", "last_reviewed_sha", "requested"),
-    [(False, "", True), (False, "oldsha", False), (True, "oldsha", False)],
-    ids=["first_review", "push_during_first_review", "re_review"],
-)
-async def test_only_the_first_published_review_requests_a_human_reviewer(
-    _isolate_publish_review_pr_state: AsyncMock,
-    is_re_review: bool,
-    last_reviewed_sha: str,
-    requested: bool,
-) -> None:
-    from openswe.tools.publish_review import _publish_review_async
-
-    with (
-        patch("openswe.tools.publish_review.get_thread_id_from_runtime", return_value="tid"),
-        patch(
-            "openswe.tools.publish_review.list_findings_async",
-            AsyncMock(return_value=[_f(id="f_new", severity="high", file="b.py")]),
-        ),
-        patch(
-            "openswe.tools.publish_review.get_thread_metadata",
-            AsyncMock(return_value={"last_reviewed_sha": last_reviewed_sha}),
-        ),
-        patch(
-            "openswe.tools.publish_review.post_pull_request_review",
-            AsyncMock(return_value={"id": 999}),
-        ),
-        patch("openswe.tools.publish_review.fetch_review_comments", AsyncMock(return_value=[])),
-        patch(
-            "openswe.tools.publish_review._resolve_threads_for_resolved_findings",
-            AsyncMock(return_value=0),
-        ),
-        patch("openswe.tools.publish_review.set_reviewer_thread_metadata", AsyncMock()),
-        patch("openswe.tools.publish_review._maybe_post_slack_completion_reply", AsyncMock()),
-        patch("openswe.tools.publish_review._hand_findings_to_author", AsyncMock()),
-    ):
-        result = await _publish_review_async(
-            owner="o",
-            repo="r",
-            pr_number=7,
-            head_sha="sha",
-            token="t",
-            summary="Adds docs.",
-            severity_threshold="medium",
-            is_re_review=is_re_review,
-        )
-
-    assert result["success"] is True
-    assert _isolate_publish_review_pr_state.await_count == (1 if requested else 0)
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("assessment_mode", [None, "dry_run", "approve"])
 async def test_published_review_registry_failure_does_not_complete_or_invite_duplicate(
     assessment_mode: str | None,

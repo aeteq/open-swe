@@ -364,21 +364,21 @@ async def request_review(
         return _failure("Open SWE cannot reach this repository's GitHub App installation.")
 
 
-async def request_after_ai_review(
-    pr_ref: GitHubPrRef, *, head_sha: str, summary: str
-) -> AutoAssignResult | None:
-    """After Open SWE's first review, post a card and pick a human reviewer, if the repository opted in.
+async def request_after_ai_review(pr_ref: GitHubPrRef, *, summary: str) -> AutoAssignResult | None:
+    """After an Open SWE review, post a card and pick a human reviewer, if the repository opted in.
 
-    ``None`` when nothing was requested: the repository did not opt in, a request is
-    already open, or the pull request cannot be put up for review.
+    Only the default branch's settings count, so a pull request cannot opt itself in or
+    out. Each review retries until the pull request has had a request, so one blocked
+    at its first review (a draft, failing checks) still gets a reviewer later. ``None``
+    when nothing was requested.
     """
+    settings = await RepoSettings.cached(pr_ref.owner, pr_ref.repo)
+    if settings.assign_human_reviewer != "after_ai_review":
+        return None
+    if await HumanReviewRequest.ever_for(pr_ref.owner, pr_ref.repo, pr_ref.number):
+        return None
     try:
         async with PullRequestClient.as_app(pr_ref.owner, pr_ref.repo, pr_ref.number) as pull:
-            settings = await RepoSettings.fetch(pull.repo, ref=head_sha)
-            if settings.assign_human_reviewer != "after_ai_review":
-                return None
-            if await HumanReviewRequest.active_for(pr_ref.owner, pr_ref.repo, pr_ref.number):
-                return None
             result = await _request_review(
                 pr_ref, pull, Origin(), channel="", inline_summary=summary
             )
