@@ -23,6 +23,7 @@ from managed_deepagents import (
     ManagedServerRuntime,
     define_deep_agent,
 )
+from managed_deepagents.browser import BrowserMiddleware
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from rt.backend import Catalog, OpenSweBackend
 from rt.browser import ReportedBrowserMiddleware
