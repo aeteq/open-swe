@@ -44,10 +44,10 @@ sources:
     resource: repo://openswe/server.py
   - id: openwiki-source-10026b2dd7b7368bb04e27f0
     resource: repo://tests/sandbox/test_reviewer_sandbox_recovery.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Middleware Stack and Request Processing
@@ -177,7 +177,7 @@ These middleware enforce constraints and drive completion:
 
 ## Coding-agent middleware stack
 
-The coding-agent middleware chain is outer to inner. Each wraps the next, forming a defense-in-depth model for failure handling and request shaping:
+The coding-agent middleware chain is outer to inner (assembled by `build_agent()` in `/openswe/server.py#L2044-L2120`). Each wraps the next, forming a defense-in-depth model for failure handling and request shaping:
 
 | # | Middleware | Type | Condition |
 |---|---|---|---|
@@ -340,7 +340,7 @@ The blocking result includes a diff preview (truncated to 400 lines, 20,000 char
 
 ## Reviewer middleware chain
 
-The reviewer graph installs a markedly leaner middleware stack than the coding agent because reviewers are read-only and deterministic:
+The reviewer graph installs a markedly leaner middleware stack than the coding agent because reviewers are read-only and deterministic (assembled in `/openswe/reviewer.py#L1163-L1188`):
 
 | # | Middleware | 
 |---|---|

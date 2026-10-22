@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:3a221db28d4bcd1bd118ce6f31f95d3b8988898190cbafc5b59f49a30dbb3afb",
+  "pageVersion": "sha256:b8f92ddd13afebc6562da48d2e6d9cdd638e7a629f01c234ad441a735e6b6278",
   "claims": [
     {
       "id": "claim_a92a213a430c4e9e8cac73490f5ecdb8",
       "statement": "dispatch_agent_run enforces a strict validation contract: if a prebuilt input is provided with any of raw fields (content, context, channels, systems), it raises ValueError. Otherwise it normalizes Slack, Linear, and GitHub events into ordered RunInput transcripts with attributed identities and structured metadata, then creates a durable Protocol-v3 run with async durability, resumable event streams, and optional webhook.",
       "evidence": [
         {
-          "resource": "repo://openswe/dispatch.py#L415-L467",
+          "resource": "repo://openswe/dispatch.py#L432-L484",
           "version": "repo-lines-v1:sha256:28afdd7a53e23a471f0d684899ac0379927fe003ea4786f006fddd22a53cc2f0:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MGNlNzc2OGIwZmMzMDA2ZmQ0MWYzZjUxOTU2M2FhZWFjYjc3OGQ3NDEwODM3YjM2NDcxYzJlNDgwZjJiM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3NGRlNjBlNmIxYzBkNjA1OTlmMWI3NTU5YzA0M2ZiODBlOTFkYTdlZGNlODdjZjM1Y2JmM2U1NzNkY2FlYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
@@ -21,16 +21,12 @@
       "statement": "Input serialization uses escaped input-message envelopes and dynamic-context XML blocks, treats Slack channel topic and purpose as contextual metadata rather than trusted instructions, and reintroduces contexts hidden by summarization. visible_dynamic_context_hashes checks cutoff_index to distinguish visible from hidden contexts, allowing reintroduction of dropped identities.",
       "evidence": [
         {
-          "resource": "repo://openswe/dispatch.py#L101-L173",
-          "version": "repo-lines-v1:sha256:d1ddcefb7d11c2bb97e14b0efd5c15c6a00bb1b3191a00277864731cbef4ced3:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUwZjMzNGQ4YmY2NDBkNGQwYzRhNzFiNjcxOWMzYzQ0Y2Q0YjkwNGYxMDZjOTYwZmI1YjIyZDI0OTE0OTA5YjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyOTljZTAzMWYxYjFhN2E0M2VhNzNjZDA5ZDFmZGU0ZjkzZmFmZDkxOThkNzI3NDBmMGJjMmFmZDRlNzlhYzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczY2JjNjc0M2Q3OTk3ODJiOGEzYmRjZWRhNjlmMDQ1M2MwOGY0YjYyYzE0MjA2NDRkYThjMDhjNDEzNTA2YmMifQ"
-        },
-        {
           "resource": "repo://openswe/input_messages.py#L263-L279",
-          "version": "repo-lines-v1:sha256:c6d7d1a528a7668bcb6a45bb79a6a3d7cae369db6ed4d7062a9f922c14e6ffd5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NmZmOTY5MjYyYjU5MTIyYmQ0YWY4ODVlYjBmNTQwN2VmMjY3OGY2MjE3Zjk1N2I2OWRkYjQyZTJiMGY4NTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAwYzNjMDgzMDY3MmIwYTk0ZTQ4MDgyNzcwOWU4MzVlNTNmN2M5NGNlZTQ0MDZjNGE3ZTQ1NzVjMzk5OWFmMGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYxNTdjN2Y2MjNlZGQ1OTExN2Q5YmU4MzI4NGM1OWNlNmExY2EyODI3ZGIxYTA5NjA3ZjEyOTA5NThkNDIyZmYifQ"
+          "version": "repo-lines-v1:sha256:4a938377bd583e366ebd2b01ba44ed41e086d4d464f8c6fab4fe3bccd0966430:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZkODFjZGJhYTJjMWFlYzA4MDgxN2ViMDM2ZGIzZDAyODc3NDdhNTFmOTZkZTA4MWNkZGE3Y2ZmMjZkZWE1MjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwYmQ1NDljOTA2NmRjY2RhZmYzNWI1MzcyMzIwYzgwYTAwYjc0YmY4MzVjYmViOWNmNmVjYTAyYmUxMTJmZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwNWNkNDMwMDE5YTk5ZDM1OWQxYjAzYzNiZjlhOGMzMjRlNDQ2NWQ5NTg4YzQ0YTM3MDNhMmNjMGFmODNmNDAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA0YjNlMGYzMDYwNDUyNWE1MmEwMTBmOTI4MTdmZWVkZjE4NjhmYzBjMjcwMjVhNTQ1NzJmNzU1NTE2MWZlODAifQ"
         },
         {
           "resource": "repo://openswe/input_messages.py#L326-L365",
-          "version": "repo-lines-v1:sha256:def0adb719e4b5b3213d778c5d64a4b97711ae784289af291385099fa132195d:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxMWEzZGRmNDVhOWNhZGU4ZTZmYTc5OTRjZDM1ODk0NWQwOGFiNDQ2MjI1YjhiMzdiNGZkMDNlZmRlZjMwMTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY0ZmYxODQ1YmQ2ZmY2MzljMzVmZDNiNTE3N2RkYzNjZWQwY2QyNmRjNjc1OWIwMzlhZjlhN2FjZDE2ZTc1MTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE0MDhhYTNjNDM1N2JjMGExOTk1N2E2ZTI5ZTE3ODllMTEwZDUwYThkZmFjMzc0ODQ5NWY2Y2FlMjdlNmFjMmMifQ"
+          "version": "repo-lines-v1:sha256:30536da10feafef2ff0be6e522cecb099f252fbd1407c8d44499eceabdc85e86:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlOTE2ZDliNjIzZjRkZGYyODFkYTRjMTEwMDBhNmMzZDliZTFhMjRiNTJlMGFkNjNlOTA1N2NhYzdjNmZhMTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NDcwODg0YjE2ZjlmZjllYzUxZTliOWViMjk0NjBjMjQwYjUwZDVkNWJhMWVmMmFkODVjYzk4ZmMxZWNjNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1NWQ3NzdjZjc4YzZhZjI3NmNkYzJlMGU2MzEyM2M3ZTc3ZWQzMTdhNmUwNWE2YzAxYTkyMGQ0ZDJlOGJkNzcifQ"
         }
       ]
     },
@@ -67,8 +63,8 @@
           "version": "repo-lines-v1:sha256:1937138d2dbab86e78b2d836e9ef2c3ef6b43bbafd1acf2b9745902f500b727a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZmFkMDM1OWE5ZDc5YjMyMGJiNWFlMzQ3OWRlNTkzNjE3NzIwZWMyOWI2ZGU2Njc3OTdlZTZhMjRhYzJiZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMTE2Y2U5ZTMwNTYwZDBjNGM0MzVhYzAzMzdlYjU4ZDA1NGVlMWQwM2UzN2U0MTMyNTc2MTAyNGVlYzNmY2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MjIzMTA2ZmQ4NzQyYjcwZWEyMzNmOWRjMzU5ZjRiMDJiYmIwNjliNzI4M2VlZjc2MjQ5OTUxNmJkN2I5YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/prompt.py#L110-L193",
-          "version": "repo-lines-v1:sha256:afef48e44fc73642851a1c463395be63d6c267095871666140360fe2ec475d21:eyJzZWxlY3RlZExpbmVDb3VudCI6ODQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/prompt.py#L110-L191",
+          "version": "repo-lines-v1:sha256:e5500d6f897ffc8d5df1cea809333d6ecec81784b0757cb4b620d21b5e9b3659:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://openswe/resources/prompts/system/repository-setup.md.jinja#L1-L32",
@@ -96,15 +92,11 @@
       "evidence": [
         {
           "resource": "repo://openswe/server.py#L1971-L1974",
-          "version": "repo-lines-v1:sha256:91b870ec4b743723e2faebd8e9e9945adc21976299e05c392029c74ea464fe7e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGRmY2Y3ZjUyYmY3ZTAyOTIxMjc3ZDI3MmJmMDU1NmY1NDJiZTMzMmViN2Y3ZmFiMDc0M2JjOTFkOWViYWU3NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjUzMmRhMWQyNWY4ZmVlMmZkMWUzYWRlNjYzMzU4YWYyZTNlZDJjZWFiNWU4OTNhYjVhZGI5ZjI1ZTZjNDExZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMGU1YjUyMGZlMzQzMjE2NzBlZDFlMTAwNWE4Zjg5MDA3ZjdmNmRiMDZkMThmMzZmYWM2NTEzZDBlNDZlOWM1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWRiMjk2N2U5OWYyYWM2ZGIzMmQzZDQyNGVkYjI0NGQ3YjNlOTc1NjZhNWNjZDk4ZTJkMzIwNjMyYjc3ZjNhNiJ9"
-        },
-        {
-          "resource": "repo://openswe/server.py#L2190-L2220",
-          "version": "repo-lines-v1:sha256:20a9c1b7f393059551749fc5cf73b87cf40ff2ef6bbff2b8512cc7264ed5950e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwOTNkY2UwMmZhM2U1YzBiOGMxYzg2YWM2N2U4NzYzZTNhMjQ5YWFhZDAxZjlhOGVkZTJkNjcyNzE1MGJkNzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1N2MzOTMyNmViNTE0ZDQzNjJjZGVhYWRjZTE0YzQ5ZmYwYjMwYWFmZWFkMWFmN2JiNTQ1ZmNhM2FlZmI0YTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwNjVkZjkxMmVjN2Q5MDlkN2RmMGZiYjk4MzQ4MmU2ZWQzZTIxNmYzNDQzM2Y0YWZiZTdiMjBjNWI3MzA0MzkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY0MTZmMGRjNzE3NDk5ODZmNWU4MjFiY2UwZTEyYmMyNzk5MmQ5YjMxOWYyYmI1MDRkYjg4NTAyNWRiYWZhYjcifQ"
+          "version": "repo-lines-v1:sha256:8006d3c42680eb4bb14bf4afa724309da1b87c3837bddd79b16e9ba49868336e:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2FhMTQzNTFkZWE4OTdiMDI3YTg5OTA5YjQyYzdhMjA3MmM4YjU4NGM1NWM1MDg4MzQ1NDM2MGEyMDI3ZDAyNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmI0ZDRjMzVmMzI3Y2ZmYjhkZmE5NTU4ODg2YmNhZGIwZTAzMzJlZGVlMDMyOGRhNWFiMDYxMDg0YzMyMTQxOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTFjNWRkNGZjZDBjMGU0OTc0MjViMTdlMWFhMjdiNzZhOTM5ZjU2OTk2YTE5MzYwY2FjMGM4ZmY1ZmZkMTg1MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2RjZWEzMmQwYWMxMDllNGI2YzBiNWU5ZWQxNzNkNDAzNmNmMGJhODEwZTQ1ZTRkNDcxMTE0ZjRkNzZiYmRkMiJ9"
         },
         {
           "resource": "repo://openswe/server.py#L320-L325",
-          "version": "repo-lines-v1:sha256:73e07aa31dc719d7256cf2d56e0a2d5143c2f10c1c2ecdf6b5d35f39731aa259:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjlmOTY4YmI0ZWNlMDI5ZmUyOGM2NGQzMTU3NTAyZTY0YmE1ODEyN2EwN2I5MGJmMDRhNDFiYjgxMzIyYzMzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTEzNDQwNjk4YmNkNGE0ZTc4OThjZmRlZWNjNDE0ZGE2YzJmNDNmOTNiOWRiNzdiODBhNDdmMjM1YmFmYTJmYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWRmNGIzNzljNjQwNjgyMTk0YzgxNGVjOWFkN2I2M2VmYTQwMmU4MzgxYWJjNjA0YzhmNjNmZDdjNmUyMjhjMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjI4N2EzZDRhMzRiZDdjOGYwNDY1ZjZiYmEwNmRhNjAwZjdlNmE3ZmE4YzdhZGQwYjVmNjY3NmM0ODI0NWQ2OSJ9"
+          "version": "repo-lines-v1:sha256:2696da7b38cee6d53622ab59c53b92005e979e23fa0110a0ac99a414f3ee70f8:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzVhMzMxMWU0MjgzNDMxZDk4MTg3N2UxZDFiN2I4OWJiODAzMmEyZmRmYWU2ZjljOWZlYzYwYWUwZjg1ZmVjNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NlNzgxNGNlMDhjMjliODNiNjJkMDI5YTk4YmNjYTMzMThlNTkyNjNkZjI4N2E0MjE3YzZiMWQxMTE0ZTYxMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOThlMzQ2OTJkNWNiZWViY2MxNjgyMGZmNjY5OTIyY2I0NjQwYTZkODkxODU0NzA2ZmM0YjBkMTAyMTBjYjdjYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2ZlMTM4MjA4M2IxNGMwNWEyNDhhMTUzNjUyOWZiZjgxYTMwODYyZDQ0YmZhYjhkNTYwYjFiNzRjZDgyMDAzNiJ9"
         }
       ]
     },
@@ -113,8 +105,8 @@
       "statement": "Instruction precedence in the main-agent system prompt, from lowest to highest, is: default system guidance, environment/workspace instructions, sender/user instructions, repository custom instructions, root AGENTS.md, and scoped directory AGENTS.md files.",
       "evidence": [
         {
-          "resource": "repo://openswe/prompt.py#L110-L193",
-          "version": "repo-lines-v1:sha256:afef48e44fc73642851a1c463395be63d6c267095871666140360fe2ec475d21:eyJzZWxlY3RlZExpbmVDb3VudCI6ODQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/prompt.py#L110-L191",
+          "version": "repo-lines-v1:sha256:e5500d6f897ffc8d5df1cea809333d6ecec81784b0757cb4b620d21b5e9b3659:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://openswe/resources/prompts/system/main.md.jinja#L1-L64",
@@ -147,10 +139,6 @@
         {
           "resource": "repo://openswe/threads/recent_context.py#L37-L146",
           "version": "repo-lines-v1:sha256:6393e3839797187d87bf3c20057d6cd394b029aad8f8b881663f747931040e79:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlOThmYjgxMTk0ZGM5MjI0MjM2YjdiNmFkZjAzNTZiNmNkNzlmYWRkMzMxZDhmMzYwNzg3MDNhMzI1MWQ3NWY5IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJkNWQzMTlkM2Y5MDU4YjBiYjI3Yzk1YmQ4YWFlYzAyOWU5OGZjMDlmNWZlYjhkNzIxYTcyODU1NDdhNGUzZjA0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlNWMxYzQ2MmUyYTM5ZDc0NzU5ZjVlMWIxMjZmNzY4M2EyYjczMDExOGUxOGY1MTIyYjA4Y2VkZWViNjUwZTIzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjMjM5MWJmYzA4MWJiNmRlODdhYzY4ZmU0NThhZTA5NmZjM2E1OGEzMjQwNGU1NmM3ZDkxOWE0NzY4ODY4ZTI1In0"
-        },
-        {
-          "resource": "repo://openswe/threads/recent_context.py#L88-L112",
-          "version": "repo-lines-v1:sha256:eb7178a5524301a9039283f83be18cfd4d5f3ccef5e5aae56b3087bee42d6bec:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0NTBjMGU0NzY1MmFhMWYxODI3ZDdiYjVhYzIwNzcwNGM3NmM4MDFhNjg1ZGU4OWY1YWZiZDgzZWNiNGQ2YTciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhYWIwZTIzY2JhZTkzYTkwMGI3YTA1YzMyYjMzM2JlNTVhNThmNzM2YzM1NWE4MWUwYmI2YmQ1MGE5OGU2MjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyZmUzNWU3MTNiMzBjODlkYjM0MmVjYTY0ZDhlMzdjNzJkNGFjZDdhNzU1YWJjYTJlZWQ5ZTViZTE4NjJkMzgifQ"
         }
       ]
     },
@@ -187,10 +175,48 @@
           "version": "repo-lines-v1:sha256:dd0700de656bc2799b8bf5d9502b1ae2bb469a8446f1de703e69a3d0dff1f478:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM2Yjc2Y2ZiYTk0MDkyNDc0ZmQ2ZjcxZWIwZTdhOGNhZWMzMWE0Y2NlYTIyOWI0OTJhM2FkNjZlZGExNGEyMjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyYWZkYThlZTI4MjQzM2ZjZjAzZThlNjM1MmVjMmNmZWUzZGEwOTBmYjQ3YWJiZmQ1MDFkZDU4N2Y5NmZlMDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRlNzU3NWMzYjc3NzZjZjJmOWMyYmZiY2E0NGYyMTQ4MTNhNzgyN2VhYTljMzg0NTRjNzAzYjY4OWE3NDQzODYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_a773f4c180eb455daf1fd757c7204537",
+      "statement": "The prompt() function in openswe.prompts loads and renders static Markdown files or Jinja2 templates from openswe/resources/prompts/ with support for variable substitution. The main system prompt is composed of modular template sections that can be conditionally included based on run configuration, source, and user role.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/prompt.py#L110-L191",
+          "version": "repo-lines-v1:sha256:e5500d6f897ffc8d5df1cea809333d6ecec81784b0757cb4b620d21b5e9b3659:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://openswe/prompts.py#L1-L150",
+          "version": "repo-lines-v1:sha256:a73ae6228cf62917b3ee7c6049bc44342b71a28512be44b305fde5543b9b13d1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJhODMwMzMzMzEyYzRjOWMyMjMzYmIwMjc2MmJkNDk4MjAzYjFjM2JmMDUyNzYxNDczNTY5M2I0Yjc5ZjZkMTY3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJmM2QwMzNmNDNhZDc3YTFkNDY5YjI1ZDQ4MjU2NzllNWUwOTIzNWUxZWExZmNiNDE0OTBlMDJkZjAxNzdjNWIxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MSwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjMDgzZDg5YjgyMjNmYzhiNTMzYTIwMDY0YWFmYjcyMzNhYTZlZDE3ZGMzMGYyNDNiNzljYjQwNzg1ZTNjZTJjIn0"
+        },
+        {
+          "resource": "repo://openswe/resources/prompts/system/main.md.jinja#L1-L64",
+          "version": "repo-lines-v1:sha256:cae0624d3e98185e64602c899a46c7564cf96b90d73380237493a11610324b99:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1M2UyNGY0ZTNlZmE2NGY1ZTVkNWIwYzc0YTRkNGVkOWFkMjM1MGRmZTcxNWMwMjM5NWNmY2JkM2UyMGQ0OGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkZDczZGEyNjFkZDg4NDQzMDEwMGM3ODA5MDEzOTZmOGIwYjRlOWMyYjJkMDU5MmE1MjIwZDlmZTViNTM0MDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_a7e893c11ade404d85beabc20b1eba36",
+      "statement": "The _render_source_guidance function dynamically selects guidance sections based on the event source (Slack, Linear, GitHub, schedule, dashboard) and source-specific flags (slack_context, slack_ask, slack_breakout, slack_by_the_way), wrapping them in open_swe_source_context tags.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/prompt.py#L43-L66",
+          "version": "repo-lines-v1:sha256:feae5700a7e534ae7309349c2df3253d23d36340f9a33227bdc7291190d155e3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjYmJhNGVkZmVjYzIzOTIwMjU4ZGI2ZDc2MjJhYWI2OGY5ZWUzZjE2ZWYxNjRkNmQ3NTY3ZDg5N2E5YzU2YmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjYzk2ZGM4NWYyNWY1YzdlZTc4OWQ1NTU5OGE4MGNkMjljZTk4ZDc4YjJkZDRiYzMyMjlmZjk5YzQyODI4ZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNGQ1YTY2MTVmMzczNGRjOGI5OTk5OWI3NGI2ODIyMmQxZWE4MWUwN2FhMTUxNWVlNTNkOGJlNDExNGI4YTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImEyMDU3NTkzNDUxNGM3MjhjNjA4MDhkZDQyNWFkZTNlYzY0MzFmMmFjYzQ0NGMxMTk2NjYwYTBlYTZhYjVmMjEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_0070de807b73498595123901f73f6b3f",
+      "statement": "construct_system_prompt integrates multiple instruction layers: default system guidance, working environment, dashboard context, source guidance, default prompt, repository scope, collaboration guidance, external untrusted comments, repo instructions, recent thread context, workspace instructions, admin workspace settings, and sole-writer guidance.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/prompt.py#L110-L191",
+          "version": "repo-lines-v1:sha256:e5500d6f897ffc8d5df1cea809333d6ecec81784b0757cb4b620d21b5e9b3659:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-21T13:36:13.083Z"
+    "at": "2026-10-22T13:38:02.092Z"
   }
 }

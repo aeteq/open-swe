@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:18e1d56d675db81cd28f6c8c1b89ae34b2a0c6e084892659ab9e7a83d2a3b938",
+  "pageVersion": "sha256:609cc3a10c3a104fd74b45e2acb6ff5478ae9281ea02d09740326cc9825a6844",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         }
       ]
     },
@@ -38,13 +38,13 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         }
       ]
     },
     {
       "id": "claim_7c0acef30b314001ba9760696f5b0434",
-      "statement": "The local dev server's LangGraph constraints are set to langgraph-api>=0.16.1,<0.17 and langgraph-runtime-inmem>=0.36.1,<0.37 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
+      "statement": "The local dev server's LangGraph constraints are set to langgraph-api>=0.16.2,<0.17 and langgraph-runtime-inmem>=0.36.2,<0.37 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
       "evidence": [
         {
           "resource": "repo://Dockerfile",
@@ -55,8 +55,8 @@
           "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
         },
         {
-          "resource": "repo://pyproject.toml#L78-L81",
-          "version": "repo-lines-v1:sha256:85bb40eb96568641013be0101d8c7fc293c9e59f35b0461a592da1e9c27c496b:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjg2MmU0MmI1ZDAyY2I5OTUwM2I2MGVmNWY4MzNiNTc0MTA1YzkxYWUzMTFmNmM3NTZlODcyYzk5ZDIzNTYwYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjk0MTZlMDlmNzhiYTMxNmMwMzI1NjgyMTNiODU1ZWU3NTZlNDE1NjVkOTE4ZjA5NTE5YzgxZmQ2MjBmNDA2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODBkYmIyNjM5ZjU0YjUxOTE0ZmRmZTU0MWUyOWQxODhjZTA2YTA0NmJjYTQxZWRiNGYxMjI5ZWNkYjNkZWZlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjkwNWJkZWQwNjQ0MDE5ODI4NDkwYjFkNTZjOTA2YTQ4YTk4YzIwM2JlMTY5MDNiNGZmNTIwMmI5NTRmYjZhZSJ9"
+          "resource": "repo://pyproject.toml",
+          "version": "repo-file-v1:sha256:cd91df0634d20597e8a71019277afe79417fc30134256b06c9cd2254ff67f1f0"
         }
       ]
     },
@@ -72,19 +72,19 @@
     },
     {
       "id": "claim_9728ecdcb847471f8a5e2b37825bc6c6",
-      "statement": "make web runs `pnpm run dev --filter=open-swe-dashboard` (via root package.json), starting the dashboard Vite dev server on http://localhost:3000, which in development proxies backend paths to DASHBOARD_API_URL (defaulting to http://localhost:2024) so no ui/.env is needed.",
+      "statement": "make web runs `pnpm run dev` (Turbo filter open-swe-dashboard from root package.json), starting the dashboard Vite dev server on http://localhost:3000, which in development proxies backend paths to DASHBOARD_API_URL (defaulting to http://localhost:2024) so no ui/.env is needed.",
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         },
         {
           "resource": "repo://package.json",
           "version": "repo-file-v1:sha256:448c10173e8cd0d561069c0a53fe7eadce7d9b8d42c9b1402a131764bba7dc26"
         },
         {
-          "resource": "repo://ui/vite.config.ts#L161-L161",
-          "version": "repo-lines-v1:sha256:6654907119fea310a113f639a9b35ce7b083772758a1e9f642ebbb6477e0b021:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjY1NDkwNzExOWZlYTMxMGExMTNmNjM5YTliMzVjZTdiMDgzNzcyNzU4YTFlOWY2NDJlYmJiNjQ3N2UwYjAyMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjY1NDkwNzExOWZlYTMxMGExMTNmNjM5YTliMzVjZTdiMDgzNzcyNzU4YTFlOWY2NDJlYmJiNjQ3N2UwYjAyMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGVmZWU1OWZjOTI5YzlmNGZjN2QyZjU1NmY1NGI1NzkwMGVhZmQ4ZTQxZWUzYzgwNGQwZWIwOGIyYmMxMzI4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjE2MzcxYTY3OWViMjZiOTdjYjUzOTQ3MDYyNWMxNDk4MjYzZDlhNGNhNTE1MTVjMGQ2MmQ2M2EyMDBkMzk3MyJ9"
+          "resource": "repo://ui/vite.config.ts",
+          "version": "repo-file-v1:sha256:37cdb0513284d00c34a05b439e57f9a4394afb7865755975bb9fa9dfe85f796b"
         }
       ]
     },
@@ -124,7 +124,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         }
       ]
     },
@@ -174,7 +174,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:b97bacc9d5998f93882695419eb1aae8ceebc68bd8076314a561c276ddf45348"
+          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
         }
       ]
     },
@@ -194,7 +194,7 @@
       "evidence": [
         {
           "resource": "repo://ui/vite.config.ts",
-          "version": "repo-file-v1:sha256:f787f4d491689d150e6262ef3672fc6225f2804dd10b10696f4d72106953607a"
+          "version": "repo-file-v1:sha256:37cdb0513284d00c34a05b439e57f9a4394afb7865755975bb9fa9dfe85f796b"
         }
       ]
     },
@@ -204,7 +204,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:b97bacc9d5998f93882695419eb1aae8ceebc68bd8076314a561c276ddf45348"
+          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
         }
       ]
     },
@@ -213,8 +213,8 @@
       "statement": "The production Nitro proxy requires DASHBOARD_API_URL at request time and throws if it is unset, rather than falling back to a backend; it proxies the original path and query while preserving OAuth redirects manually.",
       "evidence": [
         {
-          "resource": "repo://ui/server/backend-proxy.ts#L1-L12",
-          "version": "repo-lines-v1:sha256:0a38af90f197ceb9c4ec57d1f6be0499c52ec728f060b77f07c02a6cfab1bba3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmOWQ0NTkyYWY0NDgyNGJhNGI1NmNjNDNmNjZmMTg1NWExNGMyODgzM2ZjYmI0NTIzYjdlNDE3ZjExMDk0MTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzMTlmYWE5OGJjNDljNzM3ZTJkYjM3ZDcyZDExMjEwZjRkZGYwZTY0YzJiZWIwZGRhZGYyMjk1M2U0MzYwMmYifQ"
+          "resource": "repo://ui/server/backend-proxy.ts",
+          "version": "repo-file-v1:sha256:621b86cafa2d1d4f2d0b305a00a90eaa4868efff6431a56b9381e3de27c8d0ac"
         }
       ]
     },
@@ -234,15 +234,15 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         },
         {
-          "resource": "repo://langgraph.json#L30-L30",
-          "version": "repo-lines-v1:sha256:2fa373d97dc786a1af046ccb442bb2d86e5f4aa1f7a5c78e3e3e6acb63b255b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmZhMzczZDk3ZGM3ODZhMWFmMDQ2Y2NiNDQyYmIyZDg2ZTVmNGFhMWY3YTVjNzhlM2UzZTZhY2I2M2IyNTViOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmZhMzczZDk3ZGM3ODZhMWFmMDQ2Y2NiNDQyYmIyZDg2ZTVmNGFhMWY3YTVjNzhlM2UzZTZhY2I2M2IyNTViOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDQ2NTlkM2NhYjU2Y2NiZTIwZDM2MzY3ZmEwNmViNDQzZjBiNTllNmJjNjc4ZjY2MWMzOTk5Y2U0NWY4OTgxYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjc4ZTM3OGMzM2YxOGU0OTkwMjRlNzQzODljZTk3MjJmNGY2MTBhNWY3M2EyMDhhNjYxM2I0NTg0NmRiYjA2YiJ9"
+          "resource": "repo://langgraph.json",
+          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
         },
         {
           "resource": "repo://ui/vite.config.ts",
-          "version": "repo-file-v1:sha256:f787f4d491689d150e6262ef3672fc6225f2804dd10b10696f4d72106953607a"
+          "version": "repo-file-v1:sha256:37cdb0513284d00c34a05b439e57f9a4394afb7865755975bb9fa9dfe85f796b"
         }
       ]
     },
@@ -252,7 +252,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         },
         {
           "resource": "repo://examples/ngrok/webhooks-only.yml",
@@ -269,8 +269,8 @@
           "version": "repo-file-v1:sha256:d0ddb3959c1eda19cd3de9567f64a8e10afd1135e59dcee4b01f947251d43181"
         },
         {
-          "resource": "repo://langgraph.json#L28-L45",
-          "version": "repo-lines-v1:sha256:4dcd922e797f79ddd3d3764642d11fbd7bd013d0f92b71c0e45ccd6e3d93139c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiMzY0NTNkNjNhZWRkNjZkYzg0YTI2ZjRiZDhiMTI3NzQyOTRkN2JmZGE5YzU3MjBlZmFiM2U0OWY0OTdjZjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwNjQ4Zjc3ZmQ1YTljNjNiM2NkZDBhZjQ5ZGFhMTI5OTIyMGI3NTQxZTg4Y2ExN2VmZTFhNmExMTRiOWZmMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE4MDlkYTkwNTc4NzMyYzVhYWFmYTVlNDFkZTgzMzE5ZDU2ODhlYmFlMDk0ZWIxMzRjMDBiNjkyNTc1MTA2ZTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEifQ"
+          "resource": "repo://langgraph.json",
+          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
         }
       ]
     },
@@ -280,7 +280,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:b97bacc9d5998f93882695419eb1aae8ceebc68bd8076314a561c276ddf45348"
+          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
         }
       ]
     },
@@ -289,8 +289,8 @@
       "statement": "The FastAPI lifespan startup sequence validates configuration, pins an event loop, acquires a database advisory lock, creates the open_swe schema and runs alembic migrations, imports workspace data from the LangGraph Store into Postgres (idempotent steps), deletes legacy analyzer crons, syncs admin flags, starts an analytics worker, starts transcript/bridge/UI-invalidation/notification listeners, warms the agent build, and opens LangGraph graphs; import/analytics/listener failures log warnings but do not prevent startup.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L46-L126",
-          "version": "repo-lines-v1:sha256:f7e93fa0d4adfbdea6a97e1d41041375775d0a8bc351528eaa7fa56a5c1c41c9:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3Y2ZmM2YxNzg0MmRlYzZlN2U5MWMzZTNiOGZjZTBhODIyZmMzMTEyNzM4MWIwMGY0NGE5ZjEzMzMzMDNhMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNTgzMDM2ZTQ5MGMxYjdkNjI3MjYwNGJkN2I3N2QyYTc5MGViOGFmMGZhM2EwZTQ3MTgyZDc5MDdiZThlOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNmUzOGZiNDM1NjdmMWM0NzNhNTg0MTgxZTY3YmNiNGMyODJkNzQwNTM3NGFhMTJkOWY4MmM0NjU5NWM0OGIifQ"
+          "resource": "repo://openswe/api/app.py",
+          "version": "repo-file-v1:sha256:05fae6990f48549c5f8c60db88b3e22cb8c4b4f674029fdf65b5cf21d4592a60"
         }
       ]
     },
@@ -300,7 +300,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         }
       ]
     },
@@ -310,7 +310,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:454b48b387adbf1c18c86358975b3e22aceb24e3aa6496a21f8dbb739e61c6e1"
+          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
         }
       ]
     },
@@ -339,8 +339,8 @@
       "statement": "Alembic-based database migrations in openswe/database/migrations/versions/ run at startup within an advisory lock (XID 557314367248862439), create the open_swe schema if missing, and execute only new revisions tracked in alembic_version; on the preview environment, rebased branch heads that become superseded are deleted from the version table to apply the new chain cleanly.",
       "evidence": [
         {
-          "resource": "repo://openswe/database/postgres.py#L213-L256",
-          "version": "repo-lines-v1:sha256:164f73a5a338314eaf7ce2f46795b5b1d3aa15c1d6d79c57e1f7dbd3cb42e31c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5ODAzMWM1MmJmOWZmZDMwN2E2ODkwZTFkM2ZiYjAxMzQ3YzQyMDk2NDNmZDYzMjhhY2VjYjk0ZTUxYmU3MzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiMmQxOTc0NGQ2NDNhN2EzYjYxN2JjMzdkNWYzN2U4NjgyNDA2MDIwNjFkZTk0ZDMzZjJkMGEwZWYzZDc2ZmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViYTA5MjMxMzFmYWNkZjA5OWMzYTU3ODJhZGYxMzE0MjM1NjI2OWMxMTdiMDNlM2RmMmY3MGFiNjkzMzUxNWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhY2I2MjQxYjRjNDFjZTdkYjMxYzA5ZDI5NWQ1MzkwNWQ3YmVmYjA0NGQ4M2YxZGQxYjQ0Yjg5YzdiZGFjZGIifQ"
+          "resource": "repo://openswe/database/postgres.py",
+          "version": "repo-file-v1:sha256:9126eb3494fb1bd9ca327ef0d35be06200e6020fccf18c7c69437d54a3e0cee2"
         }
       ]
     },
@@ -353,8 +353,8 @@
           "version": "repo-file-v1:sha256:d0ddb3959c1eda19cd3de9567f64a8e10afd1135e59dcee4b01f947251d43181"
         },
         {
-          "resource": "repo://langgraph.json#L20-L26",
-          "version": "repo-lines-v1:sha256:12aec50317b1e566f70f5ed9e22f9da69ba986880e7a318462ef1cc974b2a094:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGM1Zjc0MTQ0ZDM0ZjA2NTkzNDIzN2JhODFiZWM4YzVhZjMzOTVhYTdjMmQxNDM1ZTY0OTk0NGFhMzVkMTIzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ1Y2QyZmI0ZjNkZjg4NDUxNTI1NWIzOTUyM2YyZjhiNTQ3MmJlZWE5ZjU2NmZmY2EyMDRkYjgwMjU2MTA0MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmZjMzQzMGI1YTQ1YzllZWM5YzRiMTZiNzVkMzExNDA3Y2Y0OTJkNjU1MjgzMjNiNzkyMjY3MTgzYmM1NjlmZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDQ2NTlkM2NhYjU2Y2NiZTIwZDM2MzY3ZmEwNmViNDQzZjBiNTllNmJjNjc4ZjY2MWMzOTk5Y2U0NWY4OTgxYyJ9"
+          "resource": "repo://langgraph.json",
+          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
         }
       ]
     },
@@ -373,14 +373,14 @@
       "statement": "Multiple replicas share Postgres for state and Redis for workers; cross-replica communication includes transcript listener (Store writes), sandbox-bridge listener (file I/O), analytics worker (Store-to-Postgres), UI invalidation hub (dashboard updates), and database notification listener (PostgreSQL NOTIFY), with listener startup failures logged as warnings that allow the replica to continue with degraded feature support.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L46-L126",
-          "version": "repo-lines-v1:sha256:75863236c3a0c8eb0e9980cdc795de8cab5c8086b820f585a9337aaba600c88d:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4NmQ2Mzg2NTgwOTVjNWNhNzhjMTFjNDE4NDFiZTZiMzYyOTc2NmRkYjNmYTY3ZDA0MWRjZjcxZWQ0YTI2YTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNmUzOGZiNDM1NjdmMWM0NzNhNTg0MTgxZTY3YmNiNGMyODJkNzQwNTM3NGFhMTJkOWY4MmM0NjU5NWM0OGIifQ"
+          "resource": "repo://openswe/api/app.py",
+          "version": "repo-file-v1:sha256:05fae6990f48549c5f8c60db88b3e22cb8c4b4f674029fdf65b5cf21d4592a60"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-21T13:36:13.083Z"
+    "at": "2026-10-22T13:38:02.092Z"
   }
 }

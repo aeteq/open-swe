@@ -34,10 +34,10 @@ sources:
     resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -80,6 +80,22 @@ Slack filters messages early: it rejects bots and self-messages, validates messa
 
 Slack first obtains channel context. Operations are permitted only in DMs or channels confirmed not externally shared; an app mention in an external shared channel gets one deduplicated refusal reply and no run. Signed slash commands, code-channel actions, and supported Block Kit actions turn into explicit code-channel turns; plan/workflow approval actions instead update their approval state or enqueue the prescribed follow-up.
 
+## RunInput and InputMessageContext
+
+The `RunInput` type defines every durable run's input schema: a dict containing a required `messages` list and optional `files` dict. Each message is a dict with `role` ("user" or "system"), `content` (string or list of content blocks), and optional `id`. This is the gateway contract all invocation sources must satisfy before dispatch.
+
+`InputMessageContext` captures the operational envelope for a single input message: the sender's identity (`sender_id`), the surface it arrived on (`surface`: one of `"slack"`, `"linear"`, `"notion"`, `"github"`, `"web"`, `"automation"`, `"eval"`, `"deployment"`), message kind (`kind`: `"human"` or `"system"`), an optional channel/thread context (`channel_id`), and optional structured data (`data`: arbitrary key-value pairs). The context is combined with sender/channel/system `Identity` objects (typed dicts carrying structured metadata) to build a complete serialized input message.
+
+Identity objects are namespaced TypedDicts:
+
+- **`PersonIdentity`**: Maps a person across surfaces. Requires an `id` field (format: `platform:identifier`, e.g., `github:alice`, `slack:U123ABC`) and may include GitHub login, email, commit name/email, timezone, account-linking status, admin role, PR preferences, and standing instructions. PersonIdentity is deduplicated by content hash within a thread, so unchanged identities are not re-injected.
+
+- **`ChannelIdentity`**: The conversation context (Slack channel, Linear issue, etc.). Requires `id` and `platform` fields, optionally includes name, thread_id, topic, purpose, description, default repo, web_url, and trace_url. Fields marked `trust="untrusted"` in XML represent channel-controlled content like topic and purpose that may be user-controlled or polluted.
+
+- **`SystemIdentity`**: Metadata about the system that initiated the run (e.g., scheduler, automation engine). Requires `id` and `display_name`, optionally includes platform and sender_type.
+
+Input serialization enforces human/system kind alignment, XML-escapes authored content in input-message envelopes with attributes for sender, surface, kind, channel, and optional structured data, and uses SHA-256-hashed dynamic context introductions so previously injected identities (and their introductions) are omitted on later turns when they haven't changed.
+
 ## Surface-specific construction
 
 ### Slack
@@ -120,6 +136,31 @@ Inputs are not arbitrary prompt strings at the graph boundary. `human_input` and
 
 ## Durable dispatch and completion
 
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
+flowchart TD
+    A["dispatch_agent_run<br/>thread_id, content, configurable"] --> B{Input provided?}
+    B -->|Yes| C["Validate: input cannot<br/>mix with raw content"]
+    B -->|No| D["Synthesize input from<br/>content + source context"]
+    C --> E["create_durable_run"]
+    D --> E
+    E --> F["Prepare config with<br/>invocation_id, v2 markers"]
+    F --> G["Fetch user metadata<br/>and attribution"]
+    G --> H["Set multitask_strategy<br/>interrupt or enqueue"]
+    H --> I["Create thread if needed"]
+    I --> J["Call runs.create with<br/>Protocol v2 stream modes"]
+    J --> K{COMPLETION_WEBHOOK_URL<br/>configured?}
+    K -->|Yes| L["Attach completion webhook"]
+    K -->|No| M["Skip webhook"]
+    L --> N["Run executing"]
+    M --> N
+    N --> O["Run completes:<br/>success/error/timeout"]
+    O --> P["POST completion webhook"]
+    P --> Q["Failure handling:<br/>post source-specific reply"]
+```
+
+Diagram: Request path from dispatch_agent_run through config preparation to durable run creation with optional completion webhook attachment.
+
 `dispatch_agent_run` is the single agent/reviewer dispatch contract. It rejects ambiguous calls that combine prebuilt input with raw content/identity arguments, selects the graph with `assistant_id`, and delegates to `create_durable_run`. The latter defaults to `multitask_strategy="interrupt"`, `durability="async"`, and `stream_resumable=True`; callers such as untagged Slack follow-ups can explicitly select `enqueue`. Async durability checkpoints each step while the next one runs, so a crash or process recycle can resume from at most a step back instead of losing the run.
 
 Every created run is marked for Protocol v2 streaming via the `__event_streaming_v2` configuration key, includes the v2 stream modes (`values`, `updates`, `messages`, `custom`, `tasks`, `checkpoints`) and subgraphs, and receives an `invocation_id` (with legacy `prepare_run_id` alias) in both configurable state and metadata. This preserves tools/lifecycle and nested-agent visibility for runs that the dashboard did not start, and lets a later client replay the stream.
@@ -137,6 +178,22 @@ The `multitask_strategy` parameter controls how a new run interacts with any act
 When both `RUN_COMPLETE_WEBHOOK_SECRET` and an absolute non-loopback `COMPLETION_WEBHOOK_URL` are configured, dispatch attaches `/webhooks/run-complete?token=…`; otherwise it deliberately omits the webhook so an invalid local URL cannot make all run creation fail. The receiving route is fail-closed on that token.
 
 On `success`, completion schedules a deduplicated Slack session-cost refresh. On `error` or `timeout`, it loads thread metadata, settles an unfinished reviewer check where relevant, restores a code-channel session only if no later run is live, and best-effort posts a source-appropriate failure reply to Slack, Linear, GitHub, or Notion. Failure replies are idempotent per run id (with a legacy thread-level fallback when an old payload has no run id); `interrupted` is intentionally not treated as a user-visible failure because it is the normal replacement behavior for an interrupting follow-up.
+
+## Error handling and retry behavior
+
+Invocation sources handle errors with varying strategies:
+
+- **Signature verification failures** (`401 Unauthorized`): GitHub, Linear, and Slack webhooks verify raw-body signatures before JSON parsing. Invalid or missing signatures return `401` immediately. Verifiers fail closed when the signing secret is absent.
+
+- **Stale deliveries**: Linear webhooks reject payloads older than 60 seconds based on webhook timestamp, returning `401` to signal GitHub/Linear to stop retrying and dropping the delivery.
+
+- **Missing credentials**: Slack prompts users to link GitHub accounts or re-authenticate rather than dispatching when a valid GitHub token is unavailable. This prevents silent failures.
+
+- **Completion webhook failures**: If the completion webhook is misconfigured (relative URL, loopback address, or missing secret), dispatch degrades gracefully by omitting the webhook from run creation rather than failing the entire run. A warning is logged so operators notice the misconfiguration.
+
+- **Repository access loss**: Scheduled runs recheck the creator's repository access before each tick. If access is revoked, the scheduled run does not proceed and the schedule remains for the next tick when access might be restored.
+
+- **Best-effort failure replies**: When a run times out or errors, completion attempts source-specific replies but does not fail if the reply posting fails. Consecutive failure replies are capped at 3 per thread to prevent spam if failures persist.
 
 ## Safe changes and focused verification
 

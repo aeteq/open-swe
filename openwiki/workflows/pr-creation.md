@@ -5,7 +5,7 @@ description: How the agent creates and manages pull requests with attributed aut
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-6ba47e09f2a30f358f5d7a36
     resource: repo://openswe/github/squash_message.py
@@ -25,7 +25,7 @@ sources:
     resource: repo://openswe/tools/open_pull_request.py
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Pull Request Creation and Workflow Approval
@@ -52,6 +52,8 @@ flowchart TD
     Telemetry --> Thread["Update Slack thread"]
     Thread --> Done["PR created or found"]
 ```
+
+This diagram shows the pull request workflow from code commit through workflow approval (if needed) to PR creation and metadata recording.
 
 ## Commit and authorization
 

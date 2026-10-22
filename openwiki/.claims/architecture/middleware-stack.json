@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:fc5d396b28f01dddd7e6943d4e1b170dca50b2e79e2d70a1261e17221a834504",
+  "pageVersion": "sha256:f9a6574d238602710a4b2a62deace761ba05b68bea2fb3c84ea5ebe68ecd851b",
   "claims": [
     {
       "id": "claim_5f37c6f3fd0d4b7daf65acc42b1cb6c1",
       "statement": "The assembled agent middleware order (outer to inner) is FilesystemMiddleware, AnthropicPromptCachingMiddleware, ConversationOffloadingMiddleware, PrepareAgentRunMiddleware, optional ReviewGuideMiddleware, TranscriptMiddleware, optional ClientToolsMiddleware, optional IncidentMiddleware, optional WorkspaceSkillsMiddleware, ValidateImageReadsMiddleware, ModelCallLimitMiddleware, ToolErrorMiddleware, ExcludeToolsMiddleware, SubdirAgentsReadMiddleware, ToolRetryMiddleware, optional PullRequestCreationGuardMiddleware (non-local), WorkflowPushGuardMiddleware, optional TaskCoordinationMiddleware, refresh_github_proxy_before_model (unless worker mode), check_message_queue_before_model and deliver_event_matches_before_model (except stop-summary mode), RequireUserReplyMiddleware, optional RequireCliResultMiddleware, notify_step_limit_reached, record_run_usage, ModelSelectionMiddleware (conditional), ModelFallbackMiddleware (conditional), ImageModelFallbackMiddleware (conditional), three message sanitizers, StableToolResultOrderMiddleware, ModelErrorMiddleware, and ModelCallTimeoutMiddleware (innermost).",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2063-L2140",
-          "version": "repo-lines-v1:sha256:88d6ea7c45181def61164445648fdb899d7b1062684e38e58e28ae7ed0f64816:eyJzZWxlY3RlZExpbmVDb3VudCI6NzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYmRiOGI2YTczYjE0MTAzZWRjYTllYmMxNGEyZjQzNjY0YmZmMzc5ZmZhMzY1YzdhOGY0NWI0MzY2OWEyY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQwYjZlNzhiMGY0YjExMGU3ZmY3ZGUxNjFkZGI2YTZhMjIzZTA3MTJjODYzZDY0OGYwNDVkM2FmYjE3Nzc5NTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRmMzdiNmVjNzM1NDVkZDQ2Y2IyNmEyNTkzOWU4NDlhYWRhY2MzZmE2NGJjMGQ4ZjE3YmYwMjJmOTk5ODM4N2IifQ"
+          "resource": "repo://openswe/server.py#L2044-L2120",
+          "version": "repo-lines-v1:sha256:b58161a7cc8c29b0366428dba91cf7801c4f53f1158e531626b5af394f602448:eyJzZWxlY3RlZExpbmVDb3VudCI6NzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYmRiOGI2YTczYjE0MTAzZWRjYTllYmMxNGEyZjQzNjY0YmZmMzc5ZmZhMzY1YzdhOGY0NWI0MzY2OWEyY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiMzllMTZkY2I1YTAyODlmMTQ0MGJiMGNmOGQ1MmRiZTU4MWQyYWI2N2IzNmIzNDQwZWRmZjRmMWRmOGFlNTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0ODQwNmRjYzk1MTE4MTU1ZGRiZmRlYzlhZWQ0NjBiYzQ3NDg4NmIwMmNiZTk4N2I3ZDQzMzJjYjQ0NjgzM2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU1ZDUzNTc4NWRmYmZkZjdhZTQ3ZGEzNGU5MzdjMzY4NzBjNzA2Y2MyZDFjZTk2MzVjMzgyNDEyNTljMTU4YmIifQ"
         }
       ]
     },
@@ -25,8 +25,8 @@
           "version": "repo-lines-v1:sha256:50f23f23f0c9c5a60e5f176e88a9d22101679679c58f5f439dc0caeebf57845d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkYjVlMTczNzQ2YjJmOWEwMGFkYmI3NmNmNjRlZTIyMTRjNTZiNGIxZjZjZTMxMjhhZDI4YmM5ZDdjZDFlYmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwMzBkNWFkNDdkZDFlMDNjYjUyMzMzOTJkNzgzNDk2YjQwYzNmYjZkNWM3YTdlNDYwZDBlMGU1MzllZThmNmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0YzBkOTllNTQ0ODkwNGRhYmZmODNjYzVmYWYyMTZjOTVkOTIxYzJlNDBlZDI5MDdjZTBlZDhmZDZkZDc4NGUifQ"
         },
         {
-          "resource": "repo://openswe/server.py#L2135-L2140",
-          "version": "repo-lines-v1:sha256:c90b9cb9a96d759a5427937920ba8b0f12ac5ad6b71c7cad8b2bf069254223f8:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWY3MTQ2ODQ5Mjc2NzYwYTQzMWI1YTRjZDAwM2JhYWVlYTcyNTExYzczYzZmMGIzMzA4YTQyZjEzYjdkODQwYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTUyZjAyNjhhYWE4NTNmNWNiYzUzYmIxYTU1MjBhMmNjYjcyZjZiMjFhOWIxZGZiYzdlMzMwYWI3MzZjMTQzZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNGYzN2I2ZWM3MzU0NWRkNDZjYjI2YTI1OTM5ZTg0OWFhZGFjYzNmYTY0YmMwZDhmMTdiZjAyMmY5OTk4Mzg3YiJ9"
+          "resource": "repo://openswe/server.py#L2117-L2120",
+          "version": "repo-lines-v1:sha256:7d07bb9eb26a66b30d64d3ca37e8348d49e9627035b7484939d5541a47d3c1f2:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ0YWZhYWRiN2NkNGYwODYyMTZiOTBkYjUxYzQ4OTFkNDg1ZWQ3NzE3YTg5YWQyN2Y4NTIwYTM5OTllM2FhNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMGIzOWUxNmRjYjVhMDI4OWYxNDQwYmIwY2Y4ZDUyZGJlNTgxZDJhYjY3YjM2YjM0NDBlZGZmNGYxZGY4YWU1MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTkwYTE1MDA4ZGU2MmM4NGIzNzJjMmY0MDg1ZmQ4MjhkYTc3MGJkOTFjOWVlMmJkOGMyY2Q5YmI4YWE5MjgzMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTVkNTM1Nzg1ZGZiZmRmN2FlNDdkYTM0ZTkzN2MzNjg3MGM3MDZjYzJkMWNlOTYzNWMzODI0MTI1OWMxNThiYiJ9"
         }
       ]
     },
@@ -35,7 +35,7 @@
       "statement": "The reviewer graph installs a leaner middleware chain with no conversation offloading, transcript middleware, incident, workspace skills, dynamic tools, tool validation, task retry, model selection, PR guard, workflow push guard, run-usage hook; it uniquely adds RepairOrphanedToolCallsMiddleware and settle_review_check_on_exit, uses langchain's ModelRetryMiddleware for TimeoutError, and also installs ModelErrorMiddleware.",
       "evidence": [
         {
-          "resource": "repo://openswe/reviewer.py#L1161-L1186",
+          "resource": "repo://openswe/reviewer.py#L1163-L1188",
           "version": "repo-lines-v1:sha256:7a1593a6c1429b97920211a3b431061c18ac6827f411bdcefa7a46d71ce627cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRkYmRiOGI2YTczYjE0MTAzZWRjYTllYmMxNGEyZjQzNjY0YmZmMzc5ZmZhMzY1YzdhOGY0NWI0MzY2OWEyY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZGZiNmIzMWE0YzViMzMwNmZlZmU0MDI4YWM5YTIxMzg0YjgxYTUxMjQyOWEwZjVjOTVmNzk5Y2JhNWRmM2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI5ZmU5NWNiNTYwZGFkMGViZDYyYWYzMTk5MWUwZjU1MDIwZmMwMDgwZmJkMGNiMTUyOGEyZjUyYTQwZjkyMDQifQ"
         }
       ]
@@ -97,7 +97,7 @@
           "version": "repo-lines-v1:sha256:e002cab87aff27ca4304986accaf397486f6b4088daf1d7a8184a56ba07bee53:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjOTFmZmIyZmU4NGFkNmUwNzk4MDBmZGI3Nzc2YWJlNzQ2Y2Q5YmQxYzY5YjJlZmM1MTYzZmJmOWFkMmE1MzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkOGY4OWJlYTc0MjQ4MjVjNTNkYWYzN2RlZDZjODVmZWNmOTcxOTM1MmQ5NmRhNmQzZGYxNmVlZjUzMTQyMGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/server.py#L2091-L2098",
+          "resource": "repo://openswe/server.py#L2072-L2079",
           "version": "repo-lines-v1:sha256:c9d6644e74f5c5505beb4074c6b9211aa950543c5e774042f392f0cd3dd2316c:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ4OWEyMzg4ZGFhMDFlNWE4Nzk3MDRjNWVjMTg4ZTUwZjc2NzY2ZTM2YzRiNDVjZGRhMjVmNWJkODY5OTRhNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQzNGE5ZGY3NzliOTU2NmIwNGFkMmI5ZTZjZGRlM2IxZDVlNmMxYThjOGI5N2FiN2MyOGE3YjEzYTMzYmQ2YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWIwNWNjOWVlMWY1Mzg4ZjIyNWMzOTU0YTRkN2JkOTQ3NDExYmEwZDk3MzM3YmJhNjRkOGNkYTljNWViYWIwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGVmZTZkYjE4ZjczOGFhYTAxNzk2M2ZhNTFjMTEzNzBkMmIxMTkwYmM1ZWE5MjIyYWIxZmM5ZmY1YWU4MmViZCJ9"
         }
       ]
@@ -147,7 +147,7 @@
       "statement": "ConversationOffloadingMiddleware is the outermost agent middleware after FilesystemMiddleware and handles deferring of conversation context when configured by the user, permitting long runs without hitting provider context limits.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2068-L2070",
+          "resource": "repo://openswe/server.py#L2049-L2051",
           "version": "repo-lines-v1:sha256:8ef33236a5c3747cb806a5a83cb635f88a4096150a366915abc098ed0ad3cef7:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmIxM2ZiODZhZTc5YjNmYWMxYjA0NDY3NDg0NDdiNzA2YjE3ZWM1YWU5NmIzOGJlZGY4YjFjYjVlNDBiYTgzYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGQzNGE5ZGY3NzliOTU2NmIwNGFkMmI5ZTZjZGRlM2IxZDVlNmMxYThjOGI5N2FiN2MyOGE3YjEzYTMzYmQ2YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTVhYjgxZmExZjY1ZjgyODI5Zjc4OTI3OGI5MmI3YjE0MTRiOTAzMTBhMTQxZTA4OGY4YTU1YWMwNWZmNmVkZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmRlYWM0YTYzZGY1ZWYzYzA0MDA3YWIzMzk2YmU3MDYyZWJmYjg0MmMyYjI0YzhmMTgwMGE3NzEyODNjYjE4NiJ9"
         }
       ]
@@ -157,7 +157,7 @@
       "statement": "ValidateImageReadsMiddleware validates image-read tool calls and is positioned after WorkspaceSkillsMiddleware to allow basic tool configuration before validation occurs.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2081-L2081",
+          "resource": "repo://openswe/server.py#L2062-L2062",
           "version": "repo-lines-v1:sha256:e0a98e2b9732b28480e0db19af9edc46509f5842450fe50f08176fb5a601bc23:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTBhOThlMmI5NzMyYjI4NDgwZTBkYjE5YWY5ZWRjNDY1MDlmNTg0MjQ1MGZlNTBmMDgxNzZmYjVhNjAxYmMyMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTBhOThlMmI5NzMyYjI4NDgwZTBkYjE5YWY5ZWRjNDY1MDlmNTg0MjQ1MGZlNTBmMDgxNzZmYjVhNjAxYmMyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODA5MThhNmQ2ZWQ5NmUyM2FkZjk4ZDk1MmM0Y2E5MDEyMWQ1OTJjMGY5MjljMGEzOTM3NjdiYWE2NjZjOWIwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzRkNWIyNGQ3YzU3OTlmMzQ3YjEwM2Y5MjAzZWFlNzFjN2NiODA2YTc5OTBiMzY0OTE3MWUzOGQ3YWZiZTRhMyJ9"
         }
       ]
@@ -187,7 +187,7 @@
       "statement": "PullRequestCreationGuardMiddleware blocks execute and background_execute forms that create pull requests outside open_pull_request, including GitHub CLI, API, curl, and nested bash forms, and is not installed for local/desktop runs.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2099-L2099",
+          "resource": "repo://openswe/server.py#L2080-L2080",
           "version": "repo-lines-v1:sha256:a06eca41e6cfa2de0fad137c467d52df5906419447b92b90d8314bcaefed76eb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZWNhNDFlNmNmYTJkZTBmYWQxMzdjNDY3ZDUyZGY1OTA2NDE5NDQ3YjkyYjkwZDgzMTRiY2FlZmVkNzZlYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTA2ZWNhNDFlNmNmYTJkZTBmYWQxMzdjNDY3ZDUyZGY1OTA2NDE5NDQ3YjkyYjkwZDgzMTRiY2FlZmVkNzZlYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWRiN2ZmMmRmMzI1OTljZWI3OGM5OTgyNDU1NGY2NTFkNWY3Mzg1ODk4Mzk3ZDViOWZiNmUzZGYyMjc3MGVmMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWQ1MGY2NzZkOGY5MTM4YzkzYTQzNmVhYTAyZTBhYWZiZjgzMDE5OGJlMDU5YWUwMGE3NDZiODdhMGZhMDEyNCJ9"
         }
       ]
@@ -217,7 +217,7 @@
       "statement": "ModelSelectionMiddleware is installed only when adaptive model routing is enabled, allowing the agent to route requests between a primary and alternate model based on configured routing rules.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2127-L2127",
+          "resource": "repo://openswe/server.py#L2108-L2108",
           "version": "repo-lines-v1:sha256:70296e6b6ca3fd60363e6258be96a4f3634e7901933b0b8112ed8f0ec371e44b:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyOTZlNmI2Y2EzZmQ2MDM2M2U2MjU4YmU5NmE0ZjM2MzRlNzkwMTkzM2IwYjgxMTJlZDhmMGVjMzcxZTQ0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzAyOTZlNmI2Y2EzZmQ2MDM2M2U2MjU4YmU5NmE0ZjM2MzRlNzkwMTkzM2IwYjgxMTJlZDhmMGVjMzcxZTQ0YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDUzOWVkZjJhZGZiM2NlYzBlNzZlZWM3YTM4YjQ2NThiYmExNDk1ZTUyNTVlNGY5YTdmYTc3NzQ5MTQzMmZlMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGVlMDVhZmExMjZiNjQwM2E0YThmZTI5MTEzZGQ5NmNlMTU0OTVmNzcxNDFiYTIyMzRlNTlkMWQwOGViYTlhYyJ9"
         }
       ]
@@ -227,8 +227,12 @@
       "statement": "Reviewer sandbox setup opts into replacement because its checkout is re-derived for each run and a persistent PR thread should not be bricked by a dead sandbox, whereas the coding-agent sandbox setup deliberately does not auto-replace to avoid concealing loss of uncommitted work.",
       "evidence": [
         {
-          "resource": "repo://tests/sandbox/test_reviewer_sandbox_recovery.py#L22-L68",
-          "version": "repo-lines-v1:sha256:fa888ac18a3f0708dd810d077991f44fe39a217896aa62d18c845c155f0afb83:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ODFhYzU5Yzk2Njg4OTQ5MDc3MGU5NmFlMGUwZGY0ZjBiYTYzMTNmMzU5ZmI4MjNlMjAzMjMyYjUwMjY2YTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNjMTJkNmVjNzkzNjZjNmQ2MWJiNDMwNDEwNWMyMGNjOWRhZjcxMmFjNzYwZWNjM2FmNDk0OTU5YmI2NGIyNjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVhYjdiMjcyYWI0ZTI1MTc1YjVmZDI0YzEzY2ZlNTYzNDI1MTRjMDI3OTQ2ZjAzYjUzMDVkZjIwMzM3ODc5ZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVhYjdiMjcyYWI0ZTI1MTc1YjVmZDI0YzEzY2ZlNTYzNDI1MTRjMDI3OTQ2ZjAzYjUzMDVkZjIwMzM3ODc5ZjkifQ"
+          "resource": "repo://openswe/reviewer.py#L556-L563",
+          "version": "repo-lines-v1:sha256:5610d60a092f6e56827aa9c86402d77112683564e425fd19bec25c7daf3cd238:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODFmZWY4NjY2ZmJkODliMWNiMjY1NGY4OTA5M2ZjY2FkYmM0ZjU1ZTgzNmZjNjUzZTAyZDJkNDE5MWY1M2Q4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTAwNDgxYzU0ZDQzMDE3YjFjYzExODMzYWExZGNjZWIyZTZkZWVhYzZjOGE0NmI4MzliZjA2MDZjNDljMjczYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTE3OTcwNmM2ZGE4MTQ0YTAxZWQyMTIxZmJlZTAyNTI4OTljYTNjZmM2ZGU4ZDcyMDI5YWZjZGQwMzg5Y2VmOCJ9"
+        },
+        {
+          "resource": "repo://tests/sandbox/test_reviewer_sandbox_recovery.py#L1-L6",
+          "version": "repo-lines-v1:sha256:f31191f447ed977ef2c719bda6501921f3c0f4853cf688c61bb137c05a864ffc:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTViM2ZhZjZlNTkxNjBhNGZmMDhiZDllOGE5NGViZDAzMjdjZGU4ODU3MzJlNjRmOTA2N2ZlYjIwYjA3Y2Y3NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTMwM2VjZGQ0YTRkMTBmMTljNzNmZDQyZmQxMjQzN2ZkMzM1NGE4MjY4MTYwNWRhNTI1NWE5N2EzOTA2OGRiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTAyZWUzYThjMTU4NjVlZWQ2YmFkNmFlMGRkMzQ3ZjNlM2NkOTY0MDQ5YjNlYjEzNmEwNGRjMTE2NWJkMDIxNiJ9"
         }
       ]
     },
@@ -237,7 +241,7 @@
       "statement": "TranscriptMiddleware processes the conversation state and populates the transcript for debugging and auditing, and is positioned immediately after PrepareAgentRunMiddleware.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2077-L2077",
+          "resource": "repo://openswe/server.py#L2058-L2058",
           "version": "repo-lines-v1:sha256:bc98f96bbf8c1e3c7a4cbdfb6d40de2974f77f84e3fd1c5f9a1af263f39123cb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM5OGY5NmJiZjhjMWUzYzdhNGNiZGZiNmQ0MGRlMjk3NGY3N2Y4NGUzZmQxYzVmOWExYWYyNjNmMzkxMjNjYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM5OGY5NmJiZjhjMWUzYzdhNGNiZGZiNmQ0MGRlMjk3NGY3N2Y4NGUzZmQxYzVmOWExYWYyNjNmMzkxMjNjYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGNjYjNjNWFkYWZmODgzYTA1MTk5MmUyZjY0YzI0ODdhNjVmZmNlYzZhYTJkMDAyN2IyNTdkYTQwOWY4ZWM1ZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiODA5MThhNmQ2ZWQ5NmUyM2FkZjk4ZDk1MmM0Y2E5MDEyMWQ1OTJjMGY5MjljMGEzOTM3NjdiYWE2NjZjOWIwZCJ9"
         }
       ]
@@ -248,10 +252,10 @@
       "evidence": [
         {
           "resource": "repo://openswe/middleware/dynamic_tools.py#L80-L120",
-          "version": "repo-lines-v1:sha256:96d79f4a1dbff1b3f599e2cce7169153b302473edd5ee413071bbdb165f28674:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMWFiYTEyNDNiNDUyM2MyN2NhOTkwNGU2MTg3OGQ1MzA5M2FjNzAxZjVkMWE0YzhmOWYzODBmZTE4ODM5ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MzgxNWRkOGMwMGVjYjQ3MWM0MjkwNjI5NmViMDRjNjZlNDhiYjc2OGE4MzBmMTdiOGQ5N2I0MmQ4OTUwYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQ0YzhlYWM1NWRhZTVhNjg3YTZlNmQ4ZTg1ZDY0YWFlMWMyOTMzYmVkZTE5MjM3Mjg2YThmNDBkMjMzNDdkZTIifQ"
+          "version": "repo-lines-v1:sha256:a4023e77c9be5ff8966170356c88f1777daefa05ea0ec486b0bba07061c723f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMWFiYTEyNDNiNDUyM2MyN2NhOTkwNGU2MTg3OGQ1MzA5M2FjNzAxZjVkMWE0YzhmOWYzODBmZTE4ODM5ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhZjE2MmEwZmNiMmE2ODM2NjE1MGU1NTJiNWFhMjc0N2FmMDQwOTI2ZDQ0NzMyMTQ4ZTRmZTQ0NDMyZjkyODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MzgxNWRkOGMwMGVjYjQ3MWM0MjkwNjI5NmViMDRjNjZlNDhiYjc2OGE4MzBmMTdiOGQ5N2I0MmQ4OTUwYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0YzgzMzQ5Y2FlZGViNWYwMjJiOTJmYmJiYzk4ODcwYmJmZWI0M2M0ZTM3YzkwODdhZmZiZTE2OWQ1MGU4MTQifQ"
         },
         {
-          "resource": "repo://openswe/server.py#L2130-L2130",
+          "resource": "repo://openswe/server.py#L2111-L2111",
           "version": "repo-lines-v1:sha256:ed3ab5eda2fd802e1c48901734c96b66ffd5cebcbb77c0b701d6c2e78b539553:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWQzYWI1ZWRhMmZkODAyZTFjNDg5MDE3MzRjOTZiNjZmZmQ1Y2ViY2JiNzdjMGI3MDFkNmMyZTc4YjUzOTU1MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWQzYWI1ZWRhMmZkODAyZTFjNDg5MDE3MzRjOTZiNjZmZmQ1Y2ViY2JiNzdjMGI3MDFkNmMyZTc4YjUzOTU1MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmRjNThiNmVhMmVjM2QwMDEzMjUwN2RhZDMzYTI5NmM0ODIwMjYzNzRhMTBhNTI5MzRjYzQxMTgzNGZlMjI0OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDNiNDNjODhkOTMwY2MzMzZkMGM1ZTRiNzczMTZiZmUxYWQwMzcyMTU5YWFkNmVhYWE3NzAyNWRlZWY0YzBjZiJ9"
         }
       ]
@@ -265,7 +269,7 @@
           "version": "repo-lines-v1:sha256:3ec38fd588c8559a6ecf25f9f60f647fb9e595276524afe7507e4d799950d698:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNzBiOGNjY2M1MjcyZGQ4MjZhNGI1ZjUzMGQwYmUzMjBhMWM0MDIwODYyYTE0YmM2MTc3NWIyZmQ1ZTFjZjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjY2FmM2U2MTc0MzFiMTRmOWNlZTkwNzI4NTc4ODIwN2I1Y2Q1YmM2OGE4MzIyN2FhMjNlOWYzNzAwNDE0ZGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/server.py#L2129-L2129",
+          "resource": "repo://openswe/server.py#L2110-L2110",
           "version": "repo-lines-v1:sha256:bae15b2f213ece95b21479ce9d913e9f690c43d3ee61db0fc82b8df8845db43d:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmFlMTViMmYyMTNlY2U5NWIyMTQ3OWNlOWQ5MTNlOWY2OTBjNDNkM2VlNjFkYjBmYzgyYjhkZjg4NDVkYjQzZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmFlMTViMmYyMTNlY2U5NWIyMTQ3OWNlOWQ5MTNlOWY2OTBjNDNkM2VlNjFkYjBmYzgyYjhkZjg4NDVkYjQzZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWM0OTJhZDJhZmMyOGVjMjQ3NmQ4ZTQ1YzYyNGE0OTAxZjdkMTRjY2YyYjkxNDhiZDZlOTljZmZmNGNkMDcyNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTcwMTNiYzY3NTg1NjNjYzMxNTEyODQyN2ZlNzVjZGIyOGE4NWU0MzQ2ZjljMTJlMDMxN2RjOTJiMzE2MDExNyJ9"
         }
       ]
@@ -275,7 +279,7 @@
       "statement": "FilesystemMiddleware is the outermost middleware and exposes file read/write/delete and directory navigation tools with configurable binary content offloading.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L2066-L2066",
+          "resource": "repo://openswe/server.py#L2047-L2047",
           "version": "repo-lines-v1:sha256:f20d49f27fecab1a8a892dc6304701f8c84de8ea2ea69595a59878bcf8e61926:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjIwZDQ5ZjI3ZmVjYWIxYThhODkyZGM2MzA0NzAxZjhjODRkZThlYTJlYTY5NTk1YTU5ODc4YmNmOGU2MTkyNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjIwZDQ5ZjI3ZmVjYWIxYThhODkyZGM2MzA0NzAxZjhjODRkZThlYTJlYTY5NTk1YTU5ODc4YmNmOGU2MTkyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2RkMjdjNDBhMTkxMmMxZGVkMjBiN2FhYzUyZDhhYTkwY2I1NWEyYWQwOWUzMDBmY2E0ZDA2YzVkMzQ2NGYxYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNWZlOTFiYWZkOWExMjZlNDBjMDliNTE2YzI4ODNkNDU2ZTM1ZDJmZGRjZDAwMmFlZWE2N2M3ZWYzNDA3MzEzMyJ9"
         }
       ]
@@ -355,6 +359,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-21T13:36:13.083Z"
+    "at": "2026-10-22T13:38:02.092Z"
   }
 }

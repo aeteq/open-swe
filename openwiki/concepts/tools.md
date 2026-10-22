@@ -26,10 +26,10 @@ sources:
     resource: repo://openswe/tools/automations.py
   - id: openwiki-source-1a477779016142ec6f3dc601
     resource: repo://openswe/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Tools and Tool Access
@@ -38,7 +38,7 @@ Open SWE does not treat the tools package as a universal capability grant. A too
 
 ## Tool catalog structure
 
-`openswe.tools` is the curated export facade. The module exports `_TOOL_MODULES`, a flat map of public tool names to their implementation modules. Lazy imports are cached so each access loads once; several public names can share a single implementation, such as all automation operations drawing from `.automations`.
+`openswe.tools` is the curated export facade. The module exports `_TOOL_MODULES`, a flat map of public tool names to their implementation modules. Lazy imports are cached so each access loads once; several public names can share a single implementation, such as all automation operations drawing from `.automations` or multiple human-review operations drawing from `.request_human_review`.
 
 Exporting a name from the catalog only makes it importable; each graph factory supplies its own list to `create_deep_agent`. This decouples availability from registration.
 
@@ -50,7 +50,7 @@ Deep Agents separately supplies filesystem and delegation tools: `read_file`, `w
 | --- | --- |
 | **Main agent** | Context-dependent static tools, eligible dynamic groups (MCPs, workspace skills), and Deep Agents built-ins. Resolves access policies and excludes tools based on run mode. |
 | **Reviewer** | Finding operations (`add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, `reply_to_finding_thread`), `fetch_review_diff`, plus `web_search`, `fetch_url`, and `http_request`. Does not include PR creation or modification. |
-| **PR chat** | `read_repo_file`, `search_repo_code`, `list_review_findings`, `web_search`, `fetch_url`, `propose_review_comment`, and `propose_pr_review`, with read-only GitHub-backed tools and virtual-file `/pr/` context seeded by the dashboard. Has **no sandbox** and excludes shell and write built-ins. |
+| **PR chat** | Read-only tools for GitHub-backed PR context with virtual `/pr/` file seeding. No sandbox. Excludes shell and write built-ins. Operates as a proxy to the parent PR-fixes thread, with read-only access controlled at the thread proxy layer. |
 
 ## Main coding agent assembly
 
@@ -82,7 +82,7 @@ Deep Agents separately supplies filesystem and delegation tools: `read_file`, `w
 
 Tool inclusion depends on **runtime context**:
 
-- **Admin threads** receive `ADMIN_TOOLS`: automation management (`create_automation`, `update_automation`, `delete_automation`, `trigger_automation`, `list_automations`), workspace management (`list_workspaces`, `publish_workspace`, `refresh_workspace_start`, `configure_repository`, `delete_workspace`), and organization-skill operations (`save_organization_skill`, `delete_organization_skill`). The factory verifies the triggering identity is an admin before adding these.
+- **Admin threads** receive `ADMIN_TOOLS`: automation management (`create_automation`, `update_automation`, `delete_automation`, `trigger_automation`, `list_automations`), workspace management (`list_workspaces`, `publish_workspace`, `refresh_workspace_start`, `configure_repository`, `delete_workspace`), and organization-skill operations (`save_organization_skill`, `delete_organization_skill`), plus `send_announcement`. The factory verifies the triggering identity is an admin before adding these.
 - **Desktop `local_run`** collapses to only `http_request`, `fetch_url`, and `web_search`. Integration groups are not collected.
 - **Stop-summary mode** initially gets only `slack_read_thread_messages` and `slack_reply`. Integration groups are not collected.
 - **Slack operations** are conditionally removed unless trusted Slack context enables them. Channel-ask mode removes thread-bound operations while retaining write capabilities. Slack DM mode additionally excludes `slack_add_reaction`.
@@ -90,6 +90,12 @@ Tool inclusion depends on **runtime context**:
 - **Human review tools** are removed when Slack bot context is unavailable. Expedited review tools are removed when disabled or when Slack bot context is unavailable.
 - **Incident-session tools** are added if an incident is in scope; automatic incident sweeps additionally exclude mutations.
 - **Subagents** receive the applicable static list except `save_user_settings` and tools that require the parent agent context (Slack thread-bound operations, background operations, notion tasks, thread/event listeners, etc.). Separately compiled subagent graphs receive the parent's dynamic integration middleware but do not inherit parent middleware exclusions.
+
+## Tool error handling and result validation
+
+Tools that perform administrative or credentialed operations return structured result objects rather than raising exceptions. Automation tools exemplify this pattern: operations return `{ok: false, error: ...}` for authorization and service failures, keeping exceptions from propagating and allowing the model to observe and respond to failures. Tool calls that cannot proceed due to access policy restrictions return a `ToolMessage` with `status="error"` and a human-readable refusal message, blocking malicious or mode-inappropriate calls early.
+
+Middleware layers validate tool results after execution. Read-file operations validate that images conform to expected format and size, and mode-specific exclusion middleware prevents tool invocation altogether for tools that contradict the run mode. Sandbox tool calls are authenticated via JWT capability-token verification before returning results, confirming the caller's thread and sandbox binding.
 
 ## Deferred integration tool loading
 
@@ -101,7 +107,7 @@ This deferred loading works as follows:
 2. Middleware serializes loading per group (one lock per group) and caches both successful and failed resolutions.
 3. A successful loader call updates run state so the requested schema becomes available on the next model turn.
 4. Names must be unique across groups and must not collide with the loader, built-ins, or static tools.
-5. Middleware returns tool errors rather than failing the run when loading fails.
+5. Middleware returns tool errors (as `ToolMessage` with `status="error"`) rather than failing the run when loading fails.
 
 Integration loading is a credential boundary: workspace-scoped MCP tools load from workspace, instance, and (if a user is logged in) personal tiers, with later tiers' connections replacing earlier ones. All tool invocations receive a fresh credential check at runtime.
 
@@ -111,6 +117,16 @@ Models that support in-conversation tool addition (Anthropic's `tool_addition` a
 
 - **Anthropic** (`tool_addition`): `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5`, `claude-sonnet-5-5`
 - **OpenAI Responses API** (`additional_tools`): `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna`
+
+## MCP tool integration tiers
+
+Workspace-scoped MCP tool resolution respects a three-tier credential hierarchy. When loading an MCP tool, the middleware queries tools from:
+
+1. **Workspace tier**: connections stored at workspace level, accessible to all workspace members.
+2. **Instance tier**: connections stored at instance level, accessible to all users on this instance.
+3. **Personal tier** (if user is logged in): connections stored under the user's own identity, replacing same-named workspace and instance connections.
+
+Each tool invocation receives a fresh authorization check at the time of execution, so connection credentials are validated against the current user's permissions even if an earlier load succeeded.
 
 ## Sandbox tool access
 

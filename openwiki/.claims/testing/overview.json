@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:80b0f6afe3d5f526a381647d6174e20141775c024492a3b4054222e39c1605aa",
+  "pageVersion": "sha256:fc4f5fed5db20496d487c3d4b9010a01d5c30abfd9bb0a1b3d5581aad21f8b21",
   "claims": [
     {
       "id": "claim_9a77e9c5301a46b8bbd02832b9de5a90",
       "statement": "The pytest unit suite runs in asyncio auto mode (asyncio_mode = \"auto\"), so async test functions and fixtures are awaited without any per-test asyncio marker.",
       "evidence": [
         {
-          "resource": "repo://pyproject.toml#L129-L131",
-          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQzOTYxNWY5N2I3MjdkMGQzYjY0ZjMyMjllOTY5OGU5NTJmM2VjZjVmOThmNGQ5NzZkZjNlMjNkYWU2NWQ0YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MyZmVhMjkzY2UxYTY5M2E2ZjMwNjZkYTM4MTMxN2UwMGNhODkwYmY5ZWQ3NzZhNjMwNGI4MjdiZTRmNDVhNSJ9"
+          "resource": "repo://pyproject.toml#L132-L133",
+          "version": "repo-lines-v1:sha256:32fb22be41a810464bf2f0ab4f195f6ebb3568baccc88d380ed23c1c79c6ba08:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTAxZGZhOTgyZWZmZDMxZjAxMGVlOTdmMTM2ZTFmNWY3MDNlYjcwYTJjN2ZjODgzOWIxMTQyYzIwNTgwNGQ0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTNlYjBkYTJlZTBjZDY4NjQ0MmMzOTY3YTM2YjI0N2I1ZGQ5ZjdjNWVjYmY5ZGQ5NDE1MjBhZjJmZWIxZjM3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MyZmVhMjkzY2UxYTY5M2E2ZjMwNjZkYTM4MTMxN2UwMGNhODkwYmY5ZWQ3NzZhNjMwNGI4MjdiZTRmNDVhNSJ9"
         }
       ]
     },
@@ -17,8 +17,8 @@
       "statement": "Pytest collection is rooted at the tests/ directory via testpaths = [\"tests\"], so a bare pytest run discovers the entire unit suite there.",
       "evidence": [
         {
-          "resource": "repo://pyproject.toml#L129-L131",
-          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQzOTYxNWY5N2I3MjdkMGQzYjY0ZjMyMjllOTY5OGU5NTJmM2VjZjVmOThmNGQ5NzZkZjNlMjNkYWU2NWQ0YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MyZmVhMjkzY2UxYTY5M2E2ZjMwNjZkYTM4MTMxN2UwMGNhODkwYmY5ZWQ3NzZhNjMwNGI4MjdiZTRmNDVhNSJ9"
+          "resource": "repo://pyproject.toml#L132-L133",
+          "version": "repo-lines-v1:sha256:32fb22be41a810464bf2f0ab4f195f6ebb3568baccc88d380ed23c1c79c6ba08:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTAxZGZhOTgyZWZmZDMxZjAxMGVlOTdmMTM2ZTFmNWY3MDNlYjcwYTJjN2ZjODgzOWIxMTQyYzIwNTgwNGQ0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTNlYjBkYTJlZTBjZDY4NjQ0MmMzOTY3YTM2YjI0N2I1ZGQ5ZjdjNWVjYmY5ZGQ5NDE1MjBhZjJmZWIxZjM3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MyZmVhMjkzY2UxYTY5M2E2ZjMwNjZkYTM4MTMxN2UwMGNhODkwYmY5ZWQ3NzZhNjMwNGI4MjdiZTRmNDVhNSJ9"
         }
       ]
     },
@@ -27,7 +27,7 @@
       "statement": "Test tooling (pytest, pytest-asyncio, Ruff, ty, Pygments) is declared in the dev optional-dependency group and installed via `make install` which runs `uv sync --extra dev`.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L76-L77",
+          "resource": "repo://Makefile#L88-L89",
           "version": "repo-lines-v1:sha256:4acc6a762f11eefc5086577d8339b55c7b8337df97164ffad72a7acd6aae3220:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzZjNTgwMTljOTcwZTNiMTczMmFlNjZjOTAwODU2NDM4MjQ2OTUzZjEyY2JhMjlkNjE5YjAwNTcyZmZmMjQ1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZhYmIyYTMxZDhjZDE1OTA2ZjBkZDhlZmMzZDFmYjVhZjRlZGY4ZTZlZTY5YzQ2ZjAyMmIwNGRmN2NiYjQxZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFmNzc1NjM2MTQ0YzU5YTlkMmMwOTM2Zjg3NzRkZWEzY2I5NTgxZmFiMzY5MjdhZjFlMTAyYzQyODgwZTY0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjdmMTExYWJjZDYxNzdhNzk1NzQ0OTFlOWI2YjA1NmYwNTUwYmY3N2NlZDA4N2U0ODBlYzgxNjJlNDVhMWZjMyJ9"
         },
         {
@@ -61,7 +61,7 @@
       "statement": "Unit tests are run with `make test` (aliased `make tests`), which executes `uv run pytest -vvv $(TEST_FILE)` where TEST_FILE defaults to tests/; use TEST_FILE for an existing test path and invoke `uv run pytest` directly for a single `file.py::test_name` node id.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L94-L99",
+          "resource": "repo://Makefile#L106-L111",
           "version": "repo-lines-v1:sha256:6808f6ee4c0901f550edb21503c05d05c4569610cd9c0d4dfb0884f15e608353:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDliMzBjZTkzZjhkMmVlNmQ2NDdlYjNhN2RhYjQ0NjRiNWQ5Yjc5ZGExOTI4ZGE2MDY4MDQ3M2QyY2Y0ZTY4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmVjYjM4MWFiNzkyZDgyM2YwMTNmODJjNzA2N2ZjZjA2MTQ1NmNjYjY4NTZlMmZhM2QzNmQ0MDY4NmJmOGViNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTcwMjkwZDE0Zjk2OTE3Y2ZiNzI2YzY3NTU0ZTk4MWZhMzc5NGYxNWRkOWY4ZjhiNjdkMTlhNTU5MzdiYzMwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDQwYzM1NzkyYzI2NTFlYjQwZDI3OGFiNzcyZWIzYTQzMDU0YWY1YWM1MmJhYzVlYTM3MWFiM2E2M2E5MTY2MSJ9"
         }
       ]
@@ -71,7 +71,7 @@
       "statement": "`make test` only invokes pytest when the TEST_FILE path exists and otherwise prints a skip message instead of failing.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L94-L99",
+          "resource": "repo://Makefile#L106-L111",
           "version": "repo-lines-v1:sha256:6808f6ee4c0901f550edb21503c05d05c4569610cd9c0d4dfb0884f15e608353:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDliMzBjZTkzZjhkMmVlNmQ2NDdlYjNhN2RhYjQ0NjRiNWQ5Yjc5ZGExOTI4ZGE2MDY4MDQ3M2QyY2Y0ZTY4MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmVjYjM4MWFiNzkyZDgyM2YwMTNmODJjNzA2N2ZjZjA2MTQ1NmNjYjY4NTZlMmZhM2QzNmQ0MDY4NmJmOGViNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTcwMjkwZDE0Zjk2OTE3Y2ZiNzI2YzY3NTU0ZTk4MWZhMzc5NGYxNWRkOWY4ZjhiNjdkMTlhNTU5MzdiYzMwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDQwYzM1NzkyYzI2NTFlYjQwZDI3OGFiNzcyZWIzYTQzMDU0YWY1YWM1MmJhYzVlYTM3MWFiM2E2M2E5MTY2MSJ9"
         }
       ]
@@ -81,7 +81,7 @@
       "statement": "Lint, format, and type checks are separate gates from tests: `make lint` runs Ruff check plus a Ruff format diff, `make format` fixes in place, and `make typecheck` runs `ty check openswe tests`.",
       "evidence": [
         {
-          "resource": "repo://Makefile#L114-L126",
+          "resource": "repo://Makefile#L126-L138",
           "version": "repo-lines-v1:sha256:67b8f84840672965e60e4c47f2531540db40ebf42604ac226b293acb63c707df:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMDk1ZDI5MjU2MTViZDUzOTBmOTRiNjQ1MzYzY2I0ODE1YzJjOTU2YWZmNDdlNWFjYTFkODg1MTg3YjIwODMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlMjk1ZDUyZDhkNjZlYTA2N2MxZmRhZjEzNmEwZmYwMjg1OGNiZjI4Mjk1N2RiZjhkZDBlZmE2NzgxZGVhMmEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ1N2JiMGE2ZmMxMGMxZTU1YjQ0MDVkZDc2NzlkMDVkZTgxNTJmZGM4YTY5NWUzMDdlZTM4OGYxNDU2ZTllZTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFiMjdhODhhOGNlZWY5NWE1OTViMDUwZDc1NGNkNDkzMmJhNWVjNWIwNDBiNGY3NDM0YTZiMDMwMDQxZGFiMmIifQ"
         }
       ]
@@ -275,8 +275,8 @@
       "statement": "Tests are organized by system owner across tests/agent/, tests/reviewer/, tests/sandbox/, tests/webhooks/, tests/dashboard/, tests/middleware/, tests/github/, tests/slack/, and tests/tools/ directories.",
       "evidence": [
         {
-          "resource": "repo://pyproject.toml#L129-L131",
-          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQzOTYxNWY5N2I3MjdkMGQzYjY0ZjMyMjllOTY5OGU5NTJmM2VjZjVmOThmNGQ5NzZkZjNlMjNkYWU2NWQ0YSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MyZmVhMjkzY2UxYTY5M2E2ZjMwNjZkYTM4MTMxN2UwMGNhODkwYmY5ZWQ3NzZhNjMwNGI4MjdiZTRmNDVhNSJ9"
+          "resource": "repo://pyproject.toml#L132-L133",
+          "version": "repo-lines-v1:sha256:32fb22be41a810464bf2f0ab4f195f6ebb3568baccc88d380ed23c1c79c6ba08:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTAxZGZhOTgyZWZmZDMxZjAxMGVlOTdmMTM2ZTFmNWY3MDNlYjcwYTJjN2ZjODgzOWIxMTQyYzIwNTgwNGQ0YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTNlYjBkYTJlZTBjZDY4NjQ0MmMzOTY3YTM2YjI0N2I1ZGQ5ZjdjNWVjYmY5ZGQ5NDE1MjBhZjJmZWIxZjM3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2MyZmVhMjkzY2UxYTY5M2E2ZjMwNjZkYTM4MTMxN2UwMGNhODkwYmY5ZWQ3NzZhNjMwNGI4MjdiZTRmNDVhNSJ9"
         }
       ]
     },
@@ -311,18 +311,38 @@
       ]
     },
     {
-      "id": "claim_70135884b2c841d78db705e2f179132a",
-      "statement": "Reviewer publish tests use an autouse _isolate_publish_review_pr_state fixture to mock the PR state management, workspace settings, PR linking, review fetching, finding replacement, and head-SHA resolution, isolating the publish_review tool from its GitHub and database boundaries.",
+      "id": "claim_41044cb9c8584af3949e0ba8a732de9f",
+      "statement": "The memory_event_claims fixture provides an in-memory event-claim registry that never lapses, replacing the PostgreSQL backend for testing idempotency and event deduplication without a live database.",
       "evidence": [
         {
-          "resource": "repo://tests/reviewer/test_reviewer_publish.py#L98-L119",
-          "version": "repo-lines-v1:sha256:40de11cd30996e3d9e673466bfe90268a11f5f873c9f54a9072cfa9e2e6259b9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmMDg2NmY0MDExZTU4NWZmYzA5MDkyZWRmMDgzMmUxN2I1MmY0YzkwYzRjYTBiNDJkY2ZhMDUwZmEzNzViNWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxMWNjMDM0ZTAyNGU2NmQ0MWNiM2NlY2E5NTUxY2M0OTUxNTZmM2JiZWIyODhkMThhNDcyYjcyOTNjMDBiMDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2YjExNjQ5NzVmMGNhMzBiYzI5M2I2MGIyMjM2MDNlZjRlNGFjYzBjNDc3YWY3NzA2Njg5MzNkOGI2Mzg2YjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE5ODM2ZDBhNjU0MjEzMGY1MzgxOTRlNmUzZmE3NGRhNGViNzllOTk1ZGU1MWNkNGI1NmZjNjkxMzY4ZmRlNzgifQ"
+          "resource": "repo://tests/conftest.py#L354-L382",
+          "version": "repo-lines-v1:sha256:6792135404e6139f3d57f675481bbea1cc8ff2e353de8437cfe10dcf5f5b1fd7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzNmVjNDYyNjM3YWNmMjBiYmVjMDllYWZjYjBjMzhlYjI5NDAzZjIwMzJiZjBkMWE3NTllYmM1NmU0M2M3OTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEyMDcwODFkNWIxNjA2M2FlNTJmNjdkY2NkYzdkMjAxZmRkYWYwMmJiMjI0MTBlYmZlMTEwZmFkZTg5Njk1NTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRjMTJmNDAyYmU0ZmZhN2JiMzFjY2QzNWM2ZWUzMDc4M2NjY2EzYmUyYjk1ZmJjOGRiMGVkNzE0MWVlYzI2NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_847c0917bb4349a6972f98a22d205d9c",
+      "statement": "Testing philosophy prioritizes narrow ownership and concrete regressions: tests are maintenance cost, so new tests are added only when they reveal a regression existing coverage would miss; prefer extending existing tests over new files or mocks, and avoid tests for documentation, constants, or behavior guaranteed by types.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L37-L47",
+          "version": "repo-lines-v1:sha256:db9b851dee01156cb3e5cfdc08ead932569616517b43a1e5bac2850d80665058:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk1MTQ2YWM0OTUxNDM3NjUyNzNkYzIyNDUyNmEzOGMzZjg2NGRiZjg0ODI0Yzc0ZGM5NTgzMGI1ODgwNmE0ZGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1NTNhOWU1ODIxN2YyMjEyZTk5ZDRlNmMxNjkwZTY1ZjAzZDA5ZmNiMTkwZWZlZTgyMTY1NWFiMTVjYmMzNTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlZGFiN2Y5MzY4MjE4NTJkMjIwNjYzZjE1NzAxMjJjYjhiNDQ3MTI4OTM2OWY2OWI3MDYyNDViMTQ4OTMyMzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjAxMGZiMmFlN2MxMTU2ODE1YTBmNDdkOTkwYTFjMzJlMjU4MDQ5NGVkMmE1MDIwNTNmNzFlMDJhMTgwYmUwNDQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_17a75db1cd534cf88c5859e773bc531f",
+      "statement": "Never run the full test suite locally; run only tests related to the change, because the unit suite is large enough that running it all locally without proportional signal burns developer time.",
+      "evidence": [
+        {
+          "resource": "repo://AGENTS.md#L37-L37",
+          "version": "repo-lines-v1:sha256:95146ac495143765273dc224526a38c3f864dbf84824c74dc95830b58806a4db:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTUxNDZhYzQ5NTE0Mzc2NTI3M2RjMjI0NTI2YTM4YzNmODY0ZGJmODQ4MjRjNzRkYzk1ODMwYjU4ODA2YTRkYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTUxNDZhYzQ5NTE0Mzc2NTI3M2RjMjI0NTI2YTM4YzNmODY0ZGJmODQ4MjRjNzRkYzk1ODMwYjU4ODA2YTRkYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWVkYWI3ZjkzNjgyMTg1MmQyMjA2NjNmMTU3MDEyMmNiOGI0NDcxMjg5MzY5ZjY5YjcwNjI0NWIxNDg5MzIzMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWM4ZDMzNTFhNjQ0ZWE1NjJkZDA1OTJhOTk5YTVjOGZlMWQ4YzYyN2Y5ZjU4NjE4ZTA5NDM4NDdmMzE3NWJkNSJ9"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-21T13:36:13.083Z"
+    "at": "2026-10-22T13:38:02.092Z"
   }
 }
