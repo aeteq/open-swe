@@ -30,6 +30,7 @@ from openswe.input_messages import (
     system_input,
     system_introduction,
 )
+from openswe.notion.notifications import record_pull_request_merged
 from openswe.prompts import prompt
 from openswe.review.approvals import approval_mode_for, approval_policy_for_review
 from openswe.review.findings import (
@@ -563,6 +564,14 @@ async def settle_human_review_on_close(payload: dict[str, Any]) -> None:
     if identity is None or not postgres.configured():
         return
     await close_for_pull_request(*identity)
+
+
+async def record_merge_on_notion_tasks(payload: dict[str, Any]) -> None:
+    """Move the Notion tasks a merged PR links or names in its title to done."""
+    event = PullRequestEvent.parse(payload)
+    if event is None or not event.pull_request.merged or not event.pull_request.html_url:
+        return
+    await record_pull_request_merged(event.pull_request.html_url, event.pull_request.title)
 
 
 async def withdraw_superseded_approvals(payload: dict[str, Any]) -> None:
