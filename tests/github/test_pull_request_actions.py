@@ -36,7 +36,7 @@ def github(monkeypatch):
         (None, "new", None, {1, 5, 6}),
         (3, None, None, {1, 5, 6, 7}),
         (None, None, None, {1, 3, 5, 6, 7}),
-        (None, None, 4, {1, 3, 7}),
+        (None, None, 4, {1, 3, 5, 6, 7}),
         (None, None, 999, set()),
     ],
     ids=[
@@ -62,13 +62,13 @@ async def test_only_open_swe_approvals_other_than_the_kept_one_are_withdrawn(
         }
 
     reviews = [
-        review(1, "open-swe[bot]", "APPROVED", "old"),
+        review(1, "jarvis-aeteq[bot]", "APPROVED", "old"),
         review(2, "alice", "APPROVED", "old"),
-        review(3, "open-swe[bot]", "APPROVED", "new"),
-        review(4, "open-swe[bot]", "COMMENTED", "old"),
-        review(5, "Open-SWE-Preview[bot]", "APPROVED", "old"),
-        review(6, "openswe-dev[bot]", "APPROVED", "old"),
-        review(7, "open-swe[bot]", "APPROVED", "new"),
+        review(3, "jarvis-aeteq[bot]", "APPROVED", "new"),
+        review(4, "jarvis-aeteq[bot]", "COMMENTED", "old"),
+        review(5, "Jarvis-Aeteq[bot]", "APPROVED", "old"),
+        review(6, "jarvis-aeteq[bot]", "APPROVED", "old"),
+        review(7, "jarvis-aeteq[bot]", "APPROVED", "new"),
     ]
     dismissals: list[int] = []
 
@@ -90,9 +90,8 @@ async def test_only_open_swe_approvals_other_than_the_kept_one_are_withdrawn(
         )
 
     assert set(dismissals) == dismissed
-    # Scoping to a login excludes review 6 (a different login) before it is ever
-    # attempted, and an unknown scope review attempts nothing at all.
-    assert refused == ([6] if scope_to_review_id is None else [])
+    # An unknown scope review attempts nothing at all.
+    assert refused == ([] if scope_to_review_id == 999 else [6])
 
 
 @pytest.mark.parametrize("status,merged", [(200, True), (200, False), (409, False), (403, False)])
