@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -25,7 +25,7 @@ sources:
     resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Coding Agent Assembly and Execution
@@ -258,6 +258,8 @@ sequenceDiagram
     
     Server-->>Client: Response with completion
 ```
+
+*Factory and execution flow: assembly gates on execution flag and thread_id, resolves sandbox/models/tools/middleware concurrently, then invokes the graph with step-by-step model and tool loops.*
 
 ## Change guidance and extension points
 

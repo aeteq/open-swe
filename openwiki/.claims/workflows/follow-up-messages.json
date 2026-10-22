@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:6ace2c892be9929f0cc17811b36a11cd32a6efe288a20ca1c4e5bd0663bff478",
+  "pageVersion": "sha256:103dc03c37ce53856ffcd33f571ee8add44242f6142c51237f57028ff9b4c970",
   "claims": [
     {
       "id": "claim_3b1b07aeac4b4d8b811c397903ae1694",
@@ -50,11 +50,11 @@
       "evidence": [
         {
           "resource": "repo://openswe/dispatch.py#L139-L151",
-          "version": "repo-lines-v1:sha256:7767494dad5cd481cf8749f40f058d82b66ef8671af0beb12193d303ac6246bd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ0ZmZmMDEwYmIwZTYzMjQ4MTQ5ZWMxZGIxZTA0NDU3MGQyZTk1YmQ5OTU3Y2QxNDhjMmJkZDk4MWZiNzIxOGUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc3NzIwM2Y3OGMzYjZjNDQxMzgwYzU3ZGQ0OGVkZjNlOTVlZGRkMTZlMTZmMTc2MTU0NDY3MDUyZThjNWVlMWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2MGM1YjVmMzVkN2M5ZGJmYzFlMWZkMjNlOGZiYWM5NjYzY2ZkMmI5NDQyZjU3MDU2YzU1YzJiMDIwZDA1YzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjYmNhMTQ4Mzg4YWI1MjU5YzlkZjNhYzc0NDdkODk5YTllNzE3YTM4NDhiNDUxYmNhNWUzZGYwNzFjMDNmMzcifQ"
+          "version": "repo-lines-v1:sha256:2a3610a9950f3ba95fbc0fd59b5ae5de8cd000024a8f2c714c599640b78e7a1f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5OThjNGU3ZTNkNjBiYTViNzg1NjBmMzYxNzc5ZWQ0NDIxZmUxMDNjMWQ2MjNlOWI3NjJiMzE1Mzg3NjQwMzgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxZWI1YTE4NzcyMTMxOTMyZjdiNThiMGU3NmFmNTY3MzVjYzdlMmMzNDAxM2I1OTE1MzNkMGMyYjYxN2YyZWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyZWQ3NjE0YTJiNjFhMjVjODE5ZmVjZDQ0MzE1YjE0MmI5NmIwODBiM2YxZmRhMTQ3ZWU5OTU5MDRkYWE2ZGUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRiNjU3NTU4YzdjMGI0YmFmNjg1MGEwMjY2MWUxYzNiZDk1OGI5OWNhY2NhMTVhOTNmOTY1NzNhMDMwMWFiODgifQ"
         },
         {
-          "resource": "repo://openswe/sandboxes/lifecycle.py#L320-L356",
-          "version": "repo-lines-v1:sha256:3cef554a26c74bdfa9485978e45672b960fae39d73014630fdca8099caf9055f:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzYmIyYzZhNzY2ZDBkNjZiYTlmYjBiZDRiMDlkY2QzMTNlZTc4YTI2Yjk1YWEyMDU4NTU0MDViNTFhNWI3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2MWM2ZmRkZjZjYmQ0NjRjNzM2YjhkNTBjZGQwNWM4ZTAxZGYyYjkyZmI5NTFlMzgxNzA1ZmFiZWYwNzI4ZjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4MDM4MDNiMjUzYjAwZGI3YzVmMTQ5YjA3NTA5ZmU5YjUyOTNiODY2MTNlNTdkYThkYmQzZjY1NWM3MmFjODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjllMmQwZTZjYzZkY2ZhYmUwNTg2NTA1NDA0MzQzZGQ4NmIyNjY5NzI0NzBhNmNhZTA0N2VlODQ2MWMyNWNmNjEifQ"
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L354-L370",
+          "version": "repo-lines-v1:sha256:2327a59e03952a76a169ddeac29754146b166ff7daf4be0120315958c63416f0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQzYmIyYzZhNzY2ZDBkNjZiYTlmYjBiZDRiMDlkY2QzMTNlZTc4YTI2Yjk1YWEyMDU4NTU0MDViNTFhNWI3MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjYmIwNTYwOGJjZjYwY2I4YzNlNDQ0NThkYTI5OWY4NjMzN2U4NjRlOTRiODM5MTljMmNiMjg4YTMzNjllMjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4MDM4MDNiMjUzYjAwZGI3YzVmMTQ5YjA3NTA5ZmU5YjUyOTNiODY2MTNlNTdkYThkYmQzZjY1NWM3MmFjODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlMTc4NTQxZGM3ODhhZDc3ZGE1ZjQ2YzY1NjFkODRjMzNhMWZhMmE0OWExOWJmNWFkZDc4YjMwMTFhZmViNWIifQ"
         }
       ]
     },
@@ -195,12 +195,12 @@
       "statement": "The authorized dashboard stop cancels all pending and running runs by enumerating the thread rather than trusting `latest_run_id`, marks it interrupted, and—unlike Slack stop—preserves queued messages and dispatches an empty-input continuation run when they exist; the admin variant does not perform queued continuation.",
       "evidence": [
         {
-          "resource": "repo://openswe/threads/handlers.py#L257-L315",
+          "resource": "repo://openswe/threads/handlers.py#L267-L325",
           "version": "repo-lines-v1:sha256:155bc8a76e193e48216dc3d1d7c6ebb3c6c0d90525a45b42731794c973bd0aef:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlOTg1MDc2NDNhMGFkZDc2ZTE1YzVmZmQ4ZjM5ZTE4MWFjNjAyYmRjNTRlMjQ3MzA5MDFmOGJiMmY5YTEwZmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2ZTExNGQ2NTA0YTYyZDc4Y2QwYTU4NTI0YTFhZjA1YzUyNTdlMDI0MDY5NjE5OTEyMWRlYzZjYmFiNzdiNzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU2ZGZiZjQ1M2Y3ZjFiZWJhYjcyODM2MWIwZjM5M2VlYjRjMWZiNjY4ZjllYTIyYjkxNmRhY2Y1ZGZmODFkODMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiYWI4ZjE0YmQ3ZGUxZjFmMWYwN2Q3NzY1MWZhYThiNjc2ZmQ5NDc0NTMyZTNmZTE2NjI0ZTllMDUxNDY2NDMifQ"
         },
         {
           "resource": "repo://openswe/threads/runs.py#L1403-L1415",
-          "version": "repo-lines-v1:sha256:a8d9b9fdb9964b0dffca07e9e6cd6af3e6692a9655545ab7ad0045e07a2b766b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgwMzdhNGViMWExNDE4ODEyMjg3YTNiNWJhYWMwYmFhODgwNTY4YzJiNjI2YTZlMWFkZDMwNmE3N2UzYjBjMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEwMDYxZjYwOTFjZTAwMzYwYzViNWYzNzBhYmM1MGU4NjhiODg2YThmODY3MTA3NmIzNjhiY2FjMGQzYjcxNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmZWRkMzAwMzk4ZTEyNDNmNjFlOTVlOWY2YmZiNGVlNjlhOTdkYzc1MDdlOTI1MzI5MDE1Y2YxODQxNGQ5YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk5OTAxOWZlMDg1ZGU0NjQyZmM4YWQ5MzQ3YWQ3NmZjMjA4M2NmY2VhY2U4OTRhMGUwMzU4YTQ0NzQ0MWUwNWEifQ"
+          "version": "repo-lines-v1:sha256:b7ec764658a67e7f9ddd4dabf4910702d9b11273c8a9ff9292a7152dd60ecb69:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmMmE4MDIyYzBlY2UyMzdmZTgwY2E5YzZjM2M5YjQ0MmQyM2M1ZGI0NTRkMmRiYWQyYzY3YTc2MjI4NjE4NWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4MTY5ZWJhMGE5MTFjNjZiYTg2NzM3ZTQyZDJmYTBjMzcxZDcyNWIzNzk2MDAxMjI2MTY5MTEzYWM4YzFlN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFiNGFkZGVmMjQxNWNlNmU1Njc1OGQ2NjcxMGY2MjdhNjkyN2ViZjUzNzg2M2M0MTdhMmU3Y2Q3ZDI3Yzc4NmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIzZTc1YzQ0OTUxNGRiNzczNTAyYzI1OWUxODczMTRmOWM4ZTZjMWU4OWUyOThhNzJhNDg2ZGRjMmE2OWU2OWEifQ"
         }
       ]
     },
@@ -221,10 +221,68 @@
           "version": "repo-lines-v1:sha256:549548244f93b3c61e1e258d67b4b25328a69d951fcda32dbca2c07006f675e3:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjJjMGMxNDY0MzJkYmQxNTM1NDIyMmJkODhkYjYyZmY5ODdjZDY0NTU1YzVkMGY2NTk3ZjAxOGQ3NDZkNjExYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2QzMDZiYjI3Nzc2ZGE1ZGNjMTUwNTBmM2MyZDJiNGQ5ZjViZTMxZDkxMGNiMTQ4MjIyYjE4ZGE3MTBkMGZhMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGMwYjhmODMxMjA4ZTJiMDNlZTE1NWFlNGNkNGMwOTEzNDMzZDdiOGQ4ODVkYmUzZjBlOWQ4NGUzMTBhN2E5YyJ9"
         }
       ]
+    },
+    {
+      "id": "claim_7c755d191dee43b89846826057b722f3",
+      "statement": "`wake_thread_owner` starts a run for a Slack thread's owning agent to handle background events, attributing the run to a system `\"background-event\"` identity with event-specific prompt text; it raises `ThreadOwnerWakeError` if no run starts.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/slack/thread_owner.py#L27-L63",
+          "version": "repo-lines-v1:sha256:39045f2ecb49d2cfa21028e19af843f10c639b9f65843a988ae2cef3ad26e19e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVlYTQ1ZTAwZTZlMWVjNmY0YjlkNjc0ODcyMGUxYzFkMDYyNjdhOTFhNTE1YWZmMmQ4MGZkZTliOTY1MTM1Y2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiZjRkN2FkMDAyOWM5OTMxMTE3OWE1MTZmZjM2Yzc1ZTkwMmYyNzY3NzcwZDRjOTgxODhhNWRmYjU2ZmFhNWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhYmNlNWY0MTdhZmJkNDFkMDk4MWMzYzU0NzcxMzNlZDExNmYyN2ZiMWVlY2Q3ZDIyYzE0ZDQyMTY2NTljMmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_eaa3fd7dfb694461872b4952f391b3a6",
+      "statement": "`note_for_thread_owner` queues an informational message for a Slack thread's owning agent without starting a run; it skips queuing if the thread does not exist or is the thread's own run.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/slack/thread_notes.py#L20-L31",
+          "version": "repo-lines-v1:sha256:bb1dfe3a1b02dcd8320b4df65c292b51240a37c1a2e79831f72ab66cfc1addb6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZGQ2MGRmNmZhZDk5MDFmMTFiNzgwYjE4NzA2ZGUyMjEwYzQ2NDY1Mzg4ODZmNWIzNzU4YjExZWU2NGM1NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkYjE0OTM1NWU3ZjY2NWViNWY0MTM4MWUxZGZhYWIzMjQ5NTEyOGMxMDllOTIyOWZmZjgyMjBlOGUzZmI4ODgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_2237a40882074508a3712f9e5bd5a7ee",
+      "statement": "`WakeBudget` enforces a per-human-message limit on self-wakeup runs a thread may schedule: the budget resets to zero when a new human message lands, and subsequent wakeups increment the count until the limit (10 by default) is reached.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/threads/wake_budget.py#L7-L60",
+          "version": "repo-lines-v1:sha256:cd52d005a5d79cb018e6919e1799253767550f9ddd3221deb40df666c687c47c:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczOGJjMDcxNjMzMmY5ODBlZGVlNzBmNGIyMjkyZTQ5YWI0ZDhjYzlhNWM5YzI0OTM1MGZiNWFkN2E0YmQ0NjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzYTJiNTJiMDdlMmFkZDIyY2NiOTdkMDI0MzVjYzkwYjNmZjdiZTc5ZmJhZTAzZmQ3NTk4M2ZmNmY2OGRkNGYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljYmQyN2FhY2VhMDRjYmI2ZWRkNWZlY2ZjNzBkZTY4NzFhODFlYWVmYmU2Zjg3MmQxNGZlMmI1YTRjYjE0NGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_51f4d9ecd005426895f707931fecbe2b",
+      "statement": "`THREAD_WAKEUPS` caps thread-scheduled follow-up runs at 10 per human message; `MONITOR_WAKES` applies the same 10-per-message limit to background-task and baby-sit completion notifications.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/threads/wake_budget.py#L53-L61",
+          "version": "repo-lines-v1:sha256:1be5bf9d1e1a4a682ff88397d150a94c24ad1504e4f45115d37d20bee3519553:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTJhZDllNmVmODk1YWUyM2VhODlmMTRhMTMyZjQxZmRkMmMzZjViOWM1YjY4ZWMzMmRmMTU2N2Q1YWFjYmUyNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWNiZDI3YWFjZWEwNGNiYjZlZGQ1ZmVjZmM3MGRlNjg3MWE4MWVhZWZiZTZmODcyZDE0ZmUyYjVhNGNiMTQ0YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjNkZjJhY2YwNmU4YzNmMDNjNzEzNWM2ZThhYzVhOWNhNTQzMmFiZTA2YTc0YWNhMGZkZDlhNTNhMDA4Zjk4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://openswe/tools/schedule_thread_wakeup.py#L21-L21",
+          "version": "repo-lines-v1:sha256:a56a8b2ff2b6127229cd0976795ad95021f1d7ee333feacdef82203b601bd43f:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTU2YThiMmZmMmI2MTI3MjI5Y2QwOTc2Nzk1YWQ5NTAyMWYxZDdlZTMzM2ZlYWNkZWY4MjIwM2I2MDFiZDQzZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTU2YThiMmZmMmI2MTI3MjI5Y2QwOTc2Nzk1YWQ5NTAyMWYxZDdlZTMzM2ZlYWNkZWY4MjIwM2I2MDFiZDQzZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTdlZjE3NDU1NDcwZDMzNDc5NTIzYzE3NGZlMWUwNThhMzhjYTAxN2ZkYTA0MzEzOWRmOTcyNGEyYzU1Njg4ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTdhYWE1ODcxZmYzMzcyZGY1ZjY2MzYxNzczZTkyZTBiY2YxMDdhM2EyMDZjNTEzMTJlYWQwMWZhMmI0M2NhZSJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_1e57a7a9ccb54df886bf5801ae8b31eb",
+      "statement": "Recent-thread context is loaded asynchronously in parallel with workspace setup and injected into the system prompt during run preparation; the digest is bounded to 5 threads, 160-character titles, 4,000-byte payload, and 1-second timeout, and respects audience rules to exclude private work from shared conversations.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/server.py#L1289-L1305",
+          "version": "repo-lines-v1:sha256:690271dc6fa2c1481f35804034884b76743d4d09852047e2d00b7ce3a586cb6e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcyOTFhNzEzNTBhMDk1ZDJlNWE3ZWE1OTM1NDYzMDc1ZGQzNTY3MjRkY2QwOTQyMmU2MGM4OWE0ZjZlNzI4YmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZmYTIxNWFiZDc2OGUyODUxOTMzZmEyYWM4YzFhMTNmZTIwOGQxZTQ1ZWQ1NGI3NDAzNzNmNGM1YmY1MDJlZDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmZDRjM2ZiN2U4ZjgyZDYzZWIzODBmMDdmYjIwZjYwM2ZlMDg2MjIyYjAxN2JhZmEyZjlhNWI3NzYxMGFmYzYifQ"
+        },
+        {
+          "resource": "repo://openswe/threads/recent_context.py#L37-L100",
+          "version": "repo-lines-v1:sha256:aa6d13dbf7cb97ff9a3c2130b07a842ec4696e2988a69d0c7cf9045bae8ecc48:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5OGZiODExOTRkYzkyMjQyMzZiN2I2YWRmMDM1NmI2Y2Q3OWZhZGQzMzFkOGYzNjA3ODcwM2EzMjUxZDc1ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjMGMxYmQzOTRiNTgzMWNkMmVkZjJlM2Y1MTdlZTEwNGVkZDUzOGJlNjQ1OGJkMTEyMzQ3YWI5ZmQ2NTgwZmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1YzFjNDYyZTJhMzlkNzQ3NTlmNWUxYjEyNmY3NjgzYTJiNzMwMTE4ZTE4ZjUxMjJiMDhjZWRlZWI2NTBlMjMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0MWFjNGU1ODM1ZjdmOTZjMWZiOTU2OGEyZGM2ZTUyOGI0MzgwYTc2NmNjZGZmNjJkZjQwYWE3MDZmZmM2ODcifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-21T13:36:13.083Z"
+    "at": "2026-10-22T13:38:02.092Z"
   }
 }

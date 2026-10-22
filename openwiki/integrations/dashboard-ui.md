@@ -3,6 +3,9 @@ type: integration
 title: Dashboard and UI Integration
 description: React UI architecture, thread listing and chat interfaces, real-time updates, state invalidation, and OAuth integration.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, langgraph, real-time]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
@@ -44,10 +47,7 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Dashboard and UI Integration
@@ -80,7 +80,7 @@ The cloud terminal uses a two-step contract. `POST /threads/{id}/terminal/connec
 
 ## Dashboard-managed configuration and automation
 
-Repository instruction records normalize `owner/repo`; route handlers filter lists and guard direct access through current repository authority. For a run's resolved repository, non-empty instructions are appended to the main prompt (and lookup failure is fail-soft). Review styles use similarly repository-guarded records with `idle`, `running`, `completed`, and `failed` states. A read reconciles an in-progress analyzer; a concurrent analysis returns `409`; a saved prompt allows a terminal or missing analyzer run to become completed.
+Repository instruction records normalize `owner/repo`; route handlers filter lists and guard direct access through current repository authority. For a run's resolved repository, non-empty instructions are appended to the main prompt (and lookup failure is fail-soft). Review styles use similarly repository-guarded records with `idle`, `running`, `completed`, and `failed` states. A read reconciles an in-progress analyzer; a concurrent analysis returns `409`; a saved prompt allows a terminal or missing analyzer run to become completed. The approval mode delegates approval authority to the analyzer when set.
 
 Personal skills are virtual `SKILL.md` files isolated by GitHub login. Organization skills are shared, cursor-paginated, limited to 1,000 records, readable by every session, and writable by administrators only. Schedule listing requires a session, while create, update, trigger, and delete require administration. Workspace-scoped schedule records keep cron configuration separate from run state. Creation writes the record before creating a LangGraph cron and removes it with `502` if creation fails; enabled changes create the replacement cron before deleting the old one, while disabling deletes the cron. Before launch, repository access for the recorded owner is rechecked; failure records an unauthorized run state rather than launching. Successful launch creates an automation thread and resumable durable agent run.
 
@@ -88,7 +88,16 @@ Personal skills are virtual `SKILL.md` files isolated by GitHub login. Organizat
 
 The browser opens a server-sent events stream at `GET /dashboard/api/ui-invalidations?t=...` with a list of topics and their staleness age (e.g., `t=42.workspaces` means "workspaces data is 42 seconds old"). The invalidation hub in `openswe.ui_invalidations.hub` manages a single shared PostgreSQL `LISTEN` connection that notifies all replicas when a topic changes; each replica's `Stream` registry tracks which topics connected clients need and immediately signals when an invalidation arrives.
 
-The stream first reports which subscribed topics were invalidated within their staleness window (a replay window accounting for PostgreSQL lag and commit delays), then continues to emit every topic as it is invalidated, one per frame. The browser refetches only the invalidated queries; empty, out-of-window, or unauthorized topics are silently dropped. This pattern avoids polling while ensuring that queries stay synchronized with server state changes that happen during client inactivity. A `Topic` is a fully qualified name like `workspaces`, `threads/thread-id`, or `review-styles/owner/repo`, and authorization checks which keys a session may hear before allowing the subscription.
+The stream first reports which subscribed topics were invalidated within their staleness window (a replay window accounting for PostgreSQL lag and commit delays), then continues to emit every topic as it is invalidated, one per frame. The browser refetches only the invalidated queries; empty, out-of-window, or unauthorized topics are silently dropped. This pattern avoids polling while ensuring that queries stay synchronized with server state changes that happen during client inactivity. A `Topic` is a fully qualified name like `workspaces`, `threads/thread-id`, or `review-styles/owner/repo`. Topics include:
+
+- `workspaces` — Any workspace's definition, bindings, settings, snapshot or refresh state.
+- `review-styles/owner/repo` — Repository-scoped review analysis configuration and findings.
+- `incidents/incident-id` — Incident listing entry, detail, and investigation state.
+- `pull-requests/owner/repo/number` — PR live state, review findings, and walkthrough.
+- `threads/thread-id` — Thread queue messages, browser window state, and background work.
+- `announcements` — Admin announcements and delivery progress (admin-only).
+
+Authorization checks which topic keys a session may hear before allowing the subscription, ensuring that keyed topics do not expose private records.
 
 ## Pull request reviews and findings display
 

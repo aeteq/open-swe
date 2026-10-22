@@ -5,7 +5,7 @@ description: Operational provider selection, provisioning, and configuration. Co
 tags: [sandbox, providers, langsmith, configuration, extension, lifecycle]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-3436762fd1bce7c774640399
     resource: repo://openswe/bridge/backend.py
@@ -17,6 +17,8 @@ sources:
     resource: repo://openswe/sandboxes/providers/daytona.py
   - id: openwiki-source-5d9c36f48ae657b2e73411eb
     resource: repo://openswe/sandboxes/providers/e2b.py
+  - id: openwiki-source-e2d4ab22e08f00169bb3c374
+    resource: repo://openswe/sandboxes/providers/langsmith_api.py
   - id: openwiki-source-d16a45e9fc6aa80a3708c88c
     resource: repo://openswe/sandboxes/providers/langsmith.py
   - id: openwiki-source-5b3f60be6fd7ddbdf61f37ad
@@ -33,7 +35,7 @@ sources:
     resource: repo://openswe/sandboxes/repo_prep.py
   - id: openwiki-source-63c74145043dac21719006df
     resource: repo://openswe/sandboxes/retry.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Sandbox Providers and Configuration
@@ -218,7 +220,7 @@ Desktop CLI synchronizes repository state with the backend via a bridge connecti
 - Enforces file transfer timeouts (120 seconds) and worktree handoff timeout (360 seconds)
 - Supports execute, upload, and download operations only; all other operations raise `NotImplementedError`
 
-The bridge backend pair implements `SandboxBackendProtocol` symmetrically: the backend submits requests, the listener on the desktop answers them, and results flow back through the bridge store. A `BridgeUnavailableError` surface when the desktop closes its connection or stops responding.
+The bridge backend pair implements `SandboxBackendProtocol` symmetrically: the backend submits requests, the listener on the desktop answers them, and results flow back through the bridge store. A `BridgeUnavailableError` surfaces when the desktop closes its connection or stops responding.
 
 ### Read-only backend for virtual skill routes
 

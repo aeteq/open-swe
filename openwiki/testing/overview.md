@@ -4,6 +4,8 @@ title: Testing Infrastructure and Validation Patterns
 description: Test organization, fixture strategies, E2E setup, and focused validation patterns for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
 sources:
+  - id: openwiki-source-8037e2358a2c4f9b2c722a11
+    resource: repo://AGENTS.md
   - id: openwiki-source-24f77a48f966a05631988d08
     resource: repo://desktop/package.json
   - id: openwiki-source-012f2c78e3b1446dfc35803f
@@ -30,8 +32,6 @@ sources:
     resource: repo://tests/e2e/tests/full_flow.spec.ts
   - id: openwiki-source-ec3fbe14e1e05123704c4f28
     resource: repo://tests/reviewer/test_reviewer_outcomes.py
-  - id: openwiki-source-7df46053b42dbcb9f728130d
-    resource: repo://tests/reviewer/test_reviewer_publish.py
   - id: openwiki-source-f05d7497d4c60c3b322628eb
     resource: repo://tests/sandbox/test_sandbox_state.py
   - id: openwiki-source-a9842c19fa28878dfa7fcd61
@@ -40,10 +40,10 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -58,6 +58,14 @@ The testing strategy separates concerns by layer: focused pytest tests for agent
 - **Real webhook, UI auth, git, Electron integration**: Focused Playwright E2E
 
 Test layer responsibilities: pytest owns Python backend contracts via unit tests with fakes; Vitest owns frontend React components; Node tests own Electron main process; Playwright owns real webhook routes, UI integration, and end-to-end flows through the agent.
+
+## Testing philosophy and ownership
+
+Tests are maintenance cost. Add one only when you can name a concrete regression existing coverage would miss. Prefer extending an existing behavioral test over new files, fixtures, or mock-heavy harnesses. Do not write tests for docs, prompt wording, constants, mappings, source structure, trivial accessors, or behavior guaranteed by types or a library. Avoid change-detector tests, incidental snapshots, call-order assertions, or mocks that only prove the mock was called.
+
+Security, authorization, data integrity, and tricky state transitions deserve targeted coverage. Behavior-preserving refactors should not need mechanical test updates; rewrite or remove tests that do. For bug fixes, prefer a focused regression test that fails before the fix. Before submitting, prune redundant or low-signal tests the change added; shipping no new tests is often correct.
+
+**Never run the full test suite locally**; run only tests related to the change. The unit test suite is large enough that running it all locally burns developer time without proportional signal. Focus on targeted regression tests and acceptance paths.
 
 ## Python test organization and fixtures
 
@@ -89,6 +97,7 @@ make typecheck
 - **`allowed_bot`**: Seeds a test Slack bot configuration; requires the `registry_db` fixture.
 - **`user_records`**: In-memory store for UserRecords keyed like PostgreSQL resolves logins, for tests that need to seed user data.
 - **`grant_tool_access`**: Callable fixture that resolves every gated tool call to `Access(**fields)` for the test, enabling or disabling individual tool permissions.
+- **`memory_event_claims`**: In-memory event-claim registry that never lapses; replaces the PostgreSQL backend for idempotency testing.
 
 ### System-boundary test locations and patterns
 
@@ -187,6 +196,7 @@ The backend requires PostgreSQL: export `POSTGRES_URI` before running the suite 
 Poke at it by hand (from the repo root):
 
 ```bash
+tests/e2e/mda-dev.sh
 uv run langgraph dev --config tests/e2e/langgraph.e2e.json --port 2024 \
   --no-browser --allow-blocking --no-reload
 # open http://127.0.0.1:2024/mock/slack  and  /mock/github

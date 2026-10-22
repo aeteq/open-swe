@@ -3,9 +3,6 @@ type: architecture lifecycle
 title: Thread Sandbox Lifecycle
 description: How a thread acquires, persists, reconnects to, and deliberately replaces its sandbox. Covers provider selection, proxy-backed credentials, recovery safety, and operational lifecycle controls.
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
 sources:
   - id: openwiki-source-5491be991f9727afe1f3163d
     resource: repo://openswe/github/proxy.py
@@ -25,7 +22,10 @@ sources:
     resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Thread Sandbox Lifecycle
@@ -38,7 +38,7 @@ Related: [Threads and state](../concepts/threads-and-state.md), [Auth and securi
 
 `thread.metadata["sandbox_id"]` is the durable identity of a sandbox. `get_sandbox_metadata` reads the live LangGraph thread; a lookup failure returns `{}`, hence no ID. That fail-open behavior is safe for reading but is why provider interfaces intentionally have no delete operation keyed from this metadata: an unreliable lookup must not delete a live working tree.
 
-`SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `SANDBOX_CONNECTIONS` is keyed by *sandbox* ID rather than thread ID, so a thread rebound on another worker cannot be handed a stale connection from its previous worker. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object.
+`SANDBOX_BACKENDS` is an in-process dictionary from thread ID to a stable `SandboxBackendProxy`. It is a cache, not persistence, and therefore disappears with a worker restart. `SANDBOX_CONNECTIONS` is keyed by *sandbox* ID rather than thread ID, so a thread rebound on another worker cannot be handed a stale connection from its previous worker. `set_sandbox_backend` retains the existing proxy and swaps its target when possible, so middleware and tools holding the proxy see a replacement backend instead of retaining a stale object. When the sandbox ID changes, the old connection is unpublished from the keyed registry.
 
 The proxy is asynchronous. Synchronous backend methods fail with `NotImplementedError`; its `a*` methods resolve the current backend before delegating. If it has no target, resolution uses a registered reconnect callback, or falls back to the metadata ID and `create_sandbox`. A lock and shared startup task collapse concurrent first operations to one reconnect; `asyncio.shield` means cancellation of one waiter does not cancel shared startup. The proxy subclasses `BaseSandbox` so filesystem tooling recognizes capture-at-source support and can preserve the in-sandbox output cap. If an underlying backend lacks execute-offload support, the proxy explicitly falls back to ordinary execution. The `ready()` contract exposes `_aget_backend()` so callers can await a fully resolved backend without executing a command.
 
@@ -97,15 +97,15 @@ A command-level failure is not automatically a sandbox failure. The tool error p
 
 The GitHub proxy is LangSmith-only. On sandbox creation and reuse, lifecycle code resolves either a supplied GitHub token or a GitHub App installation token, then configures the LangSmith proxy. GitHub credentials are injected as opaque request headers: `api.github.com` receives `Authorization: Bearer`, while `github.com` and `*.github.com` receive Basic authentication for `x-access-token:<token>`. The sandbox sees only the `GH_TOKEN=proxy-injected` placeholder required by `gh`; the real GitHub token is not written into its environment or filesystem.
 
-Environment-provided proxy configuration is retained as a base configuration. It is persisted in thread metadata as `sandbox_base_proxy_config` after successful creation, so reconnects and token rotations preserve custom rules. The configuration procedure replaces its managed user-LangSmith rule, preserves other custom rules, and may add opaque Stagehand model credentials. A proxy PATCH retries retryable transport/status errors. If it receives the special not-ready response, it best-effort starts the stopped sandbox and retries; a stopped box retains its filesystem and is not equivalent to a deleted one.
+Environment-provided proxy configuration is retained as a base configuration. It is persisted in thread metadata as `sandbox_base_proxy_config` after successful creation, so reconnects and token rotations preserve custom rules. The configuration procedure replaces its managed user-LangSmith rule, preserves other custom rules, and may add opaque Stagehand model credentials. A proxy PATCH retries retryable transport/status errors. If it receives the special not-ready response (when the LangSmith SDK provides `SandboxNotReadyError`), it best-effort starts the stopped sandbox and retries; a stopped box retains its filesystem and is not equivalent to a deleted one.
 
-GitHub App tokens expire after one hour. `record_proxy_token_expiry` keeps worker-local expiry, recorded time, repository scope, permission scope, and base proxy configuration per thread. The before-model `refresh_github_proxy_before_model` invokes `maybe_refresh_proxy_token`; it refreshes within five minutes of known expiry or after 50 minutes when expiry is unknown. Refresh remints with the original recorded scope unless a caller supplies a scope, so ordinary rotation does not broaden repository access or permissions. The middleware logs refresh failures rather than preventing a model call.
+GitHub App tokens expire after one hour. `record_proxy_token_expiry` keeps worker-local expiry, recorded time, repository scope, permission scope, and base proxy configuration per thread. The before-model middleware `refresh_github_proxy_before_model` invokes `maybe_refresh_proxy_token`; it refreshes within five minutes of known expiry or after 50 minutes when expiry is unknown. Refresh remints with the original recorded scope unless a caller supplies a scope, so ordinary rotation does not broaden repository access or permissions. The middleware logs refresh failures rather than preventing a model call.
 
 ## Deliberate replacement operations
 
 `recreate_sandbox_for_thread` is the ordinary tool: it creates a fresh sandbox using the resolved environment configuration, configures it, persists the new ID, and only then replaces the cached backend. The fresh box has no prior files or worktree state. Neither operation deletes the old sandbox; it remains preserved but detached from the thread.
 
-The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. The new ID is persisted to thread metadata before replacing the cached proxy target. If metadata persistence fails, the existing cached proxy retains the old backend, leaving the new provider resource detached. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached.
+The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. The new ID is persisted to thread metadata before replacing the cached proxy target. If metadata persistence fails, the existing cached proxy retains the old backend, leaving the new provider resource detached. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached. A stop attempt is made first for LangSmith sandboxes; if it fails, the new sandbox is still bound and the error is captured and surfaced to the caller via `SandboxRecreationStopError` so the replacement binding is atomic even if the stop could not be confirmed.
 
 ## Repository paths and reviewer preparation
 

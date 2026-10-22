@@ -3,6 +3,9 @@ type: configuration concept
 title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
 tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-b944dafe6742f31d7ab88e70
     resource: repo://openswe/dashboard/agent_instructions.py
@@ -32,10 +35,7 @@ sources:
     resource: repo://openswe/utils/model.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-15T13:12:32.024Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Models, Profiles, and Instructions
@@ -50,7 +50,7 @@ The dashboard's `/options` response does not mutate this registry. It returns co
 
 ### Defaults and recovery
 
-`default_model_pair()` is the deployment-level terminal default. It reads `LLM_MODEL_ID` and `LLM_REASONING_EFFORT`, with a credential-sensitive built-in model id and default effort as fallbacks. The selected default must be a supported, default-eligible model and support its effort; otherwise it raises `ValueError` rather than constructing an arbitrary model. Local development startup separately validates the credential required by the configured default.
+`default_model_pair()` is the deployment-level terminal default. It reads `LLM_MODEL_ID` and `LLM_REASONING_EFFORT`, with credential-sensitive built-in fallbacks. The selected default must be a supported, default-eligible model and support its effort; otherwise it raises `ValueError` rather than constructing an arbitrary model. Local development startup separately validates the credential required by the configured default.
 
 A selection that has fallen out of the registry is handled differently from one explicitly listed in `DEPRECATED_MODEL_IDS`:
 
@@ -63,7 +63,7 @@ All team default resolvers use a valid saved pair first, then same-provider reco
 
 Team settings are a single LangGraph Store record keyed `"default"` in `["team_settings"]` (historically called "team settings" in the pre-workspaces architecture). Reads overlay non-null stored fields over hardcoded defaults and fail soft to those defaults on store failure. The team can set main and subagent pairs for agent and reviewer roles; review chat inherits the agent pair when its own pair is absent or invalid, and diff grouping inherits the reviewer subagent pair. Thread-title selection has a separate default and can switch an OpenAI title model to Haiku on an Anthropic-only deployment with neither gateway routing nor desktop OpenAI OAuth.
 
-Profiles in `["profiles"]` carry a main pair, optional subagent pair, default repository and branch preferences, PR/CI preferences, and model-routing and UI preferences. Profile writes are separate from encrypted OAuth records in `["oauth_tokens"]`, preventing concurrent profile saves and token refreshes from overwriting each other. Run-start profile lookup is fail-soft, while dashboard profile reads deliberately surface store failures.
+Per-user profiles are stored in the LangGraph Store in the `["profiles"]` namespace, keyed by GitHub login. A profile holds a main model pair, optional subagent pair, default repository and branch preferences, PR/CI preferences, and model-routing and UI feature flags. Profile writes are kept separate from encrypted OAuth records in the `["oauth_tokens"]` namespace, preventing concurrent profile saves and token refreshes from overwriting each other's fields.
 
 ```mermaid
 flowchart TD
@@ -114,16 +114,15 @@ Provider request routing is distinct from runtime model fallback. `ModelFallback
 
 ## Instruction sources and authority
 
-Repository custom instructions are workspace-admin-authored records in `["agent_instructions"]`, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
+Repository custom instructions are workspace-admin-authored records in the LangGraph Store `["agent_instructions"]` namespace, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
 
-Personal instructions are separate `["user_instructions"]` records keyed by GitHub login, capped at 20,000 characters. They can be changed from the dashboard or by `save_user_instructions`, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
+Personal instructions are separate LangGraph Store records in the `["user_instructions"]` namespace, keyed by GitHub login, and capped at 20,000 characters. They can be changed from the dashboard or by the agent's `save_user_instructions` tool, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
 
 Prompt authority is explicit:
 
 1. A repository `AGENTS.md`, if present, overrides prompt defaults with the same authority as the system prompt.
 2. Repository-specific custom instructions are mandatory but yield to `AGENTS.md`.
-3. Workspace-level instructions yield to repository instructions and `AGENTS.md`.
-4. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
+3. Sender-level personal instructions yield to repository instructions and `AGENTS.md`.
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.
 
@@ -135,9 +134,9 @@ When `model_routing_enabled` is true at the workspace or user level, the factory
 
 ## Prompt loading, instruction caching, and rendering
 
-Prompts are Jinja2 templates and static Markdown files loaded from `agent/resources/prompts/` via the `prompt()` function in `agent/prompts.py`. Templates end with `.md.jinja` and accept keyword arguments that become Jinja variables. The main system prompt is constructed in `construct_system_prompt`, which assembles sections for working environment, dashboard context, source guidance, repository scope, collaboration, external comments, repository instructions, workspace settings, and recent thread context. Each section is conditionally rendered and only included if its content is non-empty.
+Prompts are Jinja2 templates and static Markdown files loaded from `agent/resources/prompts/` via the `prompt()` function in `openswe/prompts.py`. Templates end with `.md.jinja` and accept keyword arguments that become Jinja variables. The main system prompt is constructed in `construct_system_prompt`, which assembles sections for working environment, dashboard context, source guidance, repository scope, collaboration, external comments, repository instructions, workspace settings, and recent thread context. Each section is conditionally rendered and only included if its content is non-empty.
 
-Repository custom instructions are rendered into a dedicated section via `_render_repo_instructions_section`. Workspace instructions are rendered via `_render_workspace_section` and include org-level guidelines and workspace-specific repos. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block in `agent/input_messages.py`. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
+Repository custom instructions are rendered into a dedicated section via `_render_repo_instructions_section`. Workspace instructions are rendered via `_render_workspace_section` and include org-level guidelines and workspace-specific repos. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block in `openswe/input_messages.py`. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
 
 Instruction caching leverages Anthropic's prompt caching middleware (`AnthropicPromptCachingMiddleware`), configured with a 1-hour TTL on all graph models. This middleware enables efficient multi-turn conversations by caching the stable portions of the system prompt and instructions, reducing token consumption and latency for subsequent turns in the same thread.
 

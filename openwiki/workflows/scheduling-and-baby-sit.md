@@ -5,7 +5,7 @@ description: How the job queue routes cron and delayed work into durable automat
 tags: [job-queue, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, cost-refresh]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py

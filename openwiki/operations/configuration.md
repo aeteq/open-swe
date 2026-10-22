@@ -1,11 +1,8 @@
 ---
 type: operations reference
-title: Configuration and Environment
+title: Configuration and Startup Validation
 description: Explains Open SWE's lazy environment registry, persisted team and workspace settings, model and sandbox selection, secrets, and the boot-time validation that determines whether a server starts.
 tags: [configuration, operations, environment-variables, startup-validation, sandbox, models, security, workspace-settings]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -35,10 +32,13 @@ sources:
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 ---
 
-# Configuration and Environment
+# Configuration and Startup Validation
 
 Open SWE has two configuration planes:
 

@@ -39,7 +39,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Quick Start: Navigate the Open SWE Codebase

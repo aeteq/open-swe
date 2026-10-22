@@ -42,10 +42,10 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Runtime and Product Architecture
@@ -74,7 +74,8 @@ It also operates as a reviewer (runs on-demand or automatic reviews, publishes f
 | `reviewer` | `openswe.graphs.reviewer:traced_reviewer_agent` | PR review and findings publication workflow. |
 | `review-scout` | `openswe.graphs.review_scout:traced_review_scout` | Review-tool inspection and capability discovery. |
 
-```
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
   Slack["Slack"] --> Webhooks["Webhook routers<br/>(GitHub, Linear, Slack)"]
   Linear["Linear"] --> Webhooks

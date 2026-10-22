@@ -3,6 +3,9 @@ type: workflow
 title: Follow-up Messages and Threaded Continuity
 description: Thread message routing, follow-up invocation from GitHub PR comments and Slack replies, run continuation and interruption coordination, and completion webhooks that coordinate concurrent work without losing user input.
 tags: [follow-up, message-queue, middleware, completion-webhook, baby-sit, background-tasks, stop, multitask-strategy, interrupt, enqueue, threaded-continuity]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-987be1dce6e9ba720855c2ed
     resource: repo://openswe/baby_sit.py
@@ -22,20 +25,27 @@ sources:
     resource: repo://openswe/server.py
   - id: openwiki-source-09f15fb673d6653b5f61bf55
     resource: repo://openswe/slack/stop.py
+  - id: openwiki-source-c9b528d2c81acad011d6dc75
+    resource: repo://openswe/slack/thread_notes.py
+  - id: openwiki-source-83f226a6ff9ebdb43b584dea
+    resource: repo://openswe/slack/thread_owner.py
   - id: openwiki-source-72370931d61f0a7232adcf12
     resource: repo://openswe/slack/webhook.py
   - id: openwiki-source-1b56c0378ee7dbe5ac66ab32
     resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-4b5283763f4ffcc761aa1c9f
     resource: repo://openswe/threads/proxy.py
+  - id: openwiki-source-5d8b1cb7551116affdb348f3
+    resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
+  - id: openwiki-source-ad980e633ed1ddfea4a66419
+    resource: repo://openswe/threads/wake_budget.py
+  - id: openwiki-source-f49481fb34a251dc31b8f17a
+    resource: repo://openswe/tools/schedule_thread_wakeup.py
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Follow-up Messages and Threaded Continuity
@@ -100,11 +110,11 @@ sequenceDiagram
 
 `check_message_queue_before_model` is installed in both the agent and reviewer graphs as a before-model middleware. It is deliberately excluded from the agent's `stop_summary` mode (read-only summary runs have no need to consume queued messages).
 
-At every model boundary, the middleware performs three sequential operations:
+At every model boundary, the middleware performs sequential operations:
 
-1. **Consume a batched autofix event** from `("autofix", thread_id) / "pending_event"` (if present). It deletes the event and prepends a system instruction to re-check CI and review comments before finishing, rather than launching a separate run. This allows baby-sit status changes to be handled within the active run.
+1. **Consume a batched autofix event** from the Store's autofix namespace (if present). It deletes the event and prepends a system instruction to re-check CI and review comments before finishing, rather than launching a separate run. This allows baby-sit status changes to be handled within the active run.
 
-2. **Read and clear the message queue** from `("queue", thread_id) / "pending_messages"`. The middleware deletes the entire record *before* conversion, preventing a subsequent invocation during the asynchronous conversion (e.g., image fetches) from injecting the same batch twice. A snapshot of the queued messages is taken first, so any follow-ups appended while the conversion is in flight are preserved for the next model call.
+2. **Read and clear the message queue** from the Store's queue namespace. The middleware deletes the entire record *before* conversion, preventing a subsequent invocation during the asynchronous conversion (e.g., image fetches) from injecting the same batch twice. A snapshot of the queued messages is taken first, so any follow-ups appended while the conversion is in flight are preserved for the next model call.
 
 3. **Convert queued messages to input blocks** and append them to the model's state:
    - Ordinary queued blocks become a system message attributed to `system:thread-queue` on the automation surface.
@@ -151,6 +161,24 @@ The watch stores metadata including retry count, dispatch keys for idempotence, 
 
 When all running and pending background tasks are complete, the monitor deletes its per-thread cron entry and clears the running-tasks metadata, shutting down the background-task monitoring for that thread.
 
+## Background work notification flow
+
+### Thread owner wake and queue
+
+Certain background events—such as human-review approvals, thread notes, and sandbox alerts—are routed to a thread's owning agent without immediately starting a new run. Open SWE provides two mechanisms:
+
+**`wake_thread_owner`** starts a run for the thread if one is needed. It resolves the thread by Slack location, fetches channel context and repository configuration, and dispatches a new run attributed to a system `"background-event"` identity with event-specific prompt text. If no run is started (e.g., the thread no longer exists), it raises `ThreadOwnerWakeError`.
+
+**`note_for_thread_owner`** queues an informational message for the thread's agent without starting a new run. It resolves the thread by Slack location, checks that the note is not from the thread's own run (to avoid duplicate processing), and queues the note for delivery at the next model call. If queueing fails at the store, a warning is logged but execution continues.
+
+Both functions enable coordination between background subsystems (human-review checkers, task monitors) and the conversation thread, preserving the agent's control over turn timing while ensuring important updates are not missed.
+
+### Thread wake budget
+
+When a thread schedules its own follow-up run (via `schedule_thread_wakeup` tool), the system enforces a per-human-message wake budget to prevent infinite loops. The `WakeBudget` class tracks how many self-wakeup runs have been scheduled since the last human message. A new human message resets the count to zero; subsequent wakeups increment it until the limit (10 by default) is reached, after which no further wakeups are allowed without a new human message.
+
+The same budget mechanism is used for `MONITOR_WAKES`, which limits background-task and baby-sit completion runs to 10 per human message. This ensures that monitoring loops are bounded and can be terminated by human action or by a change in thread state.
+
 ## Emergency stop and follow-up cleanup
 
 ### Slack emergency stop (`:x:` reaction)
@@ -175,6 +203,24 @@ The dashboard stop endpoint (`cancel_dashboard_thread`) authorizes the caller, c
 
 The admin variant (`admin_cancel_dashboard_thread`) cancels and marks interrupted without authorization checks or queued continuation.
 
+## Sandbox state preservation between runs
+
+Sandbox state is preserved between runs in the same thread through the durable `sandbox_id` stored in thread metadata. When an agent step needs the sandbox, it resolves by thread: if a cached backend exists in memory, it is reused; otherwise, `_connect_existing_sandbox` reconnects through the persisted `sandbox_id`, ensuring that uncommitted work (untracked files, temporary state) is not lost.
+
+When a follow-up or continuation run starts, the sandbox backend is reused if the connection is still alive. If the backend is unreachable, normal agent threads fail with a clear error rather than silently replacing it, because silent replacement could discard uncommitted work. Reviewers and deleted sandboxes can opt into replacement; these exceptions account for use cases where the sandbox is no longer needed or has been explicitly removed.
+
+## Context loading and recent-context truncation
+
+When preparing to run the agent, the `prepare_workspace` phase loads optional recent-thread context—a digest of the sender's recent activity across other threads—to answer "what has this person been working on?" with only non-private metadata.
+
+Recent-thread context is constructed asynchronously in parallel with other workspace setup (participants, model routing) to minimize critical path impact. The context retrieves up to 5 recent threads (excluding the current one) that match the sender's audience rules:
+- **Private/DM context**: includes the sender's own public and privately-owned threads.
+- **Shared Slack context**: restricted by team and channel to avoid leaking cross-organizational work.
+
+The context digest is bounded: titles are truncated to 160 characters, the entire payload caps at 4,000 characters, and the query times out after 1 second to prevent blocking run preparation. The digest includes thread ID, title, repository, source, resolved status, and update time—enough for the agent to understand recent work without exposing content.
+
+This recent context is injected into the system prompt on initial run preparation, not at every follow-up, to keep context fresh without redundant re-computation on queued message injection.
+
 ## Testing and regression coverage
 
-Focused regression tests exercise message queue draining, dashboard handoff attribution, error resilience when queue reads fail, Slack stop cleanup (mapped and root reactions), cancellation of pending and running runs, deferred-work deletion, summary dispatch, duplicate and missing-event protection, the no-summary code-channel session-stop path, and the preservation and continuation of queued messages after dashboard stop.
+Focused regression tests exercise message queue draining, dashboard handoff attribution, error resilience when queue reads fail, Slack stop cleanup (mapped and root reactions), cancellation of pending and running runs, deferred-work deletion, summary dispatch, duplicate and missing-event protection, the no-summary code-channel session-stop path, and the preservation and continuation of queued messages after dashboard stop. Tests also cover wake-budget enforcement, thread-owner queueing and waking, sandbox reconnection and error handling, and recent-context truncation by audience.

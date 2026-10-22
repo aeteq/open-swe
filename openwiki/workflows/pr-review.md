@@ -3,6 +3,9 @@ type: workflow
 title: Pull Request Review Workflow
 description: How Open SWE starts GitHub pull-request reviews, prepares a diff-grounded reviewer run, persists and publishes findings, and reconciles replies, resolutions, and review checks across later pushes.
 tags: [reviewer, pr-review, github, webhooks, findings, reconciliation, review-scout, style-guidance]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -42,10 +45,7 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-08T15:19:10.971Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Pull Request Review Workflow
@@ -101,6 +101,26 @@ Findings live in PostgreSQL under the pull request they were raised on (owned by
 
 Before findings moved to PostgreSQL, they lived in thread metadata; the first access to a legacy thread copies them over once, marked by a `pull_request_finding_state` row. Reads normalize legacy singular GitHub-identity fields and nested `surface` data to canonical ID lists plus a forward-only `surface_state` (not_surfaced → surfaced → resolve_pending → resolved). The storage API serializes mutations per thread/event loop, reads the freshest state, and writes only on change; snapshot replacement merges by finding ID. `append_finding` deduplicates against open findings by fingerprint. A missing reviewer thread raises `ReviewerThreadMissingError`; tools return a structured `thread_not_found` response directing the agent not to retry.
 
+### Finding lifecycle and state
+
+```mermaid
+stateDiagram-v2
+  [*] --> OpenNotSurfaced: add_finding
+  OpenNotSurfaced --> OpenSurfaced: publish_review posts inline comment
+  OpenSurfaced --> OpenResolvePending: review thread resolved or dismissed
+  OpenResolvePending --> Resolved: GitHub thread marked resolved
+  
+  OpenNotSurfaced --> UpdatedNotSurfaced: update_finding
+  UpdatedNotSurfaced --> UpdatedSurfaced: publish_review posts
+  UpdatedSurfaced --> UpdatedResolved: GitHub resolution
+  
+  OpenNotSurfaced --> Dismissed: resolve_finding_thread dismissed=True
+  Dismissed --> [*]
+  Resolved --> [*]
+```
+
+Status is independent of surface state: a finding's `status` field tracks open/resolved/dismissed, while surface state follows the publication pipeline. This allows findings to be resolved agent-side before threads propagate to GitHub.
+
 ## Review-scout lightweight pre-check
 
 Before the main reviewer runs, an optional lightweight `review_scout` graph can analyze the PR to determine whether full review is needed. The scout:
@@ -139,6 +159,17 @@ Publication selects only open, in-diff findings at or above the requested severi
 
 A publish may be successful without posting a review: eval mode is a dry run, and an empty re-review after a known Open SWE review skips another summary while still resolving fixed threads and advancing `last_reviewed_sha`. Only a numeric `review_id` without `dry_run` or `skipped_empty_re_review` confirms GitHub publication. If GitHub returns an unresolved-anchor 422, the tool removes identifiable invalid findings, retries the remaining batch once, and returns `unresolvable_findings` so the agent fixes or resolves them rather than repeating the request.
 
+### GitHub comment formatting
+
+Each inline comment includes:
+
+1. **HTML marker comment** (hidden from display): `<!-- open-swe-review-comment {json} -->` containing finding ID, file path, and line anchors for reconciliation
+2. **Finding title** and description as rendered markdown
+3. **Line reference** (file, start/end line, diff side)
+4. **Suggestion block** (optional, fenced as ` ```suggestion ``` `) when present, enabling GitHub's "Commit suggestion" feature
+
+The finding marker enables recovery of lost GitHub comment IDs and unambiguous thread matching during reconciliation.
+
 ## Re-review, replies, and settlement
 
 ```mermaid
@@ -156,6 +187,8 @@ stateDiagram-v2
 The watch lifecycle preserves findings and GitHub thread identity across review runs.
 
 On close/reopen transitions, `closed` disables watch and `reopened` enables it. `converted_to_draft` disables watch only when draft reviews are not enabled for that PR author. A watched push is ignored when the head equals `last_reviewed_sha`. When the PR diff is provably unchanged, the system advances `last_reviewed_sha` and creates then completes a success check titled **No new changes to review** on the new head, because GitHub no longer displays the old commit's check. A changed push reconciles live threads, refreshes PR metadata and `head_sha`, creates a new in-progress check, and dispatches a `re_review=True` run with the prior reviewed SHA.
+
+### Reconciliation and thread resolution
 
 Reconciliation (`reconcile_findings_with_review_threads`) links findings to live review threads first by embedded marker, then stored thread/comment identity. It backfills identities and marks findings surfaced; records only the latest non-bot reply after the bot comment as an interaction requiring reassessment; and marks an open finding resolved only when all matched threads are resolved (outdated threads are terminal but do not count as resolved). It persists only when data changed. A reply webhook reconciles, finds the parent comment's finding, records the reply as a `FindingInteraction` flagged `needs_reassessment`, and dispatches `reviewer_event="finding_reply"`; that run can reply for clarification, or resolve/dismiss with an agent-authored note.
 

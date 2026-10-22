@@ -2,8 +2,13 @@
 type: security architecture concept
 title: Authentication, Authorization, and Secret Boundaries
 description: How Open SWE authenticates dashboard and automation users, resolves GitHub authority, verifies inbound requests, encrypts stored credentials, and keeps secrets out of sandboxes.
-tags: [authentication, authorization, github-oauth, github-app, webhooks, encryption, csrf, sandbox-security]
+tags: [authentication, authorization, github-oauth, github-app, webhooks, encryption, csrf, sandbox-security, agent-server-auth, mcp-authorization]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 sources:
+  - id: openwiki-source-f01f6fab1cd3b23d20383d03
+    resource: repo://openswe/api/agent_server_auth.py
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
   - id: openwiki-source-035276d8c595782faca6e595
@@ -48,15 +53,23 @@ sources:
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
     resource: repo://tests/dashboard/test_github_token_auth.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-18T12:31:08.965Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Authentication, Authorization, and Secret Boundaries
 
 Open SWE crosses distinct trust boundaries: dashboard users authenticate with GitHub, external systems deliver webhooks, agent runs need GitHub authority, and sandboxed code must not receive long-lived secrets. This page describes the enforcement points and their failure modes. See also [sandbox lifecycle](../architecture/sandbox-lifecycle.md), [tools](./tools.md), [dashboard UI](../integrations/dashboard-ui.md), [configuration](../operations/configuration.md), and [invocation](../workflows/invocation.md).
+
+## Agent Server and MCP authorization
+
+The Agent Server's LangGraph-SDK `/threads` and `/runs` endpoints are guarded by a custom authenticator in `openswe/api/agent_server_auth.py`. A request is authenticated if it carries:
+
+- An `x-api-key` header that constant-time-matches one of the configured backend keys (resolved from `LANGGRAPH_API_KEY`, `LANGSMITH_API_KEY`, or `LANGCHAIN_API_KEY` environment variables), which grants `openswe:backend` permission and allows unrestricted backend writes; or
+- A valid session JWT from the dashboard `osw_session` cookie, which grants no backend permissions and restricts reads to threads the user owns.
+
+Calls from the app's own LangGraph runtime (`/noauth` and `/noauth/*` root paths) bypass this check entirely, as they are intra-process. The backend permission is checked by `backend_only` authorization hooks, which are applied to endpoints that must not be called by dashboard users.
+
+MCP (Model Context Protocol) authorization in the Agent Server is tied to the same authentication model: MCP clients must authenticate as either the backend (via API key) or as an authenticated dashboard user (via session JWT), and MCP resources are subject to the same thread ownership filters.
 
 ## GitHub authority for runs
 

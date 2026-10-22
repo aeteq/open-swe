@@ -1,6 +1,6 @@
 ---
 type: workflow
-title: Context and Prompt Engineering
+title: Prompt Rendering and Context Engineering
 description: Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources.
 tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions]
 sources:
@@ -14,6 +14,8 @@ sources:
     resource: repo://openswe/middleware/subdir_agents.py
   - id: openwiki-source-c950a10d3272291deaffd090
     resource: repo://openswe/prompt.py
+  - id: openwiki-source-3554a18b9529d3d118344e34
+    resource: repo://openswe/prompts.py
   - id: openwiki-source-1c7c5f1a7efc26b4594613d2
     resource: repo://openswe/resources/prompts/system/main.md.jinja
   - id: openwiki-source-4b3bf000502ef658b64c0b0f
@@ -32,13 +34,13 @@ sources:
     resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-6cab3229da0697cc82ed6224
     resource: repo://openswe/utils/agents_md.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
-# Context and Prompt Engineering
+# Prompt Rendering and Context Engineering
 
 Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
 
@@ -102,7 +104,7 @@ The complete instruction hierarchy in `construct_system_prompt`, from lowest to 
 2. **Environment instructions** — workspace custom instructions configured by an admin.
 3. **User instructions** — standing instructions for the triggering sender, stored per GitHub login. The prompt notes that these yield to repository and `AGENTS.md` instructions.
 4. **Repository custom instructions** — configured by a workspace admin for this repository. The prompt treats them as mandatory rules and states they override defaults, but lose to `AGENTS.md` on conflict.
-5. **`AGENTS.md` at the repository root** — mandatory rules that override all prior instruction sources.
+5. **Root `AGENTS.md`** — mandatory rules that override all prior instruction sources.
 6. **Scoped `AGENTS.md` files** — injected by `SubdirAgentsReadMiddleware` after successful `read_file` calls, with deeper scopes taking precedence.
 
 ## Repository conventions: AGENTS.md and CLAUDE.md
@@ -117,7 +119,7 @@ The reviewer cannot assume a sandbox clone; instead, it fetches convention docum
 
 The reviewer also derives ancestor convention paths for changed files and fetches scoped files concurrently via `fetch_scoped_agents_md`, which uses `git ls-tree` and `git cat-file` to read files efficiently from the trusted base revision. Up to 8 concurrent requests are possible, but each candidate independently skips failures (missing, oversized, unreadable, or non-UTF-8 files); the absence of one scoped file does not hide valid instructions in another changed subtree. The ordered results make nested instructions override parent instructions.
 
-Fetching `AGENTS.md` and scoped variants happens in parallel with repo checkout and diff computation during `PrepareReviewerRunMiddleware`. This deterministic loading means the reviewer assesses a pull request against rules that were stable at the PR base, not rules introduced or modified by the PR itself.
+Fetching `AGENTS.md` and scoped variants happens in parallel with repo checkout and diff computation during reviewer preparation. This deterministic loading means the reviewer assesses a pull request against rules that were stable at the PR base, not rules introduced or modified by the PR itself.
 
 ## Approval policy selection by review type
 
@@ -145,7 +147,28 @@ The agent's prompt can include a digest of the sender's recent threads for orien
 
 ## Review style and organization guidelines
 
-Reviewer prompts can include optional organization guidelines and a custom repository style prompt, both fetched during `PrepareReviewerRunMiddleware`. These are fail-soft: a store outage or network failure during fetch causes the reviewer to omit that supplement without failing the review. Organization guidelines are cached across review runs in the same workspace. The custom repository style prompt is editor-curated per-repository and supplements the default review guidance with specific technical standards or preferences.
+Reviewer prompts can include optional organization guidelines and a custom repository style prompt, both fetched during reviewer preparation. These are fail-soft: a store outage or network failure during fetch causes the reviewer to omit that supplement without failing the review. Organization guidelines are cached across review runs in the same workspace. The custom repository style prompt is editor-curated per-repository and supplements the default review guidance with specific technical standards or preferences.
+
+## Prompt sources and composition
+
+The system prompt is composed from multiple sources using a modular template system in `openswe/prompts.py`. The `prompt()` function loads and renders static Markdown files or Jinja2 templates from `openswe/resources/prompts/`, with support for variable substitution. Key template sections include:
+
+- **Working environment** — different templates for hosted sandbox vs. local checkout
+- **Dashboard context** — environment, base URL, and artifact references
+- **Source guidance** — different guidance sections for Slack, Linear, GitHub, schedule, and other sources
+- **Default prompt** — optional user-configured custom instructions
+- **Repository scope** — organization boundary restrictions
+- **Collaboration** — co-authorship and attribution text
+- **External comments** — safety guidance for untrusted content
+- **Recent thread context** — optional digest of recent work
+- **Workspace section** — workspace instructions and repo list
+- **Admin workspace** or **workspace-admin-required** — role-based guidance
+
+Each section can be conditionally included or rendered with different parameters based on run configuration, source, and user role.
+
+## External and untrusted comment handling
+
+The system recognizes that comments from external contributors or PR authors may contain adversarial or misleading content. External comments are marked with dedicated safety sections that explicitly tell the model to treat them as untrustworthy input, verify claims independently, and prioritize security. This guidance is always included in reviewer prompts and in applicable agent scenarios.
 
 ## Safe change and focused verification
 

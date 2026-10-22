@@ -3,6 +3,9 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -24,15 +27,12 @@ sources:
     resource: repo://openswe/tools/publish_review.py
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 ---
 
 # Reviewer Graph and Code Review
 
-Open SWE exposes one specialized deep-agent graph: `reviewer` (`openswe.graphs.reviewer:traced_reviewer_agent`). The reviewer evaluates a GitHub pull request using durable, per-PR findings stored in LangGraph thread metadata. It reviews code against repository style, organizational guidelines, API standards, and approval policies.
+Open SWE exposes one specialized deep-agent graph: `reviewer` (`openswe.graphs.reviewer:traced_reviewer_agent`). The reviewer evaluates a GitHub pull request using durable, per-PR findings stored in PostgreSQL and keyed by a deterministic thread ID. It reviews code against repository style, organizational guidelines, API standards, and approval policies.
 
 For trigger routing and webhook behavior, see [PR Review Workflow](../workflows/pr-review.md). For sandbox provider and recovery behavior, see [Sandbox Lifecycle](sandbox-lifecycle.md), and for the broader tool catalog, see [Tools](../concepts/tools.md).
 
@@ -87,7 +87,7 @@ PR title/body, existing review-thread comments, and finding replies are attacker
 
 ### Durable finding lifecycle
 
-Findings are stored in LangGraph metadata on the deterministic reviewer thread, rather than in the sandbox. `reviewer_thread_id(owner, repo, pr_number)` uses UUID5, allowing webhooks, dashboard code, and runs to retrieve the same one-per-PR thread across pushes. `set_reviewer_thread_metadata` writes `kind: "reviewer"`; that tag supports cross-thread lookup for the UI and usage aggregation.
+Findings are stored in PostgreSQL under the pull request they were raised on, not in sandbox state. `reviewer_thread_id(owner, repo, pr_number)` uses UUID5, allowing webhooks, dashboard code, and runs to retrieve the same one-per-PR thread across pushes. `set_reviewer_thread_metadata` writes `kind: "reviewer"`; that tag supports cross-thread lookup for the UI and usage aggregation.
 
 A `Finding` records its location and side, severity and confidence, title/description/suggestion, diff membership and hunk, status, first and last-confirmed SHAs, publication identities, surface state, human-reply/reconciliation fields, fingerprint, and interaction history. Legacy persisted shapes are normalized on read. Surface state is monotonic: normalization resolves contradictory legacy data by retaining the furthest state.
 
@@ -121,6 +121,17 @@ Repositories can define a custom review style prompt through the dashboard. This
 The `ReviewStyle` record holds a `custom_prompt`, approval mode (off/dry_run/approve), and audit timestamps. Callers update the prompt through `ReviewStyleStore.update_prompts`, which handles validation and UI topic invalidation.
 
 The analyzer graph that once synthesized these custom prompts per-repository has been removed. Custom prompts are now authored in the dashboard and persisted directly.
+
+## Review scout walkthrough generation
+
+Before the main reviewer runs, an optional lightweight `review_scout` graph can analyze the PR to generate a structured walkthrough of the changes. The scout:
+
+- Runs on its own thread (derived from a separate UUIDv5 via `review_scout_thread_id`)
+- Materializes a walkthrough by organizing commits and files into logical steps
+- Records a summary of human input extracted from PR description and structure
+- Returns structured analysis to guide the reviewer's priorities
+
+The scout's walkthrough feeds into the reviewer's prompt as untrusted data in a separate XML block, providing context on PR scope and structure. The reviewer waits up to 600 seconds for the walkthrough before proceeding without it; if it does not complete, the main review continues and the scout's result is still stored for the dashboard.
 
 ## Focused tests
 

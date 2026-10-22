@@ -18,30 +18,40 @@ sources:
     resource: repo://openswe/mcp/records.py
   - id: openwiki-source-573a0cf072c076b2dd72dbbd
     resource: repo://openswe/mcp/runtime.py
+  - id: openwiki-source-17ab40c119b1d2766b27f589
+    resource: repo://openswe/mcp/tiers.py
   - id: openwiki-source-75b8c8788feef409fe98f64c
     resource: repo://openswe/mcp/user.py
   - id: openwiki-source-1175dd137a24de0ce785a4c1
     resource: repo://openswe/mcp/workspace.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
     resource: repo://openswe/middleware/dynamic_tools.py
+  - id: openwiki-source-90777797f3501969c0c62e93
+    resource: repo://openswe/middleware/image_model_fallback.py
   - id: openwiki-source-f14e3b9027356fb68a4a9984
     resource: repo://openswe/middleware/model_errors.py
   - id: openwiki-source-7f36425bcc9aa67f9d9ae31a
     resource: repo://openswe/middleware/trace.py
   - id: openwiki-source-39f8a68480d768367a7dd112
     resource: repo://openswe/middleware/transcript.py
+  - id: openwiki-source-2611fea0ef16d38defa68095
+    resource: repo://openswe/sandboxes/browsers.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
   - id: openwiki-source-84f99988450cd60ecc31ec89
     resource: repo://openswe/session_cost.py
+  - id: openwiki-source-4c045faeaf37be446cb51133
+    resource: repo://openswe/threads/browser.py
+  - id: openwiki-source-1b56c0378ee7dbe5ac66ab32
+    resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-cd112cd02fc1d81c51e6f024
     resource: repo://openswe/utils/errors.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-21T13:36:13.083Z
+    at: 2026-10-22T13:38:02.092Z
 ---
 
 # Observability, Tracing, and MCP
@@ -54,7 +64,7 @@ The agent combines three observability and integration systems:
 
 3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, and user. Missing credentials or connection failures remove optional tools rather than blocking a run.
 
-Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, and tracks model-call errors in thread metadata for observability and recovery.
+Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call errors in thread metadata for observability and recovery, and provides image model fallback so agents can handle image inputs even when the selected model does not support them.
 
 See [Authentication and security](../concepts/auth-and-security.md) for the broader trust model, [Tools](../concepts/tools.md) for dynamic tool availability, [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) for model selection, and [Configuration](../operations/configuration.md) for environment settings.
 
@@ -117,6 +127,20 @@ The system tracks model-call errors in thread metadata for observability and ups
 - **`ModelErrorMiddleware`** (`openswe/middleware/model_errors.py`): Logs full exception details on model-call failures and records an error classification in thread metadata under `LAST_MODEL_ERROR_KEY`.
 - **Error classification**: `openswe/utils/errors.py` provides `classify_exception` to categorize errors by code (e.g., "provider_overloaded", "rate_limited", "invalid_request"), distinguishing provider-specific failures from generic API errors by inspecting status codes and error bodies.
 - **Thread metadata**: The `last_model_error` metadata key carries the error type, run ID, and classification code. The run-completion reply can use this classification to decide recovery strategies, even when the exception message has been scrubbed by the platform.
+
+## Image model fallback
+
+When an agent receives image inputs but the selected model does not support images, `ImageModelFallbackMiddleware` automatically replaces the model for that call with a configured fallback that does support vision capabilities. The middleware:
+
+- Inspects request messages for `image` content blocks.
+- If any image is present and the current model is text-only (configured via `add_text_only_model`), overwrites the model with the fallback before sending the request.
+- Preserves the original model selection in the configuration, so the fallback is transparent to the rest of the graph.
+
+This ensures the agent can handle image attachments from Slack, email, or file uploads without failing, even when the user pins a text-only model.
+
+## Browser automation support
+
+Agent runs can interact with web browsers via the LangSmith browser MDA (Multi-Deployment Agent). Browser state is keyed by thread, so each thread's agent has its own signed-in session and profile. Browsers are provisioned on demand and can be cleared from thread metadata before sharing; the system tracks browser windows and provides observability for browser-driven actions via the transcript.
 
 ## MCP connection scoping and discovery
 
@@ -182,6 +206,7 @@ The combination of these systems enforces key invariants:
 - **Trace isolation**: Middleware trace policies omit sensitive input payloads from traces, and trace resource naming happens at the middleware boundary so platform-level APM can properly instrument routes.
 - **Cost attribution**: Session costs and invocation costs are tracked independently with bounded-retry scheduling, ensuring cost data eventually reaches Slack replies and analytics even if LangSmith is temporarily unavailable.
 - **Error recovery**: Model-call errors are classified and recorded on the thread so upstream systems and human operators can decide recovery strategies without relying on exception message inspection.
+- **Capability fallbacks**: Image model fallback and optional browser support ensure agents can handle diverse input types even when model selection constraints would otherwise force rejection.
 
 ## Focused verification
 
@@ -193,3 +218,4 @@ Relevant tests cover:
 - **Transcript recording**: Transcript lifecycle and event flushing in tests under `tests/middleware/transcript/` and `tests/transcript/`.
 - **Cost tracking**: Invocation and session cost refresh in `tests/agent/test_agent_cost.py` and `tests/agent/test_session_cost.py`.
 - **Error tracking**: Model error classification and recording in `tests/middleware/` error tracking tests.
+- **Image fallback**: Image model fallback behavior in `tests/middleware/test_image_model_fallback.py`.
