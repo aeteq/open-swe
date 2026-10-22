@@ -30,7 +30,6 @@ from openswe.input_messages import (
     system_input,
     system_introduction,
 )
-from openswe.notion.notifications import record_pull_request_merged
 from openswe.prompts import prompt
 from openswe.review.approvals import approval_mode_for, approval_policy_for_review
 from openswe.review.findings import (

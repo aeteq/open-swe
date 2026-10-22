@@ -19,7 +19,6 @@ from openswe.github.thread_token import (
     invalidate_cached_github_token,
     resolve_thread_github_token,
 )
-from openswe.human_review.standard import request_after_ai_review
 from openswe.prompts import escape_for_data_block, prompt
 from openswe.review.approvals import approval_mode_for
 from openswe.review.assessment_feedback import PublishedAssessment
@@ -70,7 +69,7 @@ from openswe.review.publish import (
 )
 from openswe.review.reconcile import reconcile_findings_with_review_threads
 from openswe.run_config import RunConfig
-from openswe.slack.client import GitHubPrRef, post_slack_thread_reply
+from openswe.slack.client import post_slack_thread_reply
 from openswe.utils.dashboard_links import dashboard_review_url
 from openswe.utils.langsmith import get_langsmith_trace_url
 
@@ -448,7 +447,6 @@ async def _publish_review_async(
             title=check_title,
             summary=check_summary,
         )
-        await _request_human_review(pull_request, summary=summary)
         return {
             "success": True,
             "review_id": None,
@@ -737,8 +735,6 @@ async def _publish_review_async(
         title=check_title,
         summary=check_summary,
     )
-
-    await _request_human_review(pull_request, summary=summary)
 
     result: dict[str, Any] = {
         "success": True,
@@ -1082,10 +1078,12 @@ async def _hand_findings_to_author(
     try:
         if rounds > MAX_AUTHOR_HANDOFF_ROUNDS:
             if rounds == MAX_AUTHOR_HANDOFF_ROUNDS + 1:
-                async with PullRequestClient.as_app(
-                    pull_request.owner, pull_request.repo, pull_request.number
-                ) as pull:
-                    await pull.comment(_handoff_cap_notice())
+                async with GitHubClient.as_app(pull_request.owner, pull_request.repo) as github:
+                    await (
+                        github.repo(pull_request.owner, pull_request.repo)
+                        .pull_request(pull_request.number)
+                        .comment(_handoff_cap_notice())
+                    )
             return
         await pull_request.wake_author(
             prompt(
