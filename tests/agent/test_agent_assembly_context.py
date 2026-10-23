@@ -167,7 +167,7 @@ async def test_existing_task_keeps_controls_without_delegation(
 async def test_unknown_scope_omits_workspace_and_personal_mcps():
     with (
         patch("openswe.server.private_credential_login", side_effect=TimeoutError),
-        patch("openswe.server._mcp_tools_for", new_callable=AsyncMock) as mcps,
+        patch("openswe.server.mcp_tools_for", new_callable=AsyncMock) as mcps,
     ):
         await _plan_agent()
     mcps.assert_not_awaited()
