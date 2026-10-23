@@ -28,6 +28,7 @@ export type AgentSource =
   | "linear"
   | "notion"
   | "schedule"
+  | "claude_code"
 
 export type AgentThreadCategory =
   | "interactive"
