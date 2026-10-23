@@ -43,7 +43,7 @@ async def test_public_agent_excludes_personal_skills_and_tools(saved_thread_scop
     saved_thread_scope["visibility"] = "public"
     config = _base_config()
     config["configurable"]["source"] = "dashboard"
-    with patch("openswe.server._mcp_tools_for", new_callable=AsyncMock, return_value=[]) as mcps:
+    with patch("openswe.server.mcp_tools_for", new_callable=AsyncMock, return_value=[]) as mcps:
         captured = await _plan_agent(config)
     assert captured["skills"] == ["/organization-skills/", "/bundled-skills/"]
     assert "/skills/" not in captured["backend"].routes

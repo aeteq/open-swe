@@ -58,7 +58,7 @@ from openswe.middleware import (
 )
 from openswe.middleware.prepare_run import PrepareRunState
 from openswe.middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
-from openswe.prompts import apply_tool_descriptions, prompt
+from openswe.prompts import apply_tool_descriptions, escape_for_data_block, prompt
 from openswe.review.approvals import approval_policy_for_review
 from openswe.review.diff import (
     changed_files,
