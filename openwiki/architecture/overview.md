@@ -10,28 +10,18 @@ sources:
     resource: repo://openswe/api/app.py
   - id: openwiki-source-e4bce0ee35cec33ca72293f7
     resource: repo://openswe/dashboard/__init__.py
-  - id: openwiki-source-7fc33e4789861923a6f12e78
-    resource: repo://openswe/dashboard/routes.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
   - id: openwiki-source-d0edf7555209b3e6418b5c5f
     resource: repo://openswe/github/routes.py
-  - id: openwiki-source-813c25f6bac2408de322a1f5
-    resource: repo://openswe/graphs/agent.py
   - id: openwiki-source-a9562865a4bff791686b49dd
     resource: repo://openswe/graphs/review_scout.py
-  - id: openwiki-source-90b15fd6117126ebfe5b6b22
-    resource: repo://openswe/graphs/reviewer.py
-  - id: openwiki-source-1501ebbb20af772307a3e518
-    resource: repo://openswe/jobs/kinds.py
   - id: openwiki-source-ff94e6d6f8e823f174c61b08
     resource: repo://openswe/linear/routes.py
   - id: openwiki-source-7a02c62499495310b04f21ef
     resource: repo://openswe/review/chat.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
   - id: openwiki-source-c1d629bf5196269b73880148
     resource: repo://openswe/slack/routes.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
@@ -42,10 +32,10 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Runtime and Product Architecture
@@ -74,14 +64,13 @@ It also operates as a reviewer (runs on-demand or automatic reviews, publishes f
 | `reviewer` | `openswe.graphs.reviewer:traced_reviewer_agent` | PR review and findings publication workflow. |
 | `review-scout` | `openswe.graphs.review_scout:traced_review_scout` | Review-tool inspection and capability discovery. |
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
+```mermaid
 flowchart TD
-  Slack["Slack"] --> Webhooks["Webhook routers<br/>(GitHub, Linear, Slack)"]
+  Slack["Slack"] --> Webhooks["Webhook routers"]
   Linear["Linear"] --> Webhooks
   GitHub["GitHub"] --> Webhooks
   Browser["Web dashboard"] --> Dashboard["Dashboard router"]
-  JobQueue["Job queue"] --> BackgroundJobs["Background jobs<br/>(reconcile, watch, costs)"]
+  JobQueue["Job queue"] --> BackgroundJobs["Background jobs"]
   Dashboard --> Chat["PR chat proxy"]
 
   subgraph App["FastAPI app"]
@@ -93,14 +82,14 @@ flowchart TD
   Dashboard --> Dispatch
   Dispatch --> Agent["agent graph"]
   Dispatch --> Reviewer["reviewer graph"]
-  Agent --> Backend["Thread sandbox or desktop backend"]
+  Agent --> Backend["Thread sandbox"]
   Reviewer --> Backend
   Scout["review-scout graph"] --> Backend
   Chat --> Agent
   BackgroundJobs --> Dispatch
 ```
 
-This shows the principal paths. `dispatch_agent_run` is the shared creation boundary for `agent` and `reviewer` runs; review-scout uses its own graph entrypoint. Chat, background work, and scheduled runs do not go through dispatch or registered graphs.
+Request flow from multiple trigger sources converging through dispatch to graphs: Slack, Linear, and GitHub webhooks validate and resolve stable thread identities. The dashboard routes requests through dispatch or the chat proxy. Background jobs (reconciliation, watch evaluation, costs, deadlines) route through dispatch for scheduled runs. All trigger sources eventually reach the backend sandbox through either the agent graph, reviewer graph, or chat proxy.
 
 ## Graph and execution boundaries
 
@@ -127,8 +116,8 @@ Slack, Linear, and GitHub webhook routes validate and normalize external events 
 The durable defaults are intentional:
 - **`multitask_strategy="interrupt"`** — a follow-up halts the active run (progress preserved by its checkpoints) and resumes the agent with full history plus the new message. On an idle thread it just starts. Background follow-ups such as `/baby-sit` can explicitly opt into another strategy like `enqueue` for background queuing instead.
 - **`durability="async"`** — checkpoint every step, written while the next one runs, so a crash or worker recycle resumes from at most one step back. (`"sync"` made every step wait on its write, adding ~0.3s per model/tool step in production; dashboard-started runs already use the platform's async default.)
-- **Stream resilience** — `stream_resumable=True` retains the run's event stream so a client that attaches later can replay it. Without this the dashboard cannot observe a run it did not start; the v3 protocol only synthesizes the `lifecycle: running` event that drives `stream.isLoading` when it can replay the run's events, so an externally-triggered run would appear idle in the web UI (no stop button) until it emitted its next event.
-- **v3 streaming shape** — the same `stream_mode` set, `stream_subgraphs` flag, and compatibility marker (`__event_streaming_v2`) that `langgraph_api`'s `run.start` command applies when the dashboard submits a run. The server fixes a run's streaming protocol at creation: without the marker a run streams `values` only, so the dashboard sees no `tools` events or subagent namespaces for externally triggered runs.
+- **Stream resilience** — `stream_resumable=False` means the run's event stream is not replayed when a client attaches later. Instead, the dashboard reads a thread from its transcript, so streams are not retained in the LangGraph platform. This is cost-efficient and does not break cross-surface observability because the v3 protocol synthesizes the `lifecycle: running` event when it can replay the run's events.
+- **v3 streaming shape** — the same `stream_mode` set, `stream_subgraphs` flag, and compatibility marker that `langgraph_api`'s `run.start` command applies when the dashboard submits a run. The server fixes a run's streaming protocol at creation: without proper v3 config a run streams `values` only, so the dashboard sees no `tools` events or subagent namespaces for externally triggered runs.
 
 Completion notification is best effort. The dispatcher attaches a webhook only when `RUN_COMPLETE_WEBHOOK_SECRET` is configured and `COMPLETION_WEBHOOK_URL` is absolute and non-loopback. Otherwise it logs the condition and creates the run without a webhook, avoiding a configuration error that would poison all run creation.
 

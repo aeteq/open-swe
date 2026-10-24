@@ -1,17 +1,27 @@
 ---
-type: workflow
-title: Prompt Rendering and Context Engineering
-description: Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts from multiple instruction sources.
-tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions]
+type: "Reference"
+title: "Context Engineering: Prompts, Skills, and Subagents"
+openwiki_generated: true
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 sources:
+  - id: openwiki-source-f909450359e22e7d9c1ba0b3
+    resource: repo://mda/rt/subdir_agents.py
+  - id: openwiki-source-fb24ffc1656ce0258fa2ac33
+    resource: repo://openswe/agent_api/graph.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
   - id: openwiki-source-836966ba5e0c4d710801c9a9
     resource: repo://openswe/input_messages.py
+  - id: openwiki-source-51d07a8021d655868612582c
+    resource: repo://openswe/middleware/conversation_offloading.py
+  - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
+    resource: repo://openswe/middleware/dynamic_tools.py
+  - id: openwiki-source-1c036e99d40740776a65df4f
+    resource: repo://openswe/middleware/exclude_tools.py
   - id: openwiki-source-052a9a68c52dca5bb8277219
     resource: repo://openswe/middleware/prepare_run.py
-  - id: openwiki-source-16e333a939d057e31c63690d
-    resource: repo://openswe/middleware/subdir_agents.py
   - id: openwiki-source-c950a10d3272291deaffd090
     resource: repo://openswe/prompt.py
   - id: openwiki-source-3554a18b9529d3d118344e34
@@ -34,13 +44,11 @@ sources:
     resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-6cab3229da0697cc82ed6224
     resource: repo://openswe/utils/agents_md.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 ---
 
-# Prompt Rendering and Context Engineering
+
+# Context Engineering: Prompts, Skills, and Subagents
 
 Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
 
@@ -88,24 +96,49 @@ An introduction uses XML serialization of the entity definition. `build_input_me
 
 The type is intentionally tolerant of distributed writers. All context models allow unknown fields and `dump()` uses `exclude_unset=True`, preserving unrecognized data through a read-enrich-write cycle instead of inventing defaults. `parse()` accepts only mappings and returns an empty context—with a warning on validation failure—rather than failing a run on malformed historical metadata.
 
+## Context window and conversation management
+
+Long runs may accumulate conversation beyond a provider's context window or a user's desired token budget. `ConversationOffloadingMiddleware` extends the `SummarizationMiddleware` from deepagents: it defers conversation context to external storage when configured by the user, preventing token exhaustion without truncating history. Summarization replaces messages before a cutoff index with a text summary, keeping recent interactions in the prompt.
+
+The visible-context hash check (`visible_dynamic_context_hashes`) distinguishes contexts behind the summarization cutoff from those still visible: only messages at or after `cutoff_index` are inspected for dynamic context hashes. This allows the agent to reintroduce entity metadata that was hidden by summarization, ensuring sender and participant identities are available even after a conversation compaction.
+
+Token budget allocation is managed at the middleware layer: `ConversationOffloadingMiddleware` computes summarization defaults based on the model's context window and configured thresholds, then acts only when the total token count exceeds limits. Manual offloading is available via the `_manual` context variable, allowing tool calls or policy middleware to trigger summarization on demand.
+
 ## Prompt preparation and instruction ordering
 
 The graph factory creates a deep agent with an initially empty system prompt. `PrepareAgentRunMiddleware` performs setup before the agent: it obtains the sandbox/work directory, resolves the environment and sender information, schedules thread-title work, writes run metadata, and produces `rendered_system_prompt` plus separate sender-context messages. It deliberately does not splice sender metadata into a historical user message, because changing cached history would make later invocations send a different transcript.
 
 `BasePrepareRunMiddleware` fingerprints the latest message and relevant configuration by computing a SHA256 hash of a JSON payload containing the middleware name, message fingerprint, and config fingerprint. Once its before-agent update is checkpointed, a resumed attempt with the same fingerprint skips preparation; a later invocation prepares fresh credentials, prompt, and context. Preparation must therefore be idempotent, and a sandbox failure is surfaced and re-raised rather than silently continuing without a workspace.
 
-For every model call, the middleware combines the rendered prompt with any existing system message using `awrap_model_call`. The main prompt states that repository custom instructions and workspace instructions are mandatory, while `AGENTS.md` overrides them on conflict; sender-level standing instructions yield to repository instructions and `AGENTS.md`.
+For every model call, `ashape_model_call` combines the rendered prompt with any existing system message using the `CallShape.prepending()` method. The main prompt states that repository custom instructions and workspace instructions are mandatory, while `AGENTS.md` overrides them on conflict; sender-level standing instructions yield to repository instructions and `AGENTS.md`.
 
 ### Instruction precedence in the main agent
 
 The complete instruction hierarchy in `construct_system_prompt`, from lowest to highest precedence, is:
 
 1. **Default system guidance** — working environment, tools, task execution, dependencies, commit/PR, and self-awareness sections.
-2. **Environment instructions** — workspace custom instructions configured by an admin.
+2. **Environment/workspace instructions** — workspace-level custom instructions configured by an admin.
 3. **User instructions** — standing instructions for the triggering sender, stored per GitHub login. The prompt notes that these yield to repository and `AGENTS.md` instructions.
 4. **Repository custom instructions** — configured by a workspace admin for this repository. The prompt treats them as mandatory rules and states they override defaults, but lose to `AGENTS.md` on conflict.
 5. **Root `AGENTS.md`** — mandatory rules that override all prior instruction sources.
 6. **Scoped `AGENTS.md` files** — injected by `SubdirAgentsReadMiddleware` after successful `read_file` calls, with deeper scopes taking precedence.
+
+### Prompt assembly and modular sections
+
+The system prompt is composed from multiple sources using a modular template system. The `prompt()` function in `openswe/prompts.py` loads and renders static Markdown files or Jinja2 templates from `openswe/resources/prompts/` with support for variable substitution. The main template (`system/main.md.jinja`) includes sections conditionally based on run configuration:
+
+- **Working environment** — different templates for hosted sandbox vs. local checkout
+- **Dashboard context** — environment, base URL, and artifact references
+- **Source guidance** — dynamically selected based on event source (Slack, Linear, GitHub, schedule, dashboard) and source-specific flags (slack_context, slack_ask, slack_breakout, slack_by_the_way)
+- **Default prompt** — optional user-configured custom instructions
+- **Repository scope** — organization boundary restrictions
+- **Collaboration** — co-authorship and attribution text
+- **External comments** — safety guidance for untrusted content
+- **Recent thread context** — optional digest of recent work
+- **Workspace section** — workspace instructions and repo list
+- **Admin workspace** or **workspace-admin-required** — role-based guidance
+
+The `_render_source_guidance()` function dynamically selects guidance sections based on source and flags, wrapping them in `<open_swe_source_context>` tags to group source-specific instructions.
 
 ## Repository conventions: AGENTS.md and CLAUDE.md
 
@@ -129,42 +162,47 @@ The reviewer's approval behavior—whether it only comments (`dry_run`), never a
 
 Skills are instructions exposed as virtual `SKILL.md` files rather than copied wholesale into the prompt. A `CompositeBackend` keeps the run backend as default and routes skill prefixes to specialized backends; it strips the route prefix before delegation. Passing those prefixes in `create_deep_agent(skills=[...])` lets deepagents advertise skills while the agent reads full instructions through ordinary `read_file`.
 
-The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a profile login exists, per-user skills read-only at `/skills/`; the user route is first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
+The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a profile login exists, per-user skills read-only at `/skills/`; the user route is inserted first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate LangGraph Store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
 
 ### Reviewer: trusted skills from base revision
 
 The reviewer materializes trusted skills from the PR base revision (via `materialize_trusted_skills`) into a separate `.review-skills` directory outside the checkout. This prevents a PR author from injecting instructions into the reviewer prompt by adding or editing a `SKILL.md`. Skills are sourced from `.agents/skills` or `.claude/skills` relative to the repository root, extracted via `git archive` at the trusted base SHA. The extracted paths are then routed to `SkillsMiddleware` for mounting. If extraction fails for a skill directory, the reviewer continues without it; a single missing directory does not prevent skill wiring or the review.
 
+## Dynamic tool injection and filtering
+
+Tool visibility is managed through middleware and run-configuration filtering. `DynamicToolMiddleware` exposes configured integration groups (MCPs, workspace skills) lazily: tool names are visible to the model up front, but the actual tool schemas are built only after the model requests them via `load_integration_tools`. This deferred loading works by:
+
+1. The model calls `load_integration_tools` with a list of tool names from the catalog.
+2. Middleware serializes loading per group (one lock per group) and caches both successful and failed resolutions.
+3. A successful loader call updates run state so the requested schema becomes available on the next model turn.
+4. Models supporting in-conversation tool addition (Anthropic's `tool_addition` and OpenAI's `additional_tools`) receive loaded tools via those fields to preserve prompt cache; models without this support receive tools in the standard list, invalidating cache.
+
+`ExcludeToolsMiddleware` filters disallowed tool names from model requests based on run mode and context. The main agent's static tool list is constructed with context-dependent inclusion: admin threads add administrative tools; stop-summary mode removes write and shell tools; Slack modes filter thread-bound operations based on channel context; incident-session mode adds incident-specific tools.
+
+### Tool addition protocol for modern models
+
+Recognized models that support in-conversation tool addition:
+
+- **Anthropic** (`tool_addition`): `claude-opus-5`, `claude-fable-5`, `claude-opus-4-8`, `claude-mythos-5`, `claude-sonnet-5-5`
+- **OpenAI Responses API** (`additional_tools`): `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna`
+
+Other models receive tools in the standard tools list on each call, which invalidates the prompt cache but allows fresh tool loading.
+
 ## Sender context and participation
 
 The main agent includes sender context as separate structured messages produced by `PrepareAgentRunMiddleware`, not spliced into cached history. After resolving the sandbox and environment, the middleware fetches the current thread's participant list, constructs `PersonIdentity` blocks for each, and filters out any whose dynamic-context hash is already visible in the message history. This preserves the immutability of cached history while introducing or reintroducing participation metadata when the model needs it.
 
-Sender context includes identity, workspace-admin status, git configuration, collaboration metadata, and user-level instructions. The middleware identifies the latest human message and uses that sender's identity as the subject for participant context; if no human message exists or the sender cannot be determined, participant blocks are omitted from that invocation.
+Sender context includes identity, workspace-admin status, git configuration, collaboration metadata, and user-level standing instructions. The middleware identifies the latest human message and uses that sender's identity as the subject for participant context; if no human message exists or the sender cannot be determined, participant blocks are omitted from that invocation.
 
 ## Recent thread context
 
 The agent's prompt can include a digest of the sender's recent threads for orientation. `recent_thread_context_section` fetches a sender's recent threads filtered by audience rules: `"private"` includes only the sender's own public and privately-owned threads, while `"shared_slack"` further filters to threads in the same Slack workspace and channel. The digest is bounded: up to 5 threads, each title capped at 160 characters, total payload capped at 4,000 characters. The selector enforces a 1-second timeout and scans at most 100 threads to find eligible ones, dropping older entries when the payload exceeds limits. This context is background information, not instructions, and is selected under audience rules that keep private-workspace metadata from leaking into shared conversations.
 
-## Review style and organization guidelines
+## Subagent coordination
 
-Reviewer prompts can include optional organization guidelines and a custom repository style prompt, both fetched during reviewer preparation. These are fail-soft: a store outage or network failure during fetch causes the reviewer to omit that supplement without failing the review. Organization guidelines are cached across review runs in the same workspace. The custom repository style prompt is editor-curated per-repository and supplements the default review guidance with specific technical standards or preferences.
+The main agent and reviewer each use a general-purpose subagent for research, refactoring, and background analysis via the `task` tool. The subagent is defined via `GENERAL_PURPOSE_SUBAGENT` from the deepagents middleware, mounted automatically by the graph factory. Subagent capability discovery is driven by the parent's static tool list: tools are filtered to exclude subagent-incompatible operations (parent-context-specific tools, Slack thread-bound operations, background operations) before the subagent receives them.
 
-## Prompt sources and composition
-
-The system prompt is composed from multiple sources using a modular template system in `openswe/prompts.py`. The `prompt()` function loads and renders static Markdown files or Jinja2 templates from `openswe/resources/prompts/`, with support for variable substitution. Key template sections include:
-
-- **Working environment** — different templates for hosted sandbox vs. local checkout
-- **Dashboard context** — environment, base URL, and artifact references
-- **Source guidance** — different guidance sections for Slack, Linear, GitHub, schedule, and other sources
-- **Default prompt** — optional user-configured custom instructions
-- **Repository scope** — organization boundary restrictions
-- **Collaboration** — co-authorship and attribution text
-- **External comments** — safety guidance for untrusted content
-- **Recent thread context** — optional digest of recent work
-- **Workspace section** — workspace instructions and repo list
-- **Admin workspace** or **workspace-admin-required** — role-based guidance
-
-Each section can be conditionally included or rendered with different parameters based on run configuration, source, and user role.
+Subagent coordination through namespace routing is handled by the `agent_api/graph.py` runtime: when a tool call comes from inside a subagent, its namespace is preserved so tool calls and replies land under the subagent, matching the in-process execution model. Subagent runs inherit model selection from their parent but receive dedicated model configuration and can be routed through different models or reasoning efforts than the main agent.
 
 ## External and untrusted comment handling
 
@@ -172,6 +210,12 @@ The system recognizes that comments from external contributors or PR authors may
 
 ## Safe change and focused verification
 
-Changes to this workflow should preserve the boundary between untrusted event content, structured identity metadata, durable provenance, and system instructions. In particular, do not turn channel fields into trusted prompt text, mutate cached historical messages to add current sender data, or suppress a dynamic context merely because it exists before the summarization cutoff.
+Changes to this workflow should preserve the boundary between untrusted event content, structured identity metadata, durable provenance, and system instructions. In particular:
 
-Focused tests live in `tests/agent/test_input_messages.py`, `tests/agent/test_source_context.py`, `tests/agent/test_dispatch.py`, `tests/agent/test_agents_md.py`, `tests/middleware/test_subdir_agents_middleware.py`, `tests/slack/test_slack_context.py`, `tests/agent/test_skills.py`, `tests/middleware/test_prepare_run_middleware.py`, and `tests/threads/test_recent_context.py`. They are the first checks for envelope/hashing behavior, malformed provenance, dispatch contracts, convention-document failure modes, scoped injection, Slack attribution, virtual-skill routing, fingerprinting/checkpointing idempotence, and recent context selection.
+- Do not turn channel fields into trusted prompt text
+- Do not mutate cached historical messages to add current sender data
+- Do not suppress a dynamic context merely because it exists before the summarization cutoff
+- Do not allow tool schemas to be modified mid-run in a way that corrupts earlier references
+- Do not permit PR authors or external collaborators to inject instructions into reviewer or sandbox state via file edits
+
+Focused tests live in `tests/agent/test_input_messages.py`, `tests/agent/test_source_context.py`, `tests/agent/test_dispatch.py`, `tests/agent/test_agents_md.py`, `tests/middleware/test_subdir_agents_middleware.py`, `tests/slack/test_slack_context.py`, `tests/agent/test_skills.py`, `tests/middleware/test_prepare_run_middleware.py`, and `tests/threads/test_recent_context.py`. They are the first checks for envelope/hashing behavior, malformed provenance, dispatch contracts, convention-document failure modes, scoped injection, Slack attribution, virtual-skill routing, fingerprinting/checkpointing idempotence, context window management, and recent context selection.

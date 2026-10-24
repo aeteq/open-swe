@@ -3,9 +3,6 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -27,7 +24,10 @@ sources:
     resource: repo://openswe/tools/publish_review.py
   - id: openwiki-source-065c69ba95cc740a2282dd3c
     resource: repo://tests/reviewer/test_factory_config_isolation.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Reviewer Graph and Code Review
@@ -42,18 +42,18 @@ For trigger routing and webhook behavior, see [PR Review Workflow](../workflows/
 
 The reviewer is read-only with respect to the repository. Its system prompt prohibits commits, pushes, and direct `gh pr review` or review-API calls. It has no coding, commit, push, or PR-opening tools: repository changes cannot be an agent action. GitHub review mutation is centralized in `publish_review` and the finding-thread tools.
 
-`get_reviewer_agent(config)` and `build_reviewer_agent(config)` create the graph per run. The factory shallow-copies the outer config and its `configurable` mapping before supplying a default recursion limit, preserving the caller's configuration. If the run has no `thread_id`, or the graph is not loaded for execution, it deliberately returns an empty deep agent rather than provisioning a sandbox.
+`plan_reviewer(config, surface)` creates the graph per run. The factory shallow-copies the outer config and its `configurable` mapping before supplying defaults, preserving the caller's configuration. If the run has no `thread_id`, it raises `ValueError` rather than provisioning a sandbox. For an executable run, the factory selects reviewer and subagent models from explicit configuration or team defaults, applies the Fable model gate, and attaches a cached sandbox backend with a reconnect closure.
 
-For an executable run, the factory selects reviewer and subagent models from explicit configuration or team defaults, applies the Fable model gate, and attaches a cached sandbox backend with a reconnect closure. Its explicit tools are:
+Its explicit tools are:
 
 - review lifecycle: `fetch_review_diff`, `add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, and `reply_to_finding_thread`;
 - read-only external helpers: `web_search`, `fetch_url`, and `http_request`.
 
-It permits one `reviewer` subagent configured with an explicit system prompt. The parent assigns a disjoint file partition; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication. MCP workspace tools are loaded only for private-repository reviews (public reviews never receive them to prevent steering via attacker-controlled PR text).
+It permits one `reviewer` subagent configured with an explicit system prompt. The parent assigns a disjoint file partition; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication. Read-only MCP tools from workspace and instance scopes (e.g., Notion search, fetch) are loaded only for private-repository reviews (public reviews never receive them to prevent steering via attacker-controlled PR text).
 
 ### Run preparation, GitHub access, and context
 
-`PrepareReviewerRunMiddleware` performs deterministic setup before the first model call. For a configured source repository it mints a repository-scoped GitHub App installation token, caches it as the thread's bot token, and supplies it to the sandbox GitHub proxy. It then ensures a sandbox with `allow_replacement=True`, clones or fetches the repository, force-checks out the PR head, and materializes trusted repository skills from the base revision.
+`PrepareReviewerRunMiddleware` performs deterministic setup before the first model call. For a configured source repository it mints a repository-scoped GitHub App installation token (via `ensure_reviewer_github_token`), caches it as the thread's bot token, and supplies it to the sandbox GitHub proxy. It then ensures a sandbox with `allow_replacement=True`, clones or fetches the repository, force-checks out the PR head, and materializes trusted repository skills from the base revision (via `prepare_review_repo`).
 
 The middleware computes the review range and its unified diff, including delta-only re-review ranges, then derives the changed `(file, side, line)` set. It puts `diff_text` and `diff_line_set` in run state. This lets `add_finding` reject invalid anchors at creation time rather than waiting for GitHub to reject a batch.
 
@@ -83,7 +83,7 @@ If sandbox replacement itself fails with `SandboxUnreachableError`, preparation 
 
 The prompt requires a concrete, changed-line-anchored failure mode and rejects speculation, ordinary style or naming nits, pre-existing defects, and duplicate fan-out for one defect across files. Explicit repository convention violations remain reviewable when they are anchored in the diff and have a concrete failure mode. Suggestions are restricted to small, obvious fixes.
 
-PR title/body, existing review-thread comments, and finding replies are attacker-controlled GitHub content. The renderer places them in XML data blocks, treats their contents as data rather than instructions, validates login attributes against the GitHub login grammar, and neutralizes wrapper closing tags with `_escape_for_data_block`. Review scout walkthrough and human input are also explicitly untrusted and must not leak into actual findings.
+PR title/body, existing review-thread comments, and finding replies are attacker-controlled GitHub content. The renderer places them in XML data blocks, treats their contents as data rather than instructions, validates login attributes against the GitHub login grammar via `_safe_login`, and neutralizes wrapper closing tags with `_escape_for_data_block`. Review scout walkthrough and human input are also explicitly untrusted and must not leak into actual findings.
 
 ### Durable finding lifecycle
 

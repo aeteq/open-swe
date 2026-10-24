@@ -3,9 +3,6 @@ type: integration reference
 title: Sandbox Providers and Configuration
 description: Operational provider selection, provisioning, and configuration. Covers LangSmith managed sandboxes, local development, bridge client for desktop, and extension mechanisms.
 tags: [sandbox, providers, langsmith, configuration, extension, lifecycle]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-3436762fd1bce7c774640399
     resource: repo://openswe/bridge/backend.py
@@ -35,7 +32,10 @@ sources:
     resource: repo://openswe/sandboxes/repo_prep.py
   - id: openwiki-source-63c74145043dac21719006df
     resource: repo://openswe/sandboxes/retry.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Sandbox Providers and Configuration
@@ -205,9 +205,8 @@ E2B requires `E2B_API_KEY` with an optional `E2B_TEMPLATE` and enforces a one-ho
 `local` executes directly on the host and must be used only for local development with human oversight. It:
 
 - Creates the root directory if absent
-- Constructs an environment without selected model, LangSmith, and OAuth broker secrets
-- Uses `inherit_env=False` to isolate from the host environment
-- Excludes credential variables: `ANTHROPIC_API_KEY`, `LANGSMITH_API_KEY`, and others
+- Constructs an environment without selected model and provider API secrets
+- Excludes credential variables: `ANTHROPIC_API_KEY`, `BASETEN_API_KEY`, `FIREWORKS_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GROQ_API_KEY`, `LANGSMITH_API_KEY`, and `OPENAI_API_KEY`
 
 Unless the operator explicitly provides `GIT_CONFIG_GLOBAL`, it writes a root-local `.gitconfig-sandbox` that includes the host configuration. This preserves aliases and helpers while preventing bot identity writes from overwriting `~/.gitconfig`.
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:32ecf287ea819567e9c3ec823c3510d1c67dbe03993056602b842a8862b89fd1",
+  "pageVersion": "sha256:0ec40e186d4a390560ca8168be5259333a348fa50dbc2d78dfe2faa2c5cc19fe",
   "claims": [
     {
       "id": "claim_b445254b3ad5403297c30f60e15acbd1",
@@ -146,7 +146,7 @@
         },
         {
           "resource": "repo://openswe/api/app.py#L47-L127",
-          "version": "repo-lines-v1:sha256:f7e93fa0d4adfbdea6a97e1d41041375775d0a8bc351528eaa7fa56a5c1c41c9:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3Y2ZmM2YxNzg0MmRlYzZlN2U5MWMzZTNiOGZjZTBhODIyZmMzMTEyNzM4MWIwMGY0NGE5ZjEzMzMzMDNhMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNTgzMDM2ZTQ5MGMxYjdkNjI3MjYwNGJkN2I3N2QyYTc5MGViOGFmMGZhM2EwZTQ3MTgyZDc5MDdiZThlOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNmUzOGZiNDM1NjdmMWM0NzNhNTg0MTgxZTY3YmNiNGMyODJkNzQwNTM3NGFhMTJkOWY4MmM0NjU5NWM0OGIifQ"
+          "version": "repo-lines-v1:sha256:c7890f3b035833a8e4afe009e16d4ef3be100f33effe908afe5339006c6c1ac2:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3Y2ZmM2YxNzg0MmRlYzZlN2U5MWMzZTNiOGZjZTBhODIyZmMzMTEyNzM4MWIwMGY0NGE5ZjEzMzMzMDNhMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNTgzMDM2ZTQ5MGMxYjdkNjI3MjYwNGJkN2I3N2QyYTc5MGViOGFmMGZhM2EwZTQ3MTgyZDc5MDdiZThlOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNmUzOGZiNDM1NjdmMWM0NzNhNTg0MTgxZTY3YmNiNGMyODJkNzQwNTM3NGFhMTJkOWY4MmM0NjU5NWM0OGIifQ"
         }
       ]
     },
@@ -245,10 +245,40 @@
           "version": "repo-lines-v1:sha256:46f8cf2397e5496f6cd57a5f6c9de0488903661ed4de6c74505b42138acc9072:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYzAyMGNhYTY0OTcyZjg5YTIyODc1OWI5MGMwYmQyNzE0ZjkxZjEwYTNkMjVkYTEyZjU2ODZjZDJkYWNkZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MjgxYjk4NDFiNmRiY2IxMjJjODdmMDkyN2QzMjM4NGE0YjUzNGZjNTE3ODAwMTFmMzVkZDhmZDdiZGM1MGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1ZjVkOTU1NTQ0NTZjNDdhZDNjM2VhODZlOGEwMDc3YmIxMzlmOGViODc3ODZhMGJjYTQ3MDlmOWIxYjIwYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
+    },
+    {
+      "id": "claim_2f955c51b0aa48539f491665286d041e",
+      "statement": "MDA_RUNTIME_URL is required and must be absolute with HTTPS (HTTP allowed only for localhost); startup fails when unset or misconfigured, and REMOTE_RUNTIME_TOKEN_SECRET must also be configured to sign run tokens.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/agent_api/client.py#L53-L68",
+          "version": "repo-lines-v1:sha256:9053d07bcf61a112e9edaf7a5dc2e6f29840431acd36f0bfbb343e37165a9caa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyOTE2NDVlZWQ1NzI3ZTJkMWI4MDQ4MDgxNWFmZjY1MmJjNmI0ODM0MjRlYjVkZGNkOWNmNjlmMWNmZTYxZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMGUyNzM2MWJlMDAxMTkyYjQ0ZDkyYzgzNDBhYjEyNTkxNWRkMWUxMTgwM2JlNDJkMGJhMTNiZmYxYWVmZDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2ZWYyY2I4YTZkMjQ1N2MxMzVmMTU3ODVmY2ZmMjdlMjVhZGQxNGYzMDBmNjBlOWYwZjFhNzE3ZmE2NzBmODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjlhNmMxNTE4ZGVkY2ExNDZlMDBlMzRjOTk0ZjJhNzk2ZDZkY2ZiMjlkODEyMjhlNGU3MGQ1MmU1ZjM5ZjcyMGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_f2ead2ea0a624e3d930aecb0cda77522",
+      "statement": "LANGSMITH_API_KEY and LANGSMITH_ENDPOINT are the default credentials and endpoint for LangSmith sandbox API, tracing, and feedback collection; workspace-specific overrides can be configured within workspace records.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/providers/langsmith_api.py#L25-L28",
+          "version": "repo-lines-v1:sha256:0bf646ef4a90a97e2639f3b9c7dea29ca79339c46500db5d59cbb75b275be8f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODIwYjQ1M2Y1ZTBjOTJkNWY2YzI1MWE1ZWExOTYwZDcyZjNiZDA3OTU2YWU4NTdkYTIwZTMxYTg4YzU1OTY5ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTkyMGQ3ZDU1MzA2ODllMzAwYjJlMzRlMzIyZTgwYjdjZmNkMzBmOGIyZmVmOTkwZTc4YzE5ZTQzM2QyODI1OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjJjNzUwMWU4YmNhYTcwMGYwYWNiNzNhYjlmMjE2MDJhOGIwYTRiMWQwMDIzZGRmNjgxNWM3NzUxMzdhZTcwZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmE0OTdiNTVmY2YxZDBiNDIzZmFkYmE1ODNiOTU5YzRlZDE1NGViMDgzMWFhZTZkY2U1MjNmMmUxMDg2ZDg2ZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b875b27f88ac4b17b29d358d12f212aa",
+      "statement": "SandboxCreateConfig.resolve layers workspace-specific snapshot, resources, and create_params over deployment defaults, inheriting from the default workspace when a workspace's inherit_default_sandbox flag is set.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L78-L97",
+          "version": "repo-lines-v1:sha256:4b67dc3071d851dfd4b3f18ea8b1aa52b81cf5fefc22abae5e0bd772b282e670:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyMGI0NTNmNWUwYzkyZDVmNmMyNTFhNWVhMTk2MGQ3MmYzYmQwNzk1NmFlODU3ZGEyMGUzMWE4OGM1NTk2OWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmYzY3NWRmNWUxMGJmMTc2YjdlZGNlOWUwOTBjM2RjYmVhMmExMzQzMzE3YjVkMDQ4YzA4YzViNWMzYTRlMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkZTUwNmQ3Y2I5ZmQ2YmFiNmVlODBjM2RlZmE0MjkzOWFmNDY1ZTI1MjJiNjc2ZjNmMjg1MDQyYzE3ZGUyMGIifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-24T12:31:26.683Z"
   }
 }

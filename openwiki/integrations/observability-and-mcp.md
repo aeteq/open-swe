@@ -26,8 +26,6 @@ sources:
     resource: repo://openswe/mcp/workspace.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
     resource: repo://openswe/middleware/dynamic_tools.py
-  - id: openwiki-source-90777797f3501969c0c62e93
-    resource: repo://openswe/middleware/image_model_fallback.py
   - id: openwiki-source-f14e3b9027356fb68a4a9984
     resource: repo://openswe/middleware/model_errors.py
   - id: openwiki-source-7f36425bcc9aa67f9d9ae31a
@@ -36,8 +34,6 @@ sources:
     resource: repo://openswe/middleware/transcript.py
   - id: openwiki-source-2611fea0ef16d38defa68095
     resource: repo://openswe/sandboxes/browsers.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
   - id: openwiki-source-84f99988450cd60ecc31ec89
     resource: repo://openswe/session_cost.py
   - id: openwiki-source-4c045faeaf37be446cb51133
@@ -48,10 +44,10 @@ sources:
     resource: repo://openswe/utils/errors.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Observability, Tracing, and MCP
@@ -64,7 +60,7 @@ The agent combines three observability and integration systems:
 
 3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, and user. Missing credentials or connection failures remove optional tools rather than blocking a run.
 
-Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call errors in thread metadata for observability and recovery, and provides image model fallback so agents can handle image inputs even when the selected model does not support them.
+Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call errors in thread metadata for observability and recovery, and provides browser automation support so agents can interact with web applications.
 
 See [Authentication and security](../concepts/auth-and-security.md) for the broader trust model, [Tools](../concepts/tools.md) for dynamic tool availability, [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) for model selection, and [Configuration](../operations/configuration.md) for environment settings.
 
@@ -128,19 +124,13 @@ The system tracks model-call errors in thread metadata for observability and ups
 - **Error classification**: `openswe/utils/errors.py` provides `classify_exception` to categorize errors by code (e.g., "provider_overloaded", "rate_limited", "invalid_request"), distinguishing provider-specific failures from generic API errors by inspecting status codes and error bodies.
 - **Thread metadata**: The `last_model_error` metadata key carries the error type, run ID, and classification code. The run-completion reply can use this classification to decide recovery strategies, even when the exception message has been scrubbed by the platform.
 
-## Image model fallback
-
-When an agent receives image inputs but the selected model does not support images, `ImageModelFallbackMiddleware` automatically replaces the model for that call with a configured fallback that does support vision capabilities. The middleware:
-
-- Inspects request messages for `image` content blocks.
-- If any image is present and the current model is text-only (configured via `add_text_only_model`), overwrites the model with the fallback before sending the request.
-- Preserves the original model selection in the configuration, so the fallback is transparent to the rest of the graph.
-
-This ensures the agent can handle image attachments from Slack, email, or file uploads without failing, even when the user pins a text-only model.
-
 ## Browser automation support
 
-Agent runs can interact with web browsers via the LangSmith browser MDA (Multi-Deployment Agent). Browser state is keyed by thread, so each thread's agent has its own signed-in session and profile. Browsers are provisioned on demand and can be cleared from thread metadata before sharing; the system tracks browser windows and provides observability for browser-driven actions via the transcript.
+Agent runs can interact with web browsers via the LangSmith browser MDA (Multi-Deployment Agent). Browser state is keyed by thread so each agent has its own signed-in sessions and profile. Key capabilities:
+
+- **Browser lifecycle**: Browsers are provisioned on demand through LangSmith's browser sandbox API. The agent can drive one window named `mda` at a time. A person can open the window before the agent does; the agent then adopts it.
+- **Browser identity and sharing**: Browser identity (name and whether it is opened) lives in thread metadata via two separate keys (`browser_name` and `browser_opened`), so a run starting never undoes the agent having browsed. Before sharing a thread, `ThreadBrowser.forget()` deletes the browser, its profile, and signed-in sessions; the metadata is cleared and MDA opens a fresh browser under the same name if the agent browses again.
+- **Dashboard embedding**: The dashboard frames LangSmith's own view and act links (minted for the dashboard's origin) so people can see and control the window from the dashboard page.
 
 ## MCP connection scoping and discovery
 
@@ -148,7 +138,7 @@ MCP connections are organized in a three-tier hierarchy: **instance** (globally 
 
 - **Instance tier** (`openswe/mcp/instance.py`): Connections stored at the instance level that every run can access. The tier functions as the global deployment layer for connections all workspaces inherit.
 - **Workspace tier** (`openswe/mcp/workspace.py`): Connections stored under `["workspace_mcps", <slug>]`, where `<slug>` is the lowercase workspace identifier. Each workspace has its own set of connections managed by workspace administrators.
-- **User tier** (`openswe/mcp/user.py`): Personal connections stored under `["user_mcps", <login>]`, scoped to a GitHub login and visible only in runs where that login is the triggering user. Authorization checks verify the connection lookup is made only for private threads whose owner is the current login.
+- **User tier** (`openswe/mcp/user.py`): Personal connections stored under `["user_mcps", <login>]`, scoped to a GitHub login and visible only in runs where that login is the triggering user. Authorization checks via `private_credential_login()` verify the connection lookup is made only for private threads whose owner is the current login.
 
 Each tier exposes its own admin UI route for creation, validation, token refresh, and discovery. A connection is a reusable MCP server reference with a name, URL, transport (streamable_http or SSE), optional headers (including OAuth token URLs and client secrets), and an optional allowlist of tool names to expose. Stored tokens are encrypted at rest with `openswe.encryption`.
 
@@ -191,7 +181,7 @@ MCP tool loading flow: credential scope gates tool loading, then instance, works
 
 While assembling a non-local, non-summary agent for a run with known credential scope, the server loads:
 
-- **MCP tools** from instance, workspace, and user tiers using `_mcp_tools_for`.
+- **MCP tools** from instance, workspace, and user tiers using `mcp_tools_for`.
 
 Summary-stop and local/desktop runs skip optional tool loading. The tool loader is wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers the tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load the group and begin using its tools.
 
@@ -206,7 +196,7 @@ The combination of these systems enforces key invariants:
 - **Trace isolation**: Middleware trace policies omit sensitive input payloads from traces, and trace resource naming happens at the middleware boundary so platform-level APM can properly instrument routes.
 - **Cost attribution**: Session costs and invocation costs are tracked independently with bounded-retry scheduling, ensuring cost data eventually reaches Slack replies and analytics even if LangSmith is temporarily unavailable.
 - **Error recovery**: Model-call errors are classified and recorded on the thread so upstream systems and human operators can decide recovery strategies without relying on exception message inspection.
-- **Capability fallbacks**: Image model fallback and optional browser support ensure agents can handle diverse input types even when model selection constraints would otherwise force rejection.
+- **Browser isolation**: Browser state and profile are scoped per thread, so agents in different threads do not interfere with each other's sessions.
 
 ## Focused verification
 
@@ -218,4 +208,4 @@ Relevant tests cover:
 - **Transcript recording**: Transcript lifecycle and event flushing in tests under `tests/middleware/transcript/` and `tests/transcript/`.
 - **Cost tracking**: Invocation and session cost refresh in `tests/agent/test_agent_cost.py` and `tests/agent/test_session_cost.py`.
 - **Error tracking**: Model error classification and recording in `tests/middleware/` error tracking tests.
-- **Image fallback**: Image model fallback behavior in `tests/middleware/test_image_model_fallback.py`.
+- **Browser automation**: Browser lifecycle, profile isolation, and thread sharing in tests under `tests/sandboxes/` and `tests/threads/`.

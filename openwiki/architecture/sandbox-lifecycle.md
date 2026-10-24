@@ -3,6 +3,9 @@ type: architecture lifecycle
 title: Thread Sandbox Lifecycle
 description: How a thread acquires, persists, reconnects to, and deliberately replaces its sandbox. Covers provider selection, proxy-backed credentials, recovery safety, and operational lifecycle controls.
 tags: [sandbox, lifecycle, threads, providers, github-proxy, recovery]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 sources:
   - id: openwiki-source-5491be991f9727afe1f3163d
     resource: repo://openswe/github/proxy.py
@@ -22,17 +25,14 @@ sources:
     resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 ---
 
 # Thread Sandbox Lifecycle
 
 A normal agent thread has one durable sandbox binding: the sandbox contains its checkout and uncommitted working tree across runs. The binding is deliberately split between durable thread metadata and a worker-local handle. This distinction lets a later run on another worker reconnect, while avoiding exposing a partially initialized sandbox to tools.
 
-Related: [Threads and state](../concepts/threads-and-state.md), [Auth and security](../concepts/auth-and-security.md), and [Sandbox providers](../integrations/sandbox-providers.md).
+Related: [Agent graph assembly](./agent-graph.md), [Sandbox providers](../integrations/sandbox-providers.md), and [Configuration](../operations/configuration.md).
 
 ## Binding and handles
 
@@ -112,6 +112,12 @@ The operation requires an existing bound sandbox and ensures the provider return
 Provider filesystems do not share a universal root. `resolve_sandbox_work_dir` first tries provider-exposed work-directory methods, then shell `pwd`, provider home/root methods, and finally `$HOME`; each candidate must exist and be writable. The resolved path is cached on the backend, and `resolve_repo_dir` appends a validated repository name. This keeps repository operations portable across provider wrappers.
 
 The reviewer prepares its repo before the first model call: it clones once or fetches an existing checkout, fetches the PR head and base as needed, force-checks out the requested head SHA, and verifies `HEAD`. Preparation is best-effort, returning `False` on failure so the review can proceed from its fetched diff. Reviewer skills are treated separately: skill directories are extracted from the trusted base reference into `.review-skills` outside the PR checkout, never loaded from attacker-controlled PR-head content.
+
+## Managed Deep Agents integration
+
+When Managed Deep Agents (MDA) owns a thread's sandbox, the thread metadata carries `sandbox_owner="mda"`. MDA names, creates, and replaces the box; the lifecycle does not create or replace an MDA-owned sandbox. Instead, when reconnection fails, it raises `SandboxUnreachableError` so the MDA runtime can handle the failure. A disconnected thread may call `bind_mda_sandbox` to acknowledge that MDA has opened a new or existing box, storing its ID in metadata with the ownership marker.
+
+When MDA replaces a thread's box, it updates the ID in metadata. The next run on the same worker reconnects through the cached proxy's reconnect callback and updates proxy configuration, git identity, and credentials as with any reused box. The `reconnect_replaced_sandbox` function handles the transition when a different workspace or snapshot was requested; it applies the workspace's proxy rules and configuration.
 
 ## Focused verification
 

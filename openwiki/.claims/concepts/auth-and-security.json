@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:8271e659e45d42cc0d56963e86ba96ab3b386bd40ea4085b95a6d56c91b1176f",
+  "pageVersion": "sha256:3787ee20ce8fea3ed2ac8831a38774b9303e97b5e8472c6a6a6df576fa2b8ee2",
   "claims": [
     {
       "id": "claim_16867de3ca5946d1b3de2199f82d880f",
@@ -242,7 +242,7 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py#L133-L183",
-          "version": "repo-lines-v1:sha256:a50dc7a0a964e618ef252bcf2b2b5396da658439070faeac06eee7ef37644678:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiNzA1NTdhNTcxYjg5NTA3MTRmNzFlMTQwNDdkMzIxZTlmYzE2Njc2ODZlOTk4NGUwYjQyYmFhYmM1MTAzMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
+          "version": "repo-lines-v1:sha256:bfa68c3949abd5ebdb2eee29e7d4d04fb783d0300dde60b398b6d0092dd13e24:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTgyOTc0NzkyNjRjNGIzMTA4MWJhMDE4MDUzYmQ5ZDE0YjcyM2JjYTY3ZTA3NzI2MDdlZTRiMjE1ZDU4ZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNjdiNDY2Mzc4NzVjM2JiN2Y5MDNiMWRiODczNGI0YTI5NjY4NWRmNGRiZTY2YTRmNmNlZjdmZGM0MTE2M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdiNzA1NTdhNTcxYjg5NTA3MTRmNzFlMTQwNDdkMzIxZTlmYzE2Njc2ODZlOTk4NGUwYjQyYmFhYmM1MTAzMmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3ZjdlNzJkYTFjMTA1MmNjMDBhY2U2MDBjMGNlZjljODAzZGViYWM5NmFlN2ZjYmY5MGViMTlmZjlmMTNhMTQifQ"
         },
         {
           "resource": "repo://openswe/dashboard/oauth.py#L513-L534",
@@ -341,10 +341,62 @@
           "version": "repo-lines-v1:sha256:6de54ecd92bf2c460fead2df3d6e38f35e04f32ddd99a8c9edff0b91616f562c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyZWFmYmI2NWJhMDg4NTJkZTRmNjFmZDk5MmQwMzJlOTI3NmZhMTA0ZTYxOGQ3NGJmMjBiMzE4NTc4MmVmYmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YTE1NzliMzk5ZTM2YTU0NmRhZjBjN2U1NTFjZjNkMWRmZGNlNTUyODJjZjAwMzJlNjU0MTQyNzIxNGYyNjEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiYTk4ZGRmYTJmZDgwMmMyY2M0Y2FhZjAwZTVmYWVmOWRkYjM5ZTlhYzI5ZmI4YTRjOWVlMWZmYTliNzUyOWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNlMTQwNDBkYjQzZWU3MDFjMmY5MWE3Y2RhNGNiODBjNmE4M2FkYWQyNGU2Yzk2NTkxYjU5MDQzZjNkZDIzOTYifQ"
         }
       ]
+    },
+    {
+      "id": "claim_56c370aa32694bd2b4dd83ac0d50b910",
+      "statement": "Sandbox GitHub access is scoped to a subset of repositories available to the GitHub App installation through repository_token; repositories outside the installation remain accessible anonymously, the installation-wide discovery token is never given to the sandbox, and repository scope is combined with read-only review permissions (read access to pull requests, checks, statuses, actions, contents, issues, and metadata).",
+      "evidence": [
+        {
+          "resource": "repo://openswe/github/sandbox_access.py#L24-L33",
+          "version": "repo-lines-v1:sha256:e175efbc183ad4b226878fde0c2896cd89b07c5711b6ea5e5aa1f5efdcd62400:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNiMWRmMWYwM2UyNTUyNjAxZTdkYjJiMTYwMzFiNWRhZjk2MjlkOThhYmFiODAyOWVkNWMwYjA3ZDFmZmZlNTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFkZjM2MzMxYmY5NWY2ZDE1YjAyNmQ3NTgzMWRiYWUwYWU3Yjg2YzQyYWIwY2U4MWI3MWI2OWI3ZjMzZmYxZmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc3YTIzMTdiZjZjY2Q5Yzk2MzJhNDY1MTdjMGExYzI2NDQ1ODk1ZWJhZjRmNTM3ZWQyMjlkYTlmYTMxNzRkZDAifQ"
+        },
+        {
+          "resource": "repo://openswe/github/sandbox_access.py#L47-L60",
+          "version": "repo-lines-v1:sha256:1e480d2b47efd91b5f5f162603dc3ceeb72f2cff26d42b946b082467b0e43949:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2MTNkNDljZjJmMjMyNGU0MDY4NDBjZjI5Y2ZjZGYxZmM0ZWU1YTEzYjBjM2ZmMjJiNzg4ZmI0Y2I4ZDgzZTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczYzhmZThkMjJkZjcyNDliMjY4Njg3ZmRkZTk1ZDdjMmFjMzVkNjZjOTJjOTliODdjOGRlM2UwNWZlOTk0M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIxNjQ3MjE4YTdiOTFkZDY4ZDIxNGZjNTNhZmZhMDUwY2YwN2YxYWI0YWI3MTEzOTg5YTI2MDFkZDFjZmVjNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVkYjM1ZjQzNjYyZjBmNGFlOGQyNGY1MTMyMGQwMGYxZjUzMzAzYzhhYTJmZTljYzg1NzJmMWRiZGQ5NDU0MTIifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_4ab2662dc06c47ddb91a41121e11ef49",
+      "statement": "Workflow push approval gates intercept git push commands targeting .github/workflows through WorkflowPushGuardMiddleware, compute a SHA-256 fingerprint of the diff payload, check approval state in thread metadata under workflow_push_approvals, and block unapproved pushes with a truncated diff preview (max 400 lines, 20,000 chars); approved pushes are rewritten to explicit head_sha:refs/heads/branch refspecs for safety.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/threads/workflow_approval.py#L1-L50",
+          "version": "repo-lines-v1:sha256:f6c340029a7a35b7f3091f732fab7c230957fb419612f023f8349ed3bc2725a0:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczZWRiYjdkMDRlN2RhNzE0NzVmZmE2ZDYzN2JiMmYyODc5ZmJhMGZlODRjOGNhZGQ1NzBmNDU4YWQ5YjNjNzciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmNWFiYjIzYmY5MTJlYWY3Y2IxNmI0ZjJhYjU0NzhhOWYxNzBmMzNmOTRlODQ0ZWIzZGY3NmYyMGRmODRlM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg1YzQxOGJjZWZhMWE5NTE4N2QwOTJkZGI3YTYwNDVhZmFmNmVkODUzNmRlZDM0MTU2Y2FmYzIxODEyMDEwMWMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_bfd602249b934e38a690d8232b1e5c74",
+      "statement": "The AuditLogMiddleware captures all POST, PUT, PATCH, DELETE dashboard requests on endpoints decorated with @audit_endpoint, recording authenticated action metadata without payloads including actor identity (user_id, api_key_id, workspace_id), request method/path, response status, and extracted resource IDs; enrichments include operation source, actor kind, actor login, thread context, and for settings changes, before/after values with sensitive data redacted.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/audit_logs/middleware.py#L1-L90",
+          "version": "repo-lines-v1:sha256:a3dff0c6b35ce503c347ed56b71b65b1f728ccc9ba229a113cf735c040b2fe31:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkzYzhlMzdkOGFhNDgyYmJlYWNmMmQwNTlmNjkxOWZmYjcwNWE5NzcxYThkZGNlYjhjNzhjMmI0MjVjYjIxNWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI2MDFkMjdkNmU4ZTAxNGRhNzE0MTNhNjljZmIwN2I5Y2UwNTYyMzk4OTA1ZWUwMGU5YzkxMzg0OGVmNjI3OWUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://openswe/audit_logs/models.py#L34-L65",
+          "version": "repo-lines-v1:sha256:ead4d57f2204cce7b590dae2720b14a4fecff4108874afc7164a557a9ffd9528:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NWI3N2NhODE1N2QwMDM4NDFkNTI5YjdlMTdiNThhMThmNWI4YmNmYjgxNTE2MWE0MzkxMjZlNTdjOTgwYTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNGUzYjZlNzljM2E4ZTBiYjUwNDk2YjlmMzYzY2U4NjM5MzIwYWM4NmQ4YzBlN2UwYmY2NDMyMmEzMjlhYzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4MGY1MDEzYWEzZDRjNzNmYzUzYTE1YzJkZjkyMjhjNzBiMWZlMDNiYTY5MWRlN2QyNWFiM2IzMWFkZTUyY2UifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_885269e58cb747f78c671e3d00695c4a",
+      "statement": "Workspaces are isolated administrative units that manage MCP (Model Context Protocol) connections with stored server-side credentials never transmitted to sandboxes or external clients; a run's GitHub App installation token is also workspace-scoped through a single configured App ID and private key shared across installations.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/mcp/workspace.py#L1-L10",
+          "version": "repo-lines-v1:sha256:c7bf50240980767dd19e145230c0fb54f8cf5bffb0a634c4cea2a8a506e0dad5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViYjA0YzQ3NmZiMDdiYzdiZGNhOTdkMTNiODUyNjExMDUyOTExZWU3YWE1ZmJkZmQzMjY0M2M3YTBmMjViY2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjNmMyNmUwYWQxZjQ3YzZlYWQ4ZWU2YmE1MTM4Y2U0N2UzNThhZWNhMmU2Nzg3OWQ4ZWI0OWIzODZjMmVlOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhYTQ3ZjdkNWFhZTcxYmEzMTU5YzlhMmQ4OWE1ZWQyZTU4OWVlZTFmODNjNWE2N2U2NDU3YjBjYzQ5ZTk5MTIifQ"
+        },
+        {
+          "resource": "repo://openswe/tool_loaders/workspace_mcp.py#L1-L36",
+          "version": "repo-lines-v1:sha256:27328832e06909804f29f830e73128b00360ec7333b3c041ebbc7a8f9f09ddc7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0ZDI4YmNmMDhkOTZmYjVmMjgzOWEwNzhlZDIzNTk0ZGI3ODVhZTViOTA5MjhiZjUwZjI3MTY0ZmIyY2RiYTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-24T12:31:26.683Z"
   }
 }

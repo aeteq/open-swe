@@ -3,9 +3,6 @@ type: workflow
 title: Scheduled and Background Work Dispatch
 description: How the job queue routes cron and delayed work into durable automations, cost refreshes, background-task monitoring, CI watches, and thread wakeups without any LLM involvement.
 tags: [job-queue, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, cost-refresh]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py
@@ -51,7 +48,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Scheduled and Background Work Dispatch
@@ -73,19 +73,25 @@ graph TD
   Handler -->|Job.retry_later| Retry["back off on error"]
 ```
 
-Diagram: the job queue stores due work and dispatches it to kind-specific handlers.
-
 The `openswe/jobs/kinds.py` module imports every handler and registers it with `WORKER`. When the webapp starts, it imports this module, making all handlers available. A handler is a coroutine that accepts a `Job` and either succeeds, raises (causing retry), or calls `job.finish()` / `job.stop()` / `job.retry_later()` to control lifecycle. The worker provides a heartbeat loop so a running job can renew its claim and be cancelled safely.
+
+### Retry and failure semantics
+
+When a job handler raises an error, the job worker calls `job.retry_later()`. For one-shot jobs, this increments the attempt counter and backs off with exponential delay: 30s × 2^(attempts-1), capped at 1 hour, up to a maximum of 5 attempts. Once MAX_ATTEMPTS is reached, the job is marked finished (deleted). For cron jobs, `retry_later()` calls `job.finish()`, which moves the cron to its next fire time rather than retrying the same fire.
+
+If a job's handler is missing (the `kind` is not registered), the worker logs an error and calls `retry_later()` so a deployment that lost a handler does not deadlock—either the handler comes back and the job continues, or exhaustion terminates it.
+
+A worker failure during a running job (process crash, network disconnect) is handled by the claim TTL: another worker claims the job again after 30 minutes and inherits the `lapsed_lease` timestamp. The handler runs again—there is no automatic deduplication, so handlers must be safe to run multiple times for the same logical fire, or use idempotency keys.
 
 ## Scheduled agent runs (dashboard automations)
 
-`openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage with `normalize_cron_schedule()`, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds (minute 0–59, hour 0–23, day-of-month 1–31, month 1–12, day-of-week 0–6). On a dashboard schedule fire, the queue stores a job with `kind=agent_schedule` and `schedule_id`.
+`openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage with `normalize_cron_schedule()`, accepting numeric values, `*`, ranges (e.g., `1-5`), steps (e.g., `*/15`), and lists (e.g., `1,3,5`) within field-specific bounds (minute 0–59, hour 0–23, day-of-month 1–31, month 1–12, day-of-week 0–6). On a dashboard schedule fire, the queue stores a job with `kind=agent_schedule` and `schedule_id`.
 
 The handler `_agent_schedule` loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently. Deduplication via `event_claims` ensures a schedule that matures again during replay (after a deploy/crash) launches at most once.
 
 ## Stale-run reconciliation
 
-Normal durable dispatch relies on the completion webhook to release a run. `reconcile_stale_runs()` is the recovery sweep when a completion is lost: it paginates every `busy` thread (limit 100 per page), lists each thread's `pending` runs, and interrupts runs older than `max_age_seconds` (1,800 seconds by default). It skips malformed timestamps, isolates errors per thread with try/except, and returns counts for checked threads, stale runs, and cancellations. Thus a damaged or unavailable thread does not prevent other blocked threads from recovering.
+Normal durable dispatch relies on the completion webhook to release a run. `reconcile_stale_runs()` is the recovery sweep when a completion is lost: it paginates every `busy` thread (limit 100 per page), lists each thread's `pending` runs, and cancels those older than `max_age_seconds` (1,800 seconds by default). It skips malformed timestamps, isolates errors per thread with try/except, and returns counts for checked threads, stale runs, and cancellations. Thus a damaged or unavailable thread does not prevent other blocked threads from recovering.
 
 The handler `_reconcile` is registered on the `reconcile` job kind. A standing `reconcile` cron is established at startup via `start_jobs()`, providing a periodic safety net.
 
@@ -152,8 +158,6 @@ stateDiagram-v2
   Stopped --> [*]
 ```
 
-Diagram: baby-sit watch runs from start through failure/success evaluation and repair to terminal outcome.
-
 A `BabySitWatch` is stored under the lower-cased `owner/repo#pr_number` key in the `baby_sit_watches` store (persisted in `pull_request.task_state["baby_sit"]`). It binds a PR's head SHA/ref, GitHub App installation, originating agent thread, selected run configuration, and `SourceContext`; its durable fields also hold retries, failure-dispatch keys, webhook deliveries, alerts, evaluation errors, and cron ID.
 
 Only one active originating thread may watch a PR. Starting from another thread is rejected. Restarting the same PR on the same head retains retry and dedupe state; a different head starts that state over. Start saves the watch then ensures one `*/10 * * * *` UTC job, reusing a matching job and deleting duplicates. For a new watch, a job-creation failure rolls back its row and any partial job. Stopping normally removes its job and row; if job deletion fails, the row is retained but marked inactive so it cannot evaluate again.
@@ -179,8 +183,6 @@ sequenceDiagram
   Watcher->>Thread: new failure continues baby sit
   Watcher->>Source: terminal outcome
 ```
-
-Diagram: immediate signed CI events and the polling fallback converge on one serialized watch evaluation.
 
 The GitHub route verifies `X-Hub-Signature-256` HMAC before accepting a request. CI events (`check_run`, `check_suite`, `workflow_run`, and `status`) are processed in the background. `handle_ci_webhook` ignores non-failing payloads, selects active watches in the repository whose stored SHA or branch matches, updates a supplied installation ID, and records a delivery ID before evaluating; repeated deliveries (deduplicated by delivery_id) do not cause a second evaluation.
 

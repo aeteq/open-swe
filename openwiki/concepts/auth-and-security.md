@@ -2,10 +2,7 @@
 type: security architecture concept
 title: Authentication, Authorization, and Secret Boundaries
 description: How Open SWE authenticates dashboard and automation users, resolves GitHub authority, verifies inbound requests, encrypts stored credentials, and keeps secrets out of sandboxes.
-tags: [authentication, authorization, github-oauth, github-app, webhooks, encryption, csrf, sandbox-security, agent-server-auth, mcp-authorization]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+tags: [authentication, authorization, github-oauth, github-app, webhooks, encryption, csrf, sandbox-security, agent-server-auth, mcp-authorization, audit-logging, workflow-approval]
 sources:
   - id: openwiki-source-f01f6fab1cd3b23d20383d03
     resource: repo://openswe/api/agent_server_auth.py
@@ -13,6 +10,10 @@ sources:
     resource: repo://openswe/api/app.py
   - id: openwiki-source-035276d8c595782faca6e595
     resource: repo://openswe/api/health.py
+  - id: openwiki-source-207aefcaab1a73f59734eea0
+    resource: repo://openswe/audit_logs/middleware.py
+  - id: openwiki-source-fbf4881e9ac9c87396e79e9a
+    resource: repo://openswe/audit_logs/models.py
   - id: openwiki-source-913527bc7b548b4bf81f6a35
     resource: repo://openswe/completion.py
   - id: openwiki-source-31bc4bba3dc364743082e410
@@ -29,12 +30,16 @@ sources:
     resource: repo://openswe/github/comments.py
   - id: openwiki-source-d0edf7555209b3e6418b5c5f
     resource: repo://openswe/github/routes.py
+  - id: openwiki-source-ceb13e900da7601538741618
+    resource: repo://openswe/github/sandbox_access.py
   - id: openwiki-source-0c4b1aac46b8420871177918
     resource: repo://openswe/github/thread_token.py
   - id: openwiki-source-4194ce777e6975dfc2a2c3d1
     resource: repo://openswe/github/token_auth.py
   - id: openwiki-source-8d544a43b3113d48789eff4f
     resource: repo://openswe/github/token.py
+  - id: openwiki-source-1175dd137a24de0ce785a4c1
+    resource: repo://openswe/mcp/workspace.py
   - id: openwiki-source-1087d65aaa83434d4f7c209b
     resource: repo://openswe/middleware/refresh_github_proxy.py
   - id: openwiki-source-d16a45e9fc6aa80a3708c88c
@@ -43,6 +48,10 @@ sources:
     resource: repo://openswe/slack/client.py
   - id: openwiki-source-d683445251a7ec19a5def965
     resource: repo://openswe/slack/oauth.py
+  - id: openwiki-source-72d0aa1e1b6096510f34c65b
+    resource: repo://openswe/threads/workflow_approval.py
+  - id: openwiki-source-bcb7e59f9094e94d173b5d09
+    resource: repo://openswe/tool_loaders/workspace_mcp.py
   - id: openwiki-source-b5fe0e0520028e80429116d3
     resource: repo://openswe/tools/admin_gate.py
   - id: openwiki-source-1d8440f14c85812310a67572
@@ -53,7 +62,10 @@ sources:
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
     resource: repo://tests/dashboard/test_github_token_auth.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries
@@ -116,6 +128,10 @@ GitHub App installation tokens are minted by signing a short-lived RS256 JWT wit
 ### Sandbox proxy boundary
 
 A LangSmith sandbox is configured with a GitHub **App installation** token through opaque proxy headers. The sandbox environment receives `GH_TOKEN=proxy-injected`, not the real token; API traffic to `api.github.com` receives Bearer auth and traffic to `github.com` receives Basic `x-access-token` auth. The proxy token expiry record retains repository and permission scope so a refresh cannot broaden authority. Before each model call, middleware refreshes a near-expiry proxy token; a reused sandbox that cannot be reconfigured is treated as unreachable rather than silently continuing with stale access.
+
+### Sandbox repository-scoped credentials
+
+Sandbox GitHub access is scoped to a subset of repositories available to the GitHub App installation. When `repository_token` is called, it accepts a list of repository names, resolves their IDs through the installation, and mints a scoped access token. Repositories outside the App's installation remain readable anonymously; any repository the installation cannot access is silently excluded. The installation-wide discovery token is never given to the sandbox. Repository scope narrowing combines the App's configured permissions with a read-only review scope (read access to pull requests, checks, statuses, actions, contents, and issues) to ensure sandboxed code cannot write back to the repository.
 
 ## Token types and scope narrowing
 
@@ -190,6 +206,30 @@ Authentication is not authorization. `CONFIGURED_ADMINS` matches emails or login
 ## GitHub comment trust model
 
 External GitHub comment content must be wrapped in reserved trust tags so the agent can identify untrusted input. `sanitize_github_comment_body` strips the reserved `<dangerous-external-untrusted-users-comment>` open and close tags from raw comment bodies before they are processed, preventing external authors from spoofing the trust wrapper. `format_github_comment_body_for_prompt` classifies comments by author membership in a known Open SWE users set (lowercased GitHub login): registered authors bypass the wrapper, while external authors are fenced with the reserved tags. This design prevents prompt injection by making untrusted boundaries explicit within the prompt.
+
+## Workflow approval gates
+
+When the agent executes a `git push` command targeting `.github/workflows`, the `WorkflowPushGuardMiddleware` intercepts the call and enforces human approval before allowing the push. The middleware computes a SHA-256 fingerprint of the workflow diff payload, checks whether that fingerprint has been approved in the thread metadata, and blocks the push if approval is missing or denied. An approval request is posted to Slack with a truncated diff preview (max 400 lines, 20,000 chars) and a unique fingerprint; only an exact matching approval allows the push to proceed.
+
+The approval URL directs the user to the dashboard, which records consent tied to the fingerprint and thread, and dispatches a follow-up message to resume the agent run. Approval records are stored in thread metadata under `workflow_push_approvals` and trimmed to the 20 most recent records. The middleware also detects whether workflow-file changes were inherited from a merged base branch and notes this in the approval request.
+
+When a workflow-file change is detected, the middleware logs its metadata including file/addition/deletion statistics, and rewrites any approved push to an explicit `<head_sha>:refs/heads/<branch>` refspec for safety. If the changes represent workflows authored on a feature branch, the approval includes context about the source branch.
+
+## Audit logging and observability
+
+All dashboard mutations are captured in an audit log, storing authenticated action metadata without request payloads. The `AuditLogMiddleware` intercepts POST, PUT, PATCH, and DELETE requests; endpoints decorated with `@audit_endpoint` are recorded with the actor's identity (user ID, API key ID, workspace ID), request method and path, response status, and resource IDs extracted from path parameters. Enrichments include the operation source (HTTP or tool), actor kind (person, API key, GitHub Actions, or agent), actor login, and thread context.
+
+For security-sensitive operations like approval decisions and admin tool use, the audit log captures the source surface (dashboard, Slack, schedule), the target workspace and thread, delegated-sandbox identity if applicable, and for settings changes, before/after values with sensitive data redacted. Admins can view audit logs through the dashboard, which applies pagination and filtering by date, user, and operation.
+
+The audit log also records expedited review decision context, including what portions of a pull request were excluded from expedited analysis and why, allowing reconstruction of approval decisions post-hoc.
+
+## Workspace routing and MCP credentials
+
+Workspaces are isolated administrative units that manage integration configuration, including MCP (Model Context Protocol) connections and credentials. A workspace owns a set of MCP connections (e.g., third-party APIs), each with authentication headers (API keys, OAuth client credentials) and allowed tool names. When an agent run operates within a workspace, it may only discover and invoke MCP tools configured for that workspace.
+
+MCP connection credentials are stored server-side only, never transmitted to the sandbox or shared with external clients. Workspace MCP discovery lists available tools without executing them, and tool invocation filters by the workspace's allowed-tool list. This ensures that workspace-specific secrets and third-party integrations remain scoped to authorized agents and do not leak through cross-workspace or cross-tenant boundaries.
+
+A run's resolved GitHub App installation token is also workspace-scoped: the GitHub App must be installed and configured once per workspace, and all installations share the same App ID and private key. This design allows workspace isolation while reusing a single GitHub App across multiple deployments or organizations.
 
 ## Focused verification
 
