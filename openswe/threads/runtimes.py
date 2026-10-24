@@ -17,7 +17,7 @@ from langsmith.utils import get_tracer_project
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 from openswe import dispatch
-from openswe.remote_runtime.client import (
+from openswe.agent_api.client import (
     MDA_GRAPH_ID,
     mda_runtime_api_key,
     mda_runtime_url,
@@ -212,7 +212,8 @@ class MdaRuntime:
             "metadata": params.get("metadata"),
             "stream_mode": list(_V3_RUN_STREAM_MODES),
             "stream_subgraphs": True,
-            "stream_resumable": True,
+            # A client that reads the transcript instead of this stream opts out.
+            "stream_resumable": params.get("stream_resumable") is not False,
             "on_completion": "keep",
             "if_not_exists": "create",
             "multitask_strategy": strategy if isinstance(strategy, str) else "reject",
