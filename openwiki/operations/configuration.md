@@ -6,6 +6,8 @@ tags: [configuration, operations, environment-variables, startup-validation, san
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+  - id: openwiki-source-15d75fcce83b1cece4ea13b8
+    resource: repo://openswe/agent_api/client.py
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
   - id: openwiki-source-913527bc7b548b4bf81f6a35
@@ -22,6 +24,8 @@ sources:
     resource: repo://openswe/encryption.py
   - id: openwiki-source-1b32e9f41fa7e64702b380f6
     resource: repo://openswe/sandboxes/lifecycle.py
+  - id: openwiki-source-e2d4ab22e08f00169bb3c374
+    resource: repo://openswe/sandboxes/providers/langsmith_api.py
   - id: openwiki-source-d16a45e9fc6aa80a3708c88c
     resource: repo://openswe/sandboxes/providers/langsmith.py
   - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
@@ -32,10 +36,10 @@ sources:
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-24T12:31:26.683Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 ---
 
 # Configuration and Startup Validation
@@ -86,7 +90,7 @@ flowchart TD
 
 **GitHub login gate**: Startup fails when neither `OPEN_SWE_LOCAL_AUTH_TOKEN` is set nor either `ALLOWED_GITHUB_ORGS` or `ALLOWED_GITHUB_USERS` is non-empty. The deployment must gate dashboard access.
 
-**MDA/Remote runtime**: Startup fails when `MDA_RUNTIME_URL` is not configured, since the agent and reviewer graphs require it. If set, the validation checks that the URL is available.
+**MDA/Remote runtime**: Startup fails when `MDA_RUNTIME_URL` is not configured, since the agent and reviewer graphs require it. The URL must be absolute and use HTTPS (HTTP allowed only for localhost). Additionally, `REMOTE_RUNTIME_TOKEN_SECRET` must be configured to sign the run tokens the backend presents to MDA.
 
 **Sandbox configuration**: Validation is provider-specific. For `SANDBOX_TYPE=langsmith`, it checks numeric resource fields (`DEFAULT_SANDBOX_*_BYTES`, `DEFAULT_SANDBOX_*_SECONDS`), numeric TTL fields (rejecting negative values for idle or delete-after-stop), and `SANDBOX_CREATE_EXTRA_JSON` (rejecting non-JSON or non-object). An unsupported provider name is rejected only when `create_sandbox` is called, not at startup.
 
@@ -101,105 +105,182 @@ flowchart TD
 ### LangSmith sandbox resources
 
 For LangSmith, resource defaults are:
-- 128 GiB filesystem (`DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES`)
-- 4 vCPUs (`DEFAULT_SANDBOX_VCPUS`)
-- 16 GiB memory (`DEFAULT_SANDBOX_MEM_BYTES`)
-- 7200 seconds idle TTL (`DEFAULT_SANDBOX_IDLE_TTL_SECONDS`; 0 disables auto-stop)
-- 2592000 seconds deletion-after-stop (`DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS`; 0 disables auto-delete)
 
-These are deployment defaults when a workspace does not override them. Startup validation rejects non-integer values, negative TTLs, and invalid `SANDBOX_CREATE_EXTRA_JSON` (not JSON or not an object).
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES` | 128 GiB | Root filesystem size for new sandboxes |
+| `DEFAULT_SANDBOX_VCPUS` | 4 | vCPUs allocated to a sandbox |
+| `DEFAULT_SANDBOX_MEM_BYTES` | 16 GiB | Memory allocated to a sandbox |
+| `DEFAULT_SANDBOX_IDLE_TTL_SECONDS` | 7200 (2 hours) | Idle seconds before a sandbox stops; 0 disables |
+| `DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS` | 2592000 (30 days) | Seconds after stop before deletion; 0 disables |
 
-### Workspace sandbox customization
+Invalid or non-integer values raise `ValueError` at startup. Negative TTL values are also rejected.
 
-Each workspace can specify:
-- `base_snapshot_id`: opaque provider-scoped snapshot identifier; new sandboxes boot from it instead of the default root snapshot
-- `mem_bytes`, `vcpus`, `fs_capacity_bytes`: resource overrides for LangSmith (only; other providers ignore these)
-- `create_params`: arbitrary LangSmith create-body fields (only; other providers ignore these)
+`SANDBOX_CREATE_EXTRA_JSON` accepts a JSON object merged into the sandbox create body (e.g., `{"_internal_runtime": "v2"}` or nested `proxy_config`). Non-JSON or non-object values raise `ValueError` at startup.
 
-The registry passes these only to the LangSmith factory; other providers receive only an existing sandbox ID if reconnecting.
+### Workspace-level sandbox configuration
 
-### Snapshot naming and credentials
+Each workspace can specify a `base_snapshot_id` (opaque provider-scoped identifier), custom resource overrides (mem_bytes, vcpus, fs_capacity_bytes), and arbitrary provider create-body parameters (create_params). When a workspace captures a snapshot, new sandboxes boot from it instead of a deployment default.
 
-`WORKSPACE_SNAPSHOT_PREFIX` (default `openswe`, legacy alias `ENVIRONMENT_SNAPSHOT_PREFIX`) prefixes environment snapshot names, separating deployments that share a LangSmith workspace.
+`WORKSPACE_SNAPSHOT_PREFIX` (default `openswe` via legacy alias `ENVIRONMENT_SNAPSHOT_PREFIX`) separates environment snapshot names when deployments share a LangSmith workspace. Sandbox operations use `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` unless workspace-specific alternatives are configured (currently through workspace records, not environment variables).
 
-Sandbox operations use `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` unless workspace-specific `SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` are set. This allows a single workspace to use multiple LangSmith tenants for sandboxes.
+### Optional sandbox providers
 
-## Model selection and defaults
+Sandbox providers beyond `langsmith` and `local` are optional dependencies:
 
-`LLM_MODEL_ID` and `LLM_REASONING_EFFORT` establish the deployment fallback pair. The model must be in the catalog of selectable defaults; an unsupported value raises when the deployment default is resolved. The deployment default applies when no team, workspace, profile, or thread setting supplies a valid choice.
+| Provider | SDK modules | Install extra |
+|----------|-----------|---------------|
+| daytona | `daytona`, `langchain_daytona` | `sandbox-daytona` or `sandbox-providers` |
+| modal | `modal`, `langchain_modal` | `sandbox-modal` or `sandbox-providers` |
+| runloop | `runloop_api_client`, `langchain_runloop` | `sandbox-runloop` or `sandbox-providers` |
+| e2b | `e2b`, `langchain_e2b` | `sandbox-e2b` or `sandbox-providers` |
 
-### Team settings
+When `create_sandbox` is called with an unsupported provider or a missing optional extra, it raises `ValueError` with installation instructions.
 
-The team-settings record is a single instance-wide Store record (`default` key, `team_settings` namespace). It holds:
-- Review toggles and guidelines (`review_draft_prs`, `pr_summaries`, `review_trace_links`, `org_guidelines`)
-- Default model-and-effort pairs for agent, reviewer, chat, and thread titles
-- Feature flags (`gateway_enabled`, `fable_enabled`, `expedited_review_enabled`, etc.)
-- Default repository and transcription model
+### Local sandbox provider
 
-Input validation rejects unsupported model/effort combinations, an effort without a model, and oversized text. Deprecated model IDs are cleared; canonical pairs are normalized. When Fable is disabled, persisted Fable defaults are replaced with safe fallbacks.
+The local provider for development sets:
 
-Store reads for team settings are fail-soft (unavailable Store returns hardcoded defaults), because the agent and every webhook read settings on the run path. Invalid/stale model data falls back first to a supported model from the same provider, then to the global fallback. Chat inherits the agent default when unset, and review grouping inherits the reviewer subagent default.
+| Variable | Purpose |
+|----------|---------|
+| `LOCAL_SANDBOX_ROOT_DIR` | Root directory for sandboxes on the host |
+| `OPENSWE_SCRIPT_ROOT` | Where scripts and logs live (default `/open-swe/environment`, but local dev may override to a writable location) |
+| `GIT_CONFIG_GLOBAL` | Git's global config path; kept out of `~/.gitconfig` |
 
-### Fallback models and request timeouts
+## Models and reasoning profiles
 
-`LLM_FALLBACK_MODEL_ID` names an explicit fallback; otherwise Anthropic primaries fall back to `openai:gpt-6.1-sol` and OpenAI to `anthropic:claude-opus-5-5`. Fallback middleware is installed only when the fallback exists and differs from the primary. `make_model` constructs and caches clients per event loop and model options.
+The deployment specifies a default model in `LLM_MODEL_ID` (required format: `provider:model`, e.g., `openai:gpt-6.1-sol`). A fallback model is configured via `LLM_FALLBACK_MODEL_ID` or defaults to a provider-specific fallback when unset (Anthropic falls back to OpenAI and vice versa; other providers have no automatic fallback).
 
-Each provider request receives up to 6 retries. OpenAI, Anthropic, Baseten, Google GenAI, and Fireworks also receive a 600-second default per-request timeout. These bounds complement the agent's separate model-call deadline and run recursion limits.
+`LLM_REASONING_EFFORT` sets the default reasoning effort (low, medium, high, max) when no workspace or profile setting applies. Reasoning is currently supported on OpenAI, Anthropic, Google Gemini 3+, Fireworks reasoning models, and Baseten. Each provider maps effort to its own parameter names and formats.
+
+Model calls carry a provider-level per-request timeout defaulting to 600 seconds with 6 retries, applied to the openai, anthropic, baseten, google_genai, and fireworks providers so a stalled connection retries instead of parking a run.
 
 ### Gateway routing
 
-LangSmith LLM Gateway routing is applied centrally by `make_model`. The deployment default is: explicitly `LANGSMITH_GATEWAY_ENABLED` if set; otherwise routing is on when `LANGSMITH_GATEWAY_API_KEY` is set. A team setting is tri-state: `true`/`false` is authoritative, `null` inherits the deployment default.
+Gateway routing uses explicit `LANGSMITH_GATEWAY_ENABLED` when set and otherwise enables when `LANGSMITH_GATEWAY_API_KEY` is set; a true or false team value (in workspace settings) overrides this default, whereas an unset value inherits it. Unavailable routing logs and falls back to direct provider calls.
 
-Gateway authentication prefers `LANGSMITH_GATEWAY_API_KEY` and falls back to `LANGSMITH_API_KEY`. `LANGSMITH_GATEWAY_BASE_URL` (default `https://gateway.smith.langchain.com`) sets the host. `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES` (default `true`) controls whether OpenAI keeps the Responses API through the gateway.
+The gateway routes OpenAI, Anthropic, Baseten, Fireworks, and Google Gemini calls through LangSmith; other providers call directly. `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES=true` (default) keeps OpenAI's Responses API through the gateway for reasoning models.
 
-Only OpenAI, Anthropic, Baseten, Fireworks, and Google GenAI are routable. If routing is enabled but the provider is not routable or no LangSmith key is available, a warning is logged and the provider is called directly (not a run failure). Direct Baseten requires `BASETEN_API_KEY` when gateway routing is unavailable.
+## Team and workspace settings
 
-## Secrets and identity
+Team settings are a single instance-wide Store record. Model-and-effort pairs are validated on input. When a Store read fails, application defaults hardcoded in `_default_settings()` are used instead. Chat inherits the agent model, and review grouping inherits the reviewer subagent model when unset or invalid.
 
-Keep secrets in deployment configuration or appropriate encrypted stores; do not place user GitHub access tokens in environment variables. For LangSmith sandboxes, GitHub proxy rules mint an installation token at runtime and inject it transparently; sandbox processes see a placeholder instead.
+## Security and secrets
 
-### Key identity settings
+### Token encryption
 
-- **GitHub App**: `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_WEBHOOK_SECRET`
-- **Dashboard session**: `DASHBOARD_JWT_SECRET` signs session cookies and OAuth state
-- **Token encryption**: `TOKEN_ENCRYPTION_KEY` (one or more Fernet keys, comma/newline-separated, newest-first). Encryption uses the first key; decryption tries all, enabling rotation without invalidating stored tokens. Missing keys or invalid ciphertext log and return empty string.
-- **Admins**: `CONFIGURED_ADMINS` is a normalized comma-separated allowlist of GitHub logins and/or emails (empty = no admins)
-- **Repository allowlist**: `ALLOWED_GITHUB_ORGS` and `ALLOWED_GITHUB_REPOS`. If both are empty, all repositories pass; otherwise an allowlisted owner or exact `owner/repo` is required.
+`TOKEN_ENCRYPTION_KEY` encrypts stored GitHub tokens and accepts an ordered, most-recent-first list of Fernet keys so writes use the first key while reads try each key in order, enabling rotation without invalidating already-stored tokens. The key(s) can be comma-separated or newline-separated.
 
-### Run-completion webhooks
+### Webhook token verification
 
-Run completion/failure replies require `RUN_COMPLETE_WEBHOOK_SECRET` and a usable `COMPLETION_WEBHOOK_URL`. The secret makes `/webhooks/run-complete` fail-closed: every call without a valid token is rejected, disabling completion replies until configured.
+`RUN_COMPLETE_WEBHOOK_SECRET` is a shared bearer token proving a `/webhooks/run-complete` call came from Open SWE's own dispatch. The `verify_run_complete_token()` function fails closed by rejecting every call when the secret is unset, disabling completion and failure replies until it is configured.
 
-Dispatch attaches a completion webhook only when the secret is set and `COMPLETION_WEBHOOK_URL` is absolute (not relative) and non-loopback (not localhost or 127.0.0.1). A relative or loopback URL is logged as a warning and omitted (not a run failure) so invalid URLs cannot poison run creation. The dispatch URL carries the token as a query parameter for constant-time verification.
+`COMPLETION_WEBHOOK_URL` sets the absolute HTTPS URL where LangGraph posts run-completion webhooks. The platform rejects relative or loopback URLs (localhost, 127.0.0.1, ::1) even if a completion secret is set, so a platform-rejected callback cannot break run creation. When the secret is set and the URL is valid, it is appended with `?token=<secret>` so the route can verify the call came from dispatch.
 
-## MCP server configuration
+## Observability and tracing
 
-Open SWE's agent graph includes an MCP (Model Context Protocol) server that can integrate with external tools and data sources. Each workspace can configure MCP servers and their parameters. Configuration is workspace-level, set through workspace settings or workspace-specific environment overrides.
+`LANGSMITH_API_KEY` is required for LangSmith trace links and feedback collection. The LangSmith SDK reads it directly, and LangGraph Platform injects it. `LANGSMITH_ENDPOINT` specifies a self-hosted or regional LangSmith API (defaults to https://api.smith.langchain.com).
 
-- **Per-workspace MCP config**: Workspaces can specify MCP server URLs, authentication tokens, and other parameters. These override deployment defaults.
-- **Fallback to deployment defaults**: When a workspace does not override an MCP setting, the deployment configuration applies.
-- **Local development**: The MCP server validates that the workspace can reach configured URLs at startup to fail fast in development.
+`LANGSMITH_PROJECT` names the LangSmith project every run traces into and trace links point at (defaults to "default"). `LANGSMITH_TENANT_ID` supplies the LangSmith workspace id for trace links; when unset it is discovered from the workspace.
 
-## Operation and extension
+`POSTHOG_API_KEY` (optional) enables PostHog server-side usage capture. `DD_ENV` sets the shared Datadog and analytics environment (defaults to "production").
 
-**Adding an environment variable**: Declare it in `openswe/config.py` with a description, defaults, secret status, and any aliases or deprecated names. Consume through `ENV.NAME` or `ENV["NAME"]`, never through direct `os.environ` reads, so late hydration and key rotation are observed.
+## Integrations
 
-**Persisted settings**: Use the Store only for instance-wide team settings and workspace-level base snapshot/custom resources. Design changes to degrade gracefully when Store reads fail (unavailable or missing data return hardcoded defaults). Chat inherits agent model defaults, and reviewer grouping inherits reviewer subagent defaults, unless overridden.
+### GitHub
 
-**Before deploying**: Exercise lifespan startup validation with the selected sandbox provider and model configuration. In local development, set an explicit `http://localhost...` `DASHBOARD_BASE_URL` to enable model-credential validation at boot.
+`GITHUB_APP_ID` is the numeric GitHub App id. `GITHUB_APP_CLIENT_ID` and `GITHUB_APP_CLIENT_SECRET` enable OAuth flow for the dashboard. `GITHUB_APP_PRIVATE_KEY` (PEM) signs app JWTs. `GITHUB_APP_INSTALLATION_ID` supplies a fallback GitHub App installation when a run names none.
 
-**Run-completion replies**: Set `COMPLETION_WEBHOOK_URL` to the public HTTPS URL ending in `/webhooks/run-complete` and configure `RUN_COMPLETE_WEBHOOK_SECRET` with a strong token. Loopback URLs are omitted even when configured; relative URLs raise a warning.
+`ALLOWED_GITHUB_ORGS` and `ALLOWED_GITHUB_USERS` gate webhook and dashboard access. At least one must be configured.
 
-**Token encryption rotation**: Prepend a new Fernet key to `TOKEN_ENCRYPTION_KEY` (comma/newline-separated, newest-first) without removing old keys. All stored tokens remain valid during the retention window. Remove old keys only after they have been re-encrypted or expired.
+`GITHUB_WEBHOOK_SECRET` is the HMAC secret for webhook deliveries. `MERGE_QUEUE_DISPATCH_SECRET` is a backend-only signing secret for the queue dispatch gateway.
 
-### Tests
+### Slack
 
-Cover the registry's behavior (blank/alias/typed-value access), invalid LangSmith numeric and JSON fields during startup, workspace snapshot defaults and Store-failure fallbacks, model-pair normalization and inheritance, gateway precedence, and webhook edge cases (missing secret, non-public URL).
+`SLACK_BOT_TOKEN` (xoxb-...) is the Slack bot user OAuth token. `SLACK_SIGNING_SECRET` is the HMAC secret for webhook deliveries. `SLACK_BOT_USER_ID` and `SLACK_BOT_USERNAME` enable mention detection and readable context.
 
-## See also
+`SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` enable "Sign in with Slack" on the dashboard. `SLACK_TEAM_ID` restricts it to one workspace.
 
-- [Deployment](deployment.md) — installation procedures
-- [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) — model selection and resolution
-- [Authentication and security](../concepts/auth-and-security.md) — GitHub App, OAuth, and authorization
-- [Sandbox providers](../integrations/sandbox-providers.md) — provider-specific details
-- [Observability and MCP](../integrations/observability-and-mcp.md) — MCP server setup and troubleshooting
+`SLACK_PUBLIC_BASE_URL` sets the public URL for Slack webhooks and OAuth callbacks (defaults to `DASHBOARD_API_BASE_URL`; use ngrok URL when the dashboard runs on localhost).
+
+### Linear
+
+`LINEAR_WEBHOOK_SECRET` is the HMAC secret for Linear webhook deliveries. Linear uses MCP for bidirectional integration; see [Observability and MCP](../integrations/observability-and-mcp.md).
+
+### Notion
+
+`NOTION_API_KEY` is the Notion internal integration token. `NOTION_AGENT_API_KEY` is an optional personal access token of the agent's Notion member (defaults to `NOTION_API_KEY`). `NOTION_WEBHOOK_SECRET` verifies webhook deliveries.
+
+Database properties and statuses are configurable; see `openswe/config.py` for the full list (assignee, repository, status, PR URL properties, status transitions, design document configuration, etc.).
+
+## Database and persistence
+
+`POSTGRES_URI` is the PostgreSQL URI available to custom code. `ANALYTICS_POOL_SIZE` (default 20) and `ANALYTICS_POOL_OVERFLOW` (default 20) configure the connection pool per process. `ANALYTICS_POOL_TIMEOUT_SECONDS` (default 5) sets the checkout timeout.
+
+`POSTGRES_SLOW_QUERY_MS` (default 1000) logs queries at or above this duration; 0 disables. `ANALYTICS_HEALTH_TIMEOUT_SECONDS` (default 3) sets the analytics readiness timeout.
+
+Data retention windows are configurable: raw events (25 months), aggregates (7 years), person records (13 months), acknowledged outbox (30 days), ingestion receipts (90 days).
+
+## Optional features and flags
+
+`OPEN_SWE_LOCAL_AUTH_TOKEN` enables local authentication for development without GitHub OAuth. When set, either this token or GitHub authorization permits dashboard access.
+
+`OPENSWE_ENV` names the agent prompt deployment environment (`production`, `staging`, `preview`, or `local`). `preview` also lets startup drop superseded migration revisions and turns off reviewer auto-assignment.
+
+`DEBUG_TRACEMALLOC` enables tracemalloc to attribute unclosed-session warnings (frames configurable via `DEBUG_TRACEMALLOC_FRAMES`, default 25).
+
+`BG_JOB_ISOLATED_LOOPS` is a LangGraph background-job event-loop isolation flag.
+
+## Integration examples and reference
+
+### LangSmith and tracing
+
+```
+LANGSMITH_API_KEY=<key>
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_PROJECT=my-project
+```
+
+### MDA deployment
+
+```
+MDA_RUNTIME_URL=https://mda.example.com
+REMOTE_RUNTIME_TOKEN_SECRET=<hmac-key>
+MDA_RUNTIME_API_KEY=<optional-key-defaults-to-LANGSMITH_API_KEY>
+```
+
+### Gateway routing
+
+```
+LANGSMITH_GATEWAY_ENABLED=true
+LANGSMITH_GATEWAY_API_KEY=<key-with-gateway:invoke>
+LANGSMITH_GATEWAY_BASE_URL=https://gateway.smith.langchain.com
+```
+
+### Sandbox with custom resources
+
+```
+SANDBOX_TYPE=langsmith
+DEFAULT_SANDBOX_VCPUS=8
+DEFAULT_SANDBOX_MEM_BYTES=33285996544  # 31 GiB
+DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES=274877906944  # 256 GiB
+DEFAULT_SANDBOX_IDLE_TTL_SECONDS=3600  # 1 hour
+DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS=604800  # 7 days
+SANDBOX_CREATE_EXTRA_JSON='{"_internal_runtime": "v2"}'
+WORKSPACE_SNAPSHOT_PREFIX=my-deployment
+```
+
+### Webhook setup
+
+```
+RUN_COMPLETE_WEBHOOK_SECRET=<bearer-token>
+COMPLETION_WEBHOOK_URL=https://myapp.example.com/webhooks/run-complete
+```
+
+### Token encryption key rotation
+
+```
+TOKEN_ENCRYPTION_KEY=<new-key>,<old-key>,<older-key>
+```
+
+The first key encrypts all new tokens; all three can decrypt existing tokens.

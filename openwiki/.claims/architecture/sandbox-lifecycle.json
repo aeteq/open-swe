@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:96fdac7a37e60aecfebc8fee329683e29da6b5accf2b9afac9ccd5ee4466794f",
+  "pageVersion": "sha256:d0afd5a953457b1ae177edc3126841bfb1b3daad7554dfc70affaef037cbaa48",
   "claims": [
     {
       "id": "claim_b84ca73fa9ca440eaddd035980a5842f",
@@ -182,7 +182,7 @@
       "evidence": [
         {
           "resource": "repo://openswe/sandboxes/providers/local.py#L24-L63",
-          "version": "repo-lines-v1:sha256:ff99f224c8df0d5799f048da85ef762b73d2a44b4052129b7748b8d1a34c95ab:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjZDY3NDIwMjRjZjA4ODExZDFmOTk0YzgwOGY1NzdmNDA2ODc5NWRhYTk1ZmIzNjcxZWU0YzgzYzJiNTg5OGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkYThhNTQwZTg2YmM4MzhlY2U4MzljNzczNTExYzY0Zjk5MDM3ODM5ZjBkMzhhZmQzMTlhNDEyY2YxNGJjODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:7ba4e02ca43b5ef6ddc7e4b72738088ad166b2fb447147c531fad0ad63276420:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjZDY3NDIwMjRjZjA4ODExZDFmOTk0YzgwOGY1NzdmNDA2ODc5NWRhYTk1ZmIzNjcxZWU0YzgzYzJiNTg5OGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkYThhNTQwZTg2YmM4MzhlY2U4MzljNzczNTExYzY0Zjk5MDM3ODM5ZjBkMzhhZmQzMTlhNDEyY2YxNGJjODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -215,10 +215,38 @@
           "version": "repo-lines-v1:sha256:b02d3e3ad7b1953ad0444d08110ea02ef8534cbc29b288ad0032f6cd70d78601:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYxZDMyOWI1ZjEyZTA0ZmRjMTcyZjZiOGFkOTE4YmYxZWEzOTVlZWFlOGQzZDA5ZDhiODkyYmY4OWEyOTMxM2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NTBhNjIyOWY3MzM5OTJjYzdkMzIyZDQ1NGY2MmI1MDhmMTJlMGI4ODMxOWYyZjMxMTI1ZmNhZmY0NGY2NzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwMDA2MGJmNTNhNDMxZGI2NWMwMzg1ODBmYjlkZjlmNjY3OWM0YjRmMmJlOTcyNmIxZGE4YzUyNjBlM2ZlYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjljN2FmZTg0ZDA3MmRjOGVmYTNhOTU2ZTRiNjNiOWFmNGFjOWJiZDIxY2RmZDYzODBmOWJkODM1MzdhOWUxODgifQ"
         }
       ]
+    },
+    {
+      "id": "claim_b46a3947947a43a6975544df39cc4b5e",
+      "statement": "Managed Deep Agents owns a thread's sandbox when metadata carries `sandbox_owner=\"mda\"`, controls creation and replacement, and causes reconnection failures to raise `SandboxUnreachableError` rather than creating a replacement sandbox.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L559-L563",
+          "version": "repo-lines-v1:sha256:e4415b15688690435c52f11bc39634aec585987f00f7d36359ae458c95029f66:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmJkNGFmYzVmNzhjYWUwM2E5OTkxMjM5MDg2ZGYwNzI1OGFjZDNmYjFmY2E4ODBmOWVhZjkzY2U5MzgwYzVkMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODk5NTI5ODYzZjA1ZDMzZmM0YjU2YTMzMmYxM2EwYTlmMGQxNDc0MjgzMTc3ZjU1MWVmNmFkNjM5NjI3OGZhNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTAwYTMwNGM0NzBjNzAzOTg1NjFiYzliODdmNTg2OTZiNTFjMTM4NGQzZGJiMjZlOGNlOTU5Mjg0NjM2NGEyNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWQ0ZDY4MDlmMzA5ZmY3YWUzYmViOTIzYWUxYjBhYjRiMWRiMzRlNGQ1NjU5ZWQyMDU2NTI2MTVhYTVhOTNkMiJ9"
+        },
+        {
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L620-L624",
+          "version": "repo-lines-v1:sha256:572d66373391596414aaa25155ea7db35ae811cfa37cd9b453021b5e5f083260:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzZlOWFiNDUyM2EyODE4M2EyZWExNzVlOGE4MTBhNjQwM2E4ZjQ2YTg2YzMxNjBiZWQyMzdjZTk3YzdmZTBkMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMThlODAyZGYzMjVjOWNkMGExMTMyYjk3Mzk2MjIwYTFiZmJhYWU1ZDdmNDQ2M2QwNWM5M2JhMzRiZWNiNThmYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTVkMzgzYWRiOWU2MGViYmJmNWQyNTliNTViOGU3MThlOWU2NDZiODgwMzJlODkwMTA2MjZlNTk3OGIxNDMwOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmJlMzE2NDNjMjhkMGU3Mzk3ZjQyZWJjOTJmNDdmZDk3NWU2MTIzNjAxZTQ3MDIxYTQ3YjlmYjJlMDU4YzhlYiJ9"
+        },
+        {
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L686-L714",
+          "version": "repo-lines-v1:sha256:6f53ddf4eac3dc79a9f05fae3126caa702773bdcbf7f48b868706d941d7dcc7a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRkZDk1YzM4NWFiNjhmMTMyNWNmYzlkYmU2ZDljNzU2YjI5YTYxYmJiZTViZDFmMjk1NDVlNTA3ZjQ1YzdiMTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ4ODM2NDQ3OTRkMzE1NDM2ZDE4NjVjODFkZTcxODMzNGY0MTdmYmY4NWMxNmRjNmI0MTVlZjdkYzIzNDNmNmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUxZjM1MTliMzc1Mzc0ZGM3NmZjMzAwYmIyMzU2MmU5YjI1OWUxYmY2ZjdmYmU3MTYxMTkyYTk4ZTQ1YzZhNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJlNDFlMDMyOWUyNTNhOTIwYjM1ZTFlNTEyOWJiODE4NTllYzIzYjgyMzRhMTE5ZjEwNDBkYjBhMmZlOWI0NTEifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_8adb8dbc74e14958a493596f00c0f8a6",
+      "statement": "When MDA replaces a thread's sandbox, the lifecycle reconnects through the cached proxy's callback, re-applies git identity and proxy credentials; `reconnect_replaced_sandbox` handles workspace or snapshot transitions by applying the new workspace's proxy rules.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L736-L770",
+          "version": "repo-lines-v1:sha256:6652dc982da8ac4fc62ca1b633b7d9077b2fc78427a1b6d339de1fb137ef54f1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI3YWFhYWFmYzM3OThiMmUxZTJhM2U3NGQzZjk4NDZkODMxODFlOWRkYzI0ZjIyMjY1YjI3MDBlNTAzYThhNzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM4NTY4OTA3NDI3MjA0YWQwZjIwMzQ3OGZhYTE3YjMwYTE0YTNjNWI3MTM5NmVkMGJhNWY0OTAwZTE4NWQ2YjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBkMjIwNzU4ZGUxYzBlZWFlMzY3NzkzZTc4OTk1ZmM0MTIwYzE4Nzk4ZmYyNjc1OGQ2ZjIwYjZhNzAxNWUwOWIifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-24T12:31:26.683Z"
   }
 }

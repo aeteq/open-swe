@@ -3,6 +3,9 @@ type: operations-guide
 title: Development, Deployment, and Serving
 description: Deploy Open SWE as a single LangGraph service across multiple topologies — local development with Docker PostgreSQL, standalone Docker, LangGraph Platform, Electron desktop, and multiple replicas. Covers environment setup, dashboard mounting, webhook exposure, authentication modes, checkpointer durability, and health checks.
 tags: [deployment, development, docker, langgraph, dashboard, webhooks, desktop, postgresql, operations, migrations, checkpointer]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 sources:
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
@@ -42,10 +45,7 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 ---
 
 # Development, Deployment, and Serving
@@ -79,7 +79,7 @@ sequenceDiagram
   participant Build as Build
   participant Ready as Ready to serve
 
-  Boot->>Validation: Validate config (GitHub allowlist, sandbox, LLM)
+  Boot->>Validation: Validate config (GitHub allowlist, sandbox, LLM, MDA)
   Boot->>Validation: Require POSTGRES_URI configured
   Boot->>DB: Acquire advisory lock
   Boot->>DB: Create schema if missing
@@ -105,7 +105,7 @@ sequenceDiagram
 
 The FastAPI lifespan startup runs in this order:
 
-1. **Configuration validation:** Validates GitHub login allowlist, sandbox provider startup config, and local dev LLM config. Requires `POSTGRES_URI` to be set.
+1. **Configuration validation:** Validates GitHub login allowlist, sandbox provider startup config, Managed Deep Agents startup config, and local dev LLM config. Requires `POSTGRES_URI` to be set.
 2. **Event loop:** Pins a single event loop before queue worker initialization to ensure workers land on the correct loop.
 3. **Database setup:** Acquires an advisory lock (XID `557314367248862439`), creates the `open_swe` schema if it does not exist, and runs Alembic migrations to the latest revision using SQLAlchemy async connections.
 4. **Store imports:** Migrates user mappings, concierge preferences, user records, automations, and skills from LangGraph Store to Postgres (each is idempotent, run once). Failures log warnings.

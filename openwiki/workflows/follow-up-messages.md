@@ -5,7 +5,7 @@ description: Thread message routing, follow-up invocation from GitHub PR comment
 tags: [follow-up, message-queue, middleware, completion-webhook, baby-sit, background-tasks, stop, multitask-strategy, interrupt, enqueue, threaded-continuity]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-24T12:31:26.683Z
 sources:
   - id: openwiki-source-987be1dce6e9ba720855c2ed
     resource: repo://openswe/baby_sit.py
@@ -45,7 +45,7 @@ sources:
     resource: repo://openswe/tools/schedule_thread_wakeup.py
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 ---
 
 # Follow-up Messages and Threaded Continuity
@@ -64,7 +64,7 @@ When a new run is dispatched to an active thread:
 - **`multitask_strategy="interrupt"`**: The new run halts the active run (with all progress preserved by checkpoints), then resumes the agent with the full message history plus the new input. On an idle thread, it simply starts. This is used for explicitly tagged user requests (e.g., `:x:` reactions or tagged Slack mentions) where the user expects immediate attention.
 - **`multitask_strategy="enqueue"`**: The new run is queued behind active work, allowing the interactive run to finish before the follow-up begins. This is used for background monitoring (baby-sit CI checks, sandbox task completions) and non-interactive updates (message edits, automated follow-ups) where interrupting user work would be disruptive.
 
-Durable dispatch uses `durability="async"` (checkpoint written while the next step runs), resumable/subgraph-capable Protocol v2 stream modes (including `stream_mode=["values", "updates", "messages", "custom", "tasks", "checkpoints"]`), and an optional completion webhook. This preserves a checkpoint before each step and allows a later dashboard client to replay runs it did not create. The run is also marked with the v3 streaming compatibility key so it streams all supported event types, matching the behavior of dashboard-initiated runs.
+Durable dispatch uses `durability="async"` (checkpoint written while the next step runs), resumable/subgraph-capable Protocol v2 stream modes with explicit stream-mode configuration (`stream_mode=["values", "updates", "messages", "custom", "tasks", "checkpoints"]`), `stream_subgraphs=True` to capture subagent namespaces, and an optional completion webhook. This preserves a checkpoint before each step and allows a later dashboard client to replay runs it did not create. The run is also marked with the v3 streaming compatibility key (`__event_streaming_v2` in metadata) so it streams all supported event types, matching the behavior of dashboard-initiated runs.
 
 The sandbox lifecycle relies on interrupt dispatch: a subsequent agent step resolves the sandbox by thread, reusing an in-memory backend or reconnecting through the persisted `sandbox_id`. An unreachable existing sandbox is not silently replaced for a normal agent thread, because replacement would discard uncommitted work; a deleted sandbox can be recreated, and the read-only reviewer can explicitly opt into unreachable replacement.
 
@@ -79,28 +79,37 @@ The sandbox lifecycle relies on interrupt dispatch: a subsequent agent step reso
 
 ### Queueing messages for a live run
 
-When a dashboard user sends a follow-up, the system routes it based on thread activity: if the thread is busy (a run is pending or running), the message is queued for injection into that run at its next model boundary; if idle, a new run is created. The system authorizes the caller against thread metadata and returns 409 if a machine principal attempts to interact with a busy thread (machines cannot be attributed to messages), and 502 on operational failures.
+When a dashboard user sends a follow-up to an active thread, the system routes it based on thread activity and the caller's multitask strategy choice:
+
+- **Busy thread with steering (default)**: The message is queued for injection into that run at its next model boundary (via `steer_running_thread`).
+- **Busy thread with enqueue**: A new run is created with `multitask_strategy="enqueue"` (via `queue_follow_up_run`), deferring its start until the thread becomes idle.
+- **Idle thread**: A new run is created immediately.
+
+The system authorizes the caller against thread metadata, returns 409 if a machine principal attempts to interact with a busy thread (machines cannot be attributed to messages), and returns 502 on operational failures.
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Dashboard as Dashboard UI
-    participant LangGraph as LangGraph<br/>Platform
-    participant Store as Store API
+    participant Proxy as Thread Proxy
+    participant Store as Message Store
     participant Middleware as Before-model<br/>middleware
     participant Model
 
-    User->>Dashboard: send follow-up
-    alt thread is busy
-        Dashboard->>LangGraph: check thread status
-        Dashboard->>Store: append to pending_messages
+    User->>Dashboard: send follow-up to busy thread
+    Dashboard->>Proxy: run.start with multitask_strategy
+    alt steer (default, turn is available)
+        Proxy->>Store: queue_message_for_thread
         Note over Middleware: at next model call
         Middleware->>Store: read pending_messages
         Middleware->>Store: delete pending_messages
         Middleware->>Middleware: build attributed input messages
         Middleware-->>Model: inject into state
-    else thread is idle
-        Dashboard->>LangGraph: create new run
+    else enqueue (explicit or no turn)
+        Proxy->>Proxy: create_durable_run with enqueue
+        Note over Proxy: LangGraph delays start
+    else idle thread
+        Proxy->>Proxy: create_durable_run immediately
     end
 ```
 

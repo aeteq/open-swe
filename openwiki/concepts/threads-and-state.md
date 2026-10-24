@@ -2,7 +2,7 @@
 type: state-management concept
 title: Threads, Durable Runs, and State
 description: How Open SWE identifies durable LangGraph conversations, constructs follow-up inputs, owns thread metadata and Store records, and preserves sandbox continuity across product surfaces.
-tags: [threads, state, langgraph, durability, checkpoints, sandbox, slack, integrations]
+tags: [threads, state, langgraph, durability, checkpoints, sandbox, slack, integrations, indexing, metadata]
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -32,14 +32,18 @@ sources:
     resource: repo://openswe/thread_ids.py
   - id: openwiki-source-5e89303bbff1b32492ae2b1c
     resource: repo://openswe/threads/creation.py
+  - id: openwiki-source-e29c7758ccd7463928fb895e
+    resource: repo://openswe/threads/index.py
+  - id: openwiki-source-932730a18e85495ceba5df6d
+    resource: repo://openswe/threads/router.py
   - id: openwiki-source-183593e64b0a8affdce9abac
     resource: repo://openswe/utils/thread_participants.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-18T12:31:08.965Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-24T12:31:26.683Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Threads, Durable Runs, and State
@@ -51,6 +55,24 @@ The boundary matters when changing an integration: a webhook, dashboard action, 
 ## Thread creation enforces a title
 
 Threads are created through `openswe.threads.creation.create_thread`, which is the only place LangGraph threads are created. Every thread people can open must have a title; the module enforces this invariant by requiring a non-empty, stripped title string. Titles are stored in thread metadata and remain unchanging from the opening activity unless explicitly updated via the `title_locked` mechanism. System-named threads use `ensure_titled_thread` to create or keep titles current.
+
+## Thread indexing in PostgreSQL
+
+Every thread the system knows is indexed in PostgreSQL in the `thread_index` table. The index answers thread reads, updates, and searches in the Agent Server's own shape, so callers of `client.threads` see no change, and each metadata change is copied to the thread's runtimes. Runs, checkpoints, and streams stay with the runtime that owns them.
+
+The `IndexedThread` model captures what the index keeps: `thread_id`, `runtime` (one of `"local"` or `"mda"`), `metadata`, `status` (one of `"idle"`, `"busy"`, `"interrupted"`, `"error"`), `created_at`, and `updated_at`. Thread search is performed on the index with optional text queries against searchable fields (title, repository, branch, PR URL, and PR metadata), ranked by relevance and recency. Pagination and status filtering support the dashboard's thread listing.
+
+```mermaid
+flowchart TD
+  Create["New thread created"]
+  Create -->|marked runtime=mda| Index["Indexed in PostgreSQL"]
+  Index -->|ready for reads/updates| Search["Dashboard search"]
+  Index -->|updates on run end| Status["Thread status"]
+  Index -->|migrations| LocalRead["Local threads read-only"]
+  LocalRead -->|live_thread_id| Successor["Redirect to MDA successor"]
+```
+
+The `ThreadSearch` query builder handles metadata containment (JSONB `@>` operator), text search, status filtering, and sorting. Metadata search enables workspace routing and principal resolution—finding threads by participant, repository, or PR.
 
 ## Identity is a persistence contract
 
@@ -82,6 +104,7 @@ flowchart TD
   AgentThread --> Run["Create durable run"]
   Reviewer --> Run
 ```
+
 Thread identity lets independently triggered work converge on the correct durable conversation.
 
 ### Slack mappings support moves and retirement
@@ -101,6 +124,14 @@ Participant logins and emails use key-per-person maps such as `{"octocat": true}
 Thread-level settings are a separate metadata snapshot under `agent_settings`. On the first run, model, effort, subagent model/effort, and repository instructions are chosen for the thread; sender identity, personal instructions, and PR preferences remain per-message. Later profile edits do not change the snapshot unless a caller explicitly stores a replacement, such as a model override. Reads cache for five minutes and reads/writes fail soft, so settings storage cannot prevent a run. Strict normalization drops invalid or obsolete settings rather than retaining arbitrary profile data.
 
 The LangGraph Store in a LangGraph deployment holds separately namespaced application records distinct from thread metadata. Store access is typically through LangGraph SDK methods. Records in the Store follow similar patterns to thread metadata: malformed or missing records are handled gracefully to prevent cascading failures.
+
+## Runtime ownership: MDA vs. local
+
+New threads are created on Managed Deep Agents (MDA), the platform's hosted LangGraph deployment. Every thread's metadata includes a `runtime` field: either `"mda"` for new threads, or `"local"` for threads created before MDA was deployed. The routing layer `openswe.threads.router.ThreadRouter` sits in front of the Agent Server's `/threads` and `/runs` endpoints.
+
+Local threads are **read-only**: starting a run, cron, posting a command, or copying a thread on a local runtime raises an error. When a local thread receives new activity, the system resolves its successor on MDA via `mda_successor_thread_id(thread_id)` and routes the activity there, rebinding Slack locations if needed. This migration is transparent to users: they continue referencing the original thread, and the router maps it to its successor.
+
+New threads are indexed with the metadata key `runtime = "mda"` and stamped with the signal `RUNTIME_METADATA_KEY = "runtime"` to mark them definitively. The index, the local Agent Server, and the MDA deployment each keep a copy of the thread's metadata; changes to the index are copied to both runtimes so traces and runs see the updates.
 
 ## Follow-up input and run configuration
 
@@ -129,6 +160,7 @@ sequenceDiagram
   LG->>Thread: append input and checkpoint execution
   LG-->>Trigger: run identity
 ```
+
 A trigger creates a run on the selected durable thread using a normalized input and configuration.
 
 The standard defaults are `multitask_strategy="interrupt"`, `durability="async"`, `if_not_exists="create"`, resumable streaming, the Protocol v3 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its async checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.

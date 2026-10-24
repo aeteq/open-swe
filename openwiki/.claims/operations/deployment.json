@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:609cc3a10c3a104fd74b45e2acb6ff5478ae9281ea02d09740326cc9825a6844",
+  "pageVersion": "sha256:2a3e7496f3e9d6e0436ed581efea8c7919fde50158a3d73c5b375c52a4235469",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -38,7 +38,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -56,7 +56,7 @@
         },
         {
           "resource": "repo://pyproject.toml",
-          "version": "repo-file-v1:sha256:cd91df0634d20597e8a71019277afe79417fc30134256b06c9cd2254ff67f1f0"
+          "version": "repo-file-v1:sha256:605fdb0da88cdda8fff527398d5233212fd893ea5874e6df2386f71592ed5ffc"
         }
       ]
     },
@@ -66,7 +66,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:ac2c0161f4a07fdb56e3c355050bf0480bda92f369cc3e8c6fa4c54960beec17"
+          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
         }
       ]
     },
@@ -76,7 +76,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         },
         {
           "resource": "repo://package.json",
@@ -114,7 +114,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:ac2c0161f4a07fdb56e3c355050bf0480bda92f369cc3e8c6fa4c54960beec17"
+          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
         }
       ]
     },
@@ -124,7 +124,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -174,7 +174,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
+          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
         }
       ]
     },
@@ -204,7 +204,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
+          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
         }
       ]
     },
@@ -234,7 +234,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         },
         {
           "resource": "repo://langgraph.json",
@@ -252,7 +252,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         },
         {
           "resource": "repo://examples/ngrok/webhooks-only.yml",
@@ -280,17 +280,17 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
+          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
         }
       ]
     },
     {
       "id": "claim_15a10d49566b4e37aa1edc28ccbb0019",
-      "statement": "The FastAPI lifespan startup sequence validates configuration, pins an event loop, acquires a database advisory lock, creates the open_swe schema and runs alembic migrations, imports workspace data from the LangGraph Store into Postgres (idempotent steps), deletes legacy analyzer crons, syncs admin flags, starts an analytics worker, starts transcript/bridge/UI-invalidation/notification listeners, warms the agent build, and opens LangGraph graphs; import/analytics/listener failures log warnings but do not prevent startup.",
+      "statement": "The FastAPI lifespan startup sequence validates configuration (GitHub allowlist, sandbox provider, LLM, MDA), pins an event loop, acquires a database advisory lock, creates the open_swe schema and runs alembic migrations, imports workspace data from the LangGraph Store into Postgres (idempotent steps), deletes legacy analyzer crons, syncs admin flags, starts an analytics worker, starts transcript/bridge/UI-invalidation/notification listeners, warms the agent build, and opens LangGraph graphs; import/analytics/listener failures log warnings but do not prevent startup.",
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:05fae6990f48549c5f8c60db88b3e22cb8c4b4f674029fdf65b5cf21d4592a60"
+          "version": "repo-file-v1:sha256:923f7c9014f4afe4d3d748c92746ac87623dbf1eb0f508b8a10b606f69a742f5"
         }
       ]
     },
@@ -300,7 +300,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -310,7 +310,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -330,7 +330,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:ac2c0161f4a07fdb56e3c355050bf0480bda92f369cc3e8c6fa4c54960beec17"
+          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
         }
       ]
     },
@@ -374,13 +374,13 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:05fae6990f48549c5f8c60db88b3e22cb8c4b4f674029fdf65b5cf21d4592a60"
+          "version": "repo-file-v1:sha256:923f7c9014f4afe4d3d748c92746ac87623dbf1eb0f508b8a10b606f69a742f5"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-24T12:31:26.683Z"
   }
 }

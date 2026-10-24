@@ -3,9 +3,6 @@ type: integration
 title: Dashboard and UI Integration
 description: React UI architecture, thread listing and chat interfaces, real-time updates, state invalidation, and OAuth integration.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, langgraph, real-time]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
@@ -29,6 +26,8 @@ sources:
     resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-eedbca98a88c0fad1cac9934
     resource: repo://openswe/threads/listing.py
+  - id: openwiki-source-bd1da9ec63b2a270cd82678b
+    resource: repo://openswe/threads/routes.py
   - id: openwiki-source-a21a5bab5cd5ef26a5d5e360
     resource: repo://openswe/threads/summary.py
   - id: openwiki-source-59a48f28b14dd2fa02f2e8c3
@@ -48,6 +47,9 @@ sources:
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
 generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-24T12:31:26.683Z
 ---
 
 # Dashboard and UI Integration
