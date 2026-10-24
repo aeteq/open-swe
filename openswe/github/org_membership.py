@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 _MEMBERSHIP_REQUEST_TIMEOUT = 5.0
 
 # The GitHub Apps Open SWE acts as; events they send are Open SWE's own.
-OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset(
-    {"open-swe[bot]", "open-swe-preview[bot]", "openswe-dev[bot]"}
-)
+OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset({"jarvis-aeteq[bot]"})
 INTERNAL_BOT_LOGINS: frozenset[str] = frozenset(
     OPEN_SWE_GITHUB_LOGINS
     | {login.strip() for login in ENV.EXTRA_INTERNAL_BOT_LOGINS.get().split(",") if login.strip()}
