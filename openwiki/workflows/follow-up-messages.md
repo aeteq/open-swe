@@ -3,9 +3,6 @@ type: workflow
 title: Follow-up Messages and Threaded Continuity
 description: Thread message routing, follow-up invocation from GitHub PR comments and Slack replies, run continuation and interruption coordination, and completion webhooks that coordinate concurrent work without losing user input.
 tags: [follow-up, message-queue, middleware, completion-webhook, baby-sit, background-tasks, stop, multitask-strategy, interrupt, enqueue, threaded-continuity]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-987be1dce6e9ba720855c2ed
     resource: repo://openswe/baby_sit.py
@@ -45,7 +42,10 @@ sources:
     resource: repo://openswe/tools/schedule_thread_wakeup.py
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-28T14:57:39.210Z
 ---
 
 # Follow-up Messages and Threaded Continuity
@@ -64,7 +64,7 @@ When a new run is dispatched to an active thread:
 - **`multitask_strategy="interrupt"`**: The new run halts the active run (with all progress preserved by checkpoints), then resumes the agent with the full message history plus the new input. On an idle thread, it simply starts. This is used for explicitly tagged user requests (e.g., `:x:` reactions or tagged Slack mentions) where the user expects immediate attention.
 - **`multitask_strategy="enqueue"`**: The new run is queued behind active work, allowing the interactive run to finish before the follow-up begins. This is used for background monitoring (baby-sit CI checks, sandbox task completions) and non-interactive updates (message edits, automated follow-ups) where interrupting user work would be disruptive.
 
-Durable dispatch uses `durability="async"` (checkpoint written while the next step runs), resumable/subgraph-capable Protocol v2 stream modes (including `stream_mode=["values", "updates", "messages", "custom", "tasks", "checkpoints"]`), and an optional completion webhook. This preserves a checkpoint before each step and allows a later dashboard client to replay runs it did not create. The run is also marked with the v3 streaming compatibility key so it streams all supported event types, matching the behavior of dashboard-initiated runs.
+Durable dispatch uses `durability="async"` (checkpoint written while the next step runs), Protocol v2 stream modes configured for resumability and subgraph streaming (with `stream_mode` including `"values"`, `"updates"`, `"messages"`, `"custom"`, `"tasks"`, and `"checkpoints"`), and an optional completion webhook. This preserves a checkpoint before each step and allows a later dashboard client to replay runs it did not create. The run is also marked with the v3 streaming compatibility key so it streams all supported event types, matching the behavior of dashboard-initiated runs.
 
 The sandbox lifecycle relies on interrupt dispatch: a subsequent agent step resolves the sandbox by thread, reusing an in-memory backend or reconnecting through the persisted `sandbox_id`. An unreachable existing sandbox is not silently replaced for a normal agent thread, because replacement would discard uncommitted work; a deleted sandbox can be recreated, and the read-only reviewer can explicitly opt into unreachable replacement.
 

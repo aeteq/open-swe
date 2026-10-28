@@ -5,7 +5,7 @@ description: React UI architecture, thread listing and chat interfaces, real-tim
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, langgraph, real-time]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-28T14:57:39.210Z
 sources:
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
@@ -47,7 +47,7 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
 ---
 
 # Dashboard and UI Integration
@@ -56,7 +56,7 @@ The dashboard is the human-facing surface for agent operations: a FastAPI router
 
 ## Composition and routing
 
-`openswe.api.app.create_app()` includes the dashboard router, then calls `mount_dashboard_ui(app)`. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
+`openswe.api.app.create_app()` includes the dashboard router at line 162, then calls `mount_dashboard_ui(app)` at line 182. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
 
 The dashboard router aggregates over 30 feature routers including threads, reviews, schedules, skills, workspaces, profiles, and integrations (Slack, MCP). Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
 

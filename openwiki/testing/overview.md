@@ -3,6 +3,9 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Test organization, fixture strategies, E2E setup, and focused validation patterns for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-28T14:57:39.210Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -40,10 +43,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -81,7 +81,7 @@ make lint
 make typecheck
 ```
 
-`make test` (alias `make tests`) executes `uv run pytest -vvv $(TEST_FILE)` when the path exists; otherwise it prints a skip message. Use `TEST_FILE` for a file or directory path; for a single node id like `file.py::test_name`, invoke pytest directly. Quality gates are independent: `make lint` runs Ruff checking and a format diff, `make format` fixes code in place, and `make typecheck` runs `ty check openswe tests`.
+`make test` (alias `make tests`) executes `uv run pytest -vvv $(TEST_FILE)` when the path exists; otherwise it prints a skip message. Use `TEST_FILE` for a file or directory path; for a single node id like `file.py::test_name`, invoke pytest directly. Quality gates are independent: `make lint` runs Ruff checking and a format diff, `make format` fixes code in place, and `make typecheck` runs `ty check openswe packages tests`.
 
 ### Shared fixtures and isolation
 

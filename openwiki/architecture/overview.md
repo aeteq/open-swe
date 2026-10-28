@@ -18,6 +18,8 @@ sources:
     resource: repo://openswe/github/routes.py
   - id: openwiki-source-813c25f6bac2408de322a1f5
     resource: repo://openswe/graphs/agent.py
+  - id: openwiki-source-2e8359c5702d5a31e2d5ea43
+    resource: repo://openswe/graphs/read_only.py
   - id: openwiki-source-a9562865a4bff791686b49dd
     resource: repo://openswe/graphs/review_scout.py
   - id: openwiki-source-90b15fd6117126ebfe5b6b22
@@ -30,8 +32,6 @@ sources:
     resource: repo://openswe/review/chat.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
   - id: openwiki-source-c1d629bf5196269b73880148
     resource: repo://openswe/slack/routes.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
@@ -42,15 +42,15 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-28T14:57:39.210Z
 ---
 
 # Runtime and Product Architecture
 
-Open SWE is a LangGraph deployment with a custom FastAPI application. The HTTP layer accepts browser and integration traffic, while durable LangGraph runs execute coding or review work against thread-scoped state and—except for PR chat—a backend. Three registered graph entrypoints power the main agent, reviewer, and review-scout tool inspector. PR chat flows through a FastAPI proxy to the main agent thread, and background work runs via the job queue, not as registered graphs.
+Open SWE is a LangGraph deployment with a custom FastAPI application. The HTTP layer accepts browser and integration traffic, while durable LangGraph runs execute coding or review work against thread-scoped state and—except for PR chat—a backend. Three registered graph entrypoints power read access to pre-Managed Deep Agents threads, while execution runs on Managed Deep Agents. PR chat flows through a FastAPI proxy to the main agent thread, and background work runs via the job queue, not as registered graphs.
 
 ## Mission and workflow
 
@@ -66,13 +66,15 @@ It also operates as a reviewer (runs on-demand or automatic reviews, publishes f
 
 ## Runtime map
 
-`langgraph.json` is the cloud deployment manifest. It registers thin `openswe/graphs/` re-export modules as stable dotted entrypoints, mounts `openswe.webapp:app`, configures checkpointer retention, loads `.env`, and builds the dashboard into the deployment image.
+`langgraph.json` is the cloud deployment manifest. It registers three named graphs at stable dotted entrypoints, mounts `openswe.webapp:app`, configures checkpointer retention, loads `.env`, and builds the dashboard into the deployment image.
 
 | Graph | Registered entrypoint | Responsibility |
 |---|---|---|
-| `agent` | `openswe.graphs.agent:traced_agent` | Per-run coding-agent factory: backend, models, tools, skills, and middleware. |
-| `reviewer` | `openswe.graphs.reviewer:traced_reviewer_agent` | PR review and findings publication workflow. |
-| `review-scout` | `openswe.graphs.review_scout:traced_review_scout` | Review-tool inspection and capability discovery. |
+| `agent` | `openswe.graphs.agent:traced_agent` | Read access to pre-MDA threads; execution runs on Managed Deep Agents. |
+| `reviewer` | `openswe.graphs.reviewer:traced_reviewer_agent` | Read access to pre-MDA reviewer threads; execution runs on Managed Deep Agents. |
+| `review-scout` | `openswe.graphs.review_scout:traced_review_scout` | Read access to pre-MDA review-scout threads; execution runs on Managed Deep Agents. |
+
+All three graphs are re-exports of `openswe.graphs.read_only:read_only_graph`, which serves graph state reads for threads created before Managed Deep Agents migration. New runs execute on Managed Deep Agents and route through `openswe.threads.router:ThreadRouter` middleware. Attempting to execute a run on a pre-MDA thread raises `ReadOnlyThreadError`, directing users to start a new thread.
 
 <!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
@@ -91,24 +93,25 @@ flowchart TD
 
   Webhooks --> Dispatch["dispatch_agent_run"]
   Dashboard --> Dispatch
-  Dispatch --> Agent["agent graph"]
-  Dispatch --> Reviewer["reviewer graph"]
+  Dispatch --> ThreadRouter["ThreadRouter middleware"]
+  ThreadRouter --> MDA["Managed Deep Agents execution"]
+  MDA --> Agent["agent graph"]
+  MDA --> Reviewer["reviewer graph"]
   Agent --> Backend["Thread sandbox or desktop backend"]
   Reviewer --> Backend
-  Scout["review-scout graph"] --> Backend
   Chat --> Agent
   BackgroundJobs --> Dispatch
 ```
 
-This shows the principal paths. `dispatch_agent_run` is the shared creation boundary for `agent` and `reviewer` runs; review-scout uses its own graph entrypoint. Chat, background work, and scheduled runs do not go through dispatch or registered graphs.
+`dispatch_agent_run` is the shared creation boundary for agent and reviewer runs. Chat and background work do not go through dispatch or registered graphs.
 
 ## Graph and execution boundaries
 
-`openswe.server:build_agent` (wrapped as `_get_agent`) produces a fresh deep-agent graph for an executable thread. It uses the thread ID to acquire a cached or reconnected backend (or a desktop `LocalShellBackend`), starts it, resolves thread/team/profile model settings, persists normalized thread settings when needed, and assembles a composite backend, tools, skills, subagents, and middleware. If no thread ID is supplied or the graph is being loaded rather than executed, it returns a deliberately empty deep agent without provisioning a backend. This is important for graph discovery and other non-execution loads. See [Agent Graph & get_agent Factory](./agent-graph.md) and [Middleware Stack](./middleware-stack.md) for its detailed composition.
+Execution now runs on Managed Deep Agents via the LangGraph platform's execution runtime. The registered graphs (`agent`, `reviewer`, `review-scout`) serve state reads only; they re-export `openswe.graphs.read_only:read_only_graph`, which raises `ReadOnlyThreadError` if a run attempts to execute on a pre-MDA thread and otherwise returns an empty deep agent with only the caching middleware.
 
-The reviewer follows the sandbox lifecycle but deliberately has a review-only toolset: `add_finding`, `update_finding`, `list_findings`, and `publish_review`; it does not receive commit, push, or PR-opening tools. Its preparation computes an in-diff line set so finding validation occurs when a finding is created, rather than failing only during GitHub publication. The review-scout graph uses the same sandbox and authenticated `gh` access but is designed for capability inspection and review-tool discovery. See [Reviewer Graph](./reviewer-and-analyzer.md).
+New runs created via `dispatch_agent_run` route through `openswe.threads.router:ThreadRouter` middleware, which detects the thread's execution model and routes to Managed Deep Agents. The platform's execution runtime handles tool invocation, subagent dispatch, and model calls. Thread metadata persists sandbox ID and related settings across workers; the sandbox cache is in process and keyed by thread ID. An existing unreachable sandbox raises rather than being automatically replaced, because silent replacement can discard uncommitted work.
 
-The chat flow is intentionally sandbox-less and read-only. Rather than being a separate graph, it is a FastAPI proxy in `openswe/review/chat.py` that proxies requests through to the main agent thread. The dashboard review-chat handlers seed the PR diff, findings, and overview via the existing agent thread's state. Filesystem tools can read that context, while `execute`, writes, edits, and deletion are excluded; GitHub-backed tools use a repository-scoped GitHub App token rather than a user credential.
+PR chat is intentionally sandbox-less and read-only. Rather than being a separate graph, it is a FastAPI proxy in `openswe/review/chat.py` that proxies requests through to the main agent thread. The dashboard review-chat handlers seed the PR diff, findings, and overview via the existing agent thread's state. Filesystem tools can read that context, while `execute`, writes, edits, and deletion are excluded; GitHub-backed tools use a repository-scoped GitHub App token rather than a user credential.
 
 Background and scheduled work runs via the job queue (openswe/jobs), not as registered graphs. Job handlers dispatch to reconciliation (`reconcile_stale_runs`), watch evaluation (`evaluate_watch`), background-task monitoring, session-cost or agent-cost refresh, thread-feedback evaluation, human-review deadline management, or scheduled agent runs. Missing a watch key, thread ID, or schedule ID yields a structured status instead of launching ambiguous work.
 
@@ -125,14 +128,14 @@ Slack, Linear, and GitHub webhook routes validate and normalize external events 
 `dispatch_agent_run` is the common run-creation contract used by Slack, Linear, GitHub, dashboard, and scheduled agent/reviewer triggers. `assistant_id` selects `agent` or `reviewer`; `source` determines input identity and is retained for metadata/logging, not graph selection. The dispatcher rejects ambiguous combinations of a prebuilt input with content or identity arguments, ensuring callers choose either a fully constructed `RunInput` or build one from content, context, and identities.
 
 The durable defaults are intentional:
-- **`multitask_strategy="interrupt"`** — a follow-up halts the active run (progress preserved by its checkpoints) and resumes the agent with full history plus the new message. On an idle thread it just starts. Background follow-ups such as `/baby-sit` can explicitly opt into another strategy like `enqueue` for background queuing instead.
+- **`multitask_strategy="interrupt"`** — a follow-up halts the active run (progress preserved by its checkpoints) and resumes the agent with full history plus the new message. On an idle thread it just starts. Background follow-ups such as scheduled work can explicitly opt into another strategy like `enqueue` for background queuing instead.
 - **`durability="async"`** — checkpoint every step, written while the next one runs, so a crash or worker recycle resumes from at most one step back. (`"sync"` made every step wait on its write, adding ~0.3s per model/tool step in production; dashboard-started runs already use the platform's async default.)
-- **Stream resilience** — `stream_resumable=True` retains the run's event stream so a client that attaches later can replay it. Without this the dashboard cannot observe a run it did not start; the v3 protocol only synthesizes the `lifecycle: running` event that drives `stream.isLoading` when it can replay the run's events, so an externally-triggered run would appear idle in the web UI (no stop button) until it emitted its next event.
+- **Stream resilience** — `stream_resumable=False` omits run-completion event replay from the platform's event store, allowing the dashboard to read thread history from its own transcript database instead. This prevents the Agent Server's Redis from accumulating events; the dashboard observes a run it did not start by reattaching to its thread and reading new events as they emit.
 - **v3 streaming shape** — the same `stream_mode` set, `stream_subgraphs` flag, and compatibility marker (`__event_streaming_v2`) that `langgraph_api`'s `run.start` command applies when the dashboard submits a run. The server fixes a run's streaming protocol at creation: without the marker a run streams `values` only, so the dashboard sees no `tools` events or subagent namespaces for externally triggered runs.
 
 Completion notification is best effort. The dispatcher attaches a webhook only when `RUN_COMPLETE_WEBHOOK_SECRET` is configured and `COMPLETION_WEBHOOK_URL` is absolute and non-loopback. Otherwise it logs the condition and creates the run without a webhook, avoiding a configuration error that would poison all run creation.
 
-A graph factory is ephemeral, but thread execution context is durable: LangGraph checkpointing retains graph state, while LangGraph thread metadata holds the sandbox ID and related thread settings. The sandbox cache is in process and keyed by thread ID; another worker reconnects using the persisted ID. An existing unreachable sandbox raises rather than being automatically replaced, because silent replacement can discard uncommitted work. Reviewer callers can allow replacement because their checkout is re-derived. The sandbox is published to the cache only after initialization and metadata binding succeed. See [Sandbox Lifecycle](./sandbox-lifecycle.md) and [Invocation](../workflows/invocation.md).
+Thread execution context is durable: LangGraph checkpointing retains graph state, while LangGraph thread metadata holds the sandbox ID and related thread settings. The sandbox cache is in process and keyed by thread ID; another worker reconnects using the persisted ID. An existing unreachable sandbox raises rather than being automatically replaced, because silent replacement can discard uncommitted work. Reviewer callers can allow replacement because their checkout is re-derived. The sandbox is published to the cache only after initialization and metadata binding succeed. See [Invocation](../workflows/invocation.md).
 
 ## Cloud and desktop product surfaces
 
@@ -148,4 +151,4 @@ The `ui/` application is a TanStack Router React client with routes for agent se
 - When changing dispatch defaults or stream fields, test durable run creation and cross-surface event attachment: dashboard observability relies on replayable v3-compatible streams for runs created outside the browser.
 - When changing desktop path handling, retain real-path validation, the allowlist/worktree boundary, and artifact routing; each prevents a distinct local safety or repository-hygiene failure.
 
-Related pages: [Agent Graph & get_agent Factory](./agent-graph.md), [Reviewer Graph](./reviewer-and-analyzer.md), [Sandbox Lifecycle](./sandbox-lifecycle.md), [Dashboard UI](../integrations/dashboard-ui.md), and [Invocation](../workflows/invocation.md).
+Related pages: [Invocation](../workflows/invocation.md), [Dashboard UI](../integrations/dashboard-ui.md).

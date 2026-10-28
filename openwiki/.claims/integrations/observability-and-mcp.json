@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:b8ccc82878389bd3a6a6e8703f51dba472dbd8b408a498e073acb0912b914d6c",
+  "pageVersion": "sha256:8d6193138f0820859655c3ec8bae60bd6f61fb43c2e5a7dccf61701c01395117",
   "claims": [
     {
       "id": "claim_6cbbd97db30a4ea28cefabb033ed91f3",
@@ -217,40 +217,44 @@
       ]
     },
     {
-      "id": "claim_fdb27d103b51488bad1127befdb4bfd9",
-      "statement": "ImageModelFallbackMiddleware automatically replaces text-only models with a configured fallback when request messages contain image content blocks, enabling agents to handle image inputs regardless of model selection constraints.",
+      "id": "claim_268451e2d5f64e7da66dfab4d21c36aa",
+      "statement": "Image model fallback occurs during agent assembly when the primary model or any routed model does not support images; a vision model is selected via default_vision_model_pair() and configured in SurfaceModels.vision, then checked before each model call via vision_for() to transparently substitute a vision-capable model when image content is detected.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/image_model_fallback.py#L1-L30",
-          "version": "repo-lines-v1:sha256:a432973647f8686629d8712e75ef13324c5322325e670b6a769cf0a5ceec98ce:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwOGU1Njg4M2M5YjdmYTBmMDBmYWNhNWMyNGM1ODZkNDQ5N2JkOThjZjVlY2EzNTNhOTM0MWEzYTFkY2NmZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/agent_api/graph.py#L733-L752",
+          "version": "repo-lines-v1:sha256:18c1da029608f0917d834569f088b5e8ae23c5aa33948858c958a1113a97eff5:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2NjJiNzBhNjYwYjc0MWI4ZTU3ZjhiZTk1YzE2NjA0YjYzYjc5YTNhZDcyZDdhZWU3ODU1ODk2NTVmZjRjZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwNjU3M2FlNTBjM2VhN2FkMzFlNmJjYTMzNTBhYzllMWUwZDg5YTA5MjE4NjQ0NGYzNzMwYzM1YjEyMjdhODUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA2YzEyYzU2MTM5YWNjODYwOTMzNWMxNzVmZDE4MzhkNWU2NTM1OTIzZDY3YjYzYjQzMzU0NTk3MzdmOTMyNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY3YTBjMmZjNDAwMjM0NGUwNzM5NTZmNDYyZTRhNmU0M2M2ZWMyNDU2NTk0ZWQ0NzU4NGFmY2E3NjZkZGI1MTMifQ"
         },
         {
-          "resource": "repo://openswe/server.py#L1590-L1620",
-          "version": "repo-lines-v1:sha256:8ac9f795d395c47c9808ba52ad53176bcd5d41c547f1497eca8cbd377e532ba7:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4N2ViMjY5MTQyNmIyMjlkMjUwNWEwOWNhM2Q3Y2M1YjZiMjg5MDU3NTIyODMxMGQ4ZGUyMTViYzZjNmY5YWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3MzU5ZmRjZjk2YmNmMGI5ZWZjYmM1NzRlM2Q4NjMyNjUzNWZmYzFkOTYxNmMzOTJmN2ViMmRjNmMxMWY1NzYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjM3NDJiYTdlMTFkNDhiMmRkNzhiZTJmODkxODE3MDAzOTA0OGQ4ZGQzMjU4MWU0YjMzMTY3NjZjMDhjOThhMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1MDUzY2QyMTYzMGQ2MWUzMzQ3YjAzZmE0NzYwMTc1MzgzNzA4YmMxMGIzYzZlYzJhYWJkNTNmNWUxMDE3MTQifQ"
+          "resource": "repo://openswe/sandboxes/tool_runtime.py#L118-L130",
+          "version": "repo-lines-v1:sha256:e1386820a489b009470648ed79738b332195f7ed869da425dc51f001472e1646:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljMzhmNWE2Njk2MjhhOWQ3N2QxZjI1ZjQ5MmE5ODFkYmMxNTJlZGNiYjgyNDA5ZTZmMWZhZTUzNmYxMTYxNDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE4OTFhYWNkMzNlY2Y0MmQ3ZmM4MzkzMmQ3ZWEwZjE5YzYzNTcxYTJkZWRjZTdmODg4NjU2NDcxODFlMDc2NTMifQ"
+        },
+        {
+          "resource": "repo://openswe/server.py#L1790-L1815",
+          "version": "repo-lines-v1:sha256:ab2976d1d378b441d6c6fb0bcd8e9921ceff84eea96fb7d1fffbf758240a2b64:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQyNGY3ZTI3Y2Y0ZmU1MmNjZGRiY2NlNDNhZTFiZDY0Yjg2MGRiMjEyM2EwZWViM2Y1ZWY1NjQxOTc0MWZkNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMxOGUzODYxY2YxZmM4ZmIwZGIzOWI3ZjYyMGU2YWI0ZWEwOTY4ZTljZGVjODEyNGZmYzk2NWFkZGI3NTQwNTIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNzgyM2ZhYmNjZWE4NjE4Mjk1ZjJhZmU5MDVkMGVjZjYwMzkwZmI4YjY0MzYxODJmNjdhYjE2MDc0MWQwM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNlMjJkMGIzYWE4N2UzNjQyNDk2NTg2NTFjMzliNzhmZGFiYmE3MjliNTY5YzZiOWY1MWU3MzIwNGQ5ZWI0Y2MifQ"
         }
       ]
     },
     {
-      "id": "claim_f8d479adbc3f4417b6876279898d876b",
-      "statement": "Agent runs interact with web browsers via LangSmith browser MDA; browser state is scoped by thread so each agent has its own signed-in sessions and profile; browser can be cleared from thread metadata before sharing via ThreadBrowser.forget().",
+      "id": "claim_93f681a947f94050b2bf0df43092b3ee",
+      "statement": "Browser state is scoped by thread via ThreadBrowser recorded in thread metadata under browser_name and browser_opened keys; LangSmithBrowser manages the browser lifecycle (starting, opening windows, minting links, deleting); before sharing a thread, ThreadBrowser.forget() deletes the browser and clears metadata to prevent private signed-in sessions from transferring to workspace viewers.",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/browsers.py#L1-L60",
-          "version": "repo-lines-v1:sha256:fcfabbc1960c7882598fae62aa5e7a9566ee9bc10acf86c34861733a3684d99d:eyJzZWxlY3RlZExpbmVDb3VudCI6NjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2MzZkMzIxMjRhMTkwODE5MTQzYWE1ZGEwNmRkZWM3MDM1OGQ0MDI0NWU1MDJlYjgwNzY3NGRkMWU2MGJjYmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZjMGFjMDdlM2JhODBiNjI2OWM3MjgwMzJmOTNmYTAwZWRjZWRlNjdmNGI3OGRlNWU1N2Q0OTg3ODczNzk5MTIifQ"
+          "resource": "repo://openswe/sandboxes/browsers.py#L74-L199",
+          "version": "repo-lines-v1:sha256:d0d653b89e9a26f139db2c11d3f41b72ed953faec217451fd80311205071dd9f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3NjRmYmNiZWM2NzRmMmQ0ZTU4OTUxNTNjMmYxN2FmZmNjNzRhZDQ4OGJiNzMzNTJhNGY5N2JkOWVhZWZhMjNhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI2YzM1YjkxNDMzMTAyNmY2ZGY5NDQ1ZmE5ZDBkYTc2YzhiZDZkMjNlZTdkZjBlNjk3N2UzMTg3MzlmNzIwMTdiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiMTY5NzUyOWMwNjdhNjNkNDExMWI4NzhlYjk4YzM3N2Q4OWExMTI2ODFlYTc3OGRiZThmMzJlYTM5OWIyY2IzIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIwMGViMzg0OTk5ZjJhNmNkYzQ1NDhmZDc4MDdlNDFjY2IwMGNmY2VkZmUyZWM2N2MwODAwNTI3MWRmODUyZWE5In0"
         },
         {
-          "resource": "repo://openswe/threads/browser.py#L30-L68",
-          "version": "repo-lines-v1:sha256:c346a26403224c6a5b9b8155e42d486cdd3566e1377b96510de44a9503c89c03:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVlNjMzYzgxOGQyZDBmYTFhYjBiMmI0ZWM2YTExNmYyMjMxMjA3MWY2NzY0YmNhMDA2NmIwY2ZlN2E1NWIzOTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NThjNTQzODJiYzM4OGU0MTM0YTI5MzA3ZmMwNGU1YjlmN2VlMTA3MjJhNTJjYjc0YTAzNmVmOWJlOTc4M2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjIwYWM5NjhiY2FlOGY3ZjNhZmEzN2IzOTQ2MTliMmRjZjU2MjVkMDcxNTcyMTY4ODUyZGVmNjY1OTgzODNlZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/threads/browser.py#L30-L96",
+          "version": "repo-lines-v1:sha256:276e75cd42c07fb983d9c195ec0346a1efdc25d8554941e3056c4d1d4fa7f235:eyJzZWxlY3RlZExpbmVDb3VudCI6NjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRlZmY4ODFmOWZjNzZiYThmNjMzZTM3ODFiODU4NmQxMzVlOGVmZjQyOTE3ZGIzZDFhYjU2YjU3ODA4Mzk1YjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlMzc1OTE3MmQ2NGFlNWQyMTFhZTU0MzVhZjNjYjM4NDJkNmNkZTAyNGI3NmU2OTkwZDNkOWQ3Mjk2ZDcwNDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNmYjZiMTJlNjM2YmM3ZmQ2YmM1ODZlNzE4OTM2NTA0YjFjNDhiZmNhMDlhZmFlNDc4NzI4YTk2NzdmYjIxYTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/threads/handlers.py#L475-L501",
-          "version": "repo-lines-v1:sha256:449d3f05b88135429f14c912fd3adc4cca8926f02436afa8e36b2eb9df77e7d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwODM1NjhhMmZiYTM5MGZhNTVjYTJkNDFmMzQyYzJlMWYzMjE2ZTAzMzg0YmQ1ODdjYmYxMDFkMGUzMjNkNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNGY1OWE2MTA1ODM5YmRjZDY2ODYyYmY1ZDQ3NjcyOGFiYTBkOWIyNzg1ZTY5YTlhNzI1MzY4ZDgwY2JjMGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMzQxNzBjN2ExODVhN2ZlNGZmN2NiOTJhNTlmZTNiY2Q5YzY2NWNiOWU0MzU0MjZkN2MwZTM5NTA4ZDEzOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzMmZhNmY0ODQ0Mzk0OTE0OTQ3MzNiNGQ5ZGNlMzIyN2I4ZjhmNzBkZjhiZGI0NjlmMGRkMDhkZWY1MTdiY2IifQ"
+          "resource": "repo://openswe/threads/handlers.py#L475-L505",
+          "version": "repo-lines-v1:sha256:52930cb671a406cf73ea24f7b52fdaaae6783af2d49d97107b7bc50bc1502587:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwODM1NjhhMmZiYTM5MGZhNTVjYTJkNDFmMzQyYzJlMWYzMjE2ZTAzMzg0YmQ1ODdjYmYxMDFkMGUzMjNkNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBjMzQxNzBjN2ExODVhN2ZlNGZmN2NiOTJhNTlmZTNiY2Q5YzY2NWNiOWU0MzU0MjZkN2MwZTM5NTA4ZDEzOWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdhMTYzYWE0MGJlZTZlNzdmMGZjOTM2NjllOTlhNmQwZTRkOThjZTlmOGMwZmE2MjY4YTMwNjZjNmRiNGQwZWMifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-28T14:57:39.210Z"
   }
 }

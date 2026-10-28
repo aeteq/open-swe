@@ -5,7 +5,7 @@ description: How Open SWE authenticates dashboard and automation users, resolves
 tags: [authentication, authorization, github-oauth, github-app, webhooks, encryption, csrf, sandbox-security, agent-server-auth, mcp-authorization]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-28T14:57:39.210Z
 sources:
   - id: openwiki-source-f01f6fab1cd3b23d20383d03
     resource: repo://openswe/api/agent_server_auth.py

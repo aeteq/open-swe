@@ -22,10 +22,10 @@ sources:
     resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+    at: 2026-10-28T14:57:39.210Z
 ---
 
 # Thread Sandbox Lifecycle
