@@ -25,6 +25,7 @@ from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
 from openswe.invocation import resolve_invocation_id, with_invocation_id
 from openswe.linear.notifications import post_linear_notification
+from openswe.notion.notifications import post_notion_comment
 from openswe.review.findings import REVIEWER_THREAD_KIND
 from openswe.review.run_failure import ReviewRunFailure
 from openswe.session_cost import schedule_session_cost_refresh
@@ -102,7 +103,7 @@ _REASON_TEXT = {
 _DEFAULT_FOLLOW_UP = "Send another message and it will pick this back up."
 _REASON_FOLLOW_UP = {
     "context_too_long": "Start a new thread to continue.",
-    "model_unavailable": "Pick a different model in Open SWE Web, then retry.",
+    "model_unavailable": "Pick a different model in Jarvis Web, then retry.",
     "backend_interrupted": "Re-trigger the run to try again.",
 }
 
@@ -175,6 +176,15 @@ async def _post_failure_reply(
         if ctx.linear_issue and ctx.linear_issue.id:
             return await post_linear_notification(
                 ctx.linear_issue.id, _failure_text(status, reason_code=reason_code)
+            )
+        return False
+
+    if source == "notion":
+        if ctx.notion_page and ctx.notion_page.id:
+            return await post_notion_comment(
+                ctx.notion_page.id,
+                _failure_text(status, reason_code=reason_code),
+                discussion_id=ctx.notion_page.discussion_id,
             )
         return False
 

@@ -13,6 +13,10 @@ How you review is up to you.
 {% include "reviewer/historical-guidance.md" +%}
 
 {% endif %}
+{% if notion_tools %}
+{% include "reviewer/notion-context.md.jinja" +%}
+
+{% endif %}
 # Submitting the review
 
 - Record each finding with `add_finding`.
