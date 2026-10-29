@@ -48,7 +48,6 @@ _TOOL_MODULES = {
     "read_user_settings": ".read_user_settings",
     "record_human_input": ".record_human_input",
     "recreate_sandbox": ".recreate_sandbox",
-    "refresh_workspace_start": ".workspaces",
     "configure_repository": ".workspaces",
     "report_platform_issue": ".report_platform_issue",
     "request_human_review": ".request_human_review",
@@ -66,6 +65,7 @@ _TOOL_MODULES = {
     "delete_user_skill": ".user_skills",
     "schedule_thread_wakeup": ".schedule_thread_wakeup",
     "search_pull_requests": ".search_pull_requests",
+    "snapshotctl": ".workspaces",
     "send_announcement": ".send_announcement",
     "start_thread": ".threads",
     "slack_add_reaction": "openswe.slack.tools.add_reaction",
@@ -134,7 +134,6 @@ __all__ = [
     "read_user_settings",
     "record_human_input",
     "recreate_sandbox",
-    "refresh_workspace_start",
     "configure_repository",
     "report_platform_issue",
     "request_human_review",
@@ -152,6 +151,7 @@ __all__ = [
     "delete_user_skill",
     "schedule_thread_wakeup",
     "search_pull_requests",
+    "snapshotctl",
     "send_announcement",
     "start_thread",
     "slack_add_reaction",
@@ -256,7 +256,7 @@ if TYPE_CHECKING:
         delete_workspace,
         list_workspaces,
         publish_workspace,
-        refresh_workspace_start,
+        snapshotctl,
     )
 
 

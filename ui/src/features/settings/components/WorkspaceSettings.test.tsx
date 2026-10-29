@@ -130,7 +130,7 @@ function mockApis(record: WorkspaceRecord = RECORD) {
         num_members: 3,
       },
     ],
-    partial: false,
+    refreshing: false,
   })
   vi.spyOn(api, "getWorkspaceMCPs").mockResolvedValue([])
   vi.spyOn(api, "listWorkspaceApiKeys").mockResolvedValue([])
@@ -597,6 +597,9 @@ describe("WorkspaceSettingsPanel", () => {
       ).rules[0].name
     ).toBe("updated-service")
     fireEvent.click(screen.getByRole("tab", { name: "Rules" }))
+    fireEvent.change(screen.getByLabelText("LangSmith Access"), {
+      target: { value: "projects:read, datasets:read" },
+    })
     fireEvent.click(
       screen.getByRole("button", { name: "Save proxy configuration" })
     )
@@ -607,6 +610,10 @@ describe("WorkspaceSettingsPanel", () => {
           proxy_config: {
             ...proxy,
             rules: [{ ...proxy.rules[0], name: "updated-service" }],
+          },
+          access_delegation: {
+            mode: "EXPLICIT",
+            permissions: ["projects:read", "datasets:read"],
           },
         },
       })
