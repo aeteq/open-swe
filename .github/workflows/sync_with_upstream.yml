@@ -55,7 +55,7 @@ jobs:
         id: merge
         run: |
           if git merge upstream/main --no-edit; then
-            echo "clean=true" >> $GITHUB_OUTPUT
+            echo "clean=true" >> "$GITHUB_OUTPUT"
           else
             # rerere may have auto-resolved some/all conflicts using
             # previously recorded resolutions
@@ -63,13 +63,13 @@ jobs:
             if [ -z "$REMAINING" ]; then
               git add -A
               git commit --no-edit
-              echo "clean=true" >> $GITHUB_OUTPUT
+              echo "clean=true" >> "$GITHUB_OUTPUT"
             else
-              echo "clean=false" >> $GITHUB_OUTPUT
+              echo "clean=false" >> "$GITHUB_OUTPUT"
               EOF_DELIM=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-              echo "conflicts<<$EOF_DELIM" >> $GITHUB_OUTPUT
-              echo "$REMAINING" >> $GITHUB_OUTPUT
-              echo "$EOF_DELIM" >> $GITHUB_OUTPUT
+              echo "conflicts<<$EOF_DELIM" >> "$GITHUB_OUTPUT"
+              echo "$REMAINING" >> "$GITHUB_OUTPUT"
+              echo "$EOF_DELIM" >> "$GITHUB_OUTPUT"
               git merge --abort
               git checkout -B sync-upstream upstream/main
             fi
