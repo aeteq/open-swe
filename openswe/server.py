@@ -915,7 +915,7 @@ async def _run_mcp_tools(
     """The instance's Managed Tools gateway and the MCP tools the run may use."""
     managed_gateway = await instance_gateway() if credential_login else None
     async with aphase(thread_id, "factory.mcp_tools"):
-        return managed_gateway, await mcp_tools_for(credential_login, workspace, managed_gateway)
+        return managed_gateway, await _mcp_tools_for(credential_login, workspace, managed_gateway)
 
 
 # The sandbox's file and shell tools, which code mode offers directly as well.
@@ -1865,6 +1865,12 @@ async def plan_agent(config: RunnableConfig, surface: ToolSurface) -> None:
         *(() if cli_result_required else (cli_result,)),
         *(() if bridge_client == "desktop" and not stop_summary_mode else (worktree_handoff,)),
         *(() if _writes_database_rows() else (execute_database_sql, write_database_rows)),
+        *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
+        *(
+            tool
+            for tool in (create_notion_design, get_notion_design_template)
+            if tool not in _notion_design_tools(cfg)
+        ),
     ]
     static_tools = [tool for tool in AGENT_TOOLS if not any(tool is w for w in withheld)]
     static_tools = permitted(static_tools, tool_access)

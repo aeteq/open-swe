@@ -188,13 +188,17 @@ class TurnContext:
                 if self.slack_ask
                 else "slack"
             )
-        elif self.source in {"linear", "github", "schedule", "dashboard"}:
+        elif self.source in {"linear", "notion", "github", "schedule", "dashboard"}:
             name = self.source
         else:
             name = "generic"
         if name in {"slack", "schedule"}:
             guidance = prompt(
                 f"system/source-{name}", breakout=self.slack_breakout, slack=self.slack_context
+            )
+        elif name == "notion":
+            guidance = prompt(
+                "system/source-notion", designs=bool(notion_settings().documents_data_source_id)
             )
         else:
             guidance = prompt(f"system/source-{name}")
