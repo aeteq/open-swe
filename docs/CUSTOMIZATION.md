@@ -466,7 +466,8 @@ Users can override either on a per-comment basis by including `repo:owner/name` 
 
 ### Customizing Notion tasks
 
-The Notion trigger (`agent/notion/`) reads task properties by name. Override the defaults when your database uses different names or status options:
+The Notion trigger (`agent/notion/`) reads task properties by name.
+Override the defaults when your database uses different names or status options:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -489,7 +490,10 @@ The Notion trigger (`agent/notion/`) reads task properties by name. Override the
 
 A missing property or status option is logged and that write is skipped; the run still starts.
 
-When `NOTION_DOCUMENTS_DATA_SOURCE_ID` is set, an agent working an assigned task can publish a design with `create_notion_design`. The design is created in the documents database in review and linked through `NOTION_DESIGN_PROPERTY`, and the task resumes in its thread once every linked design is approved. With `NOTION_DESIGN_TEMPLATE_ID` set, the agent reads that page's content through `get_notion_design_template` before writing. Designs are created as the agent's Notion member when `NOTION_AGENT_API_KEY` is set, so that member needs edit access to the documents database and the task database.
+When `NOTION_DOCUMENTS_DATA_SOURCE_ID` is set, an agent working an assigned task can publish a design with `create_notion_design`.
+The design is created in the documents database in review and linked through `NOTION_DESIGN_PROPERTY`, and the task resumes in its thread once every linked design is approved.
+With `NOTION_DESIGN_TEMPLATE_ID` set, the agent reads that page's content through `get_notion_design_template` before writing.
+Designs are created as the agent's Notion member when `NOTION_AGENT_API_KEY` is set, so that member needs edit access to the documents database and the task database.
 
 ### Customizing Slack routing
 

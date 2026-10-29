@@ -81,8 +81,7 @@ This affects reviewer assignment, not the two-hour auto-merge deadline.
 The request re-checks the pull request on every review and CI completion webhook, and two hours after it was posted.
 It merges, as the GitHub App and never with an admin bypass, when:
 
-- at least one approval from a person is standing on GitHub (Open SWE's own approval
-  does not count), and
+- at least one approval from a person is standing on GitHub (Open SWE's own approval does not count), and
 - every reviewer on the card has approved, or two hours have passed, and
 - the pull request is otherwise ready: checks green, no conflicts, no unresolved threads, no standing change request, and an Open SWE review of the head where auto-review is on.
 
