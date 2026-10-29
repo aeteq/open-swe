@@ -79,7 +79,7 @@ jobs:
           # The project .env is forwarded as the deployment's secrets: only the backend it calls back.
           printf 'OPEN_SWE_BACKEND_URL=%s\n' "$backend" >mda/.env
           printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >>mda/.env
-          uv run --project mda --locked --python 3.13 mda deploy mda \
+          uv run --project mda --locked mda deploy mda \
             --name "open-swe-mda" \
             --deployment-type prod \
             --workspace-id 7657d5d9-dea8-46fd-a8ab-d26db7f80e5f \
