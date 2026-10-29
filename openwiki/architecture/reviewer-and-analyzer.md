@@ -3,12 +3,11 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+  - id: openwiki-source-2da551997e3f932ff7fbe1d9
+    resource: repo://openswe/agent_api/reviewer.py
   - id: openwiki-source-90b15fd6117126ebfe5b6b22
     resource: repo://openswe/graphs/reviewer.py
   - id: openwiki-source-85f325a37c97d6000b6e6a23
@@ -25,14 +24,15 @@ sources:
     resource: repo://openswe/tools/add_finding.py
   - id: openwiki-source-7cec199cafafc864b85fba49
     resource: repo://openswe/tools/publish_review.py
-  - id: openwiki-source-065c69ba95cc740a2282dd3c
-    resource: repo://tests/reviewer/test_factory_config_isolation.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-28T14:57:39.210Z
 ---
 
 # Reviewer Graph and Code Review
 
-Open SWE exposes one specialized deep-agent graph: `reviewer` (`openswe.graphs.reviewer:traced_reviewer_agent`). The reviewer evaluates a GitHub pull request using durable, per-PR findings stored in PostgreSQL and keyed by a deterministic thread ID. It reviews code against repository style, organizational guidelines, API standards, and approval policies.
+Open SWE exposes one specialized deep-agent graph for code review. The reviewer evaluates a GitHub pull request using durable, per-PR findings stored in PostgreSQL and keyed by a deterministic thread ID. It reviews code against repository style, organizational guidelines, API standards, and approval policies.
 
 For trigger routing and webhook behavior, see [PR Review Workflow](../workflows/pr-review.md). For sandbox provider and recovery behavior, see [Sandbox Lifecycle](sandbox-lifecycle.md), and for the broader tool catalog, see [Tools](../concepts/tools.md).
 
@@ -42,7 +42,7 @@ For trigger routing and webhook behavior, see [PR Review Workflow](../workflows/
 
 The reviewer is read-only with respect to the repository. Its system prompt prohibits commits, pushes, and direct `gh pr review` or review-API calls. It has no coding, commit, push, or PR-opening tools: repository changes cannot be an agent action. GitHub review mutation is centralized in `publish_review` and the finding-thread tools.
 
-`get_reviewer_agent(config)` and `build_reviewer_agent(config)` create the graph per run. The factory shallow-copies the outer config and its `configurable` mapping before supplying a default recursion limit, preserving the caller's configuration. If the run has no `thread_id`, or the graph is not loaded for execution, it deliberately returns an empty deep agent rather than provisioning a sandbox.
+`plan_reviewer(config, surface)` constructs the graph per Managed Deep Agents run. The factory shallow-copies the outer config and its `configurable` mapping before supplying a default recursion limit, preserving the caller's configuration. If the run has no `thread_id`, the factory raises an error requiring a thread.
 
 For an executable run, the factory selects reviewer and subagent models from explicit configuration or team defaults, applies the Fable model gate, and attaches a cached sandbox backend with a reconnect closure. Its explicit tools are:
 

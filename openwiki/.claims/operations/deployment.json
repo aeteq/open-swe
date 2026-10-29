@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:609cc3a10c3a104fd74b45e2acb6ff5478ae9281ea02d09740326cc9825a6844",
+  "pageVersion": "sha256:7cf76f96db39d680b40d9c407a6dcbccf8f90d8ba79c0d098f3a4b82e9a86d07",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -38,13 +38,13 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
     {
       "id": "claim_7c0acef30b314001ba9760696f5b0434",
-      "statement": "The local dev server's LangGraph constraints are set to langgraph-api>=0.16.2,<0.17 and langgraph-runtime-inmem>=0.36.2,<0.37 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
+      "statement": "The local dev server's LangGraph constraints are set to langgraph-api==0.18.0.dev11 and langgraph-runtime-inmem==0.38.0.dev11 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
       "evidence": [
         {
           "resource": "repo://Dockerfile",
@@ -56,17 +56,17 @@
         },
         {
           "resource": "repo://pyproject.toml",
-          "version": "repo-file-v1:sha256:cd91df0634d20597e8a71019277afe79417fc30134256b06c9cd2254ff67f1f0"
+          "version": "repo-file-v1:sha256:605fdb0da88cdda8fff527398d5233212fd893ea5874e6df2386f71592ed5ffc"
         }
       ]
     },
     {
       "id": "claim_03a80335729849e0b9f03b173c47a3db",
-      "statement": "The desktop app connects to a shared backend; langgraph.desktop.json is no longer used. Local development uses the standard LangGraph manifest to serve the agent and other graphs for desktop clients that connect via the bridge protocol on the same backend that web clients reach.",
+      "statement": "The desktop app connects to a shared backend; the local development uses the standard LangGraph manifest to serve the agent and other graphs for desktop clients that connect via the bridge protocol on the same backend that web clients reach.",
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:ac2c0161f4a07fdb56e3c355050bf0480bda92f369cc3e8c6fa4c54960beec17"
+          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
         }
       ]
     },
@@ -76,7 +76,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         },
         {
           "resource": "repo://package.json",
@@ -110,11 +110,11 @@
     },
     {
       "id": "claim_c10336cf8d2e42079a8f26648e875c1d",
-      "statement": "The experimental Electron desktop app bundles the compiled dashboard UI and a local backend connection; it connects to a selected cloud backend URL for cloud-connected threads and supports local-agent work on This Mac through a shared loopback LangGraph server; packaged builds ask for and store a backend URL rather than defaulting to a hosted deployment.",
+      "statement": "The experimental Electron desktop app bundles the compiled dashboard UI and connects to a selected backend URL via /dashboard/api/* paths; source launches default to http://localhost:2024 or accept --backend-url/OPEN_SWE_BACKEND_URL; packaged builds ask for a backend URL rather than defaulting to a hosted deployment.",
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:ac2c0161f4a07fdb56e3c355050bf0480bda92f369cc3e8c6fa4c54960beec17"
+          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
         }
       ]
     },
@@ -124,7 +124,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -174,7 +174,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
+          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
         }
       ]
     },
@@ -204,7 +204,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
+          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
         }
       ]
     },
@@ -234,7 +234,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         },
         {
           "resource": "repo://langgraph.json",
@@ -252,7 +252,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         },
         {
           "resource": "repo://examples/ngrok/webhooks-only.yml",
@@ -280,7 +280,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:9de71d3483bad0f833694c4598760b8777f8937d569058f5f76ed3f6e8abf5ba"
+          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
         }
       ]
     },
@@ -290,7 +290,7 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:05fae6990f48549c5f8c60db88b3e22cb8c4b4f674029fdf65b5cf21d4592a60"
+          "version": "repo-file-v1:sha256:923f7c9014f4afe4d3d748c92746ac87623dbf1eb0f508b8a10b606f69a742f5"
         }
       ]
     },
@@ -300,7 +300,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
@@ -310,13 +310,13 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:6b0c664275c3068de3d34ca08dd7a19021de7aedb261b8e573b0a07133e71e29"
+          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
         }
       ]
     },
     {
       "id": "claim_09a36db3f5f14f43bb19f619883642a3",
-      "statement": "The bundled dashboard build (ui/.output/public) contains a client-only _shell.html entry point and hashed immutable assets; the server serves hashed assets with max-age=31536000,immutable and the shell with no-cache so new builds can be picked up.",
+      "statement": "The bundled dashboard build (ui/.output/public) contains a client-only _shell.html entry point and hashed assets; the server serves hashed assets with max-age=31536000,immutable and the shell with no-cache so new builds can be picked up.",
       "evidence": [
         {
           "resource": "repo://openswe/utils/dashboard_ui.py",
@@ -330,7 +330,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:ac2c0161f4a07fdb56e3c355050bf0480bda92f369cc3e8c6fa4c54960beec17"
+          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
         }
       ]
     },
@@ -374,13 +374,13 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:05fae6990f48549c5f8c60db88b3e22cb8c4b4f674029fdf65b5cf21d4592a60"
+          "version": "repo-file-v1:sha256:923f7c9014f4afe4d3d748c92746ac87623dbf1eb0f508b8a10b606f69a742f5"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-28T14:57:39.210Z"
   }
 }

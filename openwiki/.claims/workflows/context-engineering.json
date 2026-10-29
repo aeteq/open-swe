@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:b8f92ddd13afebc6562da48d2e6d9cdd638e7a629f01c234ad441a735e6b6278",
+  "pageVersion": "sha256:4fc33c4e79b7972ac28d6ba4000c5097cac50b7ac47882bafef27f62fbbf6c86",
   "claims": [
     {
       "id": "claim_a92a213a430c4e9e8cac73490f5ecdb8",
@@ -42,33 +42,21 @@
     },
     {
       "id": "claim_72b9ff8fa4c74e1bbffca8eed4902598",
-      "statement": "BasePrepareRunMiddleware checkpoints idempotent setup by a SHA256 fingerprint of middleware name, message, and config; once checkpointed, a resumed attempt with the same fingerprint skips preparation. awrap_model_call wraps rendered_system_prompt immediately before a model call; the main agent emits sender context as separate structured messages rather than altering history.",
+      "statement": "BasePrepareRunMiddleware checkpoints idempotent setup by a SHA256 fingerprint of middleware name, latest message fingerprint, and config; once checkpointed in run_prepared_for, a resumed attempt with the same fingerprint skips preparation. ashape_model_call prepends rendered_system_prompt to model calls using call.prepending.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/prepare_run.py#L51-L140",
-          "version": "repo-lines-v1:sha256:685a90ef776e87e8191b64311507b4f53329767351f4395f4574e8ab2b652f9b:eyJzZWxlY3RlZExpbmVDb3VudCI6OTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1ZGJmNjBmNjJjMTM4MDVhN2JiZmNmMzk0OTI0NTZhODY0MWU0MDRhZDc1ZTUzM2QxNjVjZmU1NDkxYmIzNmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwZjJiYjQzMDA0OGE4NTAwODc0MWFhODg1ZWJlYTUzNmViMDEwZmYxMjYxZTJmMjE1ZjMzZmQ0NTdjYTQ3ZTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
-        },
-        {
-          "resource": "repo://openswe/server.py#L1300-L1400",
-          "version": "repo-lines-v1:sha256:65f6a6c9d1172e32ebc0109a02ec9a7048cde537cfde95c83fdd75be56fc0c2b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4OGFiZTcyNTRjZTM0MjIzOTc3MDEzYzQyM2RiMDRmYzZmOGRjOWVlNWU5MmFjMThkZDZiZWMzN2NlZTJjYzFlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2ZjI2ZTBkYjcyNjMxZGMyYzNiYTQ3NDliN2Y4ODliOTBlZTk2ODhkMDVkYmY3NTE1ZTZlZGEyNjRiZjcyMTQ0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3ZWE5MGZjOTBiYmJiNWRiYjYxZjRhODEwZDU0NzlkZWZjNzkwMzIxMjhkYzllMTMwNTEwMjc2NzRjYjZmYzgyIn0"
+          "resource": "repo://openswe/middleware/prepare_run.py#L52-L132",
+          "version": "repo-lines-v1:sha256:a9cc81af3579ac594ec1aa5d92808272d1a5f090d27dcbdd529dce14402dfad6:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViOGQyNDEwNjZkMzIwZTUzYzkzNjNlMzg5NDRkYjljYjdlYTcxZmY4M2M5NzRmOGI0NGI1NzFiY2Q0M2MwY2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJkZmJiMDFiMWFmZjg0ZjRkNzgzMDBjNzkxZGNhOTA5OWQ2NTNlN2NlZTc4YTYwYTQ3MjI0Y2NmMzNkMzQ5YjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjYzk1ODcwYjI2NWU2NjBlMWY2OTRjMmY4MzAyNjZjNmEyMDhlMjZkY2FiYjNlODU0ZTJmMThhMjZjNTA5N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
     {
       "id": "claim_ce52717833c346b6a64a18fcdec5149a",
-      "statement": "The main prompt requires root AGENTS.md after repository setup and gives it precedence over custom, environment, and sender instructions; SubdirAgentsReadMiddleware injects unread ancestor AGENTS.md files after successful reads without failing the read when candidates fail.",
+      "statement": "SubdirAgentsReadMiddleware appends ancestor AGENTS.md files to read_file results after successful reads. It generates shallowest-to-deepest candidate paths relative to the read file's directory, loads via the run backend, truncates to 1,000 lines and 64 KiB, tracks loaded paths per thread, and produces a system-reminder stating deeper scope wins. Individual candidate failures do not break the requested read.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/subdir_agents.py#L146-L193",
-          "version": "repo-lines-v1:sha256:1937138d2dbab86e78b2d836e9ef2c3ef6b43bbafd1acf2b9745902f500b727a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyZmFkMDM1OWE5ZDc5YjMyMGJiNWFlMzQ3OWRlNTkzNjE3NzIwZWMyOWI2ZGU2Njc3OTdlZTZhMjRhYzJiZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMTE2Y2U5ZTMwNTYwZDBjNGM0MzVhYzAzMzdlYjU4ZDA1NGVlMWQwM2UzN2U0MTMyNTc2MTAyNGVlYzNmY2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MjIzMTA2ZmQ4NzQyYjcwZWEyMzNmOWRjMzU5ZjRiMDJiYmIwNjliNzI4M2VlZjc2MjQ5OTUxNmJkN2I5YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
-        },
-        {
-          "resource": "repo://openswe/prompt.py#L110-L191",
-          "version": "repo-lines-v1:sha256:e5500d6f897ffc8d5df1cea809333d6ecec81784b0757cb4b620d21b5e9b3659:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
-        },
-        {
-          "resource": "repo://openswe/resources/prompts/system/repository-setup.md.jinja#L1-L32",
-          "version": "repo-lines-v1:sha256:e53f146c519f855d27c5a8575533d5b21240e647885f8f88b1a70deb844d2132:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY1MmQ3MTExMDNkNTBhNDM3ODMwYzZmYmNkMDRmYjRiYWI0OWEwZjgyZjZkMjZkMWM3OTFjNmU4NDg4ZGQwOTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMDU5ZWYwZDc1N2Q1MDIzYjU1OWRmZTZlNDRlZDBiYjdlOGJhZWVjYTIzY2M5YTNjMDcyMzNmYTRkZDJlNzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://mda/rt/subdir_agents.py#L144-L194",
+          "version": "repo-lines-v1:sha256:0939e542dacbcdc56f8d0a5573b1e291b0f04f96e2d4e736bd05f5db1be69fae:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwODE2OTZjOGNkNjlmZGI0ZTQ1MTYzOTM3YzhiMzE2YTE3OThjZWU1MDQwNGNmOGVhYTdmMDJiMTc1Y2QwZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMTE2Y2U5ZTMwNTYwZDBjNGM0MzVhYzAzMzdlYjU4ZDA1NGVlMWQwM2UzN2U0MTMyNTc2MTAyNGVlYzNmY2QiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MjIzMTA2ZmQ4NzQyYjcwZWEyMzNmOWRjMzU5ZjRiMDJiYmIwNjliNzI4M2VlZjc2MjQ5OTUxNmJkN2I5YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -102,29 +90,21 @@
     },
     {
       "id": "claim_ad8d2d3073774b2fb3901fc6334a1496",
-      "statement": "Instruction precedence in the main-agent system prompt, from lowest to highest, is: default system guidance, environment/workspace instructions, sender/user instructions, repository custom instructions, root AGENTS.md, and scoped directory AGENTS.md files.",
+      "statement": "Instruction precedence in the main-agent system prompt, from lowest to highest, is: default system guidance, dashboard context, source guidance, default prompt, repository scope, collaboration guidance, external comments, repository custom instructions, recent thread context, and workspace instructions.",
       "evidence": [
         {
           "resource": "repo://openswe/prompt.py#L110-L191",
           "version": "repo-lines-v1:sha256:e5500d6f897ffc8d5df1cea809333d6ecec81784b0757cb4b620d21b5e9b3659:eyJzZWxlY3RlZExpbmVDb3VudCI6ODIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmMDgxZWY4ZmEwYTYwMzFkOTExOGMwMjU3MjZkNjVmZDkzNDg4ZjgwNjJiNWQ0YWQ1OTg0YWExNmVjMTc1MzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
-        },
-        {
-          "resource": "repo://openswe/resources/prompts/system/main.md.jinja#L1-L64",
-          "version": "repo-lines-v1:sha256:cae0624d3e98185e64602c899a46c7564cf96b90d73380237493a11610324b99:eyJzZWxlY3RlZExpbmVDb3VudCI6NjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1M2UyNGY0ZTNlZmE2NGY1ZTVkNWIwYzc0YTRkNGVkOWFkMjM1MGRmZTcxNWMwMjM5NWNmY2JkM2UyMGQ0OGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkZDczZGEyNjFkZDg4NDQzMDEwMGM3ODA5MDEzOTZmOGIwYjRlOWMyYjJkMDU5MmE1MjIwZDlmZTViNTM0MDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
     {
       "id": "claim_ef6a83dd136b4616bfe8505a945e6dec",
-      "statement": "PrepareAgentRunMiddleware produces rendered_system_prompt and separate sender-context messages with participation list, preserving immutability of cached history; sender context includes identity, workspace-admin status, git configuration, collaboration metadata, and user-level instructions.",
+      "statement": "PrepareAgentRunMiddleware produces rendered_system_prompt and separate sender-context messages with participation list, preserving immutability of cached history; sender context includes identity, workspace-admin status, git configuration, collaboration metadata, and user-level instructions. Sender messages filter out participants already visible in dynamic-context hashes.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/prepare_run.py#L106-L140",
-          "version": "repo-lines-v1:sha256:638420b9077f41954666567f9a824247f12e70b8370b36b60c38cbf2e1c19263:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxNDI5YjE3ZTkzY2Y0OWNiZDUxOTVhMWQzYWEwMDFlYjhmOTM1YzAxOWU1NjM3YzI1ZTUyOTQ4N2NmYmY4NmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxZWE2M2E2MmY5MjFhY2ZlOTFhMTcyMzExMDkyMjljNTkzZGU3ODMxZjAxYWZkYWZkNjA1MWM1MjYxNTRjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM0YTQyODNlYWM3OWJhMTA1OWMxOTg4MmUyYzc4MzkwZGQ3Zjc0NjIxMDhiOTc3MTlkYWExMjViZTdiYTZjMGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
-        },
-        {
-          "resource": "repo://openswe/server.py#L1300-L1400",
-          "version": "repo-lines-v1:sha256:65f6a6c9d1172e32ebc0109a02ec9a7048cde537cfde95c83fdd75be56fc0c2b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI4OGFiZTcyNTRjZTM0MjIzOTc3MDEzYzQyM2RiMDRmYzZmOGRjOWVlNWU5MmFjMThkZDZiZWMzN2NlZTJjYzFlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2ZjI2ZTBkYjcyNjMxZGMyYzNiYTQ3NDliN2Y4ODliOTBlZTk2ODhkMDVkYmY3NTE1ZTZlZGEyNjRiZjcyMTQ0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3ZWE5MGZjOTBiYmJiNWRiYjYxZjRhODEwZDU0NzlkZWZjNzkwMzIxMjhkYzllMTMwNTEwMjc2NzRjYjZmYzgyIn0"
+          "resource": "repo://openswe/server.py#L854-L1325",
+          "version": "repo-lines-v1:sha256:db0160c62f6e00d68ec3e01ce1dab3fdbdcaed6eaa62e26d54d8d6d01fa2c02a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcyLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIxMTIzMjczNmMxY2RiMWRmMmRlYWQxNmQyMGFlMGNjNmNjNjkyYTY2NzI3NTViMDM3YjQ0ZjQ0OWZjZDg5MzA4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlNmIwNDQ5MTQ2OTcyMmU4MzYzYTk0ZTQwNDQ1MzhlMDEzYTJhMjE3ZTM2YjFlNTY4YmE2MGFjYjdiNGM4ZjJlIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJmYjEwOWM4NzcyYTFkYTVhNGM3ZWQ0NTkzYzRlNWE3NTU3ZTRlZWM5OGE4NmIwYzNhMzNjYmY3MmEzMDc0ZjgxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyZjNiMmRiMjAzOTM1MTNkNTA5NGZlYjY3ZTk3N2Q0NDczNGViOTQyMTBmMjQ5NTcwMGFjYzkxYjBlZjZhNTY3In0"
         }
       ]
     },
@@ -206,7 +186,7 @@
     },
     {
       "id": "claim_0070de807b73498595123901f73f6b3f",
-      "statement": "construct_system_prompt integrates multiple instruction layers: default system guidance, working environment, dashboard context, source guidance, default prompt, repository scope, collaboration guidance, external untrusted comments, repo instructions, recent thread context, workspace instructions, admin workspace settings, and sole-writer guidance.",
+      "statement": "construct_system_prompt integrates multiple instruction layers in precedence order: default system guidance, dashboard context, source guidance, default prompt, repository scope, collaboration guidance, external untrusted comments, repository instructions, recent thread context, and workspace instructions.",
       "evidence": [
         {
           "resource": "repo://openswe/prompt.py#L110-L191",
@@ -217,6 +197,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-22T13:38:02.092Z"
+    "at": "2026-10-28T14:57:39.210Z"
   }
 }

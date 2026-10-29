@@ -34,10 +34,10 @@ sources:
     resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-28T14:57:39.210Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -159,9 +159,7 @@ flowchart TD
     P --> Q["Failure handling:<br/>post source-specific reply"]
 ```
 
-Diagram: Request path from dispatch_agent_run through config preparation to durable run creation with optional completion webhook attachment.
-
-`dispatch_agent_run` is the single agent/reviewer dispatch contract. It rejects ambiguous calls that combine prebuilt input with raw content/identity arguments, selects the graph with `assistant_id`, and delegates to `create_durable_run`. The latter defaults to `multitask_strategy="interrupt"`, `durability="async"`, and `stream_resumable=True`; callers such as untagged Slack follow-ups can explicitly select `enqueue`. Async durability checkpoints each step while the next one runs, so a crash or process recycle can resume from at most a step back instead of losing the run.
+`dispatch_agent_run` is the single agent/reviewer dispatch contract. It rejects ambiguous calls that combine prebuilt input with raw content/identity arguments, selects the graph with `assistant_id`, and delegates to `create_durable_run`. The latter defaults to `multitask_strategy="interrupt"`, `durability="async"`, and `stream_resumable=False`; callers such as untagged Slack follow-ups can explicitly select `enqueue`. Async durability checkpoints each step while the next one runs, so a crash or process recycle can resume from at most a step back instead of losing the run.
 
 Every created run is marked for Protocol v2 streaming via the `__event_streaming_v2` configuration key, includes the v2 stream modes (`values`, `updates`, `messages`, `custom`, `tasks`, `checkpoints`) and subgraphs, and receives an `invocation_id` (with legacy `prepare_run_id` alias) in both configurable state and metadata. This preserves tools/lifecycle and nested-agent visibility for runs that the dashboard did not start, and lets a later client replay the stream.
 
@@ -185,7 +183,7 @@ Invocation sources handle errors with varying strategies:
 
 - **Signature verification failures** (`401 Unauthorized`): GitHub, Linear, and Slack webhooks verify raw-body signatures before JSON parsing. Invalid or missing signatures return `401` immediately. Verifiers fail closed when the signing secret is absent.
 
-- **Stale deliveries**: Linear webhooks reject payloads older than 60 seconds based on webhook timestamp, returning `401` to signal GitHub/Linear to stop retrying and dropping the delivery.
+- **Stale deliveries**: Linear webhooks reject payloads older than 60 milliseconds based on webhook timestamp, returning `401` to signal GitHub/Linear to stop retrying and dropping the delivery.
 
 - **Missing credentials**: Slack prompts users to link GitHub accounts or re-authenticate rather than dispatching when a valid GitHub token is unavailable. This prevents silent failures.
 
@@ -201,4 +199,3 @@ Invocation sources handle errors with varying strategies:
 - Treat `openswe/thread_ids.py` formulas and stored source context as compatibility surfaces. Test mapping conflicts rather than adding a heuristic that guesses a Slack thread.
 - Keep all new invocation paths on `dispatch_agent_run` or `create_durable_run`; test their durability, protocol-v2 marker, resumability, metadata correlation, and completion-webhook fallback in `tests/agent/test_dispatch.py`.
 - Test completion statuses, source-specific replies, per-run dedupe, cost refresh, reviewer-check cleanup, and intentional silence for interrupted/wakeup runs in `tests/webhooks/test_completion_webhook.py`.
-- For dashboard changes, test lazy thread creation, attribution/config construction, content/image validation, and thread-wide cancellation/queue draining in `tests/dashboard/test_dashboard_thread_api.py`.

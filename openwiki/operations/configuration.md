@@ -32,10 +32,10 @@ sources:
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-22T13:38:02.092Z
+    at: 2026-10-28T14:57:39.210Z
 ---
 
 # Configuration and Startup Validation
@@ -84,7 +84,7 @@ flowchart TD
 
 ### Validation details
 
-**GitHub login gate**: Startup fails when neither `OPEN_SWE_LOCAL_AUTH_TOKEN` is set nor either `ALLOWED_GITHUB_ORGS` or `ALLOWED_GITHUB_USERS` is non-empty. The deployment must gate dashboard access.
+**GitHub login gate**: Startup fails when neither `ALLOWED_GITHUB_ORGS` nor `ALLOWED_GITHUB_USERS` is non-empty. The deployment must gate dashboard access.
 
 **MDA/Remote runtime**: Startup fails when `MDA_RUNTIME_URL` is not configured, since the agent and reviewer graphs require it. If set, the validation checks that the URL is available.
 
@@ -201,5 +201,3 @@ Cover the registry's behavior (blank/alias/typed-value access), invalid LangSmit
 - [Deployment](deployment.md) — installation procedures
 - [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) — model selection and resolution
 - [Authentication and security](../concepts/auth-and-security.md) — GitHub App, OAuth, and authorization
-- [Sandbox providers](../integrations/sandbox-providers.md) — provider-specific details
-- [Observability and MCP](../integrations/observability-and-mcp.md) — MCP server setup and troubleshooting
