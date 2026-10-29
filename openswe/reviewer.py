@@ -20,8 +20,9 @@ import logging
 import posixpath
 import re
 import warnings
+from collections.abc import Mapping, Sequence
 from functools import partial
-from typing import Any, NamedTuple, NotRequired, cast
+from typing import Any, Final, NamedTuple, NotRequired, cast
 
 logger = logging.getLogger(__name__)
 
