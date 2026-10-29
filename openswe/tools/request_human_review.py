@@ -20,6 +20,7 @@ from openswe.human_review.standard import (
     request_review,
     start_auto_assign,
 )
+from openswe.prompts import prompt
 from openswe.run_config import RunConfig
 from openswe.slack.cards import run_slack_location
 from openswe.slack.client import (
@@ -96,6 +97,17 @@ async def request_human_review(
     )
     if not result.success:
         return _failure(result.error)
+    if result.channel_mismatch:
+        return {
+            "success": True,
+            "request_id": result.request_id,
+            "slack_channel_id": result.channel,
+            "next": prompt(
+                "tools/human-review-channel-mismatch",
+                channel=result.channel,
+                requested_channel=result.requested_channel,
+            ),
+        }
     if result.summary_updated:
         posted = "The open review card now shows your new inline_summary."
     elif result.reused:
@@ -137,6 +149,17 @@ async def _request_for_mcp_caller(
     )
     if not result.success:
         return _failure(result.error)
+    if result.channel_mismatch:
+        return {
+            "success": True,
+            "request_id": result.request_id,
+            "permalink": result.permalink,
+            "next": prompt(
+                "tools/human-review-channel-mismatch",
+                channel=result.channel,
+                requested_channel=result.requested_channel,
+            ),
+        }
     if result.reused or result.summary_updated:
         posted = "This pull request already had an open review request; no new card was posted."
     elif requester.slack_user_id and await send_dm(
