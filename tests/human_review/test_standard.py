@@ -167,7 +167,7 @@ async def test_snoozed_pick_does_not_expire_before_its_new_deadline() -> None:
         assert pick.decision == "picked"
 
 
-@pytest.mark.parametrize("author", ["ada", "open-swe[bot]"])
+@pytest.mark.parametrize("author", ["ada", "jarvis-aeteq[bot]"])
 async def test_losing_auto_assignment_does_not_wake_another_picker(author: str) -> None:
     from openswe.human_review.picking import Pick
     from openswe.human_review.standard import RequestResult, _auto_assign
@@ -826,11 +826,9 @@ async def test_assignment_inbox_is_personal_and_hides_completed_or_inaccessible_
     [
         ("ada", User(), False, []),
         ("ada", None, False, ["its author is not an Open SWE user"]),
-        ("open-swe[bot]", None, False, []),
-        ("open-swe-preview[bot]", None, False, []),
-        ("openswe-dev[bot]", None, False, []),
+        ("jarvis-aeteq[bot]", None, False, []),
         ("another[bot]", None, False, ["its author is not an Open SWE user"]),
-        ("open-swe[bot]", None, True, ["it is a draft"]),
+        ("jarvis-aeteq[bot]", None, True, ["it is a draft"]),
     ],
 )
 async def test_review_blockers_require_an_account_or_an_open_swe_bot(
@@ -904,7 +902,7 @@ async def test_review_request_snapshots_merge_mode_and_preserves_it_on_reuse(
 @pytest.mark.parametrize("trigger", ["event", "deadline"])
 @pytest.mark.parametrize("pending", [False, True])
 @pytest.mark.parametrize("auto_merge", [False, True])
-@pytest.mark.parametrize("author", ["ada", "open-swe[bot]"])
+@pytest.mark.parametrize("author", ["ada", "jarvis-aeteq[bot]"])
 async def test_only_auto_merge_requests_merge_when_approved(
     author: str,
     trigger: str,
