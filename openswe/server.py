@@ -88,11 +88,8 @@ from openswe.input_messages import (
     person_introduction,
     visible_dynamic_context_hashes,
 )
-from openswe.mcp import load_mcp_tools
-from openswe.mcp.instance import instance_mcp_source
-from openswe.mcp.managed import instance_gateway, managed_mcp_source
-from openswe.mcp.user import user_mcp_source
-from openswe.mcp.workspace import workspace_mcp_source
+from openswe.mcp.managed import instance_gateway
+from openswe.mcp.tiers import mcp_tools_for
 from openswe.middleware import (
     BasePrepareRunMiddleware,
     DynamicToolMiddleware,
@@ -129,6 +126,7 @@ from openswe.model_request import (
     infer_requested_model,
     model_selection_trace,
 )
+from openswe.notion.settings import notion_settings
 from openswe.openai_responses.client_tools import CLIENT_OWNED_SERVER_TOOLS
 from openswe.prompt import construct_system_prompt
 from openswe.prompts import apply_tool_descriptions, prompt, warm_tool_schemas
@@ -177,9 +175,11 @@ from openswe.tools import (
     background_execute,
     background_task,
     code_channel_set_view,
+    comment_on_notion_task,
     configure_repository,
     connect_managed_tools,
     create_automation,
+    create_notion_design,
     create_sandbox_file_download_url,
     delete_automation,
     delete_organization_skill,
@@ -190,6 +190,7 @@ from openswe.tools import (
     expose_port,
     fetch_url,
     get_human_review_status,
+    get_notion_design_template,
     get_thread,
     http_request,
     link_pull_request,
@@ -601,6 +602,9 @@ def _is_subagent_excluded_tool(name: str) -> bool:
         "background_execute",
         "background_task",
         "monitor",
+        "comment_on_notion_task",
+        "create_notion_design",
+        "get_notion_design_template",
         "submit_thread_feedback",
         "submit_review_assessment_feedback",
         # The review page reads both from the parent's transcript.
@@ -709,6 +713,9 @@ AGENT_TOOLS: Final = (
     request_rollout_check,
     listen_events,
     list_event_types,
+    comment_on_notion_task,
+    create_notion_design,
+    get_notion_design_template,
     manage_code_channel,
     code_channel_set_view,
     manage_incident,
@@ -879,29 +886,13 @@ async def _bridge_client(thread_id: str | None) -> BridgeClient | None:
     return "desktop" if metadata.get("sandbox_bridge_client") == "desktop" else "cli"
 
 
-async def _mcp_tools_for(
-    credential_login: str | None, workspace: str, managed_gateway: str | None
-) -> list[Any]:
-    """Load the run's MCPs by tier: instance, then workspace, then the user's own.
-
-    A later tier's connection replaces a same-named one from the tier before. The
-    instance's LangSmith Managed Tools gateway comes last, used as the private owner.
-    """
-    sources = [instance_mcp_source(), workspace_mcp_source(workspace)]
-    if credential_login:
-        sources.append(user_mcp_source(credential_login))
-        if managed_gateway:
-            sources.append(managed_mcp_source(credential_login, managed_gateway))
-    return await load_mcp_tools(*sources)
-
-
 async def _run_mcp_tools(
     thread_id: str, credential_login: str | None, workspace: str
 ) -> tuple[str | None, list[Any]]:
     """The instance's Managed Tools gateway and the MCP tools the run may use."""
     managed_gateway = await instance_gateway() if credential_login else None
     async with aphase(thread_id, "factory.mcp_tools"):
-        return managed_gateway, await _mcp_tools_for(credential_login, workspace, managed_gateway)
+        return managed_gateway, await mcp_tools_for(credential_login, workspace, managed_gateway)
 
 
 # The sandbox's file and shell tools, which code mode offers directly as well.
@@ -997,6 +988,22 @@ def _slack_tools_enabled(cfg: RunConfig) -> bool:
     if _slack_ask_mode(cfg):
         return bool(cfg.slack_thread.channel_id.strip())
     return bool(cfg.slack_thread.channel_id.strip() and cfg.slack_thread.thread_ts.strip())
+
+
+def _notion_task_run(cfg: RunConfig) -> bool:
+    return cfg.source == "notion" and cfg.notion_page is not None and bool(cfg.notion_page.id)
+
+
+def _notion_design_tools(cfg: RunConfig) -> tuple[Any, ...]:
+    """Design publishing for an assigned task, never for a question asked in a comment."""
+    if not _notion_task_run(cfg) or cfg.notion_page is None or cfg.notion_page.is_mention:
+        return ()
+    settings = notion_settings()
+    if not settings.documents_data_source_id:
+        return ()
+    if settings.design_template_id:
+        return (create_notion_design, get_notion_design_template)
+    return (create_notion_design,)
 
 
 def _initial_reply_surface(cfg: RunConfig) -> ReplySurface:
@@ -1802,6 +1809,12 @@ async def plan_agent(config: RunnableConfig, surface: ToolSurface) -> None:
         *(() if cli_result_required else (cli_result,)),
         *(() if bridge_client == "desktop" and not stop_summary_mode else (worktree_handoff,)),
         *(() if _writes_database_rows() else (write_database_rows,)),
+        *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
+        *(
+            tool
+            for tool in (create_notion_design, get_notion_design_template)
+            if tool not in _notion_design_tools(cfg)
+        ),
     ]
     static_tools = [tool for tool in AGENT_TOOLS if not any(tool is w for w in withheld)]
     static_tools = permitted(static_tools, tool_access)
