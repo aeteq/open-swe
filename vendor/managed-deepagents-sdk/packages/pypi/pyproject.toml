@@ -160,3 +160,13 @@ typing = [
 typeCheckingMode = "off"
 reportUnusedFunction = "error"
 reportUnusedClass = "error"
+
+# Security floors carried by Open SWE (vendor/mda-changes/2026-10-29-dependency-security-floors.md):
+# constrain these transitive dependencies so a lockfile refresh keeps the fixed
+# releases. Drop a floor once upstream's own manifest requires it.
+[tool.uv]
+constraint-dependencies = [
+    "authlib==1.9.1",
+    "certifi==2026.10.18",
+    "dnspython==2.9.0",
+]
