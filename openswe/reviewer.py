@@ -65,7 +65,7 @@ from openswe.middleware.record_run_usage import record_run_usage
 from openswe.middleware.require_user_reply import WEB_REPLY_SURFACE
 from openswe.middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
 from openswe.middleware.transcript import TranscriptMiddleware
-from openswe.prompts import apply_tool_descriptions, prompt
+from openswe.prompts import apply_tool_descriptions, escape_for_data_block, prompt
 from openswe.review.approvals import approval_policy_for_review
 from openswe.review.diff import (
     changed_files,
@@ -117,6 +117,7 @@ from openswe.utils.model import (
     provider_model_kwargs,
 )
 from openswe.utils.startup_trace import aphase
+from openswe.workspaces.store import DEFAULT_WORKSPACE_SLUG
 
 REVIEWER_SUBAGENT_SYSTEM_PROMPT = prompt("reviewer/subagent")
 
@@ -551,7 +552,9 @@ class PrepareReviewerRunMiddleware(BasePrepareRunMiddleware):
 
     async def _prepare(self, state: PrepareRunState, runtime: Runtime) -> dict[str, Any]:  # noqa: ARG002
         await self._record_run()
-        return await prepare_reviewer_run(self._thread_id, self._config, runtime, notion_tools=self._notion_tools)
+        return await prepare_reviewer_run(
+            self._thread_id, self._config, runtime, notion_tools=self._notion_tools
+        )
 
     async def _record_run(self) -> None:
         """Attribute the run to its model before the transcript and usage observers read it."""

@@ -158,14 +158,14 @@ async def test_identity_is_reset_each_run_in_the_first_command(
         assert commands == []
         result = await run("git config --global user.email")
         assert result.exit_code == 0
-        assert result.output.strip() == "open-swe@users.noreply.github.com"
+        assert result.output.strip() == "jarvis-aeteq@users.noreply.github.com"
         assert len(commands) == 1
         await backend.ensure_git_identity()
         assert len(commands) == 1
         await backend.aexecute("git config --global user.email wrong@example.com")
         await _connect_existing_sandbox("thread-reset", cached=backend, sandbox_id=backend.id)
         result = await run("git config --global user.email")
-        assert result.output.strip() == "open-swe@users.noreply.github.com"
+        assert result.output.strip() == "jarvis-aeteq@users.noreply.github.com"
         assert len(commands) == 3
         await _connect_existing_sandbox("thread-reset", cached=backend, sandbox_id=backend.id)
         failed = await backend.aexecute("printf user-output; exit 7")
@@ -203,7 +203,7 @@ async def test_identity_is_reset_each_run_in_the_first_command(
         (home / ".gitconfig.lock").unlink()
         await _connect_existing_sandbox("thread-reset", cached=backend, sandbox_id=backend.id)
         result = await run("git config --global user.email")
-        assert result.output.strip() == "open-swe@users.noreply.github.com"
+        assert result.output.strip() == "jarvis-aeteq@users.noreply.github.com"
 
         unavailable = tmp_path / "not-a-directory"
         unavailable.touch()
