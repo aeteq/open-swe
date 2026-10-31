@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:6240748dd03d34bd6f031daa6581f2ead1deb5ee0fe85f93f61b7c3ef1ed56aa",
+  "pageVersion": "sha256:ec865edf822f51ba39d7fbe1fc7d07ac666ff09f7df87241a15706f6f9e5512d",
   "claims": [
     {
       "id": "claim_59daaaa8396044a0ab47378f78878e79",
@@ -101,12 +101,12 @@
       "statement": "Reviewer threads are tagged in metadata with kind = REVIEWER_THREAD_KIND ('reviewer'), which lets metadata searches and completion handling distinguish reviewer state from normal agent Slack work.",
       "evidence": [
         {
-          "resource": "repo://openswe/completion.py#L29-L29",
-          "version": "repo-lines-v1:sha256:930d76faace396b087a0d09466c589d4dff4529fd44babeac01e9693ffa905d3:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTMwZDc2ZmFhY2UzOTZiMDg3YTBkMDk0NjZjNTg5ZDRkZmY0NTI5ZmQ0NGJhYmVhYzAxZTk2OTNmZmE5MDVkMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTMwZDc2ZmFhY2UzOTZiMDg3YTBkMDk0NjZjNTg5ZDRkZmY0NTI5ZmQ0NGJhYmVhYzAxZTk2OTNmZmE5MDVkMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMzU3NjQwOTYwMTMyOGNlMjlkODVjZjdhZmMwYTNkZmI0ZjdiNGM5ZTM3ZmI3ZGY2MDkyM2U1NGQ0YzEwODVmYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDg5MmRmN2MxYjhmYTA0NGQ1MzAzNjNlN2U0YWZkMjIwZjQzNTU5Zjc0NjQ3OTM0MzNmNWI4ZDJjMTY2MzMwNyJ9"
+          "resource": "repo://openswe/completion.py#L29-L31",
+          "version": "repo-lines-v1:sha256:f3c30f67fd2528111a84a881af6b80b3d327239be06193929ec0f4ab543997c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzRmYWE2YjA2ZjI3YzQ3OTQyODEyYWY3Y2JlYmNkMDAzYzNhN2U1M2IzNTdhZjY4ZWZmZTZkNzNkYmFhNWJhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTMwZDc2ZmFhY2UzOTZiMDg3YTBkMDk0NjZjNTg5ZDRkZmY0NTI5ZmQ0NGJhYmVhYzAxZTk2OTNmZmE5MDVkMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2Y3NDdkMmRhM2Q3Y2Y0ZjNiMzZkMTI3N2Q5MDRjY2Y5NjNjNzVmYmE4OTIzMzljYjIyNTZlNTM4NzUzYmQwMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWYzNDlkNmU0ODkwZDM3MTgyODE0NWU4YjA1NzY3ZDgzNzY3ZTY4NTVkNjA3NThjYWQ4NmM5ODQyNmQwYjRmMiJ9"
         },
         {
-          "resource": "repo://openswe/review/findings.py#L61-L61",
-          "version": "repo-lines-v1:sha256:666420d6c6ada7dc4545d7159fde1d6cd05cec4a412809a44bfe492fb1bc696e:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjY2NDIwZDZjNmFkYTdkYzQ1NDVkNzE1OWZkZTFkNmNkMDVjZWM0YTQxMjgwOWE0NGJmZTQ5MmZiMWJjNjk2ZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjY2NDIwZDZjNmFkYTdkYzQ1NDVkNzE1OWZkZTFkNmNkMDVjZWM0YTQxMjgwOWE0NGJmZTQ5MmZiMWJjNjk2ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiN2U2ZGIxOWZjZDIxMTQxM2I3NDhiOTAwNTk0MzZhYjA4OGFjMDYwZGExNmUxZTYxZGRjMzczYjBmNTg1NjljMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzVhNDI2ZDAxNjExMDg3NTE1MTM2N2Y5YmYyOTZkMmNmYjUzMjE1ZTY3ZjMzNDZjZTg4YTQ4YWJmOWMyOTg0ZSJ9"
+          "resource": "repo://openswe/review/findings.py#L31-L31",
+          "version": "repo-lines-v1:sha256:00aea661c0cc7491893f80a67bca14cdf9442419d16b1267fcff8efdb1b64ac9:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBhZWE2NjFjMGNjNzQ5MTg5M2Y4MGE2N2JjYTE0Y2RmOTQ0MjQxOWQxNmIxMjY3ZmNmZjhlZmRiMWI2NGFjOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDBhZWE2NjFjMGNjNzQ5MTg5M2Y4MGE2N2JjYTE0Y2RmOTQ0MjQxOWQxNmIxMjY3ZmNmZjhlZmRiMWI2NGFjOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNmQxNTU2Y2NjZTMyNmEyZThjNzgxNjFjNGUzZmRjZjAwODYzZTgwY2QxYjA0MDdiYTg0ZTgwZWQ5YWUwYzg3NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmViZGNiZTk5NzAwMmNkOTMzYWVjNDNjZDc1NTNhMThmY2JhZTg4YTFkZTQ3NDVjNWRkYTc3ZWE1NDZlOGQzNiJ9"
         }
       ]
     },
@@ -167,8 +167,8 @@
       "statement": "ensure_sandbox_for_thread reuses a cached backend or reconnects with sandbox_id from thread metadata, creating a sandbox only when neither exists; an unreachable existing agent sandbox raises rather than being silently replaced, while a deleted sandbox is replaced.",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/lifecycle.py#L499-L626",
-          "version": "repo-lines-v1:sha256:ea540c2c87b94b0a90c152485ef1b75477ef173d87d9c03bbf97bc812922e489:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0Zjg3YWM2YzlmODZmZTRhNWQxMThkN2I0OTczZGY1OTY1YTdmZDczM2UyNzJmOWRlYWE5MmE3ZjJjNGJlM2NiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTYxY2U5YjEyYzhjMWRkMDllNzE3MDFlMzc1NzI5NzhlNTFlN2E0N2QwOGQwMGMxMDNiZDgxNjZlNzUxYzc3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NTVkOTU0ZTMzMjdmOTY3ODRlNDE5MTg2ZjY4ZjdlM2Q5NTg2ODRmMDg3NmMxN2UwNTg4MTlmZjNlYTExOTM2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4Y2EzOTM0NjgxOGExOTA1MzAyMzEyNzA5NzAwMDQ2YTM0OTUzNzVkZTUzMzM4OWIwNzQyYmNjMzk0MTA0ZjAwIn0"
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L473-L590",
+          "version": "repo-lines-v1:sha256:88a359e7d70590ac2caa8b8d4422d140152d4ad89dbdd067bb766f5a8dff5262:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0Zjg3YWM2YzlmODZmZTRhNWQxMThkN2I0OTczZGY1OTY1YTdmZDczM2UyNzJmOWRlYWE5MmE3ZjJjNGJlM2NiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5NzJhODYxNTk4ZDlhZGY1YzlmMmFlODRlMzhkYjZmYTZjMmEzNDExZTA0YjQwN2I5Y2JiNWQ3NzIwMGZmNDBiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NTVkOTU0ZTMzMjdmOTY3ODRlNDE5MTg2ZjY4ZjdlM2Q5NTg2ODRmMDg3NmMxN2UwNTg4MTlmZjNlYTExOTM2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIzNWQzYmY5NDhiOWI0ODI0NTI0Y2JmOGQ3OTk3ZjUyYjFlMTAyMzgwNTQyNzcxYWZmY2U1Mzc0YTQzNTBhYWNlIn0"
         }
       ]
     },
@@ -177,8 +177,8 @@
       "statement": "The thread is bound to its sandbox_id in metadata only after the sandbox is created and initialized, then the backend is published to the per-thread proxy cache, so a run that dies earlier leaves no half-built id for the next run to adopt.",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/lifecycle.py#L657-L676",
-          "version": "repo-lines-v1:sha256:87bb79ca31ab1b8c5ca4a908e184cf339c0ae9703b08b932fdee6544f0136ea6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzOTBjM2M3ODRkMDYzZTQ3Yzk4MDBlNDAzZmYwNjIzYjFlNGI3NzVmNDM2YjJhNzQzMTUwZWI5OTYyOGM0NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZTgxMDM2MWIzMmRhMjcyMjczNGIyNmFlYTJjZGQzMjRkOThkNjk1OTdjM2RiMzY2Y2QzNDZhYTE0NGU2MzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkZDg2MTJiOTNiODBiMDI3NjAxNDgxYzdlZWFlNDhjMWI5ZDdmMWQwYjBkOTYxMDZhY2ExMjQ5MDkxNTk2NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4M2I3NTIzNGZmYzhkZGUzOTYzNDM3MmJkNDllZDhkZmZjMzQ2MTlhNzMwNDczOTgzNjdiOWFmODRlN2ZlMTIifQ"
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L582-L590",
+          "version": "repo-lines-v1:sha256:36c5c1d2cab57345886431e7d6bcc54b7181e0b488d59c89b900a4ec0f7ca905:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTgzNmFmODczY2NkYmI0NGVkYzQwZWI2NWQ1ZjMyOWFjNTgyMWNhZTM0ODMzNTNiMzdjYjdlMDNiYjEyZGU2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTcyYTg2MTU5OGQ5YWRmNWM5ZjJhZTg0ZTM4ZGI2ZmE2YzJhMzQxMWUwNGI0MDdiOWNiYjVkNzcyMDBmZjQwYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODRmNWJiODM3MzJkZmNiY2JjM2JjMzhhNDM3M2I4NWZhNTQzODkyMDEzZDFiYWUwYjNjMTRiZmU0NjM1ODI2NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzVkM2JmOTQ4YjliNDgyNDUyNGNiZjhkNzk5N2Y1MmIxZTEwMjM4MDU0Mjc3MWFmZmNlNTM3NGE0MzUwYWFjZSJ9"
         }
       ]
     },
@@ -340,13 +340,13 @@
         },
         {
           "resource": "repo://openswe/run_config.py#L87-L165",
-          "version": "repo-lines-v1:sha256:8b7e7ee2f85d19d709759e40caa6bc3689f27720d72b7ac9624f24aa48755f4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmM2QxMzU2NjU0NjRiMWY1MDNiMDMzN2ExMGIxNDYwYTRlZWFjMWNmMjA4N2RjODY5YmFiZGZiOTU3MjNiNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOWNkNDI4NTE1OTg5M2EyMjBmNGRhZDkxNzE4MGI4MjA2YmZlN2Q1YTQwMDMwNGU2NDI3NDVhOWVhMWNiZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiY2NkY2EyY2Q4ZDQ3M2VhMGJiYTY5OWM5NjQ3OTUzNzU3ZWEzMjA5MjQ5M2Q2YmUwNTM1MTY0ZGRhYzc1YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1NGU5MDM0NzMwZWUxNDIyYmVjNWZkODQ0Y2JhMTVhYWMwYjkwNzhmYTdiZTU3ZmUwZTI3MTgyOTE0ZGNkMzEifQ"
+          "version": "repo-lines-v1:sha256:03d167a8b7fa1483d9f97fa3ceca389ebcfdd2c79237be13f8712ffe458caa4b:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmM2QxMzU2NjU0NjRiMWY1MDNiMDMzN2ExMGIxNDYwYTRlZWFjMWNmMjA4N2RjODY5YmFiZGZiOTU3MjNiNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOWNkNDI4NTE1OTg5M2EyMjBmNGRhZDkxNzE4MGI4MjA2YmZlN2Q1YTQwMDMwNGU2NDI3NDVhOWVhMWNiZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiY2NkY2EyY2Q4ZDQ3M2VhMGJiYTY5OWM5NjQ3OTUzNzU3ZWEzMjA5MjQ5M2Q2YmUwNTM1MTY0ZGRhYzc1YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1NGU5MDM0NzMwZWUxNDIyYmVjNWZkODQ0Y2JhMTVhYWMwYjkwNzhmYTdiZTU3ZmUwZTI3MTgyOTE0ZGNkMzEifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-28T14:57:39.210Z"
+    "at": "2026-10-31T14:24:53.711Z"
   }
 }

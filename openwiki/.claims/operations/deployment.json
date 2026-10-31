@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:7cf76f96db39d680b40d9c407a6dcbccf8f90d8ba79c0d098f3a4b82e9a86d07",
+  "pageVersion": "sha256:45c955980b1b8a4f9fb983c412d56f2966716d87676a65ebb1808b28b3b22e12",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         }
       ]
     },
@@ -38,13 +38,13 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         }
       ]
     },
     {
       "id": "claim_7c0acef30b314001ba9760696f5b0434",
-      "statement": "The local dev server's LangGraph constraints are set to langgraph-api==0.18.0.dev11 and langgraph-runtime-inmem==0.38.0.dev11 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
+      "statement": "The local dev server's LangGraph constraints are set to langgraph-api==0.18.0.dev13 and langgraph-runtime-inmem==0.38.0.dev13 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
       "evidence": [
         {
           "resource": "repo://Dockerfile",
@@ -56,7 +56,7 @@
         },
         {
           "resource": "repo://pyproject.toml",
-          "version": "repo-file-v1:sha256:605fdb0da88cdda8fff527398d5233212fd893ea5874e6df2386f71592ed5ffc"
+          "version": "repo-file-v1:sha256:6b0b090846c879d6d3698262f3fdf4f1fad537f75a45397768a0171a9734efa3"
         }
       ]
     },
@@ -66,7 +66,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
+          "version": "repo-file-v1:sha256:988176906adff58fde7c2484487c84613c2a0de23f22a618e40f4ba2def71bc1"
         }
       ]
     },
@@ -76,15 +76,15 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         },
         {
           "resource": "repo://package.json",
-          "version": "repo-file-v1:sha256:448c10173e8cd0d561069c0a53fe7eadce7d9b8d42c9b1402a131764bba7dc26"
+          "version": "repo-file-v1:sha256:aea836bb10fcc947065b5afdb0b746dab15c7b003fd344025e99162949843d7b"
         },
         {
           "resource": "repo://ui/vite.config.ts",
-          "version": "repo-file-v1:sha256:37cdb0513284d00c34a05b439e57f9a4394afb7865755975bb9fa9dfe85f796b"
+          "version": "repo-file-v1:sha256:a2c9cd04fd6800f6208d1e1ed0096ec10eac8d243966a1048a3162baa4d6d641"
         }
       ]
     },
@@ -94,7 +94,7 @@
       "evidence": [
         {
           "resource": "repo://package.json",
-          "version": "repo-file-v1:sha256:448c10173e8cd0d561069c0a53fe7eadce7d9b8d42c9b1402a131764bba7dc26"
+          "version": "repo-file-v1:sha256:aea836bb10fcc947065b5afdb0b746dab15c7b003fd344025e99162949843d7b"
         }
       ]
     },
@@ -114,7 +114,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
+          "version": "repo-file-v1:sha256:988176906adff58fde7c2484487c84613c2a0de23f22a618e40f4ba2def71bc1"
         }
       ]
     },
@@ -124,7 +124,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         }
       ]
     },
@@ -174,7 +174,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
+          "version": "repo-file-v1:sha256:c5ee95aa56be5f72811d4f13a3ce8641871939068710bd27801ff66bbede932e"
         }
       ]
     },
@@ -194,7 +194,7 @@
       "evidence": [
         {
           "resource": "repo://ui/vite.config.ts",
-          "version": "repo-file-v1:sha256:37cdb0513284d00c34a05b439e57f9a4394afb7865755975bb9fa9dfe85f796b"
+          "version": "repo-file-v1:sha256:a2c9cd04fd6800f6208d1e1ed0096ec10eac8d243966a1048a3162baa4d6d641"
         }
       ]
     },
@@ -204,7 +204,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
+          "version": "repo-file-v1:sha256:c5ee95aa56be5f72811d4f13a3ce8641871939068710bd27801ff66bbede932e"
         }
       ]
     },
@@ -224,7 +224,7 @@
       "evidence": [
         {
           "resource": "repo://openswe/utils/dashboard_ui.py",
-          "version": "repo-file-v1:sha256:d0069fbc09b4614b0dcc9a81be00431efcd605cbd9a42d5cde6223ed2b4f8f6b"
+          "version": "repo-file-v1:sha256:420d719a42688a7d98228727342c51166cbbd645ee9bbd25ec384cf96375ca7b"
         }
       ]
     },
@@ -234,7 +234,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         },
         {
           "resource": "repo://langgraph.json",
@@ -242,7 +242,7 @@
         },
         {
           "resource": "repo://ui/vite.config.ts",
-          "version": "repo-file-v1:sha256:37cdb0513284d00c34a05b439e57f9a4394afb7865755975bb9fa9dfe85f796b"
+          "version": "repo-file-v1:sha256:a2c9cd04fd6800f6208d1e1ed0096ec10eac8d243966a1048a3162baa4d6d641"
         }
       ]
     },
@@ -252,7 +252,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         },
         {
           "resource": "repo://examples/ngrok/webhooks-only.yml",
@@ -280,17 +280,17 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:0c64b1f425d9afcbd17d2f42ad39fc9abbb36bfe846c345bcac7b32f77320f0c"
+          "version": "repo-file-v1:sha256:c5ee95aa56be5f72811d4f13a3ce8641871939068710bd27801ff66bbede932e"
         }
       ]
     },
     {
       "id": "claim_15a10d49566b4e37aa1edc28ccbb0019",
-      "statement": "The FastAPI lifespan startup sequence validates configuration, pins an event loop, acquires a database advisory lock, creates the open_swe schema and runs alembic migrations, imports workspace data from the LangGraph Store into Postgres (idempotent steps), deletes legacy analyzer crons, syncs admin flags, starts an analytics worker, starts transcript/bridge/UI-invalidation/notification listeners, warms the agent build, and opens LangGraph graphs; import/analytics/listener failures log warnings but do not prevent startup.",
+      "statement": "The FastAPI lifespan startup sequence validates configuration, pins an event loop, acquires a database advisory lock, creates the open_swe schema and runs alembic migrations, deletes legacy analyzer crons, syncs admin flags, loads workspace metadata, starts an analytics worker, starts transcript/bridge/UI-invalidation/notification listeners, warms the agent build, and opens LangGraph graphs; failures in steps beyond initial setup log warnings but do not prevent startup.",
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:923f7c9014f4afe4d3d748c92746ac87623dbf1eb0f508b8a10b606f69a742f5"
+          "version": "repo-file-v1:sha256:10009d002ad275a701cbfc6c222446e81421bcb530907a33aa4af434b1317396"
         }
       ]
     },
@@ -300,7 +300,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         }
       ]
     },
@@ -310,7 +310,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:f02d9bc108e6753945b03ff1a7cd45a5fed8413ee765bae0ebba1eb62e3412d1"
+          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
         }
       ]
     },
@@ -320,7 +320,7 @@
       "evidence": [
         {
           "resource": "repo://openswe/utils/dashboard_ui.py",
-          "version": "repo-file-v1:sha256:d0069fbc09b4614b0dcc9a81be00431efcd605cbd9a42d5cde6223ed2b4f8f6b"
+          "version": "repo-file-v1:sha256:420d719a42688a7d98228727342c51166cbbd645ee9bbd25ec384cf96375ca7b"
         }
       ]
     },
@@ -330,7 +330,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:09db3c0cfc077e7ca97a02fc4cfbce17d555fdb1b632c8587b8e27c0524b0884"
+          "version": "repo-file-v1:sha256:988176906adff58fde7c2484487c84613c2a0de23f22a618e40f4ba2def71bc1"
         }
       ]
     },
@@ -374,13 +374,13 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:923f7c9014f4afe4d3d748c92746ac87623dbf1eb0f508b8a10b606f69a742f5"
+          "version": "repo-file-v1:sha256:10009d002ad275a701cbfc6c222446e81421bcb530907a33aa4af434b1317396"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-28T14:57:39.210Z"
+    "at": "2026-10-31T14:24:53.711Z"
   }
 }

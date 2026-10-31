@@ -1,12 +1,14 @@
 ---
 type: integration
-title: Dashboard and UI Integration
-description: React UI architecture, thread listing and chat interfaces, real-time updates, state invalidation, and OAuth integration.
-tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, langgraph, real-time]
+title: Dashboard, Desktop Client, and UI Integration
+description: FastAPI dashboard APIs with OAuth authentication, React/TanStack UI, Electron desktop app with local bridged-sandbox mode, real-time state invalidation, and deployment proxies.
+tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, langgraph, real-time, electron, desktop, browser-ui]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 sources:
+  - id: openwiki-source-2f66613e587b7c57d9be522e
+    resource: repo://desktop/README.md
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
   - id: openwiki-source-e4bce0ee35cec33ca72293f7
@@ -47,18 +49,18 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
-# Dashboard and UI Integration
+# Dashboard, Desktop Client, and UI Integration
 
-The dashboard is the human-facing surface for agent operations: a FastAPI router exposing APIs, a React application built with TanStack Start serving the frontend, and TypeScript proxies that mediate between browsers/clients and the backend. The dashboard API is the policy boundary for sessions, GitHub-derived authority, dashboard records, and LangGraph operations; browser-facing clients use proxies rather than exposing server credentials or calling a raw LangGraph deployment directly.
+The dashboard is the human-facing surface for agent operations: a FastAPI router exposing authenticated APIs, a React application built with TanStack Start serving the frontend, TypeScript proxies that mediate between browsers/clients and the backend, and an Electron desktop app that connects to the same backend and runs local agents on user machines. The dashboard API is the policy boundary for sessions, GitHub-derived authority, dashboard records, and LangGraph operations; browser-facing clients use proxies rather than exposing server credentials or calling a raw LangGraph deployment directly. Desktop users may run agents over selected local projects through a shared bridge that supervises sandbox operations on the Mac.
 
-## Composition and routing
+## Dashboard composition and routing
 
-`openswe.api.app.create_app()` includes the dashboard router at line 162, then calls `mount_dashboard_ui(app)` at line 182. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
+`openswe.api.app.create_app()` includes the dashboard router at line 165, then calls `mount_dashboard_ui(app)` at line 185. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
 
-The dashboard router aggregates over 30 feature routers including threads, reviews, schedules, skills, workspaces, profiles, and integrations (Slack, MCP). Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
+The dashboard router aggregates over 40 feature routers including threads, reviews, schedules, skills, workspaces, profiles, integrations (Slack, MCP), desktop environments, bridge operations, and analytics. Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
 
 ## Session and request security
 
@@ -67,6 +69,18 @@ GitHub login creates signed state containing a hash of a nonce placed in a short
 Cookie security is derived from the API URL and whether UI and API share an origin: HTTP is non-secure and `SameSite=Lax`; same-origin HTTPS is `Secure; SameSite=Lax`; split-origin HTTPS is `Secure; SameSite=None`. `require_session` turns a missing or invalid session cookie into `401`. Admin routes additionally enforce `is_admin`; no alternate authentication methods are currently supported for dashboard admin endpoints.
 
 The router-wide CSRF guard permits safe methods and requests authenticated only with an explicit bearer token. Cookie-authenticated mutations require an allowed `Origin` or `Referer`; WebSockets always receive the origin check. This control protects the ambient cookie, not business authority: individual endpoints still enforce administrator status, repository access, or thread postability. At app construction, credentialed CORS may be configured from `DASHBOARD_ALLOWED_ORIGINS`, but `*` is rejected because it is unsafe with credentials.
+
+## Desktop Electron integration
+
+The Open SWE Desktop app is an Electron application that downloads and caches a UI release, connects to a backend, and permits users to run agents over local projects selected from a workspace picker. The app uses a unified session model: GitHub login creates the same signed dashboard session used by the web UI, issued through a loopback listener on a user-selected port. The UI runs at `open-swe://app` with native IPC for local projects, threads, worktrees, terminals, and files.
+
+Desktop users can choose **This Mac** (or the configured machine) in the new-task composer to run an agent over a selected local project. The thread is an ordinary cloud thread on the connected backend — same transcript, models, settings, MCPs and skills — whose sandbox is the project on the machine instead of a hosted box. The app serves it through a sandbox bridge: it long-polls the backend for the agent's `execute`, `upload_files` and `download_files` requests, runs them in the checkout under the user's login shell, and posts the results back. This is the same bridge `oswe run` uses, from the shared `bridge-client` package.
+
+Commands run with the user's login shell environment, minus anything secret-shaped except `GITHUB_TOKEN` and `GH_TOKEN`, so `git` and `gh` use the user's own identity and credentials. A thread runs only while the app that started it is open: quitting closes its bridge, and a run started meanwhile reports the machine as unreachable. Opening the thread again, or sending a follow-up, reopens it. The thread is visible from the web and other computers, but only this machine can continue it.
+
+The composer's workspace selector chooses where a local thread runs. **Current checkout** (the default) runs the agent in the project directory itself, on whichever branch the branch picker selects. **New worktree** gives the thread its own git worktree, checked out from the selected base branch on a placeholder `open-swe/local-<id>` branch that the agent renames after it reads the request — so the user's own checkout is never touched and several local threads can run at once without contending for a working tree. Deleting a thread removes its worktree along with anything uncommitted in it. Only one agent may work in a given tree at a time, so starting a thread in a checkout another agent is running in, or switching that checkout's branch under it, is refused.
+
+The side panel's **Changes** tab diffs the project against a git snapshot taken when the session started, so it shows what the agent changed and not the working tree's prior state. It also shows the workspace's branch and discovers its pull request when the GitHub CLI is installed and authenticated. The **Terminal** and file browser open in the same checkout, on the user's machine.
 
 ## Thread discovery and access
 
@@ -116,6 +130,8 @@ The production proxy retains OAuth redirects with `redirect: "manual"`, forwards
 When a dashboard build is available, `openswe.utils.dashboard_ui` mounts immutable hashed assets at `/assets` and serves the shell (`_shell.html`) for HTML navigation requests. It deliberately declines API, webhook, health, LangGraph, docs, metrics, and asset prefixes; a non-HTML request for an unknown UI route is likewise left for the underlying server to return as a 404. The shell is `no-cache` so it can reference a new asset manifest, while hashed assets can be cached for a year. With `DASHBOARD_DEV_SERVER_URL`, the backend instead reverse-proxies non-reserved traffic to Vite, preserving the backend origin and redirect responses. The catch-all is registered last; code which subsequently adds a route must call `keep_dashboard_ui_last`.
 
 `DASHBOARD_STATIC_DIR` selects an explicit build; otherwise the in-repository `ui/.output/public` build is used when present. A build served under a LangGraph mount prefix must be built with the matching `DASHBOARD_BASE_PATH`. The UI router uses Vite's `BASE_URL` as its `basepath`, so client navigation follows that mount.
+
+Desktop UI descriptor is served at `/desktop-ui.json`: it selects a GitHub Release archive by backend commit, SHA-256 and bridge protocol version. The Electron app downloads that archive with no session credentials, verifies it before activation, and keeps the last complete UI on disk for offline use.
 
 ## Run stream display and agent events
 

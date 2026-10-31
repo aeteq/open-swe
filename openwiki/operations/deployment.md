@@ -42,10 +42,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 ---
 
 # Development, Deployment, and Serving
@@ -58,7 +58,7 @@ See [Configuration](../operations/configuration.md) for the complete environment
 
 ### Manifest and runtime versions
 
-Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.18.0.dev11` and `langgraph-runtime-inmem==0.38.0.dev11` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
+Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.18.0.dev13` and `langgraph-runtime-inmem==0.38.0.dev13` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
 
 For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.15.1-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
 
@@ -72,31 +72,24 @@ sequenceDiagram
   participant Validation as Validation
   participant DB as Postgres
   participant Migrations as Migrations
-  participant Store as LangGraph Store
-  participant Admin as Admin
-  participant Analytics as Analytics
+  participant Store as Store/Admin
   participant Listeners as Listeners
   participant Build as Build
   participant Ready as Ready to serve
 
-  Boot->>Validation: Validate config (GitHub allowlist, sandbox, LLM)
+  Boot->>Validation: Validate config (GitHub allowlist, sandbox, LLM, MDA, Slack)
   Boot->>Validation: Require POSTGRES_URI configured
+  Boot->>Validation: Pin single event loop
   Boot->>DB: Acquire advisory lock
   Boot->>DB: Create schema if missing
   Boot->>Migrations: Run alembic migrations to head
-  Boot->>Store: Import user mappings (idempotent)
-  Boot->>Store: Import concierge mode (idempotent)
-  Boot->>Store: Import user records (idempotent)
-  Boot->>Store: Import automations (idempotent)
-  Boot->>Store: Import skills (idempotent)
   Boot->>DB: Delete analyzer crons (cleanup)
-  Boot->>Admin: Sync admin flags from config
-  Boot->>Analytics: Load workspace metadata
-  Boot->>Analytics: Start pooled worker
+  Boot->>Store: Sync admin flags from config
+  Boot->>Store: Load workspace metadata + start analytics worker
   Boot->>Listeners: Start transcript listener
   Boot->>Listeners: Start sandbox-bridge listener
   Boot->>Listeners: Start UI invalidation hub
-  Boot->>Listeners: Start notification listener
+  Boot->>Listeners: Start database notification listener
   Boot->>Build: Warm agent build
   Boot->>Build: Open LangGraph runtime
   Note over Listeners,Build: failures log warnings only
@@ -105,15 +98,14 @@ sequenceDiagram
 
 The FastAPI lifespan startup runs in this order:
 
-1. **Configuration validation:** Validates GitHub login allowlist, sandbox provider startup config, and local dev LLM config. Requires `POSTGRES_URI` to be set.
+1. **Configuration validation:** Validates GitHub login allowlist, sandbox provider startup config, Slack configuration, MDA client startup config, and local dev LLM config. Requires `POSTGRES_URI` to be set.
 2. **Event loop:** Pins a single event loop before queue worker initialization to ensure workers land on the correct loop.
 3. **Database setup:** Acquires an advisory lock (XID `557314367248862439`), creates the `open_swe` schema if it does not exist, and runs Alembic migrations to the latest revision using SQLAlchemy async connections.
-4. **Store imports:** Migrates user mappings, concierge preferences, user records, automations, and skills from LangGraph Store to Postgres (each is idempotent, run once). Failures log warnings.
-5. **Cleanup:** Deletes legacy review-style analyzer crons that can no longer fire. Failures log warnings.
-6. **Admin sync:** Admin flags are synced from `CONFIGURED_ADMINS` into the user table.
-7. **Analytics activation:** Workspace records are loaded and reporting metadata is initialized; a pooled analytics event worker starts (reads the Store, writes to Postgres). Failures log warnings.
-8. **Listeners:** Transcript, sandbox-bridge, UI invalidation, and database notification listeners start (handle multi-replica notifications). Failures log warnings.
-9. **Build warming and ready:** The agent build is warmed for faster first use, then the LangGraph runtime opens all registered graphs. Failures log warnings.
+4. **Cleanup:** Deletes legacy review-style analyzer crons that can no longer fire. Failures log warnings.
+5. **Admin sync:** Admin flags are synced from `CONFIGURED_ADMINS` into the user table.
+6. **Analytics activation:** Workspace records are loaded and reporting metadata is initialized; a pooled analytics event worker starts (reads the Store, writes to Postgres). Failures log warnings.
+7. **Listeners:** Transcript, sandbox-bridge, UI invalidation, and database notification listeners start (handle multi-replica notifications). Failures log warnings.
+8. **Build warming and ready:** The agent build is warmed for faster first use, then the LangGraph runtime opens all registered graphs. Failures log warnings.
 
 Failures in any step except setup and migrations (steps 1–3) log warnings but do not prevent the server from running; the dashboard and API remain available, though affected features may degrade.
 

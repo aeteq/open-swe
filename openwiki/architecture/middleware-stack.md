@@ -3,16 +3,9 @@ type: architecture-component
 title: Middleware Stack and Request Processing
 description: Ordering-sensitive middleware around the coding agent and reviewer model and tool loops. Catalogs all middleware, their ordering, responsibilities, and how they shape agent behavior across models, tools, and state.
 tags: [middleware, agent, reviewer, model-call, tool-call, fallback, guardrails, PrepareRunState]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
 sources:
-  - id: openwiki-source-fb24ffc1656ce0258fa2ac33
-    resource: repo://openswe/agent_api/graph.py
   - id: openwiki-source-2e8359c5702d5a31e2d5ea43
     resource: repo://openswe/graphs/read_only.py
-  - id: openwiki-source-41baa38c611462fcbcd00a78
-    resource: repo://openswe/middleware/deliver_event_matches.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
     resource: repo://openswe/middleware/dynamic_tools.py
   - id: openwiki-source-d928cc1d6b2c4073452120a5
@@ -41,7 +34,10 @@ sources:
     resource: repo://openswe/reviewer.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-31T14:24:53.711Z
 ---
 
 # Middleware Stack and Request Processing
@@ -147,28 +143,14 @@ These middleware enforce safety constraints at tool-execution time:
 
 ### Before-model hooks
 
-These hooks run before each model call:
+These hooks run before each model call and are typically implemented as `abefore_model` or `before_model` decorated functions:
 
 - **`refresh_github_proxy_before_model`** (unless worker mode)  
   Refreshes a near-expiry sandbox GitHub-proxy installation token that expires after one hour, preventing 401s on git/gh commands in long-running agents.
 
-- **`check_message_queue_before_model`** (not stop-summary mode)  
-  Reads `("queue", thread_id)` from the LangGraph store, deletes `pending_messages` before constructing the message list to avoid duplicate delivery, and injects queued human input in FIFO order. Also consumes a pending autofix event.
-
-- **`deliver_event_matches_before_model`** (except in stop-summary mode)  
-  Appends webhook-driven events owed by the thread from the database in oldest-first order, preventing event delivery delays until run completion.
-
-### Reviewer-specific middleware
-
-- **`RepairOrphanedToolCallsMiddleware`**  
-  Inserts synthetic error `ToolMessage` results for tool-call IDs that have no corresponding result before model calls. Prevents permanently wedged reviewer threads when runs are interrupted mid-tool-call.
-
-- **`settle_review_check_on_exit`** (after-agent hook)  
-  Closes an unpublished tracked reviewer check as **neutral** so an incomplete review is not presented as a PR code failure. If `publish_review` completed but its conclusion PATCH failed transiently, the hook retries the stored pending real conclusion.
-
 ## Coding-agent middleware stack
 
-The coding-agent middleware chain is outer to inner (assembled by `build_agent()` in `/openswe/server.py#L1891-L1943`). Each wraps the next, forming a defense-in-depth model for failure handling and request shaping. This list shows only the openswe-specific middleware; deepagents also installs its own middleware for filesystem tools, skill management, and core tool execution:
+The coding-agent middleware chain is outer to inner (assembled by `build_agent()` in `/openswe/server.py#L2172-L2216`). Each wraps the next, forming a defense-in-depth model for failure handling and request shaping. This list shows only the openswe-specific middleware; deepagents also installs its own middleware for filesystem tools, skill management, and core tool execution:
 
 | # | Middleware | Type | Condition |
 |---|---|---|---|
@@ -182,17 +164,15 @@ The coding-agent middleware chain is outer to inner (assembled by `build_agent()
 | 8 | ModelCallLimitMiddleware | flow-control | always |
 | 9 | ExcludeToolsMiddleware | tool-related | always |
 | 10 | TaskCoordinationMiddleware | integration-specific | worker mode active |
-| 11 | refresh_github_proxy_before_model | model-call | unless worker mode |
-| 12 | check_message_queue_before_model | model-call | not stop-summary mode |
-| 13 | deliver_event_matches_before_model | model-call | not stop-summary mode |
-| 14 | RequireUserReplyMiddleware | flow-control | always |
-| 15 | RequireCliResultMiddleware | flow-control | CLI thread |
-| 16 | notify_step_limit_reached | flow-control | always (after-agent hook) |
-| 17 | record_run_usage | flow-control | always (after-agent hook) |
-| 18 | ModelSelectionMiddleware | model-selection | adaptive routing enabled |
-| 19 | ModelFallbackMiddleware | model-selection | fallback model differs |
-| 20 | DynamicToolMiddleware | tool-related | integration groups present |
-| 21 | ModelErrorMiddleware | error-handling | always |
+| 11 | refresh_github_proxy_before_model | before-model hook | unless worker mode |
+| 12 | RequireUserReplyMiddleware | flow-control | always |
+| 13 | RequireCliResultMiddleware | flow-control | CLI thread |
+| 14 | notify_step_limit_reached | flow-control | always (after-agent hook) |
+| 15 | record_run_usage | flow-control | always (after-agent hook) |
+| 16 | ModelSelectionMiddleware | model-selection | adaptive routing enabled |
+| 17 | ModelFallbackMiddleware | model-selection | fallback model differs |
+| 18 | DynamicToolMiddleware | tool-related | integration groups present |
+| 19 | ModelErrorMiddleware | error-handling | always |
 
 **Shell guards** (applied at tool execution time, not in middleware list):
 - PullRequestCreationGuardMiddleware
@@ -221,10 +201,7 @@ Preparation must be idempotent: a failure before the checkpoint can cause re-exe
 ```mermaid
 stateDiagram-v2
     [*] --> Received: Message arrives
-    Received --> QueueCheck: Check message queue
-    QueueCheck --> Deduplicate: Delete pending<br/>before injecting
-    Deduplicate --> EventDelivery: Deliver owed<br/>webhook events
-    EventDelivery --> PrepareLatch: Fingerprint message<br/>and config
+    Received --> PrepareLatch: Fingerprint message<br/>and config
     PrepareLatch --> PrepareSkip: run_prepared_for<br/>matches?
     PrepareSkip -->|Yes| ModelPrep: Skip setup<br/>use latch
     PrepareSkip -->|No| PrepareSetup: Execute setup<br/>refresh tokens/diffs
@@ -300,29 +277,31 @@ The blocking result includes a diff preview (truncated to 400 lines, 20,000 char
 
 ## Reviewer middleware chain
 
-The reviewer graph installs a markedly leaner middleware stack than the coding agent because reviewers are read-only and deterministic (assembled in `/openswe/reviewer.py#L1110-L1150`):
+The reviewer graph installs a markedly leaner middleware stack than the coding agent because reviewers are read-only and deterministic (assembled in `/openswe/reviewer.py#L1088-L1105`):
 
 | # | Middleware | 
 |---|---|
 | 1 | PrepareReviewerRunMiddleware |
-| 2 | AnthropicPromptCachingMiddleware |
-| 3 | ModelCallLimitMiddleware |
-| 4 | ExcludeToolsMiddleware |
-| 5 | refresh_github_proxy_before_model |
-| 6 | check_message_queue_before_model |
-| 7 | RepairOrphanedToolCallsMiddleware |
-| 8 | ModelRetryMiddleware (TimeoutError only) |
-| 9 | ModelErrorMiddleware |
-| 10 | settle_review_check_on_exit (after-agent hook) |
+| 2 | TranscriptMiddleware |
+| 3 | record_run_usage |
+| 4 | AnthropicPromptCachingMiddleware |
+| 5 | ModelCallLimitMiddleware |
+| 6 | ExcludeToolsMiddleware |
+| 7 | refresh_github_proxy_before_model |
+| 8 | RepairOrphanedToolCallsMiddleware |
+| 9 | ModelRetryMiddleware (TimeoutError only) |
+| 10 | ModelErrorMiddleware |
+| 11 | settle_review_check_on_exit (after-agent hook) |
 
 **Key differences from coding agent:**
 
-- No conversation offloading, transcript, incident, client tools, task coordination, model selection, model fallback, dynamic tools, or shell guards.
+- No conversation offloading, incident, client tools, task coordination, model selection, model fallback, or dynamic tools.
 - Uses langchain's `ModelRetryMiddleware` for `TimeoutError` only (not cross-provider fallback).
 - Adds `RepairOrphanedToolCallsMiddleware` to fix interrupted review threads.
 - Adds `settle_review_check_on_exit` to mark incomplete reviews as neutral.
 - Deterministic repo prep (single clone-or-fetch + checkout) before the first model call, avoiding token burn on git commands.
 - No push, commit, or PR-opening tools; review is read-only and deterministic.
+- `TranscriptMiddleware` is positioned earlier (before `record_run_usage`), and `record_run_usage` comes after TranscriptMiddleware to capture usage metrics in the transcript.
 
 ## Tool and message safety invariants
 
@@ -331,9 +310,6 @@ Reviewer sandbox setup opts into replacement because its checkout is re-derived 
 
 **Workflow push approval:**  
 `WorkflowPushGuardMiddleware` intercepts `execute` and `background_execute` tool calls and parses for `git push` commands targeting `.github/workflows`. When detected, it blocks the push and posts a Slack approval request with a diff preview, approval URL, and unique fingerprint. Only exact matching of the fingerprinted diff allows the push to proceed; any workflow change causes a new approval prompt. Changes inherited from a merged base branch are noted separately.
-
-**Message deduplication:**  
-`check_message_queue_before_model` deletes `pending_messages` from the queue before injecting deferred human input, ensuring Slack replies and web messages are not double-delivered if the agent resumes.
 
 ## Integration with DeepAgents
 

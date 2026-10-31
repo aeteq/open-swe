@@ -3,9 +3,14 @@ type: operations reference
 title: Configuration and Startup Validation
 description: Explains Open SWE's lazy environment registry, persisted team and workspace settings, model and sandbox selection, secrets, and the boot-time validation that determines whether a server starts.
 tags: [configuration, operations, environment-variables, startup-validation, sandbox, models, security, workspace-settings]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-31T14:24:53.711Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
+  - id: openwiki-source-15d75fcce83b1cece4ea13b8
+    resource: repo://openswe/agent_api/client.py
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
   - id: openwiki-source-913527bc7b548b4bf81f6a35
@@ -26,16 +31,15 @@ sources:
     resource: repo://openswe/sandboxes/providers/langsmith.py
   - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
     resource: repo://openswe/sandboxes/providers/registry.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
+  - id: openwiki-source-8ad17ae4f22f510aa742fcdb
+    resource: repo://openswe/slack/http.py
   - id: openwiki-source-cbab46b11893a9efc599e687
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+  - id: openwiki-source-7b35cf61ea1491240ef4c804
+    resource: repo://openswe/workspaces/store.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
 # Configuration and Startup Validation
@@ -55,7 +59,7 @@ The canonical name wins over aliases. Deprecated names and aliases are registere
 
 ### Deployment topology
 
-`langgraph.json` registers the agent, reviewer, review-scout, chat, and scheduler graphs and mounts `openswe.webapp:app` (FastAPI) as the HTTP application. The checkpointer uses a delete-based TTL strategy with a 60-minute sweep interval and 43200-minute default TTL (30 days). The file declares `.env` as the environment file.
+`langgraph.json` registers the agent, reviewer, and review-scout graphs and mounts `openswe.webapp:app` (FastAPI) as the HTTP application. The checkpointer uses a delete-based TTL strategy with a 60-minute sweep interval and 43200-minute default TTL (30 days). The file declares `.env` as the environment file.
 
 ## Startup lifecycle and validation
 
@@ -75,7 +79,9 @@ flowchart TD
     CheckSandbox -->|fail| Stop
     CheckSandbox -->|pass| CheckMDA["Validate MDA/remote runtime URL"]
     CheckMDA -->|fail| Stop
-    CheckMDA -->|pass| CheckModel["Validate localhost model credentials"]
+    CheckMDA -->|pass| CheckSlack["Validate Slack configuration"]
+    CheckSlack -->|fail| Stop
+    CheckSlack -->|pass| CheckModel["Validate localhost model credentials"]
     CheckModel -->|fail| Stop
     CheckModel -->|pass| Workers["Initialize background workers"]
     Workers --> Serve["Serve routes and runs"]
@@ -86,21 +92,23 @@ flowchart TD
 
 **GitHub login gate**: Startup fails when neither `ALLOWED_GITHUB_ORGS` nor `ALLOWED_GITHUB_USERS` is non-empty. The deployment must gate dashboard access.
 
-**MDA/Remote runtime**: Startup fails when `MDA_RUNTIME_URL` is not configured, since the agent and reviewer graphs require it. If set, the validation checks that the URL is available.
+**MDA/Remote runtime**: Startup fails when `MDA_RUNTIME_URL` is not configured, since the agent and reviewer graphs require it. The URL must be absolute (http/https scheme with hostname), and non-localhost HTTP URLs are rejected. `REMOTE_RUNTIME_TOKEN_SECRET` must also be configured.
 
-**Sandbox configuration**: Validation is provider-specific. For `SANDBOX_TYPE=langsmith`, it checks numeric resource fields (`DEFAULT_SANDBOX_*_BYTES`, `DEFAULT_SANDBOX_*_SECONDS`), numeric TTL fields (rejecting negative values for idle or delete-after-stop), and `SANDBOX_CREATE_EXTRA_JSON` (rejecting non-JSON or non-object). An unsupported provider name is rejected only when `create_sandbox` is called, not at startup.
+**Slack configuration**: Startup fails when any of `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_APP_ID`, `SLACK_BOT_USER_ID`, or `SLACK_BOT_USERNAME` is missing. Every deployment needs Slack integration.
 
-**Model credentials** (localhost only): Validation runs only when `DASHBOARD_BASE_URL` is explicitly set to an `http://localhost` address. It checks the credential required by the deployment's `LLM_MODEL_ID` (or the fallback default): `OPENAI_API_KEY` for OpenAI, `ANTHROPIC_API_KEY` for Anthropic, and so on. Desktop OpenAI OAuth is accepted as a substitute for `OPENAI_API_KEY`. Runtime model choices (team settings, profile, thread) are not validated at boot.
+**Sandbox configuration**: Validation checks numeric resource fields (`DEFAULT_SANDBOX_*_BYTES`, `DEFAULT_SANDBOX_*_SECONDS`), rejects negative values for idle or delete-after-stop TTLs, and validates `SANDBOX_CREATE_EXTRA_JSON` (must be valid JSON and a JSON object, not rejected until startup). Non-integer values for sandbox resource environment variables raise `ValueError`.
+
+**Model credentials** (localhost only): Validation runs only when `DASHBOARD_BASE_URL` is explicitly set to an `http://localhost` address. It checks the credential required by the deployment's `LLM_MODEL_ID` (or the fallback default): `OPENAI_API_KEY` for OpenAI, `ANTHROPIC_API_KEY` for Anthropic, and so on. Runtime model choices (team settings, profile, thread) are not validated at boot.
 
 **CORS wildcards**: If `DASHBOARD_ALLOWED_ORIGINS` contains `*`, the application raises during construction because credentialed CORS (required for dashboard API access) cannot safely use wildcards. Explicit origins enable credential sharing.
 
 ## Sandboxes: provider selection and configuration
 
-`SANDBOX_TYPE` defaults to `langsmith` and selects the sandbox backend. The provider registry recognizes `langsmith`, `daytona`, `modal`, `runloop`, `e2b`, and `local`. Unsupported values raise `ValueError` with the supported list. The local provider executes commands on the host without isolation and is intended for local development only.
+Open SWE connects to LangSmith sandboxes created and managed by Managed Deep Agents. The backend does not create sandboxes itself; it reconnects to sandboxes MDA owns by ID.
 
 ### LangSmith sandbox resources
 
-For LangSmith, resource defaults are:
+For LangSmith sandboxes, resource defaults are:
 - 128 GiB filesystem (`DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES`)
 - 4 vCPUs (`DEFAULT_SANDBOX_VCPUS`)
 - 16 GiB memory (`DEFAULT_SANDBOX_MEM_BYTES`)
@@ -112,17 +120,15 @@ These are deployment defaults when a workspace does not override them. Startup v
 ### Workspace sandbox customization
 
 Each workspace can specify:
-- `base_snapshot_id`: opaque provider-scoped snapshot identifier; new sandboxes boot from it instead of the default root snapshot
-- `mem_bytes`, `vcpus`, `fs_capacity_bytes`: resource overrides for LangSmith (only; other providers ignore these)
-- `create_params`: arbitrary LangSmith create-body fields (only; other providers ignore these)
+- `base_snapshot_id`: opaque provider-scoped snapshot identifier; new sandboxes boot from it instead of the deployment default
+- `mem_bytes`, `vcpus`, `fs_capacity_bytes`: resource overrides for sandboxes spawned in this workspace
+- `create_params`: arbitrary LangSmith create-body fields for sandboxes
 
-The registry passes these only to the LangSmith factory; other providers receive only an existing sandbox ID if reconnecting.
+When MDA creates a sandbox for a workspace, it receives these configuration details. New sandboxes boot from the workspace's captured snapshot (if ready) instead of the deployment default root snapshot.
 
-### Snapshot naming and credentials
+### Snapshot naming
 
 `WORKSPACE_SNAPSHOT_PREFIX` (default `openswe`, legacy alias `ENVIRONMENT_SNAPSHOT_PREFIX`) prefixes environment snapshot names, separating deployments that share a LangSmith workspace.
-
-Sandbox operations use `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT` unless workspace-specific `SANDBOX_LANGSMITH_API_KEY` and `SANDBOX_LANGSMITH_ENDPOINT` are set. This allows a single workspace to use multiple LangSmith tenants for sandboxes.
 
 ## Model selection and defaults
 
@@ -186,7 +192,7 @@ Open SWE's agent graph includes an MCP (Model Context Protocol) server that can 
 
 **Persisted settings**: Use the Store only for instance-wide team settings and workspace-level base snapshot/custom resources. Design changes to degrade gracefully when Store reads fail (unavailable or missing data return hardcoded defaults). Chat inherits agent model defaults, and reviewer grouping inherits reviewer subagent defaults, unless overridden.
 
-**Before deploying**: Exercise lifespan startup validation with the selected sandbox provider and model configuration. In local development, set an explicit `http://localhost...` `DASHBOARD_BASE_URL` to enable model-credential validation at boot.
+**Before deploying**: Exercise lifespan startup validation with the selected model configuration. In local development, set an explicit `http://localhost...` `DASHBOARD_BASE_URL` to enable model-credential validation at boot.
 
 **Run-completion replies**: Set `COMPLETION_WEBHOOK_URL` to the public HTTPS URL ending in `/webhooks/run-complete` and configure `RUN_COMPLETE_WEBHOOK_SECRET` with a strong token. Loopback URLs are omitted even when configured; relative URLs raise a warning.
 

@@ -3,12 +3,9 @@ type: integration and observability architecture
 title: Observability, Tracing, and MCP
 description: LangSmith tracing and cost collection, analytics event capture, invocation and session cost tracking, MCP connections, and full-transcript recording for debugging and replay.
 tags: [observability, tracing, mcp, analytics, langsmith, credentials, costs, transcript, error-tracking, browser, image-fallback]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
 sources:
-  - id: openwiki-source-fb24ffc1656ce0258fa2ac33
-    resource: repo://openswe/agent_api/graph.py
+  - id: openwiki-source-3a54086e4213e64cb31a7617
+    resource: repo://openswe/agent_api/loop.py
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py
   - id: openwiki-source-b23248ea29f610c9e611ae8c
@@ -41,8 +38,6 @@ sources:
     resource: repo://openswe/sandboxes/browsers.py
   - id: openwiki-source-c369ed8dca93cdbaf02cdbb8
     resource: repo://openswe/sandboxes/tool_runtime.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
   - id: openwiki-source-84f99988450cd60ecc31ec89
     resource: repo://openswe/session_cost.py
   - id: openwiki-source-4c045faeaf37be446cb51133
@@ -53,7 +48,10 @@ sources:
     resource: repo://openswe/utils/errors.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-31T14:24:53.711Z
 ---
 
 # Observability, Tracing, and MCP
@@ -134,10 +132,10 @@ The system tracks model-call errors in thread metadata for observability and ups
 
 When an agent receives image inputs but the selected model does not support images, the system automatically selects a configured fallback vision model for that call. The vision model fallback operates through:
 
-- **Configuration**: During agent assembly, `openswe/server.py` determines a `vision_model` fallback when the primary model or any routed model does not support images. A vision model is selected via `default_vision_model_pair()` and configured in `SurfaceModels.vision`.
-- **Detection**: Before each model call, the agent API's `vision_for()` method (`openswe/agent_api/graph.py`) checks if the selected model can handle images; if not and a vision fallback is available, it returns the fallback model.
-- **Substitution**: The fallback vision model is passed to the model call via the `before_model` hook in the agent API, allowing the deepagents runtime to transparently use the vision-capable model for that call only.
-- **Graceful degradation**: If no vision fallback is configured, `openswe/middleware/check_message_queue.py` warns when queued images arrive for a text-only model, preserving the queued message but alerting the user that images will be skipped.
+- **Configuration**: During agent assembly, the system determines a `vision_model` fallback when the primary model or any routed model does not support images. A vision model is selected via default vision model configuration and configured in `SurfaceModels.vision`.
+- **Detection**: Before each model call, `openswe/agent_api/loop.py:ModelChoices.vision_for()` checks if the selected model can handle images; if not and a vision fallback is available, it returns the fallback model.
+- **Substitution**: The fallback vision model is passed to the model call via the `vision` field in the model call configuration, allowing the model invocation to transparently use the vision-capable model for that call only.
+- **Graceful degradation**: If no vision fallback is configured, the agent logs a warning when queued images arrive for a text-only model, preserving the queued message but alerting the user that images will be skipped.
 
 This ensures the agent can handle image attachments from Slack, email, or file uploads without failing, even when the user pins a text-only model.
 

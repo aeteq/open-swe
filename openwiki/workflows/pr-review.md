@@ -5,7 +5,7 @@ description: How Open SWE starts GitHub pull-request reviews, prepares a diff-gr
 tags: [reviewer, pr-review, github, webhooks, findings, reconciliation, review-scout, style-guidance]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
