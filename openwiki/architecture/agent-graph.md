@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory, managed-deep-agents]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -25,7 +25,9 @@ sources:
     resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+  - id: openwiki-source-659ef274df23f55f0ecc0366
+    resource: repo://openswe/skill_store/run_skills.py
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
 # Coding Agent Assembly and Execution
@@ -34,7 +36,7 @@ Open SWE's coding agent runs on Managed Deep Agents (MDA), a remote LangGraph se
 
 ## Entry and execution gate
 
-The factory function `plan_agent` receives a `RunnableConfig` carrying thread metadata and launch context in its `configurable` dict. It gates full assembly on the presence of a non-null `thread_id` within `RunConfig`, indicating an executable thread run. The function populates a `ToolSurface` object that MDA uses to configure the model loop, tools, middleware, models, and subagents.
+The factory function `plan_agent` in `openswe/server.py` receives a `RunnableConfig` carrying thread metadata and launch context in its `configurable` dict. It gates full assembly on the presence of a non-null `thread_id` within `RunConfig`, indicating an executable thread run. The function populates a `ToolSurface` object that MDA uses to configure the model loop, tools, middleware, models, and subagents.
 
 `RunConfig` is the tolerant configuration contract: all declared fields are optional, unknown keys survive round trips, and parsing drops only invalid fields rather than losing an otherwise usable run configuration. This flexibility matters because different launchers and graph types add distinct keys.
 
@@ -120,7 +122,7 @@ The subagent's `mode` is `fork`, meaning it branches and collects results back i
 
 ## Middleware assembly and ordering
 
-The parent middleware list is ordered outermost to innermost, making order part of the runtime contract. MDA runs the middleware provided by `ToolSurface.middleware` in sequence around the model loop, and timeouts must be innermost so fallback escalation works correctly.
+The parent middleware list is ordered outermost to innermost, making order part of the runtime contract. MDA runs the middleware provided by `ToolSurface.middleware` in sequence around the model loop.
 
 **Layer 1: Outermost context and offloading**
 - AnthropicPromptCachingMiddleware (request caching for cost optimization)
@@ -136,7 +138,6 @@ The parent middleware list is ordered outermost to innermost, making order part 
 - ExcludeToolsMiddleware (filter unavailable or restricted tools)
 - TaskCoordinationMiddleware (optional, worker coordination state)
 - RefreshGitHubProxyMiddleware (refresh GitHub token before model calls)
-- MessageQueueCheckMiddleware, DeliverEventMatchesMiddleware (skip in stop-summary mode)
 
 **Layer 3: Flow control and guards**
 - RequireUserReplyMiddleware (Slack reply required unless tool offered)
@@ -145,18 +146,12 @@ The parent middleware list is ordered outermost to innermost, making order part 
 - RecordRunUsageMiddleware (log telemetry and usage)
 - ModelSelectionMiddleware (optional, adaptive model routing)
 - ModelFallbackMiddleware (fallback model on primary timeout/failure)
-- ImageModelFallbackMiddleware (optional, vision fallback for text-only models)
 
 **Layer 4: Innermost provider and model safety**
 - DynamicToolMiddleware (optional, integration tools)
-- SanitizeFireworksMessagesMiddleware (Fireworks response cleanup)
-- SanitizeOpenAIResponsesMiddleware (OpenAI response cleanup)
-- SanitizeThinkingBlocksMiddleware (thinking block removal)
-- StableToolResultOrderMiddleware (deterministic tool-result ordering)
 - ModelErrorMiddleware (handle model call errors)
-- ModelCallTimeoutMiddleware (innermost: deadline covers provider call, escalates to fallback)
 
-The innermost timeout measures the actual provider call and can escalate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside ToolErrorMiddleware.
+TimeoutMiddleware is the innermost layer in the deepagents runtime, set after all middleware is assembled by MDA; it measures the actual provider call and can escalate outward to the fallback model. The call limit ends the run at `MODEL_CALL_RECURSION_LIMIT`; task retry sits inside ToolErrorMiddleware.
 
 ## Execution flow on Managed Deep Agents
 
@@ -185,7 +180,7 @@ sequenceDiagram
     loop Until completion
         MDA->>MDA: before_model hooks
         MDA->>MDA: ModelSelectionMiddleware: route or use main model
-        MDA->>MDA: ModelCallTimeoutMiddleware: set deadline
+        MDA->>MDA: TimeoutMiddleware: set deadline
         
         MDA->>Model: awrap_model_call(request)
         activate Model
@@ -232,7 +227,7 @@ Preserve these contracts:
 
 - **Authority model**: `profile_login` drives authorization; thread settings freeze durable decisions. Do not silence model/settings changes between participants.
 - **Subagent tools**: Parent middleware does not wrap subagents. A parent-only guard (e.g., PullRequestCreationGuardMiddleware) needs to be registered through MDA's shell guards to secure subagent shell access. Add subagent tool filtering through the `tools` list in `SurfaceSubagent`.
-- **Middleware order**: Order is part of the contract, not an implementation detail. Timeouts must be innermost so fallback escalation works correctly.
+- **Middleware order**: Order is part of the contract, not an implementation detail. Timeout must be innermost so fallback escalation works correctly.
 - **Skill consistency**: Parent and subagent receive the same `skill_sources` list so skill availability does not differ between delegations.
 - **Tool filtering**: `_is_subagent_excluded_tool` is the authoritative exclusion list for subagent-only tool filtering; extend it there, not in per-run overrides.
 

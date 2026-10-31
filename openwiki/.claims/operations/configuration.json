@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:cc63abfdb8d522b80640eee23609d61fe9092c93e61f5eba830193b67274b472",
+  "pageVersion": "sha256:4904d4ff8fe787d0b40649df3bc0fbbf993437c9f10d220b18f8c2e1c3cb9e8b",
   "claims": [
     {
       "id": "claim_b445254b3ad5403297c30f60e15acbd1",
@@ -17,47 +17,25 @@
       ]
     },
     {
-      "id": "claim_cdafa51be1fd4acebd11466a68b08f83",
-      "statement": "SANDBOX_TYPE selects the sandbox backend and defaults to langsmith; create_sandbox resolves it against the SANDBOX_FACTORIES registry (langsmith, daytona, modal, runloop, e2b, local) and raises ValueError listing supported types for an unknown value.",
-      "evidence": [
-        {
-          "resource": "repo://openswe/config.py#L502-L504",
-          "version": "repo-lines-v1:sha256:9e6b33b7615f78eded204bd12849674676d420a702070fa01c5741779a868519:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzdiZDk3ZDFhYjlhNWUxZWNhYTFjMjFhZWVhMTIwYTJhZjQ4YzE3OGQ1YjA5NGU2OGY5Y2E2NWFjMjc0YjE4OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWQ2MjZmZmJiYTNmMWE4ZTM2NjgwNDkyZWVlZTBkNjRjYWM4Yjc3OGRmYjU3MTM4M2EyYjE4ODNmMDdjNzc1ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTMyM2Y2MjRmNjhmZGMxYzQwODRhZTEyZjI5NDQ0OTFmODQyN2UzNTY3OThkNmU0NmU5OTE1NGI1MDkzNDE0MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTMxYWRiOGUzZTgzNzgzODhkMzYwZWQ0MTQwMmNlMDllZTk1YmMzNWM1ZTFkZTkxNDNhNmFmNzVkMWJlNGYwMSJ9"
-        },
-        {
-          "resource": "repo://openswe/sandboxes/providers/registry.py#L23-L30",
-          "version": "repo-lines-v1:sha256:d233be7303ac305c2954f7a7cb50a5b19e5a71810ea57b7b3e659ca6ab480a52:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODc3ZTM3MTk4MWZkOWM1NjAwNTRlMWExZmZjYWU4OTIyYTM4NjQ4YmI2NDEyN2RiNTdhYzg0MTk5NTNmMjBlMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDJiMjU3OGQ4NWYwNTQ3ZmE5MTdkYTdiMThkMjA3ODk5MTgyOWE1MzgyYzc5MTI4YmUxNmY2ZjEwODhmN2FiNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNmNmYmJmM2E3NjI0MzY5YjRkZjllZTcxM2Q3YjFjYmQ5MWMwYWQ0YmRjZDk4ZDY1MDliMmJiMTYzYzAyMzEyNSJ9"
-        },
-        {
-          "resource": "repo://openswe/sandboxes/providers/registry.py#L46-L50",
-          "version": "repo-lines-v1:sha256:1fd0eef9a05d9bcde068b0ab1838db4ee171c22696cb8b65b4462dce4db2cba7:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWMyMTFjMTBkMWVjZjE5MWExYTcwMmJmYmQyYzA4YmM4ZDUxZTAzNzU4MWY3OTA1MDIwMjQ4ODcwZWI3NDkwNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQ1ZDAwZWY5N2YwZGU2MGUyYWY2OWQ1MDBhMjFiNDY4NTVmYTUzOTAzMzIzNTcwYzJkYzk4MmYxMjI4Y2Y2OSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDlmOTMwODNjMTk3MTIxYjk4MjcwMGJhOGFmYWJkMTcyMmNmMWQzZTc0MDQ1MDllODBlZmEyNzI0N2Y2MmYwNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzZhMjMzNzc5N2ZmMzIxOGMwMWJlMWM0NTI1ZDk0ZWMwZmE1MzQzNDdhM2Y1MGVmMzU0MTY4ZGZhMWY0ZWUzOSJ9"
-        }
-      ]
-    },
-    {
       "id": "claim_381e7b49d9cb4dc2bc5ff2ce4f73a556",
       "statement": "validate_sandbox_startup_config runs from the FastAPI lifespan hook so an invalid sandbox-provider configuration fails at server boot rather than at first sandbox creation, delegating to LangSmithProvider.validate_startup_config for the langsmith provider.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L68-L68",
-          "version": "repo-lines-v1:sha256:cce46b5f6d4705246e7ccf8f9a6495129f41ad4f992d76bc6df208f96e2637bb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NlNDZiNWY2ZDQ3MDUyNDZlN2NjZjhmOWE2NDk1MTI5ZjQxYWQ0Zjk5MmQ3NmJjNmRmMjA4Zjk2ZTI2MzdiYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NlNDZiNWY2ZDQ3MDUyNDZlN2NjZjhmOWE2NDk1MTI5ZjQxYWQ0Zjk5MmQ3NmJjNmRmMjA4Zjk2ZTI2MzdiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODk1ZTUxNzQwMWFhMWIxNmUzN2I1ZTlhYTY2MWIzZjg0YTZkZDVhOWNiYmQ0OWM5YjY2Zjg5NWJjYThjMjVmYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmQ2ZmYwY2JjOGY4MDE3ZDViNmVlODQzY2Q4ZGY2ZjY2ZDExOTkzYTAzODhjZjhhZWZmODFlMzYxZjY1YzAyOSJ9"
+          "resource": "repo://openswe/api/app.py#L69-L69",
+          "version": "repo-lines-v1:sha256:cce46b5f6d4705246e7ccf8f9a6495129f41ad4f992d76bc6df208f96e2637bb:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NlNDZiNWY2ZDQ3MDUyNDZlN2NjZjhmOWE2NDk1MTI5ZjQxYWQ0Zjk5MmQ3NmJjNmRmMjA4Zjk2ZTI2MzdiYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiY2NlNDZiNWY2ZDQ3MDUyNDZlN2NjZjhmOWE2NDk1MTI5ZjQxYWQ0Zjk5MmQ3NmJjNmRmMjA4Zjk2ZTI2MzdiYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODk1ZTUxNzQwMWFhMWIxNmUzN2I1ZTlhYTY2MWIzZjg0YTZkZDVhOWNiYmQ0OWM5YjY2Zjg5NWJjYThjMjVmYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjhkMjAxNGFlNTQ3ZWIxYzJhM2I4OGY1MDhjYjY0ZWI1YjVmZGEzNGNiNTExMzBlYTY0MjVhMzgwZDQ2OGM0YSJ9"
         },
         {
-          "resource": "repo://openswe/sandboxes/providers/registry.py#L128-L143",
-          "version": "repo-lines-v1:sha256:02cad0e5a37e80c96fb8def7aa2574d54e21ee9053a9fdfc37b2d885b5991949:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlYzRjNzk3ODgzNTBjZWE3ZjhlZDRmNTBiNTBlYTdiZmExNWFhZGQzNjM5YmRjY2JkNDhkNjExZDE1NjU5ZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1NzJmYTIwZDE4N2EwMDRhN2MzMDljMDI0MGJkOTI0MDRmY2VkZTQ1YmIzZjk1M2FmOGFkYzJlYzU0MzMwMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2OGQyNWM0ZjJiZTFhNzYwZjc1YWQ3OGI0ZDhkOTAzYTQzZGZiYWI0MTViNjg0ODI2MDBhNTc0ZWI0YmRlNTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/sandboxes/providers/registry.py#L28-L36",
+          "version": "repo-lines-v1:sha256:079880e437c7490a53845ea77be0270d2c714fa889974bb18839e3b401518593:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMGVjNGM3OTc4ODM1MGNlYTdmOGVkNGY1MGI1MGVhN2JmYTE1YWFkZDM2MzliZGNjYmQ0OGQ2MTFkMTU2NTlkNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWQ4Mjg4ODljYTU3Y2FhMDJmOWZiMWJjNWUzNzAwOWQxYWRkODg0NjY4ODU1MTE2OTIxZTdiNjc5ODI1YjY2NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDFiODhlMTMzZmI3ODNmMDQ3YjkxNjIyNWE4ODgwYjI2NjdhMjQ2ZDRmNjMyNDI4ODg0NDVlNWU4ZGU1NTA0NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         }
       ]
     },
     {
       "id": "claim_912d12aa217b4e828411699e2b156acb",
-      "statement": "For SANDBOX_TYPE=langsmith, per-sandbox resources are tuned with optional env vars with defaults of 128 GiB FS (DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES), 4 vCPUs (DEFAULT_SANDBOX_VCPUS), 16 GiB memory (DEFAULT_SANDBOX_MEM_BYTES), 7200s idle TTL (DEFAULT_SANDBOX_IDLE_TTL_SECONDS; 0 disables), and 2592000s delete-after-stop (DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS; 0 disables).",
+      "statement": "For LangSmith sandboxes, per-sandbox resource defaults are 128 GiB FS (DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES), 4 vCPUs (DEFAULT_SANDBOX_VCPUS), 16 GiB memory (DEFAULT_SANDBOX_MEM_BYTES), 7200s idle TTL (DEFAULT_SANDBOX_IDLE_TTL_SECONDS; 0 disables), and 2592000s delete-after-stop (DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS; 0 disables).",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/providers/langsmith.py#L100-L120",
-          "version": "repo-lines-v1:sha256:b938303084869575d0d32b922f553536b94b27bc6b7e4a265877c9cb0422e8cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkZmE3ZWJhMDVmYzAzMzg2MWU4NjliZDdlZjQ1MGViYTlmM2Q4ODQxOGE3MWFkYTliMWYxYWIyNDMyMjc5NzIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4OTY1OTEyZjlmMDA1ODQzNWExNmY4MDM4NTEzZmE4YzBkY2M5MGQ1MWVmYjY4YTY3Nzc4NjRjMjVkYzBkZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg0MjZmMjgyNTg0N2RkNjlhNmQ4OGM3MmFiYzkyMTdlZjE1NTc0YjIzZGQwNGYxOTJhNzIwZGNlOTQ0NzU5MTgifQ"
-        },
-        {
-          "resource": "repo://openswe/sandboxes/providers/langsmith.py#L50-L54",
+          "resource": "repo://openswe/sandboxes/providers/langsmith.py#L54-L58",
           "version": "repo-lines-v1:sha256:c9cb57e05749a5eda2a1fb0ff5c5f5336910e05ad64c94bd7d7a6abd89ae14da:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjYxMmQwNGMwNDA4Njg1NWY3ODI0NDM3YjE3ZDI2ODk0MDk0MjlhMjQyMjZiNjk3MDViYmY1ZGIxNDMxODk0MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWNlZDMwNGE0Y2UzZjc3MmVkZWNkNTAwYWM0YmVhNDFmNGJmZWJlNDIxNDFmYjc2ZmNmNmM5NTBlY2I3MzBjOSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzQxMDIyNTI5ZDAyZjQzNjcwOTNkNzdmYjJiYTExNDc0Nzc5OGFmMGVhYmU4OTI4MGE0OWJiMThiOTcyNTY1ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFiNDVlYmE2MWYxNDgzNWMwZWY3NzNhZmI5ZWRmZmM1YzcxOWZjNmY0NWUxMTlhYWQ5MDI5MTY4MDg2YzhhYiJ9"
         }
       ]
@@ -67,12 +45,8 @@
       "statement": "LLM_FALLBACK_MODEL_ID sets an explicit fallback model, defaulting to a provider-appropriate fallback_model_id_for(model_id) when unset, and a ModelFallbackMiddleware is wired only when the fallback differs from the primary model.",
       "evidence": [
         {
-          "resource": "repo://openswe/server.py#L699-L710",
-          "version": "repo-lines-v1:sha256:94d0aaaae895c1a65f66139c3f74bd02c92e5f7ebbdbc8d9a3b147dfc9d7cbab:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNzY0ZDdjNDE1OTlkNDcxZDY0NjMyN2I4ZmQ0Y2VhMGZmMzZlMDA0ZDE4NGZiN2YxMzUwZjYxMzc5NzQ4MGYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZGQyZjA3YzEwNmYyMDQ1YzExMGViYTBjZmQxNGYwNWI4MzI3N2U3NWU4NTQ0YTM0NzU3ZGE1NmVhMWZhNmIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjczNGZjYzY1MjAxZGM0OWQ1ZmIxMmFmYzlkNmUzNDE3NmQzZDBmNGU4OTQ0ZDFlMGVhNTU0ZWEyM2IwNjg1NWQifQ"
-        },
-        {
-          "resource": "repo://openswe/utils/model.py#L149-L160",
-          "version": "repo-lines-v1:sha256:e7486c792da8b7413c7aa19f185d4b809935bc9109aa1e245e481a733e1232aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNGIxZWIxMDlmMmU2MTJhNTdiNThmMWM4N2Y1MWFlNDM1MDA1NjI3NDhiMzFiNjlmNmVkOWMwMmNlODYxMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmNTIwMTE4Y2MwYmJmOTg5YzRjYzc2MGUxYzg0ZGNkYzY2ODYzMTA0ODM4M2JhMDc2MGE2ZDdiOWNkOWUzM2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1YzBkMWMyNjhhMTY4MzhkMTU0NzZlOGVhODZmNzY1Mjk1OWM1MGQ0ZTM0MmFhYjgzNGI4MDE0MzQxZGIyN2EifQ"
+          "resource": "repo://openswe/utils/model.py#L162-L173",
+          "version": "repo-lines-v1:sha256:e7486c792da8b7413c7aa19f185d4b809935bc9109aa1e245e481a733e1232aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxNGIxZWIxMDlmMmU2MTJhNTdiNThmMWM4N2Y1MWFlNDM1MDA1NjI3NDhiMzFiNjlmNmVkOWMwMmNlODYxMWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTYwMGE3M2QyZTAyZjM1MmI5MGZlZjFkOGQ2MzgxMWJhNGE4ZWUwYzFiZWFhN2FlNDY1OGYzNmFhMmUxOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjYwNTBhOTAxNThiMDNiNWM5MGJhZjdkOWE0OTE4NzhhNGY4YzRhNWY4YjNiYTIwYmNhMzdiYzg2MmI1MjNmOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1YzBkMWMyNjhhMTY4MzhkMTU0NzZlOGVhODZmNzY1Mjk1OWM1MGQ0ZTM0MmFhYjgzNGI4MDE0MzQxZGIyN2EifQ"
         }
       ]
     },
@@ -81,12 +55,12 @@
       "statement": "Model calls carry a provider-level per-request timeout defaulting to DEFAULT_REQUEST_TIMEOUT_SECONDS (600s) with DEFAULT_MAX_RETRIES (6) retries, applied to the openai, anthropic, baseten, google_genai, and fireworks providers so a stalled connection retries instead of parking a run.",
       "evidence": [
         {
-          "resource": "repo://openswe/utils/model.py#L14-L28",
-          "version": "repo-lines-v1:sha256:e320ee2a4388a5461f77ce9ab3ae30b9951db3594776706b08142a07c82dc455:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiNjQzMmNmMzdiNTMwYTk2MmQ4ZGFjZWY0ODA4OTY1NzAyZTY3ZTQ2YmU3NDEzNWQxYmNiZmFhMjVmMDU5OWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmZDUwM2RhMjk1YTFlNzZhZDgyN2VhM2QxZmFkNzQ2OTZjMWE0OGY5YWRlYWQ5MTM3MTVlNzk1MWNlNmI3OTMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiM2FlNWIyZmMxMTQyNzFkYjRkOWU5MmJlOGZmN2QzZmY4MjY0MTBhZWU3NWRlZjdlYWI0ZjI0N2VmNWRmNDkifQ"
+          "resource": "repo://openswe/utils/model.py#L105-L109",
+          "version": "repo-lines-v1:sha256:41f4f1b61fb817d27d5fdabbdb7effebfa892486c1eb9f8df1233ed9019a3822:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzg2ZDA3MWMzNjA0ZDFmNGY1ZjMyOGJmMTQzNmM5MDc2ZGQ3Y2I2YmRiZDUyODBkOTNjNjFkOTdlNmJlYjMwMyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGM5OWVjMTEwMGJmNjBlZjBiYzU5MmY0MDI4OGU3ZTMzMzk2MjEyMTkyNDhjZjkzOTU3MzlmMTllZjg1NWQ3ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzJiNTgxYzhiNTBjZTEyMGY5YzVmNGM4NWM5Zjg4ODRmOGQ3NzRmOGZlZjEyODc0MWRlYjEzMTYzNTdhNTkyYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDM4ZGY5YThiNTZmYmRkNzg2ZjJkOThhNTQ5ZmYyNTRkNDkzNDA2ZDQyZjZkYTM1YTI0ZTE0ODM5MDhlYTYzNCJ9"
         },
         {
-          "resource": "repo://openswe/utils/model.py#L97-L109",
-          "version": "repo-lines-v1:sha256:50f40001efd349acf522e78ba1d29de1f8a01edbbbd733eecdb09b692ae897a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyNzc3YjczYTlhN2M2ZDdhYzlkYzQ3ZTY2ODgwNDg5NGZhYTRmMDhkYmUzMzdmMDU5NmI0ZWI1NzI5ZjI2ZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjOTllYzExMDBiZjYwZWYwYmM1OTJmNDAyODhlN2UzMzM5NjIxMjE5MjQ4Y2Y5Mzk1NzM5ZjE5ZWY4NTVkN2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU1MTU3ZDdmY2MzNTAwYjE5YzZkYTc2ZmU4ZTNiNDc5M2QxOTdiOTdhMThiNmRiNzEzZmFmNzE0ODEzZTYyZjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzOGRmOWE4YjU2ZmJkZDc4NmYyZDk4YTU0OWZmMjU0ZDQ5MzQwNmQ0MmY2ZGEzNWEyNGUxNDgzOTA4ZWE2MzQifQ"
+          "resource": "repo://openswe/utils/model.py#L12-L28",
+          "version": "repo-lines-v1:sha256:6a73c24d1937dadfee9d444ff1cdcb9f76b03b0b0268d042a80f72c3369f5dec:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxMGNmNTAyM2JhZDA3NWZmYmIwMTAyMmI3ZDQzMDg5OGQ5MjE3OWUwODY4OWYxMWJjZjIxZjQ0ODgyMzE2MmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJiMjM5M2NmM2M2YTE3YTlmODNmN2FmZjMxOGFkNjUwYWI5YWUyNjJjMjI4YWRmMjZlN2U4MGU0OWY2ZWFiNzAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdiM2FlNWIyZmMxMTQyNzFkYjRkOWU5MmJlOGZmN2QzZmY4MjY0MTBhZWU3NWRlZjdlYWI0ZjI0N2VmNWRmNDkifQ"
         }
       ]
     },
@@ -95,16 +69,12 @@
       "statement": "RUN_COMPLETE_WEBHOOK_SECRET is a shared bearer token proving a /webhooks/run-complete call came from Open SWE's own dispatch, and verify_run_complete_token fails closed by rejecting every call when the secret is unset, disabling completion and failure replies until it is configured.",
       "evidence": [
         {
-          "resource": "repo://openswe/completion.py#L80-L89",
-          "version": "repo-lines-v1:sha256:569fcb5e7cc76a7795c5a8ba0aab9158cf80879227b18454265b1c85c31e42fc:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFmNWQ3ZGY5Yzc4YjBiMWY0OGNlMWFhYmJhM2JhZmY1ODAxODg1ZjdiYjcyNzg3NjhjMjhiYjU0MmYwMDYxNDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNzQxZjFkNDliZGVkOWQyZGU3ZjY2ZDU5Nzg0OTYyZWMyOTZiOGQ2ZDBkYTI3YTFmYjE2NWM3ZTZhYzk3N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExMDkwYjEwYjY3YjJjMGJkYTgxYTNlNjRjZjBmNjE0ZTZiNzJmNWViZjMxMjE1YWMzODg5NmJkZWE3MjQwYWYifQ"
+          "resource": "repo://openswe/completion.py#L82-L99",
+          "version": "repo-lines-v1:sha256:71d10668f8cadaa1a88ffaf5d84cdda0df7f3360ff04ecc58ae82b39933739d4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVmNDY2OTg3MDhhYjUxZjg2YmY4YmViZjNjMzA1NDYwOTQzMDIyYzlhZWRkNmI5ZDQxM2UwMDllNWUzNmMzZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViNzQxZjFkNDliZGVkOWQyZGU3ZjY2ZDU5Nzg0OTYyZWMyOTZiOGQ2ZDBkYTI3YTFmYjE2NWM3ZTZhYzk3N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdhNDYzMzU5NTQ2NWM5MzkzZGM5OTkyNTQ5MjFjODY4ZDdmNDEwMGM3ZTZjNWJlNGVkMmY0ZmEzNDJlZGQ4YzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImExMDkwYjEwYjY3YjJjMGJkYTgxYTNlNjRjZjBmNjE0ZTZiNzJmNWViZjMxMjE1YWMzODg5NmJkZWE3MjQwYWYifQ"
         },
         {
-          "resource": "repo://openswe/dispatch.py#L187-L187",
-          "version": "repo-lines-v1:sha256:226358c9c58c5a71da21c5078aa53eb6a518c880fe3cccb625e3ada84dc8b231:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI2MzU4YzljNThjNWE3MWRhMjFjNTA3OGFhNTNlYjZhNTE4Yzg4MGZlM2NjY2I2MjVlM2FkYTg0ZGM4YjIzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjI2MzU4YzljNThjNWE3MWRhMjFjNTA3OGFhNTNlYjZhNTE4Yzg4MGZlM2NjY2I2MjVlM2FkYTg0ZGM4YjIzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzNjYmM2NzQzZDc5OTc4MmI4YTNiZGNlZGE2OWYwNDUzYzA4ZjRiNjJjMTQyMDY0NGRhOGMwOGM0MTM1MDZiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWJmYWYxMWViNmYzZjkyNjQ0ZTkxNzA4YTQzNzIwMjQ5NzQ0MTJhZjVjMTA3ZDhiODk3YWU5NmI1MDI0MjFkZSJ9"
-        },
-        {
-          "resource": "repo://openswe/dispatch.py#L208-L227",
-          "version": "repo-lines-v1:sha256:6c4ceeb1b3dfdfa5d7d04a2f8f04b4221b520da6fd1385f4f172f5194eef0ad8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkYjQwMDE4MjEzNTVmMzdlMjg5ODU0ZGY4OGFkNjk4NjM3N2U3MzU2YWE4ODMwYjAxNWFmMjczNDRiNTFjN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2NTc3MzQzYzc3YzNhMDIyZTMzMmYzMTMwNDRmYTE0ZTllODA2NWIxM2MwMjVlNzY3NmY2NzBiNjMzNDk1YWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmYWQ1ZjIyNTIyOTNlZTM3MGQwYjVlN2Y1OGNjNzFiNGE4YWEwMmU4MmVmYWIzNzIzNmFhNWU4YTQ4OGRlODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQxMmNhMGFkYTdkODgxODMxNjc1MmNmOTM4ZDlmNmUzMzc2NjMzYzU4YWEyOGZiZmY3NDJjOGE2NTYzYTJjYzYifQ"
+          "resource": "repo://openswe/dispatch.py#L228-L230",
+          "version": "repo-lines-v1:sha256:7637eef5735ff202a777fc0a6222710358b4ae963f774575e04f8619f3bd18ed:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmRiNDkwYmMzNTFiNDUwYTc0MzIwNTE1NzkwOTY0NmFlMGQ5NmZhODM4NzdlYTBmZTE2OTk5ZGJmZTQxNTFlZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDYzYmYxNjQxODVlN2I3N2ExNmU4YTJlZWRiMjU2ZDcyZTE1NzVkYTc4NjM2NTVlYTg0OTM3ODIxOWQwYTAwNiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDRmYWQwOTg1MjRlM2U5YTYyM2UzMTdmMDVlYTY5YTU0NzgxZmE4MDM1NTcyMDIxOTJmNDQ5NjNjNjE0YmM2OSJ9"
         }
       ]
     },
@@ -113,12 +83,8 @@
       "statement": "TOKEN_ENCRYPTION_KEY encrypts stored GitHub tokens and accepts an ordered, most-recent-first list of Fernet keys so writes use the first key while reads try each key in order, enabling rotation without invalidating already-stored tokens.",
       "evidence": [
         {
-          "resource": "repo://openswe/encryption.py#L16-L42",
-          "version": "repo-lines-v1:sha256:64ec48e5d638ae5171b19cb7356cd4c0ce79815655d696d3014963965a4e1b87:eyJzZWxlY3RlZExpbmVDb3VudCI6MjcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ZTI3YzZjMDk5Yzk3Zjc2Zjk4ZWRlMzI0OTBmMDI1OTAxZTVlYzVmMGQ3OTEyOWEyYTc4YWY4YzFkOTllNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM2ZGExMzE2YmI4ODhiZTJhZGE1NGFjNWZmMzM0MDE5ZDFiNmY4NjVhOGRhYjk2N2QyODExMDEyNjgxODUwMTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNWZiMGE4ZjBhNTIwMGQ5NDU3N2RiMDBlM2ZiYWE3MjRjNGEzMTAyYTNkYTkzYmNmM2FiYWQzY2UwMDY3Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1NTFkMWYyNWI5NzVjZWIwMzBmYjhlMzdiZDA4Y2YzMTEzNTAyNGE5ZGU0NTIzMTE1YjY4ZjQ1Y2M4ZmFjMDIifQ"
-        },
-        {
-          "resource": "repo://openswe/encryption.py#L50-L72",
-          "version": "repo-lines-v1:sha256:65d0b38ef64f24bb5c2f62d21f79d97084f99d914f0f637c41f4692cb0d8d288:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MGU0YWRjNmJlNWY1YTk2ODA1YzIxMjNlZjRmODJiN2FhNGIwZmIyOGZkMGE5N2U2YjUyMTgzYjg3OTg0OWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYWFhYzdiOTVkNzAzNWMyYTEyY2RjNzMyZTc4YzA3MGQwMDQ4ZDA5Y2I1YzgyNmIxZjdkNmVlZWIxZjY1ZTUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyNTJhYThmNzI2YTI3NzQ3ZTMzZjJmZmRkZGQ2OGVhN2FjMmI0OTlkNjBiZTA1ZjBkOTQ5YTg1ZDdiMjI2M2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/encryption.py#L16-L47",
+          "version": "repo-lines-v1:sha256:2fc598f19e354dc46e99e768fdd3a74039cdf61f5d16ebed22e2d15140defc57:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE4ZTI3YzZjMDk5Yzk3Zjc2Zjk4ZWRlMzI0OTBmMDI1OTAxZTVlYzVmMGQ3OTEyOWEyYTc4YWY4YzFkOTllNDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwMTMxZTM2ZDk0ZmNmZTBiYjEzMDVhMGZjZmVhMGM1ZDJiOWNiZDkyNTU1MDI2MDg1YzU4OTM3MTVhZjdmZjAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhmNWZiMGE4ZjBhNTIwMGQ5NDU3N2RiMDBlM2ZiYWE3MjRjNGEzMTAyYTNkYTkzYmNmM2FiYWQzY2UwMDY3Y2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5MmU2NGViNTUzMTk2YzA1NjA0OTY4OWVkYzlkN2E1MWY5NzM0MjJjNDgyNGQ4MTk0ZmU0YzJiY2U4ZWY1YTAifQ"
         }
       ]
     },
@@ -138,15 +104,15 @@
     },
     {
       "id": "claim_bbc462fe9c954b229b55771caf1c718c",
-      "statement": "FastAPI lifespan pins a single event loop, validates GitHub login allowlist, sandbox configuration, MDA runtime availability, and localhost development model credentials before serving, and closes the database connection and stops background workers at shutdown; create_app rejects a wildcard DASHBOARD_ALLOWED_ORIGINS because it configures credentialed CORS.",
+      "statement": "FastAPI lifespan pins a single event loop, validates GitHub login allowlist, sandbox configuration, MDA runtime availability, Slack configuration, and localhost development model credentials before serving, and closes the database connection and stops background workers at shutdown; create_app rejects a wildcard DASHBOARD_ALLOWED_ORIGINS because it configures credentialed CORS.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L141-L144",
-          "version": "repo-lines-v1:sha256:28358ca3572de4e79cfe331d848975cb85c8bca06d759e705c8a4c2f3893363d:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmE2MjI1MzFkNWY4NDM3M2Y2OGJlY2Y4NmFjOTAzYmIxZDEwNjY4Y2E1N2QxOTU0NzEyYTEyMGRlYWY0NTc4YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNTkwOWE1M2E2MThkMDI4ZTFkMzAwMGMwYTdhYmNlZWNiZTVmYjM3ZjRlNTExZWZlNDY2NDNmYWQ2ZTY2ODcyZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDgyODM3ZjJhOGM2ZDhmOTRiYmU5MzBiMDIxYThkMzlmNjBmNTMwYmM5NTM0MGFjYzQyNDYzZmU0MjlmNDBjOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWY3YWQwMzg3YzU1YzFiYTZmZWRjNzQzZTRjZGRiYmExMTY1N2Y0NTc1YzFjMDQzNDhhMWQ2MTA2MmYyMDRjYSJ9"
+          "resource": "repo://openswe/api/app.py#L138-L147",
+          "version": "repo-lines-v1:sha256:b18d02ec6a32837f214f5dccb0ca7910d0bf278c7ec2a5a0428004c6e879c123:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVjNzMyMzM1YjI3ZmY0MDIzNWU5MTA5MjNjOGYwNmIxOTRiZTY2NWJiY2IzODkyNmM4M2E0YTExYjNlYjE0MmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY2MzlkNmRhM2Q2YTFjZDZiM2ZhNWJiMThhYWJjYjllZGVkNmViNzk2Y2FiZWVmZDIxNjgzZWUxZjgyM2MwYTYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFmN2FkMDM4N2M1NWMxYmE2ZmVkYzc0M2U0Y2RkYmJhMTE2NTdmNDU3NWMxYzA0MzQ4YTFkNjEwNjJmMjA0Y2EifQ"
         },
         {
-          "resource": "repo://openswe/api/app.py#L47-L127",
-          "version": "repo-lines-v1:sha256:c7890f3b035833a8e4afe009e16d4ef3be100f33effe908afe5339006c6c1ac2:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg3Y2ZmM2YxNzg0MmRlYzZlN2U5MWMzZTNiOGZjZTBhODIyZmMzMTEyNzM4MWIwMGY0NGE5ZjEzMzMzMDNhMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjNTgzMDM2ZTQ5MGMxYjdkNjI3MjYwNGJkN2I3N2QyYTc5MGViOGFmMGZhM2EwZTQ3MTgyZDc5MDdiZThlOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNmUzOGZiNDM1NjdmMWM0NzNhNTg0MTgxZTY3YmNiNGMyODJkNzQwNTM3NGFhMTJkOWY4MmM0NjU5NWM0OGIifQ"
+          "resource": "repo://openswe/api/app.py#L67-L72",
+          "version": "repo-lines-v1:sha256:11c6fe37b4a4f78d8c4dc2a0b03e49f9c837ae01b1f6495325e6600f10da39f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDFhNGJhMWUwYTE3MjQ1YTIzYzNiNDkxNjVhYWU3ZGRiY2NlMjhmYWEwYzhhZjJmNzY4ZTQzMDNmYmJlNGJjMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNiZDEwNTliZGYyYWI3MThhZmZiYTdjMzU0OTUxYjBjYTg0ZTdiNzcwM2YwMTFhMTRkYWFlOWFlMzZkY2Y3NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWY4NTM3NzY0MjY1MmNhOTEzNmZiNzYyZDc0OWQ1ZjJmZTNhMjYzZmQ4Y2Y0MjhkYzZmMmU2N2NlY2IzMDc3OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjU1NGEwZDVjYmFkYTFkZjZlMGFlZDNhYjc5NDI3YzU0OWIxNmM5YTE5Y2U0YjZjYTBlNjQ1MzViMzFhYjRhNCJ9"
         }
       ]
     },
@@ -155,12 +121,12 @@
       "statement": "Team settings are a single instance-wide Store record; input validates model-and-effort pairs, Store read failures degrade to hardcoded defaults, chat inherits the agent model, and review grouping inherits the reviewer subagent model when unset or invalid.",
       "evidence": [
         {
-          "resource": "repo://openswe/dashboard/workspace_settings.py#L320-L353",
-          "version": "repo-lines-v1:sha256:327105a428d783708a4436fe697b7f268914695ba9e02cfc36530d4621d4b0df:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkMDQ4MmU0ZGI5ZWYzNGJjNjA0N2JiY2NiNTNkMTJlNzA3MGQ2Y2RhZDU0MGViODg1YmRlNmY5YjU2NzkyMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3ZmM5ZjQ4ZTU0OWJlYmQ5YzE5MzVhMGI5MjlhYjQ0ZmJhY2FlZmZkNDY2ZGE2OGUwMTViNGQyMzU5ZGI5ZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBhNTkyNDhlZDg0MzFhYzdjMTdkN2UxYzEwMmI3MjQ3YzA5YWQzMmVkMDJjMmU1YzhmZjYwZGYwYmU4OWRmNTEifQ"
+          "resource": "repo://openswe/dashboard/workspace_settings.py#L320-L354",
+          "version": "repo-lines-v1:sha256:dbd81bc36debfc24e3cb3d1fba21c7eae4e75488b0fc8a68a567f6ada68a322d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNkMDQ4MmU0ZGI5ZWYzNGJjNjA0N2JiY2NiNTNkMTJlNzA3MGQ2Y2RhZDU0MGViODg1YmRlNmY5YjU2NzkyMjMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI3ZmM5ZjQ4ZTU0OWJlYmQ5YzE5MzVhMGI5MjlhYjQ0ZmJhY2FlZmZkNDY2ZGE2OGUwMTViNGQyMzU5ZGI5ZWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5ZTFmODRlNDVmYThjNTY0YzBkMTczY2U2ZjQ5OGQwOGNkMjQ0OTk2MTg4NWUzN2ZjNDQwNjkzNzZmYWViZWUifQ"
         },
         {
-          "resource": "repo://openswe/dashboard/workspace_settings.py#L431-L460",
-          "version": "repo-lines-v1:sha256:518f79be4e861070ed765778e5af6b8df1207766b54a15cb3f22f07f641e46ef:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4NzI3OTg2MzQ4MGEwZDM1ODRmYWExZDM2MTVmZDU0OTQ1MmQzYzQwZjJlNmQxMzQ1YTMxZGIzZTcwZmRjMDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYwMTdkMjhhZmM5NTllNTc4NjRiNjUzZDc3ZTc3Zjc3M2VlZjc3ZTIzN2M3NzkyZjUzYzUwNDljMWFhMTExNjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdjMTdmZTljNDhhMjIxMzQyYTk4OTEzZDY0MTkzZGRhOTBkOWQxMzY2NjlmMzJlMjY3NmYwYjMxZGNjMzViMmQifQ"
+          "resource": "repo://openswe/dashboard/workspace_settings.py#L421-L459",
+          "version": "repo-lines-v1:sha256:3d1fd48025dcf5b138b93b8bdfbde37c55e379bb633a16f4a4a67ad556ee0b05:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkNDg1NWZkNzE4NDk2OGU1NzA0OGExMDMyMjUxNGZmMjlhYmJlMzI0OGVmYTIwN2Y0ZjVjNGUwNjQ5NTQ1YWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU0NWYwN2VmY2MyNGUwYThhMzVjZjdlNDYyMzQ3ZDMxYmI0MmQ0M2Q5NzMwZGEwMjE5NTNlMzBiNDdlNmM5NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImViYjhkYmUyYmQzOGUyYmQyNzJmZTlhMmM5NDhlZmU3ZWJlNTdiYzg0MWVlZDdhZGRiODBjMDcwZTFhNTRiZjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJmZGYxZWE4ODkwNWU4MjlmYTg0ZDA5YTdiZDdlODFlZjQ5M2UxZjhjODI5ZGRiNjkyMTlmMzk4MDE4Yzg4YzcifQ"
         }
       ]
     },
@@ -183,8 +149,8 @@
       "statement": "Dispatch attaches no run-completion webhook when COMPLETION_WEBHOOK_URL is relative or loopback, even with a completion secret, so a platform-rejected callback cannot break run creation.",
       "evidence": [
         {
-          "resource": "repo://openswe/dispatch.py#L208-L228",
-          "version": "repo-lines-v1:sha256:ea0559fef55bfc8c98f0c075ea52aac787715c16158aa924dec05c8652b69bd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkYjQwMDE4MjEzNTVmMzdlMjg5ODU0ZGY4OGFkNjk4NjM3N2U3MzU2YWE4ODMwYjAxNWFmMjczNDRiNTFjN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmYWQ1ZjIyNTIyOTNlZTM3MGQwYjVlN2Y1OGNjNzFiNGE4YWEwMmU4MmVmYWIzNzIzNmFhNWU4YTQ4OGRlODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijg3NzU4ZTY3OGYyM2RkNDY1Y2MyYmFmNDhiNGZiNzM5ODhiNjRjNmYzYzk0OWI1MmZlYzgzMTU5OTNmZWVmMWQifQ"
+          "resource": "repo://openswe/dispatch.py#L206-L230",
+          "version": "repo-lines-v1:sha256:1d31f3c2bc8b3adca54319e5fe7628f4708a4783517e915616acac76d003940c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBkYjQwMDE4MjEzNTVmMzdlMjg5ODU0ZGY4OGFkNjk4NjM3N2U3MzU2YWE4ODMwYjAxNWFmMjczNDRiNTFjN2QiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhZmJhMDUyN2MzOTUzYzRiNmUwZTViNTczOWJhODM2MTJmODA1M2JjZGM5NDY2NzMwMTkzY2QxZDU5MGI0MDgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVmYWQ1ZjIyNTIyOTNlZTM3MGQwYjVlN2Y1OGNjNzFiNGE4YWEwMmU4MmVmYWIzNzIzNmFhNWU4YTQ4OGRlODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ0ZmFkMDk4NTI0ZTNlOWE2MjNlMzE3ZjA1ZWE2OWE1NDc4MWZhODAzNTU3MjAyMTkyZjQ0OTYzYzYxNGJjNjkifQ"
         }
       ]
     },
@@ -193,18 +159,22 @@
       "statement": "Each workspace can specify a base_snapshot_id (opaque provider-scoped identifier), custom resource overrides (mem_bytes, vcpus, fs_capacity_bytes), and arbitrary provider create-body parameters (create_params); when a workspace captures a snapshot, new sandboxes boot from it instead of a deployment default.",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/lifecycle.py#L69-L122",
-          "version": "repo-lines-v1:sha256:5c6689c35030e9e75129b5b55f5f1ac7bf6ea805a8986dc2647cabe4263a28b3:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlM2ZiMWU1OGZiYzkwNDc5NGQ1MDczMTRmYTkxYzlmMmYxOThjODhkM2ZmMzk1ZTAwODI4OTAxYzM3ZGM5MWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmN2JiMjQ3M2E1MWJiNTIwMmZmYWFkNjE4MjkyOTM4YWVlMmMxMzg5N2JkMDE5ZjA1MWY5M2JiYTA5YzNjZTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlM2IzN2JhMDA4MzMwYzZmMDVkYTk2NWI5Njc0NjhjYzQ3MWE1MTJmYzU0MTAxMGFjM2ZiMDM5ZTEwMDBlNDAifQ"
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L87-L106",
+          "version": "repo-lines-v1:sha256:e0b7c9153ecbd51ecff9208588d009bf988cbd1b244cc11b0a03b155310cb652:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyMGI0NTNmNWUwYzkyZDVmNmMyNTFhNWVhMTk2MGQ3MmYzYmQwNzk1NmFlODU3ZGEyMGUzMWE4OGM1NTk2OWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmYzY3NWRmNWUxMGJmMTc2YjdlZGNlOWUwOTBjM2RjYmVhMmExMzQzMzE3YjVkMDQ4YzA4YzViNWMzYTRlMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjZkZTUwNmQ3Y2I5ZmQ2YmFiNmVlODBjM2RlZmE0MjkzOWFmNDY1ZTI1MjJiNjc2ZjNmMjg1MDQyYzE3ZGUyMGIifQ"
+        },
+        {
+          "resource": "repo://openswe/workspaces/store.py#L728-L744",
+          "version": "repo-lines-v1:sha256:dd29a78ac6a9f8b5e376ec2cb76453f2aabec30bbbc15b95a4d2b643b35368f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmNjdkMTQ4N2E0NzZkNjdlMjM4YWIwZWVkYjQwYTEwNjRkMGZmMjY5NWNlZWUyMzBhNmU1YWVhMDE4MzJlZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzMjY3MTFiM2NmZTg1Y2ZmNzZhMDExM2M4YzA0Mzg0ODA5ZTQ0MWEwNjVhMTQ5NDA3MjUxYTE3YjExZjkyMDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljZGU4NTk2MjU1OTQyM2FlNTY1Mjg1Yzc4ZjU0OTQ0ZTBhYWVjNmZjNGQ1Y2Q1NGUxZWQxZmQzZWI5N2QyOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiOGUwYjc3YjMyYmQ2OGMyNzZjYjY2YWE0M2M5NmZiZWExZjNhZTI5M2YzOTM4ODNiODUwZjlhYjcxZjNlZGUifQ"
         }
       ]
     },
     {
       "id": "claim_b24ff4bb75cd44a88cacda32e9e5cd18",
-      "statement": "WORKSPACE_SNAPSHOT_PREFIX (default openswe via legacy alias ENVIRONMENT_SNAPSHOT_PREFIX) separates environment snapshot names when deployments share a LangSmith workspace; sandbox operations use LANGSMITH_API_KEY and LANGSMITH_ENDPOINT unless workspace-specific SANDBOX_LANGSMITH_API_KEY and SANDBOX_LANGSMITH_ENDPOINT are set.",
+      "statement": "WORKSPACE_SNAPSHOT_PREFIX (default openswe via legacy alias ENVIRONMENT_SNAPSHOT_PREFIX) separates environment snapshot names when deployments share a LangSmith workspace.",
       "evidence": [
         {
-          "resource": "repo://openswe/config.py#L515-L523",
-          "version": "repo-lines-v1:sha256:8e979c48cdf3f18fe0d7335a36485817532f2055f900c253dbe5fab5fbd7b318:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTIxNDY4ZjI1YzEyMjNkNzVkNDQ0YzNhZWU4NTQ1MzI0NDU2M2I1NTg3NTc1ODY1ZWYyZmMzOGMwNzA3MjgyNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTJjNDM4MWUyNTc1YzQzZmZlZGYyMmE5M2FjNTA3OTQ4YzkyNjZjM2I0MWRhNmU0NmRiYjZhYmQ2ZTEzNzM4YSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTNiMzg2YWM4YjRiMWIyYTFkNmM2MmM5YTRiMjI4ZjA2ZWVkYzNjZmY2Nzc2MGUzNjk3NTEzZDEyMGEwYzlmZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzQwNjZlNGYwOWVhZDZlZjFlNzg5MzBmMmRmNmJmODE4OTkxMjFjNTc5ZjQ1MGRmZjk1N2YxNTNmNjU5YTcyNiJ9"
+          "resource": "repo://openswe/config.py#L502-L507",
+          "version": "repo-lines-v1:sha256:1e2fc58aafeca33a4eb22d6c65fe4799efe8dd5bf61ffffff8a3c8b21ca3497a:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTIxNDY4ZjI1YzEyMjNkNzVkNDQ0YzNhZWU4NTQ1MzI0NDU2M2I1NTg3NTc1ODY1ZWYyZmMzOGMwNzA3MjgyNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFmYmEwNTI3YzM5NTNjNGI2ZTBlNWI1NzM5YmE4MzYxMmY4MDUzYmNkYzk0NjY3MzAxOTNjZDFkNTkwYjQwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTNiMzg2YWM4YjRiMWIyYTFkNmM2MmM5YTRiMjI4ZjA2ZWVkYzNjZmY2Nzc2MGUzNjk3NTEzZDEyMGEwYzlmZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzM3ZWZjZmNmOWYyYzFiOGYxNTQyMzcxZTdlMDdhM2ZiMzRlYmIxOTJiOWI5MWEyZjg4M2M0NjU1MTlhZDU1YSJ9"
         }
       ]
     },
@@ -213,8 +183,8 @@
       "statement": "LangSmith startup validation rejects malformed numeric resource values (non-integer or missing integer parsing), negative TTL values for idle or delete-after-stop, and invalid SANDBOX_CREATE_EXTRA_JSON (non-JSON or non-object).",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/providers/langsmith.py#L82-L138",
-          "version": "repo-lines-v1:sha256:c64c9744bfb7530b2b80827cd105154f1bd897c9e3e8a8d4651c73c7e958e890:eyJzZWxlY3RlZExpbmVDb3VudCI6NTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY5YzgyM2YxNGY1YmU4YWY1ZTNiZTVkNDgxNTlmMzA1ZmJhYTA2MzkxYTE2ZDk5OTgzNzNlNWRjYWU0N2NhNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwN2ZlOTNkNmQwZmNjMzAxMmQwYTFkNmUwYWU3MzE3ZDQ0NWQ2NzI0ZTAyMjgzNTFlMWU3NzQ3Mjk2MmViNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUxYmYwOWM3ZTQ3YmY2Y2JjNzg1OTZlZjZiOGY5YTY1MGYwZjQzZjIzZGJkZGRlNWIxMDA1YzkxZmUyNTRiZjEifQ"
+          "resource": "repo://openswe/sandboxes/providers/langsmith.py#L941-L968",
+          "version": "repo-lines-v1:sha256:89e2ad46d1d1ae0b3dfa16a4e689d04e74e1c83e467679284ca1d73b4527cd97:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJmN2Y4ZGJhMzMzYzJlOWNiMDE1NTBkZTU0NmI1NmFmNzA5ODI0ZWY4MzQ1MTAxNTZlYjJjNGFmMTY3OGFiYmEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlZDhhZGJmMGNhMjVhNmFlYWI4MDU5ZmQ5MzAyNDcxZTE1ZDI4OGUwNDBjYzAyMTQ1YWViNTJhMDQ0MzZhYWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgzOWQ1ZDMwNzU0NWQ2ZGZlNDg4NDgzMDc5NWU5NWVjMWFhNzk2NmQzODRlN2FmZTU1N2JhYjQzNTNkNDkxNTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5YmI0NzMyNTg0ZmM2NjJmMTc0YTkwMDRlNWZhYTMyODhiYTRjZmY5ZGY3OGE0OTAzZWRjYTE1NDhlZDY0ODMifQ"
         }
       ]
     },
@@ -223,12 +193,12 @@
       "statement": "validate_github_login_allowlist runs from the FastAPI lifespan hook and fails startup closed when neither ALLOWED_GITHUB_ORGS nor ALLOWED_GITHUB_USERS are configured, ensuring dashboard access is gated.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L67-L67",
+          "resource": "repo://openswe/api/app.py#L68-L68",
           "version": "repo-lines-v1:sha256:e6b2a591aeb83328aa7c2786c642efd4f4b42c99a876006cbc1c02eb04612d15:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMmE1OTFhZWI4MzMyOGFhN2MyNzg2YzY0MmVmZDRmNGI0MmM5OWE4NzYwMDZjYmMxYzAyZWIwNDYxMmQxNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZTZiMmE1OTFhZWI4MzMyOGFhN2MyNzg2YzY0MmVmZDRmNGI0MmM5OWE4NzYwMDZjYmMxYzAyZWIwNDYxMmQxNSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjI5YTYzNjZjMTdjYjM0YjVkYTkzMGNjNTIzNzUzMTAyN2FkMGRlODBhOTNjZDQ3M2YxY2RhOWRkODJhYTVmNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmQ2YWZiNDk5NDA3NzBjYjI5MTAxODk3ZTcwZjUxNzZmYzU5NmM2ZjJjMjhhMzAwMTE3NzY2Yjg3MDhlNzQwZSJ9"
         },
         {
-          "resource": "repo://openswe/dashboard/oauth.py#L214-L220",
-          "version": "repo-lines-v1:sha256:089754ea012604129691bfad730e11e32c678134d17c325a0c0ead10b73948cc:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNjNDE5MzViMzE3Zjg5NTczM2ZhOTVjZGRiNDk3OGE1ZmFiZTNhYmZkODY5ZmUzYzE2ZjU0NDhhODUzN2I1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZThkNzQ0MjdjN2U5ZTdmOTIwMWZkYzk1ZGE0YzQ3MDFkMWU3MTg2YjQ3OWRlNjVkNzc1MTA1YzAxZWZmNmQ5MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDcwYjY3Yjc0NDc5MmRhNmE2ZDI0YWE3MGJhYTVhNTUyOThjZDQ1MTFjNTJkMGE1NjgyNTBmMDlmMmEyNmU1NCJ9"
+          "resource": "repo://openswe/dashboard/oauth.py#L214-L219",
+          "version": "repo-lines-v1:sha256:4baf991067ddfefc638f01d4165f447e4d0ce478ae27f3d410962d29ad70899f:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzNjNDE5MzViMzE3Zjg5NTczM2ZhOTVjZGRiNDk3OGE1ZmFiZTNhYmZkODY5ZmUzYzE2ZjU0NDhhODUzN2I1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTAwZjI5M2I5ZDk4ZmIwNDRhYTBlYzE2Mzc2YzA5N2MxYzE5OTM4MTVlNWRkMWY0MWQxNDc3M2UyNDBkMzVkMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZThkNzQ0MjdjN2U5ZTdmOTIwMWZkYzk1ZGE0YzQ3MDFkMWU3MTg2YjQ3OWRlNjVkNzc1MTA1YzAxZWZmNmQ5MSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmFlNjA5NDdkMjA3YTZkMzUzZWY1MWI0NmI4YTEwMTFjOGZmNGE1NTljM2JiYjU2NTMzM2FmM2M4NDU2MWRjNiJ9"
         }
       ]
     },
@@ -237,18 +207,56 @@
       "statement": "validate_local_dev_llm_config runs from the FastAPI lifespan hook and validates only when DASHBOARD_BASE_URL is explicitly set to an http://localhost address; it checks that the configured or default LLM_MODEL_ID has required provider credentials to fail boot in development before run time.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L69-L69",
-          "version": "repo-lines-v1:sha256:b602849fe3b411f3cca697332a3e8f279ef13cecb83a2779447260d289a8d1cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjYwMjg0OWZlM2I0MTFmM2NjYTY5NzMzMmEzZThmMjc5ZWYxM2NlY2I4M2EyNzc5NDQ3MjYwZDI4OWE4ZDFjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjYwMjg0OWZlM2I0MTFmM2NjYTY5NzMzMmEzZThmMjc5ZWYxM2NlY2I4M2EyNzc5NDQ3MjYwZDI4OWE4ZDFjZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGQ0YmY1OWNhOWE5YmMzZDY0OGNkZTY3Y2YxMDMyODBmNzYwNDhlNDkyMjlmZjJiZmIwYjdhY2JlZTMwZjhiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjA1MDAyMTU1YjlkNDA2NzE0NTZkNzU5NmViYjk0MjY4N2Q2YTAwMGU3YjUyZmQzMmQ4ZDZkNTNjYmU1NDlhNSJ9"
+          "resource": "repo://openswe/api/app.py#L70-L70",
+          "version": "repo-lines-v1:sha256:b602849fe3b411f3cca697332a3e8f279ef13cecb83a2779447260d289a8d1cf:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjYwMjg0OWZlM2I0MTFmM2NjYTY5NzMzMmEzZThmMjc5ZWYxM2NlY2I4M2EyNzc5NDQ3MjYwZDI4OWE4ZDFjZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjYwMjg0OWZlM2I0MTFmM2NjYTY5NzMzMmEzZThmMjc5ZWYxM2NlY2I4M2EyNzc5NDQ3MjYwZDI4OWE4ZDFjZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGQ0YmY1OWNhOWE5YmMzZDY0OGNkZTY3Y2YxMDMyODBmNzYwNDhlNDkyMjlmZjJiZmIwYjdhY2JlZTMwZjhiNyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYmE1MDU3YTdjNTk3OGQ0NDM3MjEwZDA1YTVmNGZkZjE1M2I4N2NmYjJhNzkxMTA2NjIzNjdjNDRlYzc0ZTNmZSJ9"
         },
         {
-          "resource": "repo://openswe/utils/model.py#L288-L316",
+          "resource": "repo://openswe/utils/model.py#L301-L329",
           "version": "repo-lines-v1:sha256:46f8cf2397e5496f6cd57a5f6c9de0488903661ed4de6c74505b42138acc9072:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZhYzAyMGNhYTY0OTcyZjg5YTIyODc1OWI5MGMwYmQyNzE0ZjkxZjEwYTNkMjVkYTEyZjU2ODZjZDJkYWNkZDUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5MjgxYjk4NDFiNmRiY2IxMjJjODdmMDkyN2QzMjM4NGE0YjUzNGZjNTE3ODAwMTFmMzVkZDhmZDdiZGM1MGEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI1ZjVkOTU1NTQ0NTZjNDdhZDNjM2VhODZlOGEwMDc3YmIxMzlmOGViODc3ODZhMGJjYTQ3MDlmOWIxYjIwYjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_e3bf0173e98f4fd291c86a35235c3ed7",
+      "statement": "validate_mda_startup_config runs from the FastAPI lifespan hook and fails startup closed when MDA_RUNTIME_URL is not configured or invalid, or when REMOTE_RUNTIME_TOKEN_SECRET is missing, since the agent and reviewer graphs require MDA.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/agent_api/client.py#L58-L78",
+          "version": "repo-lines-v1:sha256:0a5afce3f19d85b870015e100e67a6b1f4fb87eff72cebf0ef5d7a3ec58ff7a3:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyOTE2NDVlZWQ1NzI3ZTJkMWI4MDQ4MDgxNWFmZjY1MmJjNmI0ODM0MjRlYjVkZGNkOWNmNjlmMWNmZTYxZDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlOWM3MWI2ZGIxYmZlOTU1OWU1NGU2Nzc5Y2JkN2Q0ZmJjYzBkZTI5MjA5YTUyY2E2MmY1NWRhNDMzNDM3MzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImM2ZWYyY2I4YTZkMjQ1N2MxMzVmMTU3ODVmY2ZmMjdlMjVhZGQxNGYzMDBmNjBlOWYwZjFhNzE3ZmE2NzBmODQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImMxM2ZhNDYzYmZiMTQ4OGNiNWYxYjAzYmIzYzE1YjBhMjAxNmZiNWQ4OTg3NjU5MDYyOTM0MzRkMmFlNWFlZGQifQ"
+        },
+        {
+          "resource": "repo://openswe/api/app.py#L71-L71",
+          "version": "repo-lines-v1:sha256:3c80ec05fb9aeabfc5ed01b6f385eb813be5ee84911d664b01cccc15e0c261d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2M4MGVjMDVmYjlhZWFiZmM1ZWQwMWI2ZjM4NWViODEzYmU1ZWU4NDkxMWQ2NjRiMDFjY2NjMTVlMGMyNjFkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiM2M4MGVjMDVmYjlhZWFiZmM1ZWQwMWI2ZjM4NWViODEzYmU1ZWU4NDkxMWQ2NjRiMDFjY2NjMTVlMGMyNjFkOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzEzYTZhMGNkYmMzMDhjZGFhZDU5ZDA2YmY4OGM0YWNjMzQ2MTBhMzg1MzM2NmVkNTJjODhhM2VjZDEwMTFkOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTVlODJmMjJlNmEyNzNiZTkyNDExMDc4MzU3NTIyNTM1MGI1MmI5MjBmYTk2MjIxZmUwNTA4YzZkMjkyNWUxZiJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_b6e3b01624ba4b56831a0bf5ac294deb",
+      "statement": "validate_slack_startup_config runs from the FastAPI lifespan hook and requires SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_APP_ID, SLACK_BOT_USER_ID, and SLACK_BOT_USERNAME to be configured, failing startup if any are missing.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/api/app.py#L72-L72",
+          "version": "repo-lines-v1:sha256:f3bd1059bdf2ab718affba7c354951b0ca84e7b7703f011a14daae9ae36dcf75:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNiZDEwNTliZGYyYWI3MThhZmZiYTdjMzU0OTUxYjBjYTg0ZTdiNzcwM2YwMTFhMTRkYWFlOWFlMzZkY2Y3NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjNiZDEwNTliZGYyYWI3MThhZmZiYTdjMzU0OTUxYjBjYTg0ZTdiNzcwM2YwMTFhMTRkYWFlOWFlMzZkY2Y3NSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmQ2YWZiNDk5NDA3NzBjYjI5MTAxODk3ZTcwZjUxNzZmYzU5NmM2ZjJjMjhhMzAwMTE3NzY2Yjg3MDhlNzQwZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjU1NGEwZDVjYmFkYTFkZjZlMGFlZDNhYjc5NDI3YzU0OWIxNmM5YTE5Y2U0YjZjYTBlNjQ1MzViMzFhYjRhNCJ9"
+        },
+        {
+          "resource": "repo://openswe/slack/http.py#L50-L60",
+          "version": "repo-lines-v1:sha256:bc3e15bdb0e813e5cd0af3ad3e84f2aa4445edcebc349fb0a071ffe61f248bd0:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjViOTgzMDJhODQ5YTdlZTY3N2M5YWYxZTYwNGMwODg0N2U5ZTQ3NWU1YzU3NWVhN2ZkNTgwZjM0YTlmM2Y2NjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjMzEzZjYwNzQ3N2IwZWQzNjQ3ZmU3MjVhMzUzMGI4NjM4ZmM1ZjBhMzQ1ZWM4M2UzOTVhNmU4NDY0ZDQ0MjIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1OTZjMzU2ZDIxOTA3ODM1ZjIwNTQ1NmMxYWJiNTI5ZjQ2YmU3ODU2MzljMWQyZjE5ODFjMjRhZjQ3MjIyNGMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_dba5addbc80944e69e1f0c5fec07c7f7",
+      "statement": "Workspace.sandbox_resources() returns VM sizing parameters (mem_bytes, vcpus, fs_capacity_bytes) for sandboxes, omitting any unset or invalid values, while sandbox_create_params() returns validated LangSmith create-body fields per workspace.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/workspaces/store.py#L728-L744",
+          "version": "repo-lines-v1:sha256:dd29a78ac6a9f8b5e376ec2cb76453f2aabec30bbbc15b95a4d2b643b35368f2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBmNjdkMTQ4N2E0NzZkNjdlMjM4YWIwZWVkYjQwYTEwNjRkMGZmMjY5NWNlZWUyMzBhNmU1YWVhMDE4MzJlZjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYzMjY3MTFiM2NmZTg1Y2ZmNzZhMDExM2M4YzA0Mzg0ODA5ZTQ0MWEwNjVhMTQ5NDA3MjUxYTE3YjExZjkyMDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljZGU4NTk2MjU1OTQyM2FlNTY1Mjg1Yzc4ZjU0OTQ0ZTBhYWVjNmZjNGQ1Y2Q1NGUxZWQxZmQzZWI5N2QyOTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiOGUwYjc3YjMyYmQ2OGMyNzZjYjY2YWE0M2M5NmZiZWExZjNhZTI5M2YzOTM4ODNiODUwZjlhYjcxZjNlZGUifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-28T14:57:39.210Z"
+    "at": "2026-10-31T14:24:53.711Z"
   }
 }

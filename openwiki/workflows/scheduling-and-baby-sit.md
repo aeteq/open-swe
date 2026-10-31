@@ -48,10 +48,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 ---
 
 # Scheduled and Background Work Dispatch
@@ -75,13 +75,13 @@ graph TD
 
 Diagram: the job queue stores due work and dispatches it to kind-specific handlers.
 
-The `openswe/jobs/kinds.py` module imports every handler and registers it with `WORKER`. When the webapp starts, it imports this module, making all handlers available. A handler is a coroutine that accepts a `Job` and either succeeds, raises (causing retry), or calls `job.finish()` / `job.stop()` / `job.retry_later()` to control lifecycle. The worker provides a heartbeat loop so a running job can renew its claim and be cancelled safely.
+The `openswe/jobs/kinds.py` module imports every handler and registers it with `WORKER`. When the webapp starts, it imports this module, making all handlers available. A handler is a coroutine that accepts a `Job` and either succeeds, raises (causing retry), or calls `job.finish()` / `job.stop()` / `job.retry_later()` to control lifecycle. The worker provides a heartbeat loop so a running job can renew its claim and be cancelled safely. When a handler raises an error, the job is retried with exponential back-off (30s × 2^(attempts-1), capped at 1 hour) up to 5 attempts; cron jobs skip to their next fire on failure while one-shot jobs delete themselves after exhausting retries.
 
 ## Scheduled agent runs (dashboard automations)
 
 `openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage with `normalize_cron_schedule()`, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds (minute 0–59, hour 0–23, day-of-month 1–31, month 1–12, day-of-week 0–6). On a dashboard schedule fire, the queue stores a job with `kind=agent_schedule` and `schedule_id`.
 
-The handler `_agent_schedule` loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently. Deduplication via `event_claims` ensures a schedule that matures again during replay (after a deploy/crash) launches at most once.
+The handler `launch_scheduled_agent_run` loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently. Deduplication via `event_claims` ensures a schedule that matures again during replay (after a deploy/crash) launches at most once.
 
 ## Stale-run reconciliation
 
@@ -106,11 +106,11 @@ For each unreported terminal task (`completed`, `failed`, `timed_out`, `stopped`
 
 ## Thread wakeups
 
-`schedule_thread_wakeup` is distinct from the job queue: it creates a thread-bound, one-shot cron directly in the LangGraph crons table. It accepts delays from one minute through 24 hours, rounds the fire time to a minute, and supplies an `end_time` about 90 seconds later so the cron cannot recur. The wakeup carries selected source/repository/context configuration and uses a default automated polling prompt when none is supplied. When configured, it also includes the normal completion webhook and trace correlation.
+`schedule_thread_wakeup` is distinct from the job queue: it creates a thread-bound, one-shot job directly in the job queue with a specific due time. It accepts delays from one minute through 24 hours, rounds the fire time to a minute, and supplies an `expires_at` about 90 seconds later so the cron cannot recur. The wakeup carries selected source/repository/context configuration and uses a default automated polling prompt when none is supplied. When configured, it also includes the normal completion webhook and trace correlation.
 
 Wakeups are intentionally rate limited. The tool hashes the latest human input-message identity and persists a count in thread metadata; no more than 10 wakeups can be created in that human-message generation. A new human message resets the count, while system messages—including wakeups—do not. The budget is recorded before cron creation, so a creation failure still consumes a slot rather than allowing retry storms.
 
-A fired cron row remains in LangGraph even after `end_time`. Before scheduling, the tool best-effort purges only expired `metadata.kind=thread_wakeup` rows, fully paginating first; it does not touch unrelated crons. `scripts/purge_wakeup_crons.py` is the operational backfill utility for an accumulated deployment backlog. Run `uv run python scripts/purge_wakeup_crons.py --dry-run` to list candidates, then omit `--dry-run` to delete them; it resolves the URL from `--url` or `LANGGRAPH_URL` and credentials from `LANGGRAPH_API_KEY` or `LANGSMITH_API_KEY`.
+A fired job row may remain in the job queue even after its execution. Before scheduling, the tool best-effort purges only expired `metadata.kind=thread_wakeup` rows, fully paginating first; it does not touch unrelated jobs. `scripts/purge_wakeup_crons.py` is the operational backfill utility for an accumulated deployment backlog. Run `uv run python scripts/purge_wakeup_crons.py --dry-run` to list candidates, then omit `--dry-run` to delete them; it resolves the URL from `--url` or `LANGGRAPH_URL` and credentials from `LANGGRAPH_API_KEY` or `LANGSMITH_API_KEY`.
 
 ## `/baby-sit`: durable PR CI monitoring
 
@@ -184,17 +184,17 @@ Diagram: immediate signed CI events and the polling fallback converge on one ser
 
 The GitHub route verifies `X-Hub-Signature-256` HMAC before accepting a request. CI events (`check_run`, `check_suite`, `workflow_run`, and `status`) are processed in the background. `handle_ci_webhook` ignores non-failing payloads, selects active watches in the repository whose stored SHA or branch matches, updates a supplied installation ID, and records a delivery ID before evaluating; repeated deliveries (deduplicated by delivery_id) do not cause a second evaluation.
 
-The ten-minute cron is the deterministic fallback for lost or delayed webhooks. `evaluate_watch` obtains a five-minute per-watch lock implemented as a short-lived LangGraph thread via `event_claims`. A concurrent trigger returns `busy`; otherwise it fetches the PR and current check/status sets. Pending and duplicate states return without dispatching an agent run, so unchanged polling consumes no model tokens.
+The ten-minute cron is the deterministic fallback for lost or delayed webhooks. `evaluate_watch` obtains a five-minute per-watch lock implemented via `event_claims`. A concurrent trigger returns `busy`; otherwise it fetches the PR and current check/status sets. Pending and duplicate states return without dispatching an agent run, so unchanged polling consumes no model tokens.
 
 ### Evaluation, dispatch, and terminal results
 
 Evaluation first stops a closed or merged PR. A head-SHA change resets retries, failure-dispatch keys, and alert keys. The aggregate is `failure` when a completed failing check or failing/error commit status exists; `pending` while checks are incomplete or absent; `blocked` for completed, non-successful states that are not rerunnable failures; and `success` only when all checks are completed and all check runs and statuses report successful/neutral/skipped states.
 
-On a success state with all required checks reported stable (no unreported required checks pending), the watch immediately dispatches a ready notification to the originating thread, which decides on next steps (merge or continue diagnosis). A new failing state is deduplicated by a SHA-and-retry-count fingerprint. If not already dispatched, the service resumes the originating thread with `/baby-sit --continue`, an explicit warning that failures and fetched logs are untrusted, and instructions to verify the head and complete check set before confidence-gated diagnosis. If dispatch itself fails, the fingerprint is removed so a future trigger can retry.
+On a success state with all required checks reported, the watch immediately dispatches a ready notification to the originating thread, which decides on next steps (merge or continue diagnosis). A new failing state is deduplicated by a SHA-and-retry-count fingerprint. If not already dispatched, the service resumes the originating thread with `/baby-sit --continue`, an explicit warning that failures and fetched logs are untrusted, and instructions to verify the head and complete check set before confidence-gated diagnosis. If dispatch itself fails, the fingerprint is removed so a future trigger can retry.
 
 The agent may rerun only evidence-backed flaky GitHub Actions failures. After a successful rerun it calls `manage_baby_sit(action="record_retry")`; the service checks ownership, head SHA, and a three-retry-per-head cap, then increments durable state. It posts the flaky-CI alert only once per head/check/safe GitHub URL. Deterministic, ambiguous, external-provider, and permission failures should instead stop the watch and report a blocker.
 
-`_finish_watch` handles completion, closure/merge, blocked checks needing owner triage, retry exhaustion, and three consecutive evaluation errors. It prefers the `SourceContext` destination—Slack reply, then Linear or GitHub comment—and falls back to a queued `/baby-sit --terminal` run on the originating agent thread if that notification cannot be delivered. It then stops the watch.
+Terminal watch outcomes (PR closed/merged, success dispatched, terminal non-rerunnable checks needing triage, flaky-rerun cap reached, or 3 consecutive evaluation failures) are posted to the originating source thread by `_finish_watch`. It prefers the `SourceContext` destination—Slack reply, then Linear or GitHub comment—and falls back to a queued `/baby-sit --terminal` run on the originating agent thread if that notification cannot be delivered. It then stops the watch.
 
 ### Agent-facing guardrails
 

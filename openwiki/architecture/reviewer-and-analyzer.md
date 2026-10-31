@@ -3,6 +3,9 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-31T14:24:53.711Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -10,6 +13,10 @@ sources:
     resource: repo://openswe/agent_api/reviewer.py
   - id: openwiki-source-90b15fd6117126ebfe5b6b22
     resource: repo://openswe/graphs/reviewer.py
+  - id: openwiki-source-3554a18b9529d3d118344e34
+    resource: repo://openswe/prompts.py
+  - id: openwiki-source-87ae98c9060bfcbd31e546ff
+    resource: repo://openswe/resources/prompts/reviewer/subagent-description.md
   - id: openwiki-source-85f325a37c97d6000b6e6a23
     resource: repo://openswe/review/findings.py
   - id: openwiki-source-77c518a8a4572e59e2d374ee
@@ -24,10 +31,7 @@ sources:
     resource: repo://openswe/tools/add_finding.py
   - id: openwiki-source-7cec199cafafc864b85fba49
     resource: repo://openswe/tools/publish_review.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
 # Reviewer Graph and Code Review
@@ -83,7 +87,7 @@ If sandbox replacement itself fails with `SandboxUnreachableError`, preparation 
 
 The prompt requires a concrete, changed-line-anchored failure mode and rejects speculation, ordinary style or naming nits, pre-existing defects, and duplicate fan-out for one defect across files. Explicit repository convention violations remain reviewable when they are anchored in the diff and have a concrete failure mode. Suggestions are restricted to small, obvious fixes.
 
-PR title/body, existing review-thread comments, and finding replies are attacker-controlled GitHub content. The renderer places them in XML data blocks, treats their contents as data rather than instructions, validates login attributes against the GitHub login grammar, and neutralizes wrapper closing tags with `_escape_for_data_block`. Review scout walkthrough and human input are also explicitly untrusted and must not leak into actual findings.
+PR title/body, existing review-thread comments, and finding replies are attacker-controlled GitHub content. The renderer places them in XML data blocks, treats their contents as data rather than instructions, validates login attributes against the GitHub login grammar, and neutralizes wrapper closing tags with `escape_for_data_block`. Review scout walkthrough and human input are also explicitly untrusted and must not leak into actual findings.
 
 ### Durable finding lifecycle
 
@@ -119,8 +123,6 @@ Callers must inspect the structured result: `success: true` with `review_id: nul
 Repositories can define a custom review style prompt through the dashboard. This prompt supplements the reviewer's main system prompt during preparation when `get_repo_custom_prompt` retrieves it from the `REVIEW_STYLES` store. The store lookup fails soft: a store blip omits style guidance rather than failing a PR review.
 
 The `ReviewStyle` record holds a `custom_prompt`, approval mode (off/dry_run/approve), and audit timestamps. Callers update the prompt through `ReviewStyleStore.update_prompts`, which handles validation and UI topic invalidation.
-
-The analyzer graph that once synthesized these custom prompts per-repository has been removed. Custom prompts are now authored in the dashboard and persisted directly.
 
 ## Review scout walkthrough generation
 

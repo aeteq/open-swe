@@ -5,7 +5,7 @@ description: "Route readers through the wiki hierarchy based on their task: star
 tags: [quickstart, wiki, navigation, entrypoints, developer-setup, architecture]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -27,8 +27,6 @@ sources:
     resource: repo://openswe/review_scout/graph.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
-  - id: openwiki-source-1b32e9f41fa7e64702b380f6
-    resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
     resource: repo://openswe/webapp.py
   - id: openwiki-source-5b54a58d1b51cd490b0e7162
@@ -39,12 +37,12 @@ sources:
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
 # Quick Start: Navigate the Open SWE Codebase
 
-Open SWE is a LangGraph and Deep Agents software-engineering framework: work can arrive from the dashboard, GitHub, Slack, Linear, or a schedule; coding work runs in a thread-scoped isolated sandbox and can produce a pull request. This page routes you through the wiki hierarchy based on your task. Read the relevant source and tests first; the linked OpenWiki pages are optional just-in-time context, not an authority over the repository.
+Open SWE is an asynchronous coding agent and software factory built on LangGraph and Managed Deep Agents: work can arrive from the dashboard, GitHub, Slack, Linear, or a schedule; coding work runs in a thread-scoped isolated sandbox and can produce a pull request. This page routes you through the wiki hierarchy based on your task. Read the relevant source and tests first; the linked OpenWiki pages are optional just-in-time context, not an authority over the repository.
 
 ## Start a local developer loop
 
@@ -52,27 +50,29 @@ Use Python 3.14 and `uv` for the backend. The dashboard and desktop workspace us
 
 ```bash
 make install            # uv sync --extra dev
-make dev                # uv run langgraph dev --no-browser --port 2024
-make dev-mda            # uv run mda dev --port 2025 (in separate terminal)
-make run                # uv run uvicorn openswe.webapp:app --reload --port 8000
-make dev-ui             # Vite plus LangGraph development server
+make dev                # langgraph dev serving all graphs + FastAPI on :2024
+make dev-mda            # Managed Deep Agents dev server on :2025 (in separate terminal)
+make run                # uvicorn FastAPI-only on :8000
+make dev-ui             # Vite plus LangGraph development server on :2024
 make web                # pnpm run dev
 make desktop            # pnpm run dev:desktop
 ```
 
 Use `make dev` when a change needs LangGraph graph execution; it serves all three registered graphs and the HTTP app to Managed Deep Agents. Run `make dev-mda` in a separate terminal to start the MDA runtime server. `make run` is FastAPI-only for dashboard and webhook testing without graph changes. `make dev-ui` fronts Vite through the backend at `:2024`; `make desktop` starts Electron and requires the backend separately. For local webhook exposure, use `make tunnel NGROK_DOMAIN=<name>.ngrok-free.dev` to restrict the ngrok policy to `/webhooks/*` only, since the development server has no authentication.
 
-Python is async-first: implement the async path. Add a synchronous method only when an interface requires it, and make that method raise `NotImplementedError`; do not maintain parallel implementations.
+**Constant gardening:** Before making any change, refactor the surrounding code so the change slots in naturally. Spend real effort on this rather than bolting features onto whatever shape the code happens to be in.
+
+**Async-first:** Implement the async path only. Add a synchronous method only when an interface requires it, and make that method raise `NotImplementedError`; do not maintain parallel sync/async implementations.
 
 ## Entrypoints and execution boundaries
 
-`langgraph.json` is the deployment registration point. Its graph targets are thin `openswe/graphs/` re-export shims that serve reads of pre-Managed Deep Agents threads; all new runs execute on Managed Deep Agents, not in the LangGraph graphs directly. `langgraph.json` also mounts `openswe.webapp:app` and configures the deployed checkpointer with delete-based TTL cleanup (60-minute sweep and 43,200-minute default retention).
+`langgraph.json` is the deployment registration point. Its three graph targets are thin `openswe/graphs/` re-export shims that serve reads of pre-Managed Deep Agents threads only; all new runs execute on Managed Deep Agents, not in the LangGraph graphs directly. `langgraph.json` also mounts `openswe.webapp:app` and configures the deployed checkpointer with delete-based TTL cleanup (60-minute sweep and 43,200-minute default retention).
 
 | Entrypoint | Owning concern | Start here for changes to… |
 | --- | --- | --- |
 | `openswe.graphs.agent:traced_agent` | Read-only graph for pre-MDA threads (`openswe/graphs/read_only.py`) | Legacy thread reads; new coding-agent work runs on Managed Deep Agents. |
 | `openswe.graphs.reviewer:traced_reviewer_agent` | Read-only graph for pre-MDA threads (`openswe/graphs/read_only.py`) | Legacy thread reads; new reviewer work runs on Managed Deep Agents. |
-| `openswe.graphs.review_scout:traced_review_scout` | Review scout read-only graph (`openswe/graphs/read_only.py`) | Legacy thread reads; new review-scout work runs on Managed Deep Agents. |
+| `openswe.graphs.review_scout:traced_review_scout` | Read-only graph (`openswe/graphs/read_only.py`) | Legacy thread reads; new review-scout work runs on Managed Deep Agents. |
 | `openswe.webapp:app` | FastAPI composition (`openswe/api/app.py`) | Dashboard APIs/UI mount, health, plan/approval APIs, CORS, MDA validation, and webhook ingress. |
 
 ### Request flow: from trigger to durable run
@@ -101,8 +101,9 @@ New runs execute on Managed Deep Agents; the LangGraph graphs serve only reads o
 
 ### Key invariants to preserve
 
-- **Managed Deep Agents execution:** New runs do not execute in the LangGraph graphs (`openswe/graphs/`); they run on Managed Deep Agents. The graphs serve only reads of threads created before the MDA migration.
+- **Managed Deep Agents execution:** Every `agent`, `reviewer` and `review-scout` thread runs on Managed Deep Agents, as one graph `open-swe` from the project in `mda/`; the backend refuses to start without `MDA_RUNTIME_URL` and `REMOTE_RUNTIME_TOKEN_SECRET`. The graphs serve only reads of threads created before the MDA migration.
 - **Thread binding and state:** All per-thread state lives in the sandbox plus LangGraph thread metadata (for reads) or the MDA runtime (for new runs). The graph factory is stateless.
+- **MDA ownership:** MDA owns the run: the model loop, checkpoints, the thread's sandbox, every tool call, and every hook and middleware around them. The backend is a set of stateless APIs MDA calls.
 - **Sandbox preservation:** A missing sandbox may be recreated, but do **not** silently replace an unreachable main-agent sandbox—it could contain uncommitted work. Only the reviewer and scout opt into replacement because their checkouts are recreated each run.
 - **Reviewer constraints:** The reviewer has no commit, push, or PR-opening tools. It only adds findings.
 - **Dispatch contract:** `dispatch_agent_run` is the shared creation contract for all Slack, Linear, GitHub, and dashboard triggers of `agent` or `reviewer` graphs. Its default multitask strategy is `interrupt`, and callers must choose exactly one input-construction path: either a prebuilt run input or separate content/context/identity parameters—not both.

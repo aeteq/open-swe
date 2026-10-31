@@ -3,6 +3,9 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-10-31T14:24:53.711Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -14,8 +17,6 @@ sources:
     resource: repo://openswe/dashboard/routes.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
-  - id: openwiki-source-d0edf7555209b3e6418b5c5f
-    resource: repo://openswe/github/routes.py
   - id: openwiki-source-813c25f6bac2408de322a1f5
     resource: repo://openswe/graphs/agent.py
   - id: openwiki-source-2e8359c5702d5a31e2d5ea43
@@ -24,28 +25,17 @@ sources:
     resource: repo://openswe/graphs/review_scout.py
   - id: openwiki-source-90b15fd6117126ebfe5b6b22
     resource: repo://openswe/graphs/reviewer.py
-  - id: openwiki-source-1501ebbb20af772307a3e518
-    resource: repo://openswe/jobs/kinds.py
-  - id: openwiki-source-ff94e6d6f8e823f174c61b08
-    resource: repo://openswe/linear/routes.py
   - id: openwiki-source-7a02c62499495310b04f21ef
     resource: repo://openswe/review/chat.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
-  - id: openwiki-source-c1d629bf5196269b73880148
-    resource: repo://openswe/slack/routes.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
     resource: repo://openswe/webapp.py
-  - id: openwiki-source-23775c3de52f3ab95a13cb8b
-    resource: repo://README.md
   - id: openwiki-source-4eb06f8c7641cb7107e39ca8
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
 # Runtime and Product Architecture
@@ -79,11 +69,11 @@ All three graphs are re-exports of `openswe.graphs.read_only:read_only_graph`, w
 <!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
 flowchart TD
-  Slack["Slack"] --> Webhooks["Webhook routers<br/>(GitHub, Linear, Slack)"]
+  Slack["Slack"] --> Webhooks["Webhook routers<br/>GitHub, Linear, Slack"]
   Linear["Linear"] --> Webhooks
   GitHub["GitHub"] --> Webhooks
   Browser["Web dashboard"] --> Dashboard["Dashboard router"]
-  JobQueue["Job queue"] --> BackgroundJobs["Background jobs<br/>(reconcile, watch, costs)"]
+  JobQueue["Job queue"] --> BackgroundJobs["Background jobs<br/>reconcile, watch, costs"]
   Dashboard --> Chat["PR chat proxy"]
 
   subgraph App["FastAPI app"]
@@ -94,16 +84,16 @@ flowchart TD
   Webhooks --> Dispatch["dispatch_agent_run"]
   Dashboard --> Dispatch
   Dispatch --> ThreadRouter["ThreadRouter middleware"]
-  ThreadRouter --> MDA["Managed Deep Agents execution"]
+  ThreadRouter --> MDA["Managed Deep Agents<br/>execution"]
   MDA --> Agent["agent graph"]
   MDA --> Reviewer["reviewer graph"]
-  Agent --> Backend["Thread sandbox or desktop backend"]
+  Agent --> Backend["Thread sandbox<br/>or desktop backend"]
   Reviewer --> Backend
   Chat --> Agent
   BackgroundJobs --> Dispatch
 ```
 
-`dispatch_agent_run` is the shared creation boundary for agent and reviewer runs. Chat and background work do not go through dispatch or registered graphs.
+The diagram shows the full dispatch cycle: `dispatch_agent_run` is the shared creation boundary for agent and reviewer runs. Chat and background work do not go through dispatch or registered graphs.
 
 ## Graph and execution boundaries
 

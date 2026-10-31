@@ -12,10 +12,12 @@ sources:
     resource: repo://openswe/completion.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
+  - id: openwiki-source-783616155a6663ff5d3b0dfa
+    resource: repo://openswe/github/comments.py
+  - id: openwiki-source-836966ba5e0c4d710801c9a9
+    resource: repo://openswe/input_messages.py
   - id: openwiki-source-6e25a82711fecc0a57fbef58
     resource: repo://openswe/message_queue.py
-  - id: openwiki-source-1772d9a59ed3ff28f22ae21a
-    resource: repo://openswe/middleware/check_message_queue.py
   - id: openwiki-source-1b32e9f41fa7e64702b380f6
     resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
@@ -30,6 +32,8 @@ sources:
     resource: repo://openswe/slack/webhook.py
   - id: openwiki-source-1b56c0378ee7dbe5ac66ab32
     resource: repo://openswe/threads/handlers.py
+  - id: openwiki-source-022ee08422abaad398dba679
+    resource: repo://openswe/threads/inbox.py
   - id: openwiki-source-4b5283763f4ffcc761aa1c9f
     resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5d8b1cb7551116affdb348f3
@@ -42,10 +46,10 @@ sources:
     resource: repo://openswe/tools/schedule_thread_wakeup.py
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 ---
 
 # Follow-up Messages and Threaded Continuity
@@ -87,18 +91,18 @@ sequenceDiagram
     participant Dashboard as Dashboard UI
     participant LangGraph as LangGraph<br/>Platform
     participant Store as Store API
-    participant Middleware as Before-model<br/>middleware
+    participant Inbox as Inbox Reader
     participant Model
 
     User->>Dashboard: send follow-up
     alt thread is busy
         Dashboard->>LangGraph: check thread status
-        Dashboard->>Store: append to pending_messages
-        Note over Middleware: at next model call
-        Middleware->>Store: read pending_messages
-        Middleware->>Store: delete pending_messages
-        Middleware->>Middleware: build attributed input messages
-        Middleware-->>Model: inject into state
+        Dashboard->>Store: append to message queue
+        Note over Inbox: at next model call
+        Inbox->>Store: read QueuedMessage.for_thread
+        Inbox->>Store: delete consumed messages
+        Inbox->>Inbox: build attributed input messages
+        Inbox-->>Model: inject into state
     else thread is idle
         Dashboard->>LangGraph: create new run
     end
@@ -106,25 +110,21 @@ sequenceDiagram
 
 `queue_message_for_thread` persists each message as a database row in the message queue. Messages are appended in FIFO order and the queue caps at 100 newest entries, dropping the oldest on overflow. Store errors are logged and reported to the dashboard as a failed queue operation.
 
-### Before-model middleware: consume and attribute
+### Before-model message consumption in the inbox
 
-`check_message_queue_before_model` is installed in both the agent and reviewer graphs as a before-model middleware. It is deliberately excluded from the agent's `stop_summary` mode (read-only summary runs have no need to consume queued messages).
+The inbox reader (`_ThreadInbox` in `threads/inbox.py`) is responsible for picking up queued messages before each model call. When preparing a run's input, it:
 
-At every model boundary, the middleware performs sequential operations:
+1. **Reads a snapshot of queued messages** from `QueuedMessage.for_thread()`, oldest first. This snapshot prevents duplicate injection if new messages are queued while conversion is in flight.
 
-1. **Consume a batched autofix event** from the Store's autofix namespace (if present). It deletes the event and prepends a system instruction to re-check CI and review comments before finishing, rather than launching a separate run. This allows baby-sit status changes to be handled within the active run.
+2. **Handles image URLs**: For payloads with image URLs, the reader resolves the run's configured model once. If the model does not support vision, it omits those fetched images and adds a warning to the text; supplied image blocks are retained. Failures reading images or the queue are logged and allow the model call to proceed rather than aborting the run.
 
-2. **Read and clear the message queue** from the Store's queue namespace. The middleware deletes the entire record *before* conversion, preventing a subsequent invocation during the asynchronous conversion (e.g., image fetches) from injecting the same batch twice. A snapshot of the queued messages is taken first, so any follow-ups appended while the conversion is in flight are preserved for the next model call.
-
-3. **Convert queued messages to input blocks** and append them to the model's state:
+3. **Converts queued messages to input blocks** and appends them to the model's state:
    - Ordinary queued blocks become a system message attributed to `system:thread-queue` on the automation surface.
-   - A dashboard payload (identified by `source: "dashboard"`) produces a dashboard-handoff system message followed by a human message attributed to its supplied sender on the web surface.
-   - Dynamic identity context is emitted only when its hash is not already visible to the model. The visibility calculation honors summarization cutoffs, so context retained only in historical state is re-introduced.
+   - A dashboard payload (identified by the shape `source: "dashboard"`) produces a dashboard-handoff system message followed by a human message attributed to its supplied sender on the web surface.
+   - Dynamic identity context (person, channel, system blocks) is emitted only when its hash is not already visible to the model. The visibility calculation honors summarization cutoffs, so context retained only in historical state is re-introduced.
    - Each structured envelope is its own message because the transcript parser expects one `<input-message>` envelope per message. Plain text blocks may be merged before serialization.
 
-### Image handling and error resilience
-
-For payloads with image URLs, the middleware resolves the thread's configured model once. If the model does not support vision, it omits those fetched images and adds a warning to the text; supplied image blocks are retained. Failures reading images or the queue are logged and allow the model call to proceed rather than aborting the run. A failed queue read still flushes any autofix instruction already assembled, ensuring partial content is not lost.
+4. **Removes consumed messages** from the queue after successfully reading them, preventing duplicate injection on retry or the next run.
 
 ## Run completion and follow-up dispatch
 
@@ -140,6 +140,18 @@ The completion webhook handler (`handle_run_completion`) processes terminal runs
 
 Run-completion replies are best-effort and never block run creation. A missing webhook or a completion that arrives out of order has no side effects beyond deferred feedback and cost enrichment.
 
+### GitHub comment routing and failure reply delivery
+
+When a run fails (error or timeout), the completion handler posts a failure reply to the originating channel. For GitHub-sourced runs, `post_github_comment` posts the reply to the pull request or issue that triggered the run, using a GitHub App token. The reply includes:
+
+- A user-friendly warning message summarizing the failure reason
+- A context-specific follow-up suggestion (e.g., "Start a new thread to continue" for context-too-long failures)
+- An optional link to the error trace in LangSmith for debugging
+
+Similarly, Slack runs receive a failure reply via `post_slack_thread_reply` with run-scoped deduplication, Linear issues receive notifications, and Notion pages receive comments. All replies use idempotence keys to prevent duplicate notifications if the webhook retries.
+
+### Follow-up pickup dispatch
+
 If a successful run (not a follow-up-pickup run) left pending messages in the store, `dispatch_pending_follow_ups` dispatches an empty-input follow-up run to pick them up when no run is already pending, allowing stored work to reach the agent without losing it to an idle timeout.
 
 ## Background monitoring and follow-up dispatch
@@ -148,7 +160,7 @@ If a successful run (not a follow-up-pickup run) left pending messages in the st
 
 `/baby-sit` is an opt-in watch for pull-request CI status. It runs on a configurable cron schedule (10-minute intervals by default) and evaluates whether CI has succeeded, failed, or remains pending. When CI status changes from a previous evaluation, it dispatches a follow-up run with `multitask_strategy="enqueue"` to let the interactive agent finish before the notification begins.
 
-The watch stores metadata including retry count, dispatch keys for idempotence, and delivery tracking. Terminal failures (exceeding retry limits) and successful CI (all checks passing) stop the watch and post a summary to the originating thread.
+The watch stores metadata including retry count, dispatch keys for idempotence, and delivery tracking. Terminal failures (exceeding retry limits) and successful CI (all checks passing) stop the watch and post a summary to the originating thread using `post_github_comment` or `post_slack_thread_reply`.
 
 ### Background task completion monitoring
 
@@ -181,25 +193,13 @@ The same budget mechanism is used for `MONITOR_WAKES`, which limits background-t
 
 ## Emergency stop and follow-up cleanup
 
-### Slack emergency stop (`:x:` reaction)
+### Code-channel session stop
 
-The `:x:` reaction on a Slack message triggers immediate stop processing:
-
-1. Resolve the reaction's target thread through Slack-run mapping or root timestamp.
-2. Verify the thread metadata matches the Slack channel and thread timestamp (mismatch is rejected).
-3. Claim the event ID for delivery deduplication.
-4. Enumerate and cancel every pending and running run for the thread by thread ID (not `latest_run_id`, so the stop button works for runs this browser never started).
-5. Clear deferred-work records: delete pending messages and autofix events from the store.
-6. Update thread metadata with `latest_run_status="interrupted"` and `stop_requested_at_ms`.
-7. Dispatch a read-only stop-summary run that permits only thread inspection and summary output.
-
-The summary run is mapped back to the Slack thread via the Slack-run mapping, so a subsequent `:x:` reaction can find and stop it. If cancellation or cleanup fails, the handler does not claim success, so the webhook will retry.
-
-A code-channel `agent_session_stopped` event performs the same cancellation and cleanup without dispatching a summary run, and returns the session to `active` status.
+A code-channel `agent_session_stopped` event cancels all active runs on a thread by enumerating pending and running statuses, clears all queued messages, marks the thread with `latest_run_status="interrupted"`, and returns the session to `active` status. For non-code-channel threads, the event delegates to `cancel_dashboard_thread` to perform similar cancellation with authorization checks.
 
 ### Dashboard stop and queued-message preservation
 
-The dashboard stop endpoint (`cancel_dashboard_thread`) authorizes the caller, cancels all pending and running runs by enumerating the thread (not trusting `latest_run_id`), and marks the thread interrupted. Unlike Slack stop, it **preserves** pending messages in the store. If a queued follow-up exists, it dispatches an empty-input agent run; the before-model middleware drains the preserved queue, allowing the follow-up to continue the conversation without losing user input.
+The dashboard stop endpoint (`cancel_dashboard_thread`) authorizes the caller, cancels all pending and running runs by enumerating the thread (not trusting `latest_run_id`), and marks the thread interrupted. Unlike Slack stop, it **preserves** pending messages in the store. If a queued follow-up exists, it dispatches an empty-input agent run; the inbox reader drains the preserved queue, allowing the follow-up to continue the conversation without losing user input.
 
 The admin variant (`admin_cancel_dashboard_thread`) cancels and marks interrupted without authorization checks or queued continuation.
 

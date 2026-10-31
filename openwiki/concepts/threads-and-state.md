@@ -36,10 +36,10 @@ sources:
     resource: repo://openswe/utils/thread_participants.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 ---
 
 # Threads, Durable Runs, and State
@@ -82,6 +82,7 @@ flowchart TD
   AgentThread --> Run["Create durable run"]
   Reviewer --> Run
 ```
+
 Thread identity lets independently triggered work converge on the correct durable conversation.
 
 ### Slack mappings support moves and retirement
@@ -129,6 +130,7 @@ sequenceDiagram
   LG->>Thread: append input and checkpoint execution
   LG-->>Trigger: run identity
 ```
+
 A trigger creates a run on the selected durable thread using a normalized input and configuration.
 
 The standard defaults are `multitask_strategy="interrupt"`, `durability="async"`, `if_not_exists="create"`, non-resumable streaming (`stream_resumable=False`), the Protocol v3 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its async checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.

@@ -1,13 +1,11 @@
 ---
 type: workflow
-title: Context Engineering and Agent Preparation
+title: Context Engineering and System Prompt Assembly
 description: Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts through preparation middleware.
 tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions]
 sources:
   - id: openwiki-source-f909450359e22e7d9c1ba0b3
     resource: repo://mda/rt/subdir_agents.py
-  - id: openwiki-source-1685d34aae8025be9332f45a
-    resource: repo://openswe/dispatch.py
   - id: openwiki-source-836966ba5e0c4d710801c9a9
     resource: repo://openswe/input_messages.py
   - id: openwiki-source-052a9a68c52dca5bb8277219
@@ -18,6 +16,8 @@ sources:
     resource: repo://openswe/prompts.py
   - id: openwiki-source-1c7c5f1a7efc26b4594613d2
     resource: repo://openswe/resources/prompts/system/main.md.jinja
+  - id: openwiki-source-62793d8a5a01b8895f3c1064
+    resource: repo://openswe/resources/prompts/system/thread.md.jinja
   - id: openwiki-source-342facea842feb2c43fd9e53
     resource: repo://openswe/review/approvals.py
   - id: openwiki-source-eb9e695bef31bca8f88b0c2b
@@ -26,19 +26,21 @@ sources:
     resource: repo://openswe/sandboxes/repo_prep.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
+  - id: openwiki-source-659ef274df23f55f0ecc0366
+    resource: repo://openswe/skill_store/run_skills.py
   - id: openwiki-source-76820c5856f1479d850c1ab9
     resource: repo://openswe/source_context.py
   - id: openwiki-source-5d8b1cb7551116affdb348f3
     resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-6cab3229da0697cc82ed6224
     resource: repo://openswe/utils/agents_md.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
 ---
 
-# Context Engineering and Agent Preparation
+# Context Engineering and System Prompt Assembly
 
 Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
 
@@ -98,20 +100,30 @@ For every model call, `ashape_model_call` in the base middleware combines the re
 
 ## System prompt construction and instruction ordering
 
-`construct_system_prompt` builds the main-agent system prompt by assembling multiple template sections in a fixed precedence order. It takes working-environment, dashboard, source, and role configuration and renders corresponding sections from Jinja2 templates in `openswe/resources/prompts/`. The sections are layered from lowest to highest precedence as follows:
+`construct_system_prompt` builds the main-agent system prompt by assembling multiple template sections through two persistent parts: a shared part rendered once per deployment and a thread-specific part rendered once per thread. It takes dashboard, role, and repository configuration and renders corresponding sections from Jinja2 templates in `openswe/resources/prompts/`.
 
-1. **Default system guidance** — working environment (sandbox-specific or local-checkout variant), tools, task execution, dependencies, commit/PR, and self-awareness sections.
-2. **Dashboard context** — environment identifier, base URL, and artifact references.
-3. **Source guidance** — different guidance sections wrapped in `<open_swe_source_context>` tags for Slack, Linear, GitHub, schedule, or dashboard sources, with optional follow-up-suggestions for Slack.
-4. **Default prompt** — user-configured custom instructions loaded from the environment-specified file or built-in resource.
-5. **Repository scope** — organization boundary restrictions, conditional on source.
-6. **Collaboration guidance** — co-authorship trailer and PR attribution.
-7. **External comments** — safety guidance for untrusted content from pull request authors or external contributors.
-8. **Repository custom instructions** — configured by a workspace admin for this repository.
-9. **Recent thread context** — optional digest of the sender's recent work.
-10. **Workspace instructions** — workspace-wide guidance and repository list.
+The shared prompt (rendered first) includes sections that are identical across all threads:
+1. **Dashboard context** — environment identifier, base URL, and artifact references.
+2. **Default system guidance** — self-awareness, working environment (sandbox-specific or local-checkout variant), tools, task execution, dependencies, commit/PR guidance, and external untrusted-comment safety sections.
+3. **Custom instructions** — optional user-configured custom instructions loaded from the environment-specified file or built-in resource.
+4. **Repository setup and collaboration** — co-authorship trailer and PR attribution.
 
-Repository custom instructions, workspace instructions, and `AGENTS.md` conventions are treated as mandatory rules in the prompt documentation. The prompt explicitly states that sender-level standing instructions yield to repository instructions and `AGENTS.md`, which themselves are overridden by deeper-scoped directory `AGENTS.md` files.
+The thread-specific prompt (rendered second, appended to the shared part) contains:
+5. **Thread context** — artifact link, default repository.
+6. **Collaboration metadata** — whether the thread is continued from a collaborative session.
+7. **Repository custom instructions** — configured by a workspace admin for this specific repository.
+8. **Workspace instructions** — workspace-wide guidance and repository list.
+9. **Admin-role guidance** — workspace-admin-specific or admin-required sections based on the sender's role.
+10. **Sole-writer section** — if applicable, directing single-author workflows.
+
+Repository custom instructions, workspace instructions, and `AGENTS.md` conventions are treated as mandatory rules. The prompt explicitly states that sender-level standing instructions yield to repository instructions and `AGENTS.md`, which themselves are overridden by deeper-scoped directory `AGENTS.md` files.
+
+The actual order is established dynamically per-turn through `TurnContext.source_guidance()` and `TurnContext.environment()`, which render:
+- **Working environment** (1st per-turn) — sandbox or local checkout details.
+- **Source guidance** (2nd per-turn) — different guidance sections wrapped in `<open_swe_source_context>` tags for Slack, Linear, GitHub, schedule, or dashboard sources, with optional follow-up-suggestions for Slack.
+- **Repository scope** — organization boundary restrictions, conditional on source.
+
+Recent thread context, while not part of the permanent prompt, is supplied separately as a run-specific turn context section.
 
 ## Repository conventions: AGENTS.md and CLAUDE.md
 
@@ -135,11 +147,13 @@ The reviewer's approval behavior—whether it only comments (`dry_run`), never a
 
 Skills are instructions exposed as virtual `SKILL.md` files rather than copied wholesale into the prompt. A `CompositeBackend` keeps the run backend as default and routes skill prefixes to specialized backends; it strips the route prefix before delegation. Passing those prefixes in `create_deep_agent(skills=[...])` lets deepagents advertise skills while the agent reads full instructions through ordinary `read_file`.
 
-The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a profile login exists, per-user skills read-only at `/skills/`; the user route is first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
+`RunSkillStores` orchestrates skill routing: it mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`, which are always available. For hosted runs, it additionally routes organization skills read-only at `/organization-skills/` and, when a profile login exists, per-user skills read-only at `/skills/`; the user route is inserted first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate LangGraph Store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require admin credentials.
+
+Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
 
 ### Reviewer: trusted skills from base revision
 
-The reviewer materializes trusted skills from the PR base revision (via `materialize_trusted_skills`) into a separate `.review-skills` directory outside the checkout. This prevents a PR author from injecting instructions into the reviewer prompt by adding or editing a `SKILL.md`. Skills are sourced from `.agents/skills` or `.claude/skills` relative to the repository root, extracted via `git archive` at the trusted base SHA. The extracted paths are then routed to `SkillsMiddleware` for mounting. If extraction fails for a skill directory, the reviewer continues without it; a single missing directory does not prevent skill wiring or the review.
+The reviewer materializes trusted skills from the PR base revision via `materialize_trusted_skills` into a separate `.review-skills` directory outside the checkout. This prevents a PR author from injecting instructions into the reviewer prompt by adding or editing a `SKILL.md`. Skills are sourced from `.agents/skills` or `.claude/skills` relative to the repository root, extracted via `git archive` at the trusted base SHA. The extracted paths are then routed to `SkillsMiddleware` for mounting. If extraction fails for a skill directory, the reviewer continues without it; a single missing directory does not prevent skill wiring or the review.
 
 ## Sender context and participation
 
@@ -157,18 +171,7 @@ Reviewer prompts can include optional organization guidelines and a custom repos
 
 ## Prompt sources and composition
 
-The system prompt is composed from multiple sources using a modular template system in `openswe/prompts.py`. The `prompt()` function loads and renders static Markdown files or Jinja2 templates from `openswe/resources/prompts/`, with support for variable substitution. Key template sections include:
-
-- **Working environment** — different templates for hosted sandbox vs. local checkout
-- **Dashboard context** — environment, base URL, and artifact references
-- **Source guidance** — different guidance sections for Slack, Linear, GitHub, schedule, and other sources
-- **Default prompt** — optional user-configured custom instructions
-- **Repository scope** — organization boundary restrictions
-- **Collaboration** — co-authorship and attribution text
-- **External comments** — safety guidance for untrusted content
-- **Recent thread context** — optional digest of recent work
-- **Workspace section** — workspace instructions and repo list
-- **Admin workspace** or **workspace-admin-required** — role-based guidance
+The system prompt is composed from multiple sources using a modular template system in `openswe/prompts.py`. The `prompt()` function loads and renders static Markdown files or Jinja2 templates from `openswe/resources/prompts/`, with support for variable substitution. Key template sections are organized across shared and thread-specific parts to optimize prompt-cache efficiency, allowing early threads to benefit from later threads' cached shared prompts.
 
 Each section can be conditionally included or rendered with different parameters based on run configuration, source, and user role.
 

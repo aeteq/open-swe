@@ -26,10 +26,10 @@ sources:
     resource: repo://openswe/tools/automations.py
   - id: openwiki-source-1a477779016142ec6f3dc601
     resource: repo://openswe/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-10-31T14:24:53.711Z
+generated: { by: "openwiki/0.4.2", at: "2026-10-31T14:24:53.711Z" }
 ---
 
 # Tools and Tool Access
@@ -54,7 +54,7 @@ Deep Agents separately supplies filesystem and delegation tools: `read_file`, `w
 
 ## Main coding agent assembly
 
-`openswe.server:get_agent` constructs the main agent's `static_tools` list with **required tools** including:
+`openswe.server:plan_agent` constructs the main agent's tool surface with **required tools** including:
 
 - **Web access** (`http_request`, `fetch_url`, `web_search`)
 - **Planning** (`save_plan`)
