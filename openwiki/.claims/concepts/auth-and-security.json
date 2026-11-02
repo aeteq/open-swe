@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:9fc54523c8eafab3371b58e74ad9a3b8fdad96a38627633c594a65663e49555d",
+  "pageVersion": "sha256:d5bb5b0d6bc45a6f82f5c7f64471314781d668caf7dd69b0784ac96b8108b29e",
   "claims": [
     {
       "id": "claim_16867de3ca5946d1b3de2199f82d880f",
@@ -35,12 +35,12 @@
       "statement": "GitHub App installation tokens are minted by signing a short-lived RS256 JWT with the App private key and exchanging it for an installation access token, cached in-process by a scope key of installation id, repository ids/names, and permissions, and reused until within a 10-minute margin of expiry that exceeds the proxy refresh window.",
       "evidence": [
         {
-          "resource": "repo://openswe/github/app.py#L157-L207",
-          "version": "repo-lines-v1:sha256:649a12c1956f7fb8244253ec98b7c79bed1149dd9b54f39ac96b8e64654f39ad:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNWVlNmIxOTg4NmQ4NjYyY2FiYmY4YzFlMzdjNDc4NDI5YjU4NjZjMWZmNzEzODhkMGI1OTVmMTYxMWFmNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YjliYTg3NGZjOGYwNmEyZTI5ZTYwNTA3ODQ0NzRjMWEyZjk0YjcxZTZjOWU0NjJkYjQwM2E3NDhjN2U5N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4ZjlkNjY4MzlkZjI0Y2U5NGE4NTU5N2ExZmI3Zjc3NTg1NmFhYmI0NGE4ZGFlMTY3NjM1NWFmMmM3MDEwYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmZjU4NmE5YTEzMDQ5ZmYzM2M2MjU2MzhlYWM5YjM3ZmM5MWEzNzM5NmFhOTExZTkzODJmNTRiNGMzM2MxMjEifQ"
+          "resource": "repo://openswe/github/app.py#L162-L216",
+          "version": "repo-lines-v1:sha256:2c1ae7a28c5c7bdd92d454db3a0bc41763dfb479ff5d2afa2b77cc3d90051b91:eyJzZWxlY3RlZExpbmVDb3VudCI6NTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiNWVlNmIxOTg4NmQ4NjYyY2FiYmY4YzFlMzdjNDc4NDI5YjU4NjZjMWZmNzEzODhkMGI1OTVmMTYxMWFmNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5YjliYTg3NGZjOGYwNmEyZTI5ZTYwNTA3ODQ0NzRjMWEyZjk0YjcxZTZjOWU0NjJkYjQwM2E3NDhjN2U5N2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4ZjlkNjY4MzlkZjI0Y2U5NGE4NTU5N2ExZmI3Zjc3NTg1NmFhYmI0NGE4ZGFlMTY3NjM1NWFmMmM3MDEwYTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZlNzcwMmExNTc4MjBjYjM0NDg1NGQzYTk3YmE2ZThhNDY4MmY1MzUzNjFlZDlhNjAyNzA1OTRmMDgzNWViMzQifQ"
         },
         {
-          "resource": "repo://openswe/github/app.py#L89-L91",
-          "version": "repo-lines-v1:sha256:83752cd0e698034fa559693f8bd1fbc37d7a1c3294c736d9af72db3b1c9fffde:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmM0NDFjNmFkMjhlZGE5ZjlmZGJlZmQ2MmM4ZTVkMmY3NWY2ZDg1YmM5ODZlODFiODhiMzQyMjIyNGJhYjc2OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmQ1ZDZkZmY3ZDA5YmVjNGViMDk0N2ZhODM1MzdjYTk5ZGUzY2I1MDIzN2E5ZWJmNGFjNGVkMDZiNWY0YWYyYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjU5YmIzM2QzZTdlNmZiMjdlYTJmYWY3N2U0Yjk2MTNjMDg5OTAzMDc3NzljMjk1MWJhNTBiNGZlYjlhMDBlMiJ9"
+          "resource": "repo://openswe/github/app.py#L27-L40",
+          "version": "repo-lines-v1:sha256:4ea7729a08f4969b2b32a36e3b66830f95eeff334e86af457aa91aa5b2d83afd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5NGRmNzY3NGYzNDcwYzRiNWUyNmVjODAzYzNiMGUyODU5YzU4ZTNmNmJmMmNmMGQ1MDhhZmJhMGRjNjhjNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImExMzA1NTAzMGQ2YzFhZmMwNzdlMzFiYWY3YWVjODYyMTFmZWQ5NjY1MmM0Njg1MzUwNTU5ZjkzYzhmYWZiM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjVmNTRjNmI1YjhiZjUyZjRlNDRkY2ZmOTM2ZWY0MTg5ODcyMTdkZmFkMmUwZDVlOTVlNzlkZmM4YzNmZTFjMmEifQ"
         }
       ]
     },
@@ -345,6 +345,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-28T14:57:39.210Z"
+    "at": "2026-11-02T18:01:41.066Z"
   }
 }

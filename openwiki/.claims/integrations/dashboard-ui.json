@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e16363801fb54d8b6dec9a4e63195fc174d8c58654bc14ba47bb091684eceab9",
+  "pageVersion": "sha256:d66ae04ef6849547da50db00bc75ae3ac179a61b6f4848a0a2327b4747eab19a",
   "claims": [
     {
       "id": "claim_dbbc3ca9eca441849138011e70eadf76",
-      "statement": "The dashboard backend is an APIRouter with prefix \"/dashboard/api\" and a router-level mutation-origin dependency; openswe/api/app.py includes it at line 162 and then invokes mount_dashboard_ui(app) at line 182.",
+      "statement": "The dashboard backend is an APIRouter with prefix \"/dashboard/api\" and a router-level mutation-origin dependency; openswe/api/app.py includes it at line 165 and then invokes mount_dashboard_ui(app) at line 185.",
       "evidence": [
         {
-          "resource": "repo://openswe/api/app.py#L162-L182",
+          "resource": "repo://openswe/api/app.py#L165-L185",
           "version": "repo-lines-v1:sha256:71e58da831b439855a59cd2e27fb050fec96b8399a093a4051806bd6d1f3d7c7:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4NjFiODdlZDc0OTdmYWMzZTAwYzIzNzQzZWFkMjIwYTBhYWYxMjU2YWRjMzlhYTdkMDlmYWU2YWVjZGViMjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDY5NWIxZTRhMmEyYmU5OTQ1MWNmZTYyYjhmMWYwOWFlY2U5MjllZTg3NWQ3NWYyNWVkZWViNGJmMWYyYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJjMjU0YmUwNDlmNzcwNTM5YjUwZDJiNWViNTRhMTUyODk0YmE2OWE1YTkwNWEyZjE3N2Q2NjAzY2NlZWZiODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFlZmFjOWE2YjY4ZDA5NDRmZDMzNmRjOGYzOTM4YjhhMTVjZGY2YzQ2ZWJiODViNDk4MzViODIxNGNhMDE5NTUifQ"
         },
         {
           "resource": "repo://openswe/dashboard/routes.py#L40-L43",
-          "version": "repo-lines-v1:sha256:6ee08f901ef58938356055a7405489ff8ee5fcc49bae13e58c75e5fee61d1aa7:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjliYWQ2ZjFjY2Y1NDcwM2FiNGU5N2ZiZTk2MGRhOGU1MjlkNDYyMWUxZDY1NGJlNzJiNDY2MTFhYmE1Zjg1YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjIxOThjMjZkZmU0NGY3OTNjMmE2M2UxZGFkM2M4YWNlOTgwZjA3M2FjYTBmNGE0MmZmMDM2OTgxNWFkYzRiMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGYyNWU4MmRmN2JiYWYxOTA0ZWM1MWNlNzQ5MzI5NjhjNDllYTVjMjMxMmQ2YzI1NmQwNzk0MjM4OTk0ZjViYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGE1MDliNDAwZDdhNGNiNGRlMTA5MDdjNTdlNmRkZmQ3MWM2MTE3YTczMDAyZTAxYjYwZTlmM2JiZGIyMTgyOCJ9"
+          "version": "repo-lines-v1:sha256:9d4ec080c14fa02721b4a137409c5a836c1b4604236a5e7b11faa6f62b8fc0e5:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZWE0ODY0MDJjYTY3YzU0YTJmN2E1MmYxMjIwMmZkZDYzMTBmODVmNTEwODVmMzYxOWFjYWRjNGRjM2JjMmY0ZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmJmOWUxOGE5ZTk4ODczNTBkY2Y3N2Q2MmNiODI4NTVlODcxZjBjOTVmODUwOGExZjRkZGVhNTBiNzU0MTk3ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTRjMTM1NjAwOTc0YzI0ODI2MWM0NmY5YTM3ZmViMzQyN2E5ODk1ZDZkNjc1NjU3OGMxODQ4OTU5ZTU3YmVhZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzAwN2Q3NDQxOTE1YTQ5OGQyNzRhY2IyYzA5NjdmNzA1NTU3MTEzYzkzNjQxZjcyZWFiNGJkYTE4YTg1YjZhNyJ9"
         }
       ]
     },
@@ -93,8 +93,20 @@
       "statement": "The cloud terminal is exposed as POST /threads/{id}/terminal/connect (returning a WebSocket URL, subprotocol, and short-lived signed ticket) plus a WS /threads/{id}/terminal that requires a LangSmith sandbox, is capacity-bounded by a semaphore to 20 concurrent sessions, and bridges the browser to a PTY shell in the thread's sandbox.",
       "evidence": [
         {
-          "resource": "repo://openswe/threads/terminal.py#L55-L107",
-          "version": "repo-lines-v1:sha256:59b21c3f60b203cb46632b78ddd806846b6aaaff6c063923dd735f12fda89971:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4Y2IyZDZlZGJhOWNmY2Y4YzkzN2Y0NWU0ZDQ4Mzc5YzdhZTA3NDNmYTRiMWRiMGFhNzMzNjhkODViMDIwNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhOGY4ZTIzOGVmZDllMDBhOGU1NzY2NDllNTI5ODU3ZmY1ZTc1NTE1Yzg4MjliZDM4NmJiODA4YWQxNmY3MGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyOWE0NmQxODMwZDcwYzQ2NjM0YzVlOTM4ODNlODAxZTg0NDQxNGIxYWRmZjBlYzEyZDQ4NDdjNzYzOTFkOGEifQ"
+          "resource": "repo://openswe/threads/terminal.py#L163-L170",
+          "version": "repo-lines-v1:sha256:ef2cad3313b92e60d33fabdb7a29684e8f790890d4d67fb8552e9330918158c9:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYThjZDUwOWFlM2I3YWVjMjI3MDk4MGViZmI1MjBkYWYxODdmOWZiYTNkNGU5YmY4MDg3ZTE2ZmVlZDRjNWFkZSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGU2MDM5Y2E4MDQ2YjUxNjg1ZWFiODc2NWViMDkzMjIxOTQyMDdkZTFlMTI4ZGQ2MTA3MzY2MGJkZmRhNTUyMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTFmMzY5NmZiMTllODQzZmY1ZDUzYWJmODg4MGMyNjM4YjU2MmZhMTU2NTQzZThkZjVmZDIzOWVhNDdiZjZiYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+        },
+        {
+          "resource": "repo://openswe/threads/terminal.py#L22-L23",
+          "version": "repo-lines-v1:sha256:5145d1e0acac5553713f707d620b77a13ede670f1ec0dd7febf1015d95c8beb9:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI1MDMwNzQxMjBmMGNiMGM3MzZjNzBjZDIxNTk2ZTk5Y2QxZDU4ZGY1ZGU3ZjRmOGJkNTExOWM2OTIxNTMyMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTEyZWM1ZDE5Yjc3N2U2YmQ1NGUzMzQ0ZmZhMGEwN2M5OWZmNGI5ZTBlMmIzMTExNzE0MjVkOTRjOGVhZmRlMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjQ3NGU3NTc5N2QwNzE1MDNhYzg5MmM2ZDM4ODdkNTU5MWVhZDVkMDQzOWUwMDRhMGRkNjM5ZGM1ZmVjMGJhNyJ9"
+        },
+        {
+          "resource": "repo://openswe/threads/terminal.py#L54-L69",
+          "version": "repo-lines-v1:sha256:f07a2f9b0fe9e751606e9cecfe316ae6d195d4fb22a9d8111326362143121956:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU4Y2IyZDZlZGJhOWNmY2Y4YzkzN2Y0NWU0ZDQ4Mzc5YzdhZTA3NDNmYTRiMWRiMGFhNzMzNjhkODViMDIwNzkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBhOGY4ZTIzOGVmZDllMDBhOGU1NzY2NDllNTI5ODU3ZmY1ZTc1NTE1Yzg4MjliZDM4NmJiODA4YWQxNmY3MGMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBmOGNhODNlNjBjNjQ4ZWY1NmI0ZmE5ZTM0NGI5NGE2NThkZTk4OGYwMTE3NTdkYTJhNGU5Yzg0OTMwOWJkMWIifQ"
+        },
+        {
+          "resource": "repo://openswe/threads/terminal.py#L88-L103",
+          "version": "repo-lines-v1:sha256:4466955a406aab18e2078c693ec6a233331029474fb1acbc871413295fa75ceb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkYTVjNjZlMTdiMTQ1Mzk3ODM0YjhjODU0ZGM0MTkzZTIxMjUxODBhODk5NmExNGMzMTg4MzMyNmIyZWZiY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU5NGY5NDIyMjJiOTE5OTU3N2RiOGFmZThkZTc0NDYwODFmOTQxZTZmYTc4ZmI5NzZmYTRkMTdkMjY5ZGRiMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQyOWE0NmQxODMwZDcwYzQ2NjM0YzVlOTM4ODNlODAxZTg0NDQxNGIxYWRmZjBlYzEyZDQ4NDdjNzYzOTFkOGEifQ"
         }
       ]
     },
@@ -107,8 +119,8 @@
           "version": "repo-lines-v1:sha256:f24cdda7de7416167903ab40d5d60cfdc705d09f443232481a219bdf672df68c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjY3ZGY5NWYxNWQyMzdiMzE5YWUwZTQwYjIwZmZmOGM5OTkzYzNmNDc4MDQ4OWUyNWZlZTdmNWM3ZDIyZTM3NSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDEyY2EzNDVjY2Y3NWJmOWMwODA2YmNlNjk1YmU4ZGU4MDhiNzk5ODQyNTFhN2E1NGQyMDJjZjYxMDFkZDQ1MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNWZmMzU0ZWExMzBmZDc1YWI0ZTQxYWM5OTkwNWEzNGQxNjY3ZGEyZTk2MWYwNjliNmE1ZGRhNzY4ZDJlNzEyMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWEwNjNmZDlhNWFiOWUxMDZmNGY1YWE1YmIyOGNhYTA1OWU5MWFhMzllYzBlZjhlMDkwZTM1YmRkNTZlM2YwOSJ9"
         },
         {
-          "resource": "repo://ui/vite.config.ts#L154-L166",
-          "version": "repo-lines-v1:sha256:d6e130912d11b59b3bc95833b2fe231fad8bcf38db4d7424f17ed8fd4918d333:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMTk0MjMwNWRkMGI1MTM3NzFiNzVjNGMxOTIxZDg3NTVmM2I3OGIzMTJkMzBlYjBhZmM1NjJjNjg0ODYxOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkYzc1ZmJiZmIyOTAxMDMxNjY0MGI3NGY0YTlkZWUxODY1OWRkY2JhODg2Yzg0NGE2MTBlYTMxZmQzOWE3NTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
+          "resource": "repo://ui/vite.config.ts#L147-L169",
+          "version": "repo-lines-v1:sha256:4adf5f2b73e58df7c785b2caf1e4200f3174776b7b1c1e3fb6b344678de842aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwN2ExNTc4NTQxM2ZlNTcyYjM1YjEzOWRkMzg2MGFiZDgwYWUxNjhkMGMzOTRlNWZmZWFlMWFhYWU3NTRkZGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQwYjdiNGEwZDczOGJmNDFjYmMxY2Q0MGE0NjU5YmYwNTg5OGIxYjE3MmExN2UxNGQxNzZlNDIwOGY1ZDY4ZTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
         }
       ]
     },
@@ -119,10 +131,6 @@
         {
           "resource": "repo://ui/server/backend-proxy.ts#L1-L83",
           "version": "repo-lines-v1:sha256:621b86cafa2d1d4f2d0b305a00a90eaa4868efff6431a56b9381e3de27c8d0ac:eyJzZWxlY3RlZExpbmVDb3VudCI6ODMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRmOWQ0NTkyYWY0NDgyNGJhNGI1NmNjNDNmNjZmMTg1NWExNGMyODgzM2ZjYmI0NTIzYjdlNDE3ZjExMDk0MTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
-        },
-        {
-          "resource": "repo://ui/vite.config.ts#L154-L166",
-          "version": "repo-lines-v1:sha256:d6e130912d11b59b3bc95833b2fe231fad8bcf38db4d7424f17ed8fd4918d333:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMTk0MjMwNWRkMGI1MTM3NzFiNzVjNGMxOTIxZDg3NTVmM2I3OGIzMTJkMzBlYjBhZmM1NjJjNjg0ODYxOGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBkYzc1ZmJiZmIyOTAxMDMxNjY0MGI3NGY0YTlkZWUxODY1OWRkY2JhODg2Yzg0NGE2MTBlYTMxZmQzOWE3NTEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA5OTdhYTZlMGEwYmQzNjBlZjQwZDZlMjc3NDNhMzdlNTkyNDdhZmUyMTk5MWY3YTc0N2RiMWQ4ZWE1MGI0YzgifQ"
         }
       ]
     },
@@ -209,8 +217,8 @@
       "statement": "The backend dashboard UI mount serves a configured or in-repository static build at the root, gives hashed assets immutable caching and the shell no-cache, declines reserved server paths and non-HTML unknown paths, and can instead reverse-proxy a Vite dev server while keeping the backend origin.",
       "evidence": [
         {
-          "resource": "repo://openswe/utils/dashboard_ui.py#L94-L272",
-          "version": "repo-lines-v1:sha256:1e7afbc01c1c84114edf435b85115acfbbcb7f60c664c589ff31c182eea3087e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTc5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkYjg5ZWQzYTE1NjFkOWI0YzdjYmFjZjBjZDIzODVmNjZmNGMyMzFlMmY4MzFhNDg1ZjJkMDJlNWZiY2E4N2FhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1ZTdiY2QzNmVmNTNiNDQ1MjNlNjVlOThkMTk0NDk5M2UwZmYxNzQ2ZjU1MzZjMWE1MTE3NDZmM2UwMWU3NTZmIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlMGIyMWJmODk1ZmFlMmQ3MzkyMGQ5MzE3OGNmZDU4NDFjZGY4Zjk1MjQ1MTZjOGE1NjU4NDM2YTRhYzQ4ZjNiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+          "resource": "repo://openswe/utils/dashboard_ui.py#L100-L287",
+          "version": "repo-lines-v1:sha256:261ba7c81008f717664ebd5baf4088f5cab275b3cd6b57c1e8a4c3cc1501e910:eyJzZWxlY3RlZExpbmVDb3VudCI6MTg4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkYjg5ZWQzYTE1NjFkOWI0YzdjYmFjZjBjZDIzODVmNjZmNGMyMzFlMmY4MzFhNDg1ZjJkMDJlNWZiY2E4N2FhIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlMGIyMWJmODk1ZmFlMmQ3MzkyMGQ5MzE3OGNmZDU4NDFjZGY4Zjk1MjQ1MTZjOGE1NjU4NDM2YTRhYzQ4ZjNiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MGQwZTRmMDBhOGI1YzViOTZkNGIxNDFhNGFjMzExYjIzMjIyODZmODM1Mzc5ZDAzZjVmMGUyZTE0Yzg4YzI5In0"
         }
       ]
     },
@@ -219,7 +227,7 @@
       "statement": "The dashboard UI catch-all must be registered after API routes; keep_dashboard_ui_last moves it behind subsequently registered routes.",
       "evidence": [
         {
-          "resource": "repo://openswe/utils/dashboard_ui.py#L266-L272",
+          "resource": "repo://openswe/utils/dashboard_ui.py#L289-L295",
           "version": "repo-lines-v1:sha256:e8c7f7a7cdc07151c70cc77e595c19406b1182254cf709c9ec867b2e406a921c:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDFlNWMxMTZjMWU2YTZlMTFjZGI3MGE4NDExMjJjMWQ5MTIwN2RhM2QzNTdkZGQ4MWE5ZmYxYWQ2MmMwODMyNyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWU3YmNkMzZlZjUzYjQ0NTIzZTY1ZTk4ZDE5NDQ5OTNlMGZmMTc0NmY1NTM2YzFhNTExNzQ2ZjNlMDFlNzU2ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGYzYThiYzhmOGI5ZGIzOTFjMTU2MmVjODgwYmQ3NWFhYzFlMzFlZjkyNzc1N2ZmNDZjMjJkNjk0YWQ5NTdkMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         }
       ]
@@ -239,8 +247,8 @@
       "statement": "The browser opens a server-sent events stream at GET /dashboard/api/ui-invalidations?t=... with topic names and staleness ages; the invalidation hub manages a single shared PostgreSQL LISTEN connection across replicas, with each replica tracking subscribed Stream topics in memory and delivering push notifications when invalidations commit.",
       "evidence": [
         {
-          "resource": "repo://openswe/ui_invalidations/hub.py#L1-L133",
-          "version": "repo-lines-v1:sha256:c28577bb80aa1cdd8429253a6ddd138eaf8e60e90e61202e1e684dadd7979947:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1Yzg5N2Q5ZTIyYThlYmFmMTlhODFmYzMzZTU3MWJmZGRhNTRhZGRlNGUyYjUzM2UwODU2NDczMDM3ZDk3ODA3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlOTEzZjg4NjY2MWUyMTNiYWIwZWYwNGUzZGFhY2FjZTk3ZWI3YzIwYjk1MmYyYjdkMjYxNDY3MDBhMGQwYWVkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+          "resource": "repo://openswe/ui_invalidations/hub.py#L55-L117",
+          "version": "repo-lines-v1:sha256:57b04bc682fdd29a35d553fadea816bcf0b09d59f3af615a2d437c28bf1c54f6:eyJzZWxlY3RlZExpbmVDb3VudCI6NjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc4Mzk4N2M5N2ExNmE5NTJmZWIyNzY3NWMwM2Y5ZTBmMzk3NTNmYTg5MDI0OGIwMTMwMDNiOGRkYjVhNjMyZTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIyYTAzNjU4NjM0OTY0ZGRiMzY4M2QxNGMyYzE1YzVkMGU5Mzc4MmRjNGQ5OTYwYTAwZThlYTkwNDRkY2ZhMzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ4YmU1ZjdmZjY4ODJmMDY5OWU5NjEzNDY5ZWIyODEwNTgxMWM3NjMwNzUwYzQwM2I1NTA1ZjQ3YThjYWM1ZTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3NmIwZDJmOWJjODVmMDEyZTk4M2VlYzFjMThmOTY4ZjExMWZjZTQ5YmUwODJmZTg2MWQ1ZjQzNGFjMTk1OTAifQ"
         },
         {
           "resource": "repo://openswe/ui_invalidations/routes.py#L39-L51",
@@ -253,8 +261,8 @@
       "statement": "The UI invalidation stream first reports which subscribed topics were invalidated within the staleness window (accounting for PostgreSQL lag), then emits every subsequent invalidation once per frame, so clients refetch only the stale queries while avoiding polling and staying synchronized across network gaps.",
       "evidence": [
         {
-          "resource": "repo://openswe/ui_invalidations/hub.py#L28-L100",
-          "version": "repo-lines-v1:sha256:d621cc0f7a76cfffe9f5e2be597fa7cab0d4d1026a1ead20a939e4ebbcc5dfd1:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQwNjE0YjY2NzQxYzgyNWFmNWVhNzdkMzFjYmVlNGE3ZDkyNGUyYmZmZWNlYzZlYjhhMTUwY2UzNTgxNjg1ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI1Y2QyZTVkMDVlNTA3N2IwM2U4NDk3MTdmYTJjYmMzYzBjOWI0NGZiNzI5NTk5ODZiMDNjOGNmYmM0NmI5NjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjU5YjI0YzY1Y2IwMTg5ODI0Nzk5OGY3NTY3ZDg3NzIwNTY0YmZlMWEzOGIxYzhmNWY5ZWFiZjZiNTE0ODcyMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxZmY3ZGFkYTllODYwZmE0NzY5MGMwNTAxZTllYWQ5Zjc4MzBiOWNhZTgwMjk4MTQ5ZDNmOWIzZjYyMjM3NTIifQ"
+          "resource": "repo://openswe/ui_invalidations/hub.py#L112-L117",
+          "version": "repo-lines-v1:sha256:ea4026515b2f567ff2400cf91cb322454cbe6c1fad3bcb63ddb9e2762d38a954:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjJlYTE1MDg1MWRkN2EzNGU0YWM4MjU1OTU5ODMzYWVmNmYyNDRjNWFmYTMyOTAzM2MyZjIxYzUxMWFmZWEzOSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYjJhMDM2NTg2MzQ5NjRkZGIzNjgzZDE0YzJjMTVjNWQwZTkzNzgyZGM0ZDk5NjBhMDBlOGVhOTA0NGRjZmEzMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWU2Y2Y1MDdiNmY5ZDhhYTU4MTNmOTdkNDgyZTZhMGU0OWQyNWY5YThlYWQyYTM1ZmMyNDk3MTJjNjZmZjI3MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTc2YjBkMmY5YmM4NWYwMTJlOTgzZWVjMWMxOGY5NjhmMTExZmNlNDliZTA4MmZlODYxZDVmNDM0YWMxOTU5MCJ9"
         },
         {
           "resource": "repo://openswe/ui_invalidations/routes.py#L39-L51",
@@ -267,8 +275,8 @@
       "statement": "A Topic is a fully qualified name (e.g., workspaces, threads/thread-id, review-styles/owner/repo); authorization checks which topic keys a session may hear before allowing the subscription, ensuring that keyed topics do not expose private records.",
       "evidence": [
         {
-          "resource": "repo://openswe/ui_invalidations/topics.py#L37-L167",
-          "version": "repo-lines-v1:sha256:24ab1b5f83405503ff0da9cc3fb4f26be9b0532c6dbf239aeb0e2937b862e22e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTMxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI1OGFjNTAwOGNkZGZkOTdjMGRjYzMyZmNlY2M5YmZjZmRhZTc4ZjA5NzRjNTQyODJiNDA0M2E2OTY1ZmUzNGRkIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZTBjMTNiZTQ1OWNiZDc4MzhlYjJkMDZlZjdkMTE0YzFlNDc2ODY3OWRlYzMwNWIzYTdhODJkYzZiMTQxMTYxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI3ZmY0MTU3ZTRiMWU5ZGUzODFhZTI3OTM0ZTI2MzAwYWEyYWE3YTdjZDYzZjExNDllMTc0ZmVjOTNjZTEzODlkIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlY2E1Zjc0NzFhNWQ2MGIwMmU2YjA2NGZlMjYyY2VlMWEwMDg4MzhjMjliNmE1ODAzODE1MDVlNzM3ZWM0MzVjIn0"
+          "resource": "repo://openswe/ui_invalidations/topics.py#L50-L162",
+          "version": "repo-lines-v1:sha256:15ec76d982e90198e578d0cae109e755263c7291fd120a3f1c9bc9658ea9736d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MWFiY2QwY2M2OTEzZDRmNTFlYjIxZTRmNWFmYzJlOTBmODZkMzZhNDUwYmI0MmNiMDVjNmYzZTBkNzA2ZjhjIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIzYTRlOTdkYTEwOGU1MDNhZmI3OTQyMWZiMzNjMGY4Yjg4NTNiZTBlMmVmNzZhNWZmYjlkMjBmNGFmY2JhNzM2IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJiMTkzODUzOTRlNjcyYTZlYjg4ZWFkZDM2YjhhZjVkMjk5NWEwMTcyYTViYzdlOTY4OWExNjVmZWFjNDNkNTdlIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJjNjMyZmVmM2M4ZDY0ZmVmMTIxZTg1NmRhZWJkNzAxMjRjNjc0ZWQyNDhhYTQxZTEyOTc1MjZkMDY5ODBkNzE3In0"
         }
       ]
     },
@@ -319,6 +327,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-28T14:57:39.210Z"
+    "at": "2026-11-02T18:01:41.066Z"
   }
 }

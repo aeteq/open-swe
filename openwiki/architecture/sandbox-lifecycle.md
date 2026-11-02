@@ -12,8 +12,6 @@ sources:
     resource: repo://openswe/sandboxes/paths.py
   - id: openwiki-source-d16a45e9fc6aa80a3708c88c
     resource: repo://openswe/sandboxes/providers/langsmith.py
-  - id: openwiki-source-5b3f60be6fd7ddbdf61f37ad
-    resource: repo://openswe/sandboxes/providers/local.py
   - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
     resource: repo://openswe/sandboxes/providers/registry.py
   - id: openwiki-source-c5766699cee46f671b69bf81
@@ -22,10 +20,10 @@ sources:
     resource: repo://openswe/sandboxes/retry.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Thread Sandbox Lifecycle
@@ -49,8 +47,6 @@ The proxy is asynchronous. Synchronous backend methods fail with `NotImplemented
 At server startup, `validate_sandbox_startup_config` validates the active LangSmith configuration rather than deferring errors until the first sandbox. It checks numeric size and retention settings, rejects negative TTLs, and validates `SANDBOX_CREATE_EXTRA_JSON` when present.
 
 For a new thread sandbox, `SandboxCreateConfig.resolve` chooses an environment's ready snapshot when available, otherwise the admin base snapshot. The `resolve` method returns a config object carrying environment resource settings and create parameters. If a workspace is loaded (when source is "workspace" and the workspace is found), the config holds `ready_snapshot_id` and workspace-scoped `SandboxResources`; otherwise both default to their empty values. The LangSmith provider also applies configurable idle and delete-after-stop retention to new boxes. Its creation path retries configured transient create failures; command retry is more conservative: only `SandboxRetryableConnectionError`, which guarantees the WebSocket upgrade failed before the command frame was sent, may be retried. Retries are bounded at four attempts with exponential jittered backoff, preventing a potentially executed command from being double-run.
-
-The local provider is development-only: it runs commands directly on the host without isolation. It creates a project-local `.gitconfig-sandbox` that includes the developer's normal Git configuration, preventing per-run bot identity writes from overwriting the host identity. It also constructs an explicit environment excluding model and provider API keys.
 
 ## Get, reconnect, or create
 
@@ -89,7 +85,7 @@ Recovery is intentionally data-preserving:
 
 - `SandboxGoneError` means the provider confirms the bound box no longer exists. It cannot contain the working tree, while its stale metadata ID would make every future run reconnect to the same missing resource. `ensure_sandbox_for_thread` always creates and binds a replacement.
 - `SandboxUnreachableError` means this run could not connect or reconfigure a box. The next run may succeed against the same ID. The default behavior is to raise rather than replace: silently switching to an empty filesystem could discard uncommitted work while the agent still believes that work exists. A failure while creating a chosen replacement is normalized to `SandboxUnreachableError`, preserving the caller's recovery contract.
-- `allow_replacement=True` is reserved for the reviewer. Reviewer sandboxes hold only a checkout that `prepare_review_repo` clone-or-fetches and force-checks out to the PR head on every run, so an unreachable box can safely be replaced. Review threads persist per PR across pushes; refusing that replacement would permanently block subsequent reviews.
+- `abandon_unreachable=True` is reserved for the reviewer and review scout. Reviewer and review-scout sandboxes hold only a checkout that `prepare_review_repo` clone-or-fetches and force-checks out to the PR head on every run, so an unreachable box can safely be replaced. Review threads persist per PR across pushes; refusing that replacement would permanently block subsequent reviews.
 
 A command-level failure is not automatically a sandbox failure. The tool error path distinguishes pre-command transient gateway failures, which tell the model to retry, and command error frames, which remain normal tool errors. A non-transient connection failure notifies the user once and terminates the run rather than repeatedly executing against a dead backend.
 
@@ -101,11 +97,11 @@ Environment-provided proxy configuration is retained as a base configuration. It
 
 GitHub App tokens expire after one hour. `record_proxy_token_expiry` keeps worker-local expiry, recorded time, repository scope, permission scope, and base proxy configuration per thread. The before-model middleware `refresh_github_proxy_before_model` invokes `maybe_refresh_proxy_token`; it refreshes within five minutes of known expiry or after 50 minutes when expiry is unknown. Refresh remints with the original recorded scope unless a caller supplies a scope, so ordinary rotation does not broaden repository access or permissions. The middleware logs refresh failures rather than preventing a model call.
 
-## Deliberate replacement operations
+## Sandbox handoff and replacement
 
-`recreate_sandbox_for_thread` is the ordinary tool: it creates a fresh sandbox using the resolved environment configuration, configures it, persists the new ID, and only then replaces the cached backend. The fresh box has no prior files or worktree state. Neither operation deletes the old sandbox; it remains preserved but detached from the thread.
+`hand_sandbox_to_mda` stops the box the backend gave the thread and unbinds it from the thread, allowing MDA (Managed Deep Agents) to create its next one. The thread's next run starts in a fresh box MDA creates from the specified `workspace_slug` and `source`. MDA's own boxes are replaced through MDA instead. The operation requires an existing bound sandbox and ensures the old box is distinct before unbinding. If the stop attempt fails on the old LangSmith sandbox, the new sandbox is still bound and the error is captured and surfaced to the caller via `HandedOver.stop_error` so the handoff binding is atomic even if the stop could not be confirmed.
 
-The operation requires an existing bound sandbox and ensures the provider returns a distinct ID. The new ID is persisted to thread metadata before replacing the cached proxy target. If metadata persistence fails, the existing cached proxy retains the old backend, leaving the new provider resource detached. This ordering makes an explicit replacement atomic from the thread's perspective even though the newly created provider resource may remain detached. A stop attempt is made first for LangSmith sandboxes; if it fails, the new sandbox is still bound and the error is captured and surfaced to the caller via `SandboxRecreationStopError` so the replacement binding is atomic even if the stop could not be confirmed.
+For threads owned by MDA, `request_mda_replacement` records what the thread's next box should be created from, and `reconnect_replaced_sandbox` reconnects after MDA has replaced it with a fresh one under the same name. A replacement from another workspace or the base snapshot brings that one's proxy rules.
 
 ## Repository paths and reviewer preparation
 
@@ -115,4 +111,4 @@ The reviewer prepares its repo before the first model call: it clones once or fe
 
 ## Focused verification
 
-The sandbox test suite exercises provider registry routing, startup settings, LangSmith proxy payloads and retries, thread binding order, gone/unreachable recovery, recreate handoff ordering, proxy token refresh scope, paths, reviewer preparation, and local-provider behavior. In particular, tests assert concurrent proxy callers reconnect only once, initialization failures publish no backend, metadata update failures retain the old target, and retryable gateway errors are retried only when the SDK guarantees no command ran.
+The sandbox test suite exercises provider registry routing, startup settings, LangSmith proxy payloads and retries, thread binding order, gone/unreachable recovery, handoff and reconnection ordering, proxy token refresh scope, paths, reviewer preparation, and LangSmith-specific behavior. In particular, tests assert concurrent proxy callers reconnect only once, initialization failures publish no backend, metadata update failures retain the old target, and retryable gateway errors are retried only when the SDK guarantees no command ran.

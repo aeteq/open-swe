@@ -3,6 +3,9 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-02T18:01:41.066Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -24,10 +27,7 @@ sources:
     resource: repo://openswe/tools/add_finding.py
   - id: openwiki-source-7cec199cafafc864b85fba49
     resource: repo://openswe/tools/publish_review.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 ---
 
 # Reviewer Graph and Code Review
@@ -49,11 +49,11 @@ For an executable run, the factory selects reviewer and subagent models from exp
 - review lifecycle: `fetch_review_diff`, `add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, and `reply_to_finding_thread`;
 - read-only external helpers: `web_search`, `fetch_url`, and `http_request`.
 
-It permits one `reviewer` subagent configured with an explicit system prompt. The parent assigns a disjoint file partition; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication. MCP workspace tools are loaded only for private-repository reviews (public reviews never receive them to prevent steering via attacker-controlled PR text).
+It permits one `reviewer` subagent configured with an explicit system prompt. The parent assigns work by file partitioning; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication. MCP workspace tools are loaded only for private-repository reviews (public reviews never receive them to prevent steering via attacker-controlled PR text).
 
 ### Run preparation, GitHub access, and context
 
-`PrepareReviewerRunMiddleware` performs deterministic setup before the first model call. For a configured source repository it mints a repository-scoped GitHub App installation token, caches it as the thread's bot token, and supplies it to the sandbox GitHub proxy. It then ensures a sandbox with `allow_replacement=True`, clones or fetches the repository, force-checks out the PR head, and materializes trusted repository skills from the base revision.
+`PrepareReviewerRunMiddleware` performs deterministic setup before the first model call. For a configured source repository it mints a repository-scoped GitHub App installation token, caches it as the thread's bot token, and supplies it to the sandbox GitHub proxy. It then ensures a sandbox with `abandon_unreachable=True`, clones or fetches the repository, force-checks out the PR head, and materializes trusted repository skills from the base revision.
 
 The middleware computes the review range and its unified diff, including delta-only re-review ranges, then derives the changed `(file, side, line)` set. It puts `diff_text` and `diff_line_set` in run state. This lets `add_finding` reject invalid anchors at creation time rather than waiting for GitHub to reject a batch.
 
@@ -77,7 +77,7 @@ flowchart TD
 
 Reviewer setup and publication flow. Context retrieval is concurrent during preparation; reconciliation runs while loading the existing-thread context.
 
-If sandbox replacement itself fails with `SandboxUnreachableError`, preparation posts a typed unreachable-sandbox notification on the PR and fails the run instead of silently leaving it unreviewed. This replacement policy is safe because the checkout is re-derived each run and findings are not sandbox state.
+When sandbox replacement is required (unreachable backend), preparation posts a typed unreachable-sandbox notification on the PR and fails the run instead of silently leaving it unreviewed. This replacement policy is safe because the checkout is re-derived each run and findings are not sandbox state.
 
 ### Prompt and input-safety constraints
 

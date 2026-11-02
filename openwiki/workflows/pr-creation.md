@@ -3,9 +3,6 @@ type: workflow
 title: Pull Request Creation and Workflow Approval
 description: How the agent creates and manages pull requests with attributed authorship, commits squashing, workflow-file change approval, and metadata recording.
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
 sources:
   - id: openwiki-source-6ba47e09f2a30f358f5d7a36
     resource: repo://openswe/github/squash_message.py
@@ -26,6 +23,9 @@ sources:
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Pull Request Creation and Workflow Approval

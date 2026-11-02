@@ -36,10 +36,10 @@ sources:
     resource: repo://openswe/utils/thread_participants.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Threads, Durable Runs, and State
@@ -82,6 +82,7 @@ flowchart TD
   AgentThread --> Run["Create durable run"]
   Reviewer --> Run
 ```
+
 Thread identity lets independently triggered work converge on the correct durable conversation.
 
 ### Slack mappings support moves and retirement
@@ -108,7 +109,7 @@ Each run supplies new messages; the graph retains its thread state. `build_run_i
 
 Dynamic context blocks are content-hashed. `build_input_messages` excludes introductions already recorded in the injected-hash set. When summarization has moved early messages behind its cutoff, `visible_dynamic_context_hashes` treats those hidden blocks as no longer visible, allowing necessary identity context to be introduced again. This prevents deduplication state from making a summarized conversation lose information the model can no longer see.
 
-`configurable` is the per-run transport contract, not durable thread state. `RunConfig` accepts unknown keys and dumps only fields that were supplied, so independent writers can enrich it without erasing one another's keys. Parsing is deliberately tolerant: invalid fields are dropped iteratively while valid fields, including a thread ID, survive. Its values are optional because each graph and trigger needs a different subset. The dictionary typically carries `thread_id`, `repo` (owner and name), `workspace`, `source` (webhook trigger name), `github_login`, `slack_thread` (for Slack-specific context), and per-run model/effort overrides that shadow thread-level settings.
+`configurable` is the per-run transport contract, not durable thread state. `RunConfig` accepts unknown keys and dumps only fields that were supplied, so independent writers can enrich it without erasing one another's keys. Parsing is deliberately tolerant: invalid fields are dropped iteratively while valid fields, including a thread ID, survive. Its values are optional because each graph and trigger needs a different subset. The dictionary typically carries `thread_id`, `repo` (owner and name), `workspace`, `source` (webhook trigger name), `github_login`, `slack_thread` (for Slack-specific context), and per-run model/effort overrides (`agent_model_id`, `agent_effort`) that shadow thread-level settings.
 
 ## Durable dispatch and checkpoints
 
@@ -129,6 +130,7 @@ sequenceDiagram
   LG->>Thread: append input and checkpoint execution
   LG-->>Trigger: run identity
 ```
+
 A trigger creates a run on the selected durable thread using a normalized input and configuration.
 
 The standard defaults are `multitask_strategy="interrupt"`, `durability="async"`, `if_not_exists="create"`, non-resumable streaming (`stream_resumable=False`), the Protocol v3 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its async checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.
@@ -143,7 +145,7 @@ Each run carries an `invocation_id` (aliased as `prepare_run_id` for backwards c
 
 A thread's `sandbox_id` in metadata connects durable conversation state to its working tree. `ensure_sandbox_for_thread` first uses a cached backend, otherwise reconnects using that ID, and creates a sandbox only when neither exists. It writes the ID only after creation and initialization have succeeded, then publishes the backend to the per-thread proxy cache. This ordering prevents the next run from adopting a half-built sandbox.
 
-Do not interpret reconnect failure as permission to replace an agent sandbox. An unreachable existing sandbox raises `SandboxUnreachableError`: replacement could discard uncommitted work. A deleted sandbox (`SandboxGoneError`) is replaced because its stored ID otherwise bricks future runs. `allow_replacement` additionally permits replacement for an unreachable read-only reviewer sandbox whose checkout can be rebuilt. Explicit reset and recreate operations also bind a new ID only after the replacement has been prepared.
+Do not interpret reconnect failure as permission to replace an agent sandbox. An unreachable existing sandbox raises `SandboxUnreachableError`: replacement could discard uncommitted work. A deleted sandbox (`SandboxGoneError`) is replaced because its stored ID otherwise bricks future runs. `allow_replacement` (via `abandon_unreachable` parameter) additionally permits replacement for an unreachable read-only reviewer sandbox whose checkout can be rebuilt. Explicit reset and recreate operations also bind a new ID only after the replacement has been prepared.
 
 The proxy is a stable, thread-keyed backend handle. It serializes lazy reconnect startup and lets a middleware-held reference observe a newly connected backend, rather than handing each layer a stale backend object.
 
