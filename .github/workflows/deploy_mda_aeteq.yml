@@ -107,7 +107,8 @@ jobs:
           if [[ -n "$GITHUB_APP_PRIVATE_KEY" ]]; then
             key_file="$(mktemp "$RUNNER_TEMP/github-app-key.XXXXXX")"
             trap 'rm -f "$key_file"' EXIT
-            printf '%s\n' "$GITHUB_APP_PRIVATE_KEY" >"$key_file"
+            # Accept the one-line form the backend's GITHUB_APP_PRIVATE_KEY takes, with literal \n.
+            printf '%b\n' "$GITHUB_APP_PRIVATE_KEY" >"$key_file"
             export MDA_GITHUB_APP_ID=4181923
             export MDA_GITHUB_APP_INSTALLATION_ID=143504530
             export MDA_GITHUB_APP_PRIVATE_KEY_FILE="$key_file"
