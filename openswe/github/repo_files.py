@@ -122,6 +122,9 @@ class RepoSettings(BaseModel):
     review_channel_rules: list[ReviewChannelRule] = Field(
         default_factory=list, alias="reviewChannelRules"
     )
+    assign_human_reviewer: Literal["after_ai_review", "off"] = Field(
+        "off", alias="assignHumanReviewer"
+    )
 
     @field_validator("supplementary_reviews", mode="before")
     @classmethod

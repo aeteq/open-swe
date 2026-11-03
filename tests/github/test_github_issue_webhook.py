@@ -746,7 +746,7 @@ def test_a_github_issue_followup_keeps_the_threads_workspace(monkeypatch) -> Non
                 },
                 "comment": {
                     "id": 999,
-                    "body": "@openswe please handle this",
+                    "body": "@jarvis-aeteq please handle this",
                     "user": {"login": "octocat"},
                 },
                 "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
