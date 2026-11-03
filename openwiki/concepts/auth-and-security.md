@@ -3,9 +3,6 @@ type: security architecture concept
 title: Authentication, Authorization, and Secret Boundaries
 description: How Open SWE authenticates dashboard and automation users, resolves GitHub authority, verifies inbound requests, encrypts stored credentials, and keeps secrets out of sandboxes.
 tags: [authentication, authorization, github-oauth, github-app, webhooks, encryption, csrf, sandbox-security, agent-server-auth, mcp-authorization]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
 sources:
   - id: openwiki-source-f01f6fab1cd3b23d20383d03
     resource: repo://openswe/api/agent_server_auth.py
@@ -54,6 +51,9 @@ sources:
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
     resource: repo://tests/dashboard/test_github_token_auth.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries

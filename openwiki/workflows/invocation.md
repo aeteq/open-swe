@@ -34,10 +34,10 @@ sources:
     resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -68,7 +68,7 @@ sequenceDiagram
 
 This shows the shared path: integration routes acknowledge after inexpensive admission checks, while dashboard commands proxy directly after enrichment. Webhook routes return `202 Accepted` immediately and process the event in the background; dashboard commands are synchronous proxies that return the response from LangGraph.
 
-`create_app` composes dashboard, plan, and workflow-approval routers with Linear, Slack, GitHub, Notion, and health/completion routers. It validates its CORS middleware configuration to reject wildcard origins when credentials are enabled, and its lifespan startup validates sandbox provider and local-development LLM model configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
+`create_app` composes dashboard, plan, and workflow-approval routers with Linear, Slack, GitHub, Notion, and health/completion routers. It validates its CORS middleware configuration to reject wildcard origins when credentials are enabled, and its lifespan startup validates sandbox provider, local-development LLM model, and Slack configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
 
 ## Admission and asynchronous webhook work
 
@@ -76,7 +76,7 @@ GitHub, Linear, Slack, and Notion read the raw request body and verify their res
 
 For accepted GitHub and Linear events, and the normal Slack message path, a FastAPI `BackgroundTasks` job does remote API access, metadata construction, and dispatch after the HTTP response returns `202`. Slack claims an event id before scheduling to make delivery deduplication the gate to a run, preventing duplicate processing from retried webhook deliveries.
 
-Slack filters messages early: it rejects bots and self-messages, validates message-update identity and content change, and only handles an ordinary non-code-channel message if it is a mention, DM, ready-plan reply, or permitted untagged two-party reply. Code channels are different: every interaction shares the channel's session thread and is treated as directed at Open SWE.
+Slack filters messages early: it rejects bots and self-messages, validates message-update identity and content change, and only handles an ordinary non-code-channel message if it is a mention, DM, ready-plan reply, or permitted untagged two-party reply. Code channels are different: every interaction shares the channel's session thread and is treated as directed at Open SWE. The `_retry_channel_verification` function enforces that bot messages from external sources must mention Open SWE explicitly to be processed.
 
 Slack first obtains channel context. Operations are permitted only in DMs or channels confirmed not externally shared; an app mention in an external shared channel gets one deduplicated refusal reply and no run. Signed slash commands, code-channel actions, and supported Block Kit actions turn into explicit code-channel turns; plan/workflow approval actions instead update their approval state or enqueue the prescribed follow-up.
 
@@ -94,13 +94,13 @@ Identity objects are namespaced TypedDicts:
 
 - **`SystemIdentity`**: Metadata about the system that initiated the run (e.g., scheduler, automation engine). Requires `id` and `display_name`, optionally includes platform and sender_type.
 
-Input serialization enforces human/system kind alignment, XML-escapes authored content in input-message envelopes with attributes for sender, surface, kind, channel, and optional structured data, and uses SHA-256-hashed dynamic context introductions so previously injected identities (and their introductions) are omitted on later turns when they haven't changed.
+Input serialization enforces human/system kind alignment, XML-escapes authored content in input-message envelopes with attributes for sender, surface, kind, channel, and optional structured data, and uses SHA-256-hashed dynamic context introductions so previously injected identities (and their introductions) are omitted on later turns when they haven't changed. Untrusted channel fields like topic and purpose are explicitly marked in the XML so the model can weigh them appropriately.
 
 ## Surface-specific construction
 
 ### Slack
 
-The route resolves the Slack location before it schedules work. `resolve_slack_thread_id` prefers an explicit stored location mapping, then matching thread metadata, then the deterministic Slack-derived id. Conflicting metadata matches raise `SlackThreadMappingError`; the route tells the user it will not guess. A Slack worker fetches profile, thread history, channel context, mappings, and optional images, then records `SourceContext.slack_thread`, repository, user, title, environment, and plan mode in thread metadata/configurable state. A first message can select an environment with `env:<name>`; later turns retain the stored environment because the sandbox has already been chosen.
+The route resolves the Slack location before it schedules work. `resolve_slack_thread_id` prefers an explicit stored location mapping, then matching thread metadata, then the deterministic Slack-derived id derived from `slack_thread_id(channel, timestamp)`. Conflicting metadata matches raise `SlackThreadMappingError`; the route tells the user it will not guess. A Slack worker fetches profile, thread history, channel context, mappings, and optional images, then records `SourceContext.slack_thread`, repository, user, title, environment, and plan mode in thread metadata/configurable state. A first message can select an environment with `env:<name>`; later turns retain the stored environment because the sandbox has already been chosen.
 
 Slack runs require a valid GitHub credential for the mapped triggering user unless the deployment is in bot-token-only mode, because coding work opens pull requests as that user. An unlinked or revoked credential produces an account-link/re-login prompt instead of dispatching. The worker serializes channel, people/bots, historical messages, operational context, and the current request into typed input.
 

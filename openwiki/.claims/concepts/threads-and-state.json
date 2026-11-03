@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:6240748dd03d34bd6f031daa6581f2ead1deb5ee0fe85f93f61b7c3ef1ed56aa",
+  "pageVersion": "sha256:e8600036e0d21bc7fa1000ecb86afebde975c983c3cbb84bc24ac0e26514979c",
   "claims": [
     {
       "id": "claim_59daaaa8396044a0ab47378f78878e79",
@@ -167,8 +167,8 @@
       "statement": "ensure_sandbox_for_thread reuses a cached backend or reconnects with sandbox_id from thread metadata, creating a sandbox only when neither exists; an unreachable existing agent sandbox raises rather than being silently replaced, while a deleted sandbox is replaced.",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/lifecycle.py#L499-L626",
-          "version": "repo-lines-v1:sha256:ea540c2c87b94b0a90c152485ef1b75477ef173d87d9c03bbf97bc812922e489:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI4LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0Zjg3YWM2YzlmODZmZTRhNWQxMThkN2I0OTczZGY1OTY1YTdmZDczM2UyNzJmOWRlYWE5MmE3ZjJjNGJlM2NiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0MTYxY2U5YjEyYzhjMWRkMDllNzE3MDFlMzc1NzI5NzhlNTFlN2E0N2QwOGQwMGMxMDNiZDgxNjZlNzUxYzc3IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NTVkOTU0ZTMzMjdmOTY3ODRlNDE5MTg2ZjY4ZjdlM2Q5NTg2ODRmMDg3NmMxN2UwNTg4MTlmZjNlYTExOTM2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI4Y2EzOTM0NjgxOGExOTA1MzAyMzEyNzA5NzAwMDQ2YTM0OTUzNzVkZTUzMzM4OWIwNzQyYmNjMzk0MTA0ZjAwIn0"
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L473-L575",
+          "version": "repo-lines-v1:sha256:f15952ec3f8b0ab622b00d378670bf665319af996acf411de3e2462c1f2cfdc9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAzLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0Zjg3YWM2YzlmODZmZTRhNWQxMThkN2I0OTczZGY1OTY1YTdmZDczM2UyNzJmOWRlYWE5MmE3ZjJjNGJlM2NiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1NTVkOTU0ZTMzMjdmOTY3ODRlNDE5MTg2ZjY4ZjdlM2Q5NTg2ODRmMDg3NmMxN2UwNTg4MTlmZjNlYTExOTM2IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI3YTZlNDY4YTk2MjFjYmQ5YWU2ZTI5ZGFkOWZiOThmOWEwZWRhMWU1NDFhOGJiNzQwYzFhNjQ2YzEyODUyNGMwIn0"
         }
       ]
     },
@@ -177,8 +177,8 @@
       "statement": "The thread is bound to its sandbox_id in metadata only after the sandbox is created and initialized, then the backend is published to the per-thread proxy cache, so a run that dies earlier leaves no half-built id for the next run to adopt.",
       "evidence": [
         {
-          "resource": "repo://openswe/sandboxes/lifecycle.py#L657-L676",
-          "version": "repo-lines-v1:sha256:87bb79ca31ab1b8c5ca4a908e184cf339c0ae9703b08b932fdee6544f0136ea6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYzOTBjM2M3ODRkMDYzZTQ3Yzk4MDBlNDAzZmYwNjIzYjFlNGI3NzVmNDM2YjJhNzQzMTUwZWI5OTYyOGM0NDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3ZTgxMDM2MWIzMmRhMjcyMjczNGIyNmFlYTJjZGQzMjRkOThkNjk1OTdjM2RiMzY2Y2QzNDZhYTE0NGU2MzMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlkZDg2MTJiOTNiODBiMDI3NjAxNDgxYzdlZWFlNDhjMWI5ZDdmMWQwYjBkOTYxMDZhY2ExMjQ5MDkxNTk2NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4M2I3NTIzNGZmYzhkZGUzOTYzNDM3MmJkNDllZDhkZmZjMzQ2MTlhNzMwNDczOTgzNjdiOWFmODRlN2ZlMTIifQ"
+          "resource": "repo://openswe/sandboxes/lifecycle.py#L576-L590",
+          "version": "repo-lines-v1:sha256:9802d0f72912488a01d2199e8ae4c5981c807d3c2d3631975c013f641ad6dbc3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAwYmI5YjA2ZGU5N2EyYzZiOTAyNDViYWJmZGQwNjY2NGRiMDc4ZjJkYjk3MDk4ZGE3Zjc1MTQ5NDM1N2NkZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3MmE4NjE1OThkOWFkZjVjOWYyYWU4NGUzOGRiNmZhNmMyYTM0MTFlMDRiNDA3YjljYmI1ZDc3MjAwZmY0MGIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlZTEzODkwMzJjMTFhMzkyYWM5YWJjODRjOTA1MTI5ZmFmMjA5MjBlM2UzYmJjMDc2NTQxNWFmNDEwZGI4MGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM1ZDNiZjk0OGI5YjQ4MjQ1MjRjYmY4ZDc5OTdmNTJiMWUxMDIzODA1NDI3NzFhZmZjZTUzNzRhNDM1MGFhY2UifQ"
         }
       ]
     },
@@ -332,7 +332,7 @@
     },
     {
       "id": "claim_94143805a78a4630b7ceca74cc9526da",
-      "statement": "RunConfig's configurable dictionary carries thread_id, repo (owner and name), workspace, source (webhook trigger name), github_login, slack_thread (for Slack-specific context), and per-run model/effort overrides that shadow thread-level agent_settings.",
+      "statement": "RunConfig's configurable dictionary carries thread_id, repo (owner and name), workspace, source (webhook trigger name), github_login, slack_thread (for Slack-specific context), and per-run model/effort overrides (agent_model_id, agent_effort) that shadow thread-level agent_settings.",
       "evidence": [
         {
           "resource": "repo://openswe/dispatch.py#L108-L174",
@@ -340,13 +340,13 @@
         },
         {
           "resource": "repo://openswe/run_config.py#L87-L165",
-          "version": "repo-lines-v1:sha256:8b7e7ee2f85d19d709759e40caa6bc3689f27720d72b7ac9624f24aa48755f4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmM2QxMzU2NjU0NjRiMWY1MDNiMDMzN2ExMGIxNDYwYTRlZWFjMWNmMjA4N2RjODY5YmFiZGZiOTU3MjNiNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOWNkNDI4NTE1OTg5M2EyMjBmNGRhZDkxNzE4MGI4MjA2YmZlN2Q1YTQwMDMwNGU2NDI3NDVhOWVhMWNiZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiY2NkY2EyY2Q4ZDQ3M2VhMGJiYTY5OWM5NjQ3OTUzNzU3ZWEzMjA5MjQ5M2Q2YmUwNTM1MTY0ZGRhYzc1YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1NGU5MDM0NzMwZWUxNDIyYmVjNWZkODQ0Y2JhMTVhYWMwYjkwNzhmYTdiZTU3ZmUwZTI3MTgyOTE0ZGNkMzEifQ"
+          "version": "repo-lines-v1:sha256:03d167a8b7fa1483d9f97fa3ceca389ebcfdd2c79237be13f8712ffe458caa4b:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRmM2QxMzU2NjU0NjRiMWY1MDNiMDMzN2ExMGIxNDYwYTRlZWFjMWNmMjA4N2RjODY5YmFiZGZiOTU3MjNiNGQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjljOWNkNDI4NTE1OTg5M2EyMjBmNGRhZDkxNzE4MGI4MjA2YmZlN2Q1YTQwMDMwNGU2NDI3NDVhOWVhMWNiZWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRiY2NkY2EyY2Q4ZDQ3M2VhMGJiYTY5OWM5NjQ3OTUzNzU3ZWEzMjA5MjQ5M2Q2YmUwNTM1MTY0ZGRhYzc1YmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ1NGU5MDM0NzMwZWUxNDIyYmVjNWZkODQ0Y2JhMTVhYWMwYjkwNzhmYTdiZTU3ZmUwZTI3MTgyOTE0ZGNkMzEifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-10-28T14:57:39.210Z"
+    "at": "2026-11-02T18:01:41.066Z"
   }
 }

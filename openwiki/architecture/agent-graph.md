@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory, managed-deep-agents]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -25,7 +25,9 @@ sources:
     resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+  - id: openwiki-source-659ef274df23f55f0ecc0366
+    resource: repo://openswe/skill_store/run_skills.py
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 ---
 
 # Coding Agent Assembly and Execution
@@ -79,7 +81,7 @@ The primary backend is a `CompositeBackend` whose default route is the sandbox p
 - **Hosted user skills** (`/skills/`) come from a `StoreBackend` namespaced to `credential_login` when one exists, providing access to private personal integrations.
 - **Blobs** (`/blobs/`) on hosted runs use a `StoreBackend` routed to PostgreSQL (`ThreadBlobs`) so offloaded images can be read without sandbox access.
 
-The ordered `skill_sources` list is supplied to both the parent agent and the general-purpose subagent, ensuring consistent skill availability across delegation. For hosted runs, organization skills are checked first, then bundled skills; for hosted runs with personal integrations, user skills are checked before organization skills. Desktop runs or runs without credential access use only organization and bundled skills.
+The ordered `skill_sources` list is supplied to both the parent agent and the general-purpose subagent, ensuring consistent skill availability across delegation. For hosted runs with personal integrations, user skills are checked first, then organization skills, then bundled skills; for runs without credential access, organization and bundled skills are available.
 
 ## Curated and dynamic tools
 
@@ -197,55 +199,17 @@ sequenceDiagram
         alt Tool call in response
             MDA->>MDA: Parse tool requests
             MDA->>MDA: DynamicToolMiddleware: ensure tool loaded
-            
             MDA->>Sandbox: Execute tool
-            activate Sandbox
             Sandbox-->>MDA: tool result
-            deactivate Sandbox
-            
-            MDA->>MDA: Append tool result to messages
-        else No tool
-            MDA->>MDA: Extract final response
-            MDA->>MDA: Append assistant message
+            MDA->>MDA: Store result in messages
+        else No tool call
+            MDA->>MDA: End loop, return response
         end
     end
     
     deactivate MDA
-    MDA-->>Server: Run completion
-    Server-->>Client: Response with completion
+    MDA-->>Server: Run complete
+    Server-->>Client: Response with artifacts
 ```
 
-*Factory and execution flow: plan_agent resolves sandbox/models/tools/middleware and configures a ToolSurface, then MDA executes the graph with step-by-step model and tool loops.*
-
-## Change guidance and extension points
-
-Treat `plan_agent` as the customization seam for:
-
-- Sandbox providers and reconnect strategies
-- Model policy, routing, and fallback configuration
-- Parent tool surfaces and tool-access gates
-- Skills routes and skill backends
-- Subagent composition, middleware, and boundaries
-- Middleware ordering and guard configuration
-
-Preserve these contracts:
-
-- **Authority model**: `profile_login` drives authorization; thread settings freeze durable decisions. Do not silence model/settings changes between participants.
-- **Subagent tools**: Parent middleware does not wrap subagents. A parent-only guard (e.g., PullRequestCreationGuardMiddleware) needs to be registered through MDA's shell guards to secure subagent shell access. Add subagent tool filtering through the `tools` list in `SurfaceSubagent`.
-- **Middleware order**: Order is part of the contract, not an implementation detail. Timeouts must be innermost so fallback escalation works correctly.
-- **Skill consistency**: Parent and subagent receive the same `skill_sources` list so skill availability does not differ between delegations.
-- **Tool filtering**: `_is_subagent_excluded_tool` is the authoritative exclusion list for subagent-only tool filtering; extend it there, not in per-run overrides.
-
-## Focused tests
-
-- `tests/agent/test_agent_assembly_context.py` checks backend/skills routing, desktop and stop-summary tool surfaces, parent-only tools, subagent guards, and middleware order.
-- `tests/agent/test_factory_tool_loading.py` verifies concurrent eager loading of MCP tools and integration tool caching.
-- `tests/models/test_agent_subagent_models.py` covers independent profile subagent overrides and Fable availability gating.
-
-## Related architecture
-
-- [Middleware Stack and Interceptors](middleware-stack.md) — detailed middleware reference, responsibilities, and ordering rationale.
-- [Sandbox Lifecycle](sandbox-lifecycle.md) — backend creation, reconnection, and persistence.
-- [Models & Profiles & Instructions](../concepts/models-profiles-instructions.md) — model selection, effort levels, and prompt layers.
-- [Tools](../concepts/tools.md) — tool surfaces, authorization, and dynamic loading.
-- [Context Engineering](../workflows/context-engineering.md) — how sender and thread context flow through preparation.
+The server-side factory work (resolving models, storing settings, loading MCPs) overlaps aggressively to minimize latency. The model loop is stateless—each turn rebuilds the middleware stack identically, so any middleware state that must survive a turn lives in the message thread or checkpointed in LangGraph's store.

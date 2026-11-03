@@ -14,10 +14,6 @@ sources:
     resource: repo://openswe/middleware/prepare_run.py
   - id: openwiki-source-c950a10d3272291deaffd090
     resource: repo://openswe/prompt.py
-  - id: openwiki-source-3554a18b9529d3d118344e34
-    resource: repo://openswe/prompts.py
-  - id: openwiki-source-1c7c5f1a7efc26b4594613d2
-    resource: repo://openswe/resources/prompts/system/main.md.jinja
   - id: openwiki-source-342facea842feb2c43fd9e53
     resource: repo://openswe/review/approvals.py
   - id: openwiki-source-eb9e695bef31bca8f88b0c2b
@@ -26,16 +22,18 @@ sources:
     resource: repo://openswe/sandboxes/repo_prep.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
+  - id: openwiki-source-659ef274df23f55f0ecc0366
+    resource: repo://openswe/skill_store/run_skills.py
   - id: openwiki-source-76820c5856f1479d850c1ab9
     resource: repo://openswe/source_context.py
   - id: openwiki-source-5d8b1cb7551116affdb348f3
     resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-6cab3229da0697cc82ed6224
     resource: repo://openswe/utils/agents_md.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Context Engineering and Agent Preparation
@@ -135,7 +133,7 @@ The reviewer's approval behavior—whether it only comments (`dry_run`), never a
 
 Skills are instructions exposed as virtual `SKILL.md` files rather than copied wholesale into the prompt. A `CompositeBackend` keeps the run backend as default and routes skill prefixes to specialized backends; it strips the route prefix before delegation. Passing those prefixes in `create_deep_agent(skills=[...])` lets deepagents advertise skills while the agent reads full instructions through ordinary `read_file`.
 
-The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a profile login exists, per-user skills read-only at `/skills/`; the user route is first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
+The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a credential login exists, per-user skills read-only at `/skills/`; the user route is first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
 
 ### Reviewer: trusted skills from base revision
 

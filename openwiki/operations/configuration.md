@@ -32,10 +32,10 @@ sources:
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Configuration and Startup Validation
@@ -94,20 +94,20 @@ flowchart TD
 
 **CORS wildcards**: If `DASHBOARD_ALLOWED_ORIGINS` contains `*`, the application raises during construction because credentialed CORS (required for dashboard API access) cannot safely use wildcards. Explicit origins enable credential sharing.
 
-## Sandboxes: provider selection and configuration
+## Sandboxes: LangSmith provisioning through MDA
 
-`SANDBOX_TYPE` defaults to `langsmith` and selects the sandbox backend. The provider registry recognizes `langsmith`, `daytona`, `modal`, `runloop`, `e2b`, and `local`. Unsupported values raise `ValueError` with the supported list. The local provider executes commands on the host without isolation and is intended for local development only.
+Open SWE delegates sandbox provisioning to Managed Deep Agents (MDA), which creates every thread's sandbox using LangSmith's provisioning API. The backend only reconnects to existing sandboxes by ID; it does not create sandboxes independently. This architecture makes sandbox lifecycle management simpler and allows the agent and reviewer to share a common sandbox backend.
 
-### LangSmith sandbox resources
+### Sandbox resources and configuration
 
-For LangSmith, resource defaults are:
+Resource defaults are:
 - 128 GiB filesystem (`DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES`)
 - 4 vCPUs (`DEFAULT_SANDBOX_VCPUS`)
 - 16 GiB memory (`DEFAULT_SANDBOX_MEM_BYTES`)
 - 7200 seconds idle TTL (`DEFAULT_SANDBOX_IDLE_TTL_SECONDS`; 0 disables auto-stop)
 - 2592000 seconds deletion-after-stop (`DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS`; 0 disables auto-delete)
 
-These are deployment defaults when a workspace does not override them. Startup validation rejects non-integer values, negative TTLs, and invalid `SANDBOX_CREATE_EXTRA_JSON` (not JSON or not an object).
+Workspace customization overrides these. Startup validation rejects non-integer resource values, negative TTL values for idle or delete-after-stop, and invalid `SANDBOX_CREATE_EXTRA_JSON` (non-JSON or non-object). The `SANDBOX_CREATE_EXTRA_JSON` field merges arbitrary provider-specific fields into the sandbox create body, e.g., `{"_internal_runtime": "v2"}`.
 
 ### Workspace sandbox customization
 

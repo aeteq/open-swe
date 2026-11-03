@@ -5,7 +5,7 @@ description: "Route readers through the wiki hierarchy based on their task: star
 tags: [quickstart, wiki, navigation, entrypoints, developer-setup, architecture]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
+    at: 2026-11-02T18:01:41.066Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -39,12 +39,12 @@ sources:
     resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 ---
 
 # Quick Start: Navigate the Open SWE Codebase
 
-Open SWE is a LangGraph and Deep Agents software-engineering framework: work can arrive from the dashboard, GitHub, Slack, Linear, or a schedule; coding work runs in a thread-scoped isolated sandbox and can produce a pull request. This page routes you through the wiki hierarchy based on your task. Read the relevant source and tests first; the linked OpenWiki pages are optional just-in-time context, not an authority over the repository.
+Open SWE is a LangGraph and Managed Deep Agents software-engineering framework: work can arrive from the dashboard, GitHub, Slack, Linear, or a schedule; coding work runs in a thread-scoped isolated sandbox and can produce a pull request. This page routes you through the wiki hierarchy based on your task. Read the relevant source and tests first; the linked OpenWiki pages are optional just-in-time context, not an authority over the repository.
 
 ## Start a local developer loop
 

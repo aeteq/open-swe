@@ -3,9 +3,6 @@ type: workflow
 title: Pull Request Review Workflow
 description: How Open SWE starts GitHub pull-request reviews, prepares a diff-grounded reviewer run, persists and publishes findings, and reconciles replies, resolutions, and review checks across later pushes.
 tags: [reviewer, pr-review, github, webhooks, findings, reconciliation, review-scout, style-guidance]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-10-28T14:57:39.210Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -46,6 +43,9 @@ sources:
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
 generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Pull Request Review Workflow
