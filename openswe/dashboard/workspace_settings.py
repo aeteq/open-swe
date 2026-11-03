@@ -64,7 +64,6 @@ class WorkspaceSettingsUpdate(BaseModel):
     implementation_walkthrough_enabled: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
-    pr_summaries: bool | None = Field(default=None, json_schema_extra={"agent_feature_flag": True})
     review_trace_links: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
@@ -258,7 +257,6 @@ def _default_settings() -> dict[str, Any]:
     return {
         "review_draft_prs": False,
         "implementation_walkthrough_enabled": False,
-        "pr_summaries": True,
         "review_trace_links": True,
         "model_routing_enabled": None,
         "gateway_enabled": None,

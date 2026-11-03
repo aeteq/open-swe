@@ -45,7 +45,7 @@ async def test_instance_flags_keep_unrelated_settings_and_reset() -> None:
 @pytest.mark.usefixtures("registry_db")
 @pytest.mark.parametrize(
     "flag",
-    ["pr_summaries", "human_review_auto_merge_enabled", "implementation_walkthrough_enabled"],
+    ["review_trace_links", "human_review_auto_merge_enabled", "implementation_walkthrough_enabled"],
 )
 async def test_workspace_flags_inherit_and_keep_other_overrides(flag: str) -> None:
     await WORKSPACE_SETTINGS.put("team", {"org_guidelines": "Keep me", flag: False})
