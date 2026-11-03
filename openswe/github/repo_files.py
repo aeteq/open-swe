@@ -5,7 +5,7 @@ import random
 from collections import Counter
 from datetime import timedelta
 from fnmatch import fnmatchcase
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
