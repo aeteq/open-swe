@@ -16,7 +16,7 @@ concurrency:
 jobs:
   no-new-langgraph-client:
     name: No new backend langgraph_client uses
-    if: ${{ github.event_name == 'pull_request' && github.repository != 'aeteq/open-swe' }}
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
