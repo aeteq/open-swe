@@ -56,7 +56,7 @@ from openswe.middleware import (
 from openswe.middleware.prepare_run import PrepareRunState
 from openswe.middleware.require_user_reply import WEB_REPLY_SURFACE
 from openswe.middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
-from openswe.prompts import apply_tool_descriptions, prompt
+from openswe.prompts import apply_tool_descriptions, escape_for_data_block, prompt
 from openswe.review.approvals import approval_policy_for_review
 from openswe.review.diff import (
     changed_files,
@@ -1043,6 +1043,7 @@ def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
                 web_search,
                 fetch_url,
                 http_request,
+                suggest_task,
             ]
         ),
         *mcp_tools,
@@ -1073,11 +1074,11 @@ async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None
     # whatever it reads from private pages could end up in its public comments.
     mcp_tools: list[BaseTool] = []
     if not cfg.is_eval and await _reviews_private_repo(cfg):
-        async with aphase(thread_id, "factory.mcp_tools"):
+        async with aphase(cfg.thread_id, "factory.mcp_tools"):
             mcp_tools = await reviewer_mcp_tools(cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG)
     use_gateway = models.use_gateway
 
-    surface.base_tools = reviewer_tools()
+    surface.base_tools = reviewer_tools(mcp_tools)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)
     surface.excluded = SHELL_SEARCH_EXCLUDED_TOOLS
     surface.models = SurfaceModels(
