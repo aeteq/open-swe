@@ -1117,22 +1117,6 @@ def _sandbox_file_downloads_enabled(*, bridged: bool) -> bool:
     return not bridged
 
 
-def _slack_tools_enabled(cfg: RunConfig) -> bool:
-    """Return whether the run has trusted Slack source context.
-
-    A web follow-up counts: its `slack_thread` is copied from the thread's own
-    metadata, never from the client, and keeping the tools registered across a
-    surface switch is what keeps the prompt prefix cacheable.
-    """
-    if cfg.source not in {"slack", "schedule", "incidents_agent", "github", DASHBOARD_SOURCE}:
-        return False
-    if cfg.slack_thread is None:
-        return False
-    if _slack_ask_mode(cfg):
-        return bool(cfg.slack_thread.channel_id.strip())
-    return bool(cfg.slack_thread.channel_id.strip() and cfg.slack_thread.thread_ts.strip())
-
-
 def _notion_task_run(cfg: RunConfig) -> bool:
     return cfg.source == "notion" and cfg.notion_page is not None and bool(cfg.notion_page.id)
 
