@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 _MEMBERSHIP_REQUEST_TIMEOUT = 5.0
 
 # The GitHub Apps Open SWE acts as; events they send are Open SWE's own.
-OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset(
-    {"jarvis-aeteq[bot]"}
-)
+OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset({"jarvis-aeteq[bot]"})
 # GraphQL names a GitHub App author by its slug, without the ``[bot]`` REST adds.
 OPEN_SWE_AUTHOR_LOGINS: frozenset[str] = OPEN_SWE_GITHUB_LOGINS | {
     login.removesuffix("[bot]") for login in OPEN_SWE_GITHUB_LOGINS

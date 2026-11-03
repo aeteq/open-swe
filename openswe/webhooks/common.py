@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import hmac
 import json
 import logging
 from collections.abc import Collection, Mapping, Sequence
