@@ -29,16 +29,13 @@ logger = logging.getLogger(__name__)
 
 from langgraph.graph.state import RunnableConfig
 from langgraph.runtime import Runtime
-from runtime_api.catalog import InboxSpec, LoopRules
+from runtime_api.catalog import InboxSpec
 
 warnings.filterwarnings("ignore", module="langchain_core._api.deprecation")
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", category=UserWarning)
 
 from deepagents.backends.protocol import BackendProtocol, SandboxBackendProtocol
 from deepagents.middleware.skills import SkillsMiddleware, SkillsState
-from langchain.agents.middleware import ModelCallLimitMiddleware, ModelRetryMiddleware
-from langchain.agents.middleware.types import AgentMiddleware
-from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool
@@ -48,23 +45,17 @@ from openswe.dashboard.options import gate_fable_model
 from openswe.dashboard.repo_access import repo_is_private
 from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
 from openswe.github.app import get_github_app_installation_token_with_expiry
+from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS
 from openswe.github.sandbox_access import READ_ONLY_REVIEW_PERMISSIONS
 from openswe.github.thread_token import cache_github_token_for_thread
 from openswe.mcp.models import MCPToolProvenance
 from openswe.mcp.tiers import mcp_tools_for
 from openswe.middleware import (
     BasePrepareRunMiddleware,
-    ExcludeToolsMiddleware,
-    ModelErrorMiddleware,
-    RepairOrphanedToolCallsMiddleware,
-    refresh_github_proxy_before_model,
-    settle_review_check_on_exit,
 )
 from openswe.middleware.prepare_run import PrepareRunState
-from openswe.middleware.record_run_usage import record_run_usage
 from openswe.middleware.require_user_reply import WEB_REPLY_SURFACE
 from openswe.middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
-from openswe.middleware.transcript import TranscriptMiddleware
 from openswe.prompts import apply_tool_descriptions, escape_for_data_block, prompt
 from openswe.review.approvals import approval_policy_for_review
 from openswe.review.diff import (
@@ -84,7 +75,6 @@ from openswe.review.reconcile import reconcile_findings_with_review_threads
 from openswe.run_config import RunConfig
 from openswe.runtime import (
     DEFAULT_LLM_MAX_TOKENS,
-    MODEL_CALL_RECURSION_LIMIT,
     ensure_sandbox_for_thread,
     get_cached_sandbox_backend,
 )
@@ -103,6 +93,7 @@ from openswe.tools import (
     publish_review,
     reply_to_finding_thread,
     resolve_finding_thread,
+    suggest_task,
     update_finding,
     web_search,
 )
@@ -611,12 +602,13 @@ async def prepare_reviewer_run(
                 sandbox_backend = await ensure_reviewer_sandbox_for_thread(thread_id, cfg)
             except SandboxUnreachableError as exc:
                 # This run dies without a sandbox. Say so on the PR instead of leaving
-                # it looking unreviewed.
-                await post_sandbox_unreachable_notification(
-                    config or {},
-                    sandbox_id=exc.sandbox_id,
-                    handed_to_mda=isinstance(exc, SandboxHandedOverError),
-                )
+                # it looking unreviewed, unless it is a shadow nobody on the PR knows of.
+                if not cfg.review_shadow:
+                    await post_sandbox_unreachable_notification(
+                        config or {},
+                        sandbox_id=exc.sandbox_id,
+                        handed_to_mda=isinstance(exc, SandboxHandedOverError),
+                    )
                 raise
             work_dir = await resolve_sandbox_work_dir(sandbox_backend)
             repo_ready = await prepare_review_repo(
@@ -713,7 +705,16 @@ async def prepare_reviewer_run(
                 pr_number=pr_number,
                 token=github_token,
             )
-            await reconcile_findings_with_review_threads(thread_id, threads)
+            if cfg.review_shadow:
+                # Open SWE's own threads are the control reviewer's, which a shadow must not see.
+                threads = [
+                    thread
+                    for thread in threads
+                    if not (comments := thread.get("comments"))
+                    or str(comments[0].get("author") or "").lower() not in OPEN_SWE_AUTHOR_LOGINS
+                ]
+            else:
+                await reconcile_findings_with_review_threads(thread_id, threads)
             block = _format_pr_review_threads(threads)
             if block:
                 logger.info(
@@ -1042,32 +1043,29 @@ def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
                 web_search,
                 fetch_url,
                 http_request,
+                suggest_task,
             ]
         ),
         *mcp_tools,
     ]
 
 
-async def _reconnect_reviewer_box(thread_id: str, cfg: RunConfig) -> SandboxBackendProtocol:
+async def _reconnect_reviewer_sandbox(thread_id: str, cfg: RunConfig) -> SandboxBackendProtocol:
     await ensure_reviewer_github_token(thread_id, cfg)
     return await ensure_reviewer_sandbox_for_thread(thread_id, cfg)
 
 
-def reviewer_box(thread_id: str, cfg: RunConfig) -> BackendProtocol:
-    """The review thread's box, connected again with a fresh token whenever it is gone."""
+def reviewer_sandbox(thread_id: str, cfg: RunConfig) -> BackendProtocol:
+    """The review thread's sandbox, connected again with a fresh token whenever it is gone."""
     return get_cached_sandbox_backend(
-        thread_id, reconnect=partial(_reconnect_reviewer_box, thread_id, cfg)
+        thread_id, reconnect=partial(_reconnect_reviewer_sandbox, thread_id, cfg)
     )
 
 
-async def plan_reviewer(config: RunnableConfig, surface: ToolSurface) -> None:
-    """Plan a review run into ``surface``: the tools, middleware, models and subagents its MDA run plays."""
-    config = config.copy()
-    configurable = dict(config.get("configurable") or {})
-    config["configurable"] = configurable
-    cfg = RunConfig.parse(configurable)
-    thread_id = cfg.thread_id
-    if thread_id is None:
+async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
+    """Work out a review run into ``surface``: its tools, models, subagents and loop rules."""
+    cfg = RunConfig.from_config(config)
+    if cfg.thread_id is None:
         raise ValueError("A review run needs a thread")
 
     models = await resolve_reviewer_models(cfg)
@@ -1076,44 +1074,13 @@ async def plan_reviewer(config: RunnableConfig, surface: ToolSurface) -> None:
     # whatever it reads from private pages could end up in its public comments.
     mcp_tools: list[BaseTool] = []
     if not cfg.is_eval and await _reviews_private_repo(cfg):
-        async with aphase(thread_id, "factory.mcp_tools"):
+        async with aphase(cfg.thread_id, "factory.mcp_tools"):
             mcp_tools = await reviewer_mcp_tools(cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG)
     use_gateway = models.use_gateway
 
-    backend = reviewer_box(thread_id, cfg)
-
-    middleware = cast(
-        list[AgentMiddleware[Any, Any, Any]],
-        [
-            PrepareReviewerRunMiddleware(
-                thread_id=thread_id,
-                config=config,
-                use_gateway=use_gateway,
-                model=models.main,
-                notion_tools=[tool.name for tool in mcp_tools],
-            ),
-            TranscriptMiddleware(),
-            record_run_usage,
-            AnthropicPromptCachingMiddleware(ttl="1h", unsupported_model_behavior="ignore"),
-            ModelCallLimitMiddleware(run_limit=MODEL_CALL_RECURSION_LIMIT, exit_behavior="end"),
-            ExcludeToolsMiddleware(excluded=SHELL_SEARCH_EXCLUDED_TOOLS),
-            refresh_github_proxy_before_model,
-            RepairOrphanedToolCallsMiddleware(),
-            ModelRetryMiddleware(retry_on=(TimeoutError,)),
-            ModelErrorMiddleware(),
-            settle_review_check_on_exit,
-        ],
-    )
-    surface.base_tools = reviewer_tools()
-    surface.middleware = middleware
+    surface.base_tools = reviewer_tools(mcp_tools)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)
-    surface.files = backend
     surface.excluded = SHELL_SEARCH_EXCLUDED_TOOLS
-    surface.loop = LoopRules(
-        hidden_tools=sorted(SHELL_SEARCH_EXCLUDED_TOOLS),
-        refresh_github_proxy=True,
-        at_end=["settle_review_check"],
-    )
     surface.models = SurfaceModels(
         main=ModelChoice(models.main.model_id, dict(models.main.kwargs)),
         subagent=ModelChoice(models.subagent.model_id, dict(models.subagent.kwargs)),

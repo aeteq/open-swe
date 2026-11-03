@@ -16,6 +16,7 @@ _TOOL_MODULES = {
     "create_sandbox_file_download_url": ".create_sandbox_file_download_url",
     "delete_automation": ".automations",
     "delete_workspace": ".workspaces",
+    "discover_managed_tools": ".discover_managed_tools",
     "dismiss_human_review_request": ".request_human_review",
     "expedite_pr_approval": ".expedite_pr_approval",
     "expose_port": ".expose_port",
@@ -61,10 +62,16 @@ _TOOL_MODULES = {
     "publish_workspace": ".workspaces",
     "save_organization_skill": ".organization_skills",
     "publish_artifact": ".publish_artifact",
-    "save_user_instructions": ".save_user_instructions",
+    "remember": ".remember",
+    "forget": ".remember",
+    "list_memories": ".curator",
+    "read_workspace_prompt": ".curator",
+    "decide_memory": ".curator",
+    "publish_workspace_prompt": ".curator",
     "save_user_settings": ".save_user_settings",
     "save_user_skill": ".user_skills",
     "delete_user_skill": ".user_skills",
+    "report_work_state": ".report_work_state",
     "schedule_thread_wakeup": ".schedule_thread_wakeup",
     "search_pull_requests": ".search_pull_requests",
     "snapshotctl": ".workspaces",
@@ -104,6 +111,7 @@ __all__ = [
     "create_sandbox_file_download_url",
     "delete_automation",
     "delete_workspace",
+    "discover_managed_tools",
     "dismiss_human_review_request",
     "expedite_pr_approval",
     "expose_port",
@@ -149,10 +157,16 @@ __all__ = [
     "save_organization_skill",
     "delete_organization_skill",
     "publish_artifact",
-    "save_user_instructions",
+    "remember",
+    "forget",
+    "list_memories",
+    "read_workspace_prompt",
+    "decide_memory",
+    "publish_workspace_prompt",
     "save_user_settings",
     "save_user_skill",
     "delete_user_skill",
+    "report_work_state",
     "schedule_thread_wakeup",
     "search_pull_requests",
     "snapshotctl",
@@ -210,6 +224,13 @@ if TYPE_CHECKING:
     from openswe.tools.comment_on_notion_task import comment_on_notion_task
     from openswe.tools.connect_managed_tools import connect_managed_tools
     from openswe.tools.create_sandbox_file_download_url import create_sandbox_file_download_url
+    from openswe.tools.curator import (
+        decide_memory,
+        list_memories,
+        publish_workspace_prompt,
+        read_workspace_prompt,
+    )
+    from openswe.tools.discover_managed_tools import discover_managed_tools
     from openswe.tools.expedite_pr_approval import expedite_pr_approval
     from openswe.tools.expose_port import expose_port
     from openswe.tools.fetch_review_diff import fetch_review_diff
@@ -231,9 +252,11 @@ if TYPE_CHECKING:
     from openswe.tools.read_user_settings import read_user_settings
     from openswe.tools.record_human_input import record_human_input
     from openswe.tools.recreate_sandbox import recreate_sandbox
+    from openswe.tools.remember import forget, remember
     from openswe.tools.repair_data import execute_database_sql, write_database_rows
     from openswe.tools.reply_to_finding_thread import reply_to_finding_thread
     from openswe.tools.report_platform_issue import report_platform_issue
+    from openswe.tools.report_work_state import report_work_state
     from openswe.tools.request_human_review import (
         assign_human_reviewer,
         auto_assign_human_reviewer,
@@ -243,7 +266,6 @@ if TYPE_CHECKING:
     )
     from openswe.tools.request_rollout_check import request_rollout_check
     from openswe.tools.resolve_finding_thread import resolve_finding_thread
-    from openswe.tools.save_user_instructions import save_user_instructions
     from openswe.tools.save_user_settings import save_user_settings
     from openswe.tools.schedule_thread_wakeup import schedule_thread_wakeup
     from openswe.tools.search_pull_requests import search_pull_requests

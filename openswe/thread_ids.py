@@ -11,13 +11,12 @@ import re
 import uuid
 
 __all__ = [
-    "github_issue_thread_id",
-    "linear_issue_thread_id",
     "mda_successor_thread_id",
     "notion_discussion_thread_id",
     "notion_page_thread_id",
     "pr_comment_thread_id",
     "review_chat_thread_id",
+    "review_shadow_thread_id",
     "reviewer_thread_id",
     "slack_thread_id",
     "thread_id_from_branch",
@@ -46,6 +45,10 @@ def review_scout_thread_id(owner: str, repo: str, pr_number: int) -> str:
     return _url_uuid(f"{owner}/{repo}/pr/{pr_number}/review-scout")
 
 
+def review_shadow_thread_id(owner: str, repo: str, pr_number: int) -> str:
+    return _url_uuid(f"{owner}/{repo}/pr/{pr_number}/reviewer-shadow")
+
+
 def pr_comment_thread_id(owner: str, repo: str, pr_number: int) -> str:
     """Agent thread for a PR that Open SWE did not branch, keyed by the PR itself."""
     return _url_uuid(f"{owner}/{repo}/pr/{pr_number}")
@@ -58,10 +61,6 @@ def review_chat_thread_id(owner: str, repo: str, pr_number: int, login: str) -> 
 
 def slack_thread_id(channel: str, timestamp: str, nonce: str | None = None) -> str:
     return _url_uuid(f"slack:{channel}:{timestamp}:{nonce or ''}")
-
-
-def linear_issue_thread_id(issue_id: str) -> str:
-    return _sha256_uuid(f"linear-issue:{issue_id}")
 
 
 def notion_page_thread_id(page_id: str) -> str:
