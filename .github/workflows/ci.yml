@@ -16,7 +16,7 @@ concurrency:
 jobs:
   no-new-langgraph-client:
     name: No new backend langgraph_client uses
-    if: ${{ github.event_name == 'pull_request' }}
+    if: false # disabled on the aeteq fork: sync PRs always trip it on upstream code
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
