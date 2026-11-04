@@ -7,13 +7,20 @@ import httpx
 import pytest
 
 from scripts import deploy_preview
-from scripts.deploy_preview import Deployer, DeployError, Revision, Revisions, SourceRevisionConfig
+from scripts.deploy_preview import (
+    Branch,
+    Deployer,
+    DeployError,
+    Revision,
+    Revisions,
+    SourceRevisionConfig,
+)
 
 
 @pytest.fixture(autouse=True)
 def preview_branch(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     branch = AsyncMock(return_value="published")
-    monkeypatch.setattr(deploy_preview, "preview_sha", branch)
+    monkeypatch.setattr(Branch, "sha", branch)
     monkeypatch.setattr(deploy_preview, "POLL_SECONDS", 0)
     return branch
 
@@ -56,7 +63,7 @@ async def test_waits_for_published_commit_without_triggering_deployment(
     async with httpx.AsyncClient(
         base_url="https://deploy.test", transport=httpx.MockTransport(respond)
     ) as client:
-        await Deployer(client, "preview", "published").deploy()
+        await Deployer(client, "preview", Branch("preview"), "published").deploy()
     assert not responses
 
 
@@ -66,7 +73,7 @@ async def test_waits_for_published_commit_without_triggering_deployment(
         ("BUILD_FAILED", "published", "ended BUILD_FAILED"),
         ("INTERRUPTED", "published", "ended INTERRUPTED"),
         ("SKIPPED", "published", "ended SKIPPED"),
-        ("DEPLOYED", "other", "not the published published"),
+        ("DEPLOYED", "other", "not the expected published"),
         ("DEPLOYED", None, "an unknown commit"),
     ],
 )
@@ -106,7 +113,7 @@ async def test_rejects_failed_or_wrong_commit(
         base_url="https://deploy.test", transport=httpx.MockTransport(respond)
     ) as client:
         with pytest.raises(DeployError, match=error):
-            await Deployer(client, "preview", "published").deploy()
+            await Deployer(client, "preview", Branch("preview"), "published").deploy()
 
 
 @pytest.mark.parametrize("status", [None, "BUILDING", "INTERRUPTED", "SKIPPED"])
@@ -140,7 +147,7 @@ async def test_stops_when_preview_branch_is_superseded(
     async with httpx.AsyncClient(
         base_url="https://deploy.test", transport=httpx.MockTransport(respond)
     ) as client:
-        await Deployer(client, "preview", "published").deploy()
+        await Deployer(client, "preview", Branch("preview"), "published").deploy()
     output = capsys.readouterr().out
     assert "::warning::preview branch moved from published to replacement" in output
     assert "replacement deployment not verified" in output
@@ -154,7 +161,7 @@ async def test_branch_lookup_failure_is_not_treated_as_superseded(
     preview_branch.side_effect = DeployError("could not read the preview branch")
     async with httpx.AsyncClient(base_url="https://deploy.test") as client:
         with pytest.raises(DeployError, match="could not read the preview branch"):
-            await Deployer(client, "preview", "published").deploy()
+            await Deployer(client, "preview", Branch("preview"), "published").deploy()
 
 
 async def test_times_out_when_automatic_revision_never_appears(
@@ -170,6 +177,6 @@ async def test_times_out_when_automatic_revision_never_appears(
     async with httpx.AsyncClient(
         base_url="https://deploy.test", transport=httpx.MockTransport(respond)
     ) as client:
-        deployer = Deployer(client, "preview", "published")
+        deployer = Deployer(client, "preview", Branch("preview"), "published")
         with pytest.raises(DeployError, match="no automatic revision for published"):
             await deployer.deploy()
