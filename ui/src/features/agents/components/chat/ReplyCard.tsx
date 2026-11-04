@@ -271,7 +271,7 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
   const kind = replyKind(chunk)
   const state = delivery(chunk)
   const messageUrl =
-    !isLinear && state === "delivered"
+    kind === "slack" && state === "delivered"
       ? replyResult(chunk.output)?.message_url
       : undefined
   const destination =
@@ -285,7 +285,7 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
     /^\/archives\/[A-Z0-9]+\/p\d+$/.test(destination.pathname)
       ? destination.href
       : undefined
-  const label = HEADER_LABELS[isLinear ? "linear" : "slack"][state]
+  const label = HEADER_LABELS[kind][state]
   return (
     <div className="min-w-0 px-space-1 py-0.5">
       <div className="mb-space-1 flex items-center gap-space-2 text-xxs text-secondary">
