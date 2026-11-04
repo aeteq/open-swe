@@ -446,7 +446,7 @@ def render_review_body(
         issue_word = "issue" if surfaced_count == 1 else "issues"
         headline = f"**Jarvis Review** found {surfaced_count} potential {issue_word}."
 
-    parts = [headline]
+    parts = [headline, render_review_summary(summary)]
     if config_errors:
         parts.append(
             "**Changes requested: invalid Open SWE configuration.** "
