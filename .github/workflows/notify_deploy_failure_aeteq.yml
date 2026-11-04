@@ -1,0 +1,45 @@
+name: Notify deploy failures (aeteq)
+
+# Posts to #ai-assisted when a deploy of main fails. Cancelled runs were superseded
+# by a newer push, whose own run reports on it.
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy Managed Deep Agents (aeteq)
+      - Watch openswe-server deploy (aeteq)
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Post to Slack
+    if: >-
+      github.repository == 'aeteq/open-swe'
+      && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Post the failure to #ai-assisted
+        env:
+          # openswe-server's own Slack app; it must be a member of #ai-assisted.
+          SLACK_BOT_TOKEN: ${{ secrets.MDA_SLACK_BOT_TOKEN }}
+          CHANNEL: C0BDZPNN2P7
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+          COMMIT_URL: ${{ github.event.repository.html_url }}/commit/${{ github.event.workflow_run.head_sha }}
+        run: |
+          subject="${COMMIT_MESSAGE%%$'\n'*}"
+          text=":rotating_light: *<${RUN_URL}|${WORKFLOW}> failed* on <${COMMIT_URL}|\`${SHA:0:7}\`> ${subject}"
+          response="$(jq -n --arg channel "$CHANNEL" --arg text "$text" '{channel: $channel, text: $text, unfurl_links: false}' \
+            | curl -sS --fail-with-body -X POST https://slack.com/api/chat.postMessage \
+                -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+                -H "Content-Type: application/json; charset=utf-8" \
+                --data @-)"
+          if [[ "$(jq -r .ok <<<"$response")" != "true" ]]; then
+            echo "::error::Slack rejected the message: $(jq -r .error <<<"$response")"
+            exit 1
+          fi
