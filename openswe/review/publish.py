@@ -287,6 +287,10 @@ AUTO_APPROVED_MAX_CHARS = 500
 ReviewDecision = Literal["would_approve", "would_approve_conditionally", "needs_human_review"]
 
 
+_SUMMARY_COLLAPSE_CHARS = 600
+_SUMMARY_COLLAPSE_LINES = 8
+
+
 class ReviewAssessment(BaseModel):
     """Advisory judgment for the exact commit the reviewer inspected."""
 

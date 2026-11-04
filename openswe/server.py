@@ -183,8 +183,8 @@ from openswe.tools import (
     configure_workspace,
     connect_managed_tools,
     create_automation,
-    create_project,
     create_notion_design,
+    create_project,
     create_sandbox_file_download_url,
     decide_memory,
     delete_automation,
@@ -2047,6 +2047,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             ()
             if sender_preferences.experimental_classify and SystemOneGateway.configured()
             else (classify,)
+        ),
         *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
         *(
             tool

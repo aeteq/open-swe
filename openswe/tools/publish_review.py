@@ -14,6 +14,7 @@ from openswe.audit_logs.tools import audit_tool
 from openswe.dashboard.workspace_settings import get_workspace_settings
 from openswe.github.checks import review_check_conclusion
 from openswe.github.http import GitHubClient
+from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest, PullRequestPayload
 from openswe.github.thread_token import (
     GitHubAuthError,
@@ -73,7 +74,7 @@ from openswe.review.publish import (
 from openswe.review.reconcile import reconcile_findings_with_review_threads
 from openswe.review.shadow import ReviewShadow
 from openswe.run_config import RunConfig
-from openswe.slack.client import post_slack_thread_reply
+from openswe.slack.client import GitHubPrRef, post_slack_thread_reply
 from openswe.users import User
 from openswe.utils.dashboard_links import dashboard_review_url
 from openswe.utils.langsmith import get_langsmith_trace_url

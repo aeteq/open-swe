@@ -78,6 +78,7 @@ async def test_invalid_open_swe_config_requests_changes_instead_of_assessing() -
             pr_number=7,
             head_sha="a" * 40,
             token="t",
+            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=True,
             assessment=_assessment(),
