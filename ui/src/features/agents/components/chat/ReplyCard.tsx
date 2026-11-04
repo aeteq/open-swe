@@ -70,11 +70,25 @@ function delivery(chunk: ToolExecutionChunk): Delivery {
   return "delivered"
 }
 
-const HEADER_LABELS: Record<"linear" | "slack", Record<Delivery, string>> = {
+type ReplyKind = "linear" | "notion" | "slack"
+
+function replyKind(chunk: ToolExecutionChunk): ReplyKind {
+  if (chunk.toolKind === "linear" || chunk.toolKind === "notion") {
+    return chunk.toolKind
+  }
+  return "slack"
+}
+
+const HEADER_LABELS: Record<ReplyKind, Record<Delivery, string>> = {
   linear: {
     pending: "Commenting on Linear…",
     failed: "Failed to comment on Linear",
     delivered: "Commented on Linear",
+  },
+  notion: {
+    pending: "Commenting on Notion…",
+    failed: "Failed to comment on Notion",
+    delivered: "Commented on Notion",
   },
   slack: {
     pending: "Sending to Slack…",
@@ -221,9 +235,14 @@ function optionLabels(options: unknown): Array<string> {
     .slice(0, 5)
 }
 
+const BODY_FIELDS: Record<ReplyKind, string> = {
+  linear: "comment_body",
+  notion: "text",
+  slack: "message",
+}
+
 export function replyBody(chunk: ToolExecutionChunk): string {
-  const body =
-    chunk.input?.[chunk.toolKind === "linear" ? "comment_body" : "message"]
+  const body = chunk.input?.[BODY_FIELDS[replyKind(chunk)]]
   return typeof body === "string" ? body : ""
 }
 
@@ -249,10 +268,10 @@ function SlackReply({ chunk }: ReplyCardProps) {
 }
 
 export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
-  const isLinear = chunk.toolKind === "linear"
+  const kind = replyKind(chunk)
   const state = delivery(chunk)
   const messageUrl =
-    !isLinear && state === "delivered"
+    kind === "slack" && state === "delivered"
       ? replyResult(chunk.output)?.message_url
       : undefined
   const destination =
@@ -266,14 +285,14 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
     /^\/archives\/[A-Z0-9]+\/p\d+$/.test(destination.pathname)
       ? destination.href
       : undefined
-  const label = HEADER_LABELS[isLinear ? "linear" : "slack"][state]
+  const label = HEADER_LABELS[kind][state]
   return (
     <div className="min-w-0 px-space-1 py-0.5">
       <div className="mb-space-1 flex items-center gap-space-2 text-xxs text-secondary">
-        {isLinear ? (
-          <ChatCircleIcon size={12} weight="regular" aria-hidden />
-        ) : (
+        {kind === "slack" ? (
           <SlackIcon />
+        ) : (
+          <ChatCircleIcon size={12} weight="regular" aria-hidden />
         )}
         {slackUrl ? (
           <Link
@@ -292,10 +311,10 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
           </span>
         )}
       </div>
-      {isLinear ? (
-        <Markdown content={replyBody(chunk)} />
-      ) : (
+      {kind === "slack" ? (
         <SlackReply chunk={chunk} />
+      ) : (
+        <Markdown content={replyBody(chunk)} />
       )}
     </div>
   )

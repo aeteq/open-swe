@@ -4,7 +4,8 @@ The reviewer agent calls ``publish_review`` at the end of a run. That tool
 batches eligible findings (severity ≥ threshold, status=open) into a
 single GitHub PR Review:
 
-- Review body: a host-formatted findings summary and optional advisory assessment.
+- Review body: the reviewer's summary of the change, a host-formatted findings
+  count, and an optional advisory assessment.
 - Inline comments: one per surfaced finding, anchored to ``path`` + ``line``
   (+ ``start_line`` for ranges) + ``side``.
 - Suggestion: when ``finding.suggestion`` is set, appended to the comment body
@@ -117,7 +118,7 @@ def render_inline_comment_body(finding: Finding) -> str:
         *(Refers to lines X-Y)*
 
         ---
-        *Your feedback helps Open SWE learn. React with 👍 or 👎 to tell us if this review comment was useful.*
+        *Your feedback helps Jarvis learn. React with 👍 or 👎 to tell us if this review comment was useful.*
 
         ```suggestion
         <replacement>
@@ -149,7 +150,7 @@ def render_inline_comment_body(finding: Finding) -> str:
         [
             "",
             "---",
-            "*Your feedback helps Open SWE learn. React with 👍 or 👎 to tell us if this review comment was useful.*",
+            "*Your feedback helps Jarvis learn. React with 👍 or 👎 to tell us if this review comment was useful.*",
         ]
     )
     body = "\n".join(body_parts)
@@ -286,6 +287,10 @@ AUTO_APPROVED_MAX_CHARS = 500
 ReviewDecision = Literal["would_approve", "would_approve_conditionally", "needs_human_review"]
 
 
+_SUMMARY_COLLAPSE_CHARS = 600
+_SUMMARY_COLLAPSE_LINES = 8
+
+
 class ReviewAssessment(BaseModel):
     """Advisory judgment for the exact commit the reviewer inspected."""
 
@@ -399,9 +404,18 @@ class PublishSelection:
         ]
 
 
+def render_review_summary(summary: str) -> str:
+    """Render the reviewer's summary of the change, collapsed when it is long."""
+    summary = summary.strip()
+    if len(summary) <= _SUMMARY_COLLAPSE_CHARS and summary.count("\n") < _SUMMARY_COLLAPSE_LINES:
+        return summary
+    return f"<details>\n<summary>Summary</summary>\n\n{summary}\n\n</details>"
+
+
 def render_review_body(
     *,
     pr_number: int,
+    summary: str,
     surfaced_count: int,
     trace_url: str | None = None,
     ui_url: str | None = None,
@@ -423,16 +437,16 @@ def render_review_body(
     has_additional = additional_findings_count > 0
     if surfaced_count == 0 and not out_of_diff_findings:
         headline = (
-            "## ✅ Open SWE Review: No issues found\n\n"
-            "Open SWE reviewed this PR and found no potential bugs to report."
+            "## ✅ Jarvis Review: No issues found\n\n"
+            "Jarvis reviewed this PR and found no potential bugs to report."
         )
     elif surfaced_count == 0:
-        headline = "**Open SWE Review** found no issues in the changed lines."
+        headline = "**Jarvis Review** found no issues in the changed lines."
     else:
         issue_word = "issue" if surfaced_count == 1 else "issues"
-        headline = f"**Open SWE Review** found {surfaced_count} potential {issue_word}."
+        headline = f"**Jarvis Review** found {surfaced_count} potential {issue_word}."
 
-    parts = [headline]
+    parts = [headline, render_review_summary(summary)]
     if config_errors:
         parts.append(
             "**Changes requested: invalid Open SWE configuration.** "
@@ -485,7 +499,7 @@ def render_review_body(
     if ui_url:
         links.append(f"[Open in Web]({ui_url})")
     if trace_url:
-        links.append(f"[View Open SWE trace]({trace_url})")
+        links.append(f"[View Jarvis trace]({trace_url})")
     if links:
         parts.append(" • ".join(links))
     parts.append(review_summary_marker(pr_number))
@@ -509,13 +523,13 @@ def render_status_comment(
     "Open in Web" link while the run is live; deleted once ``publish_review``
     posts the review (which carries the same link).
     """
-    parts = ["## 🔍 Open SWE Review: in progress\n\nOpen SWE is reviewing this PR…"]
+    parts = ["## 🔍 Jarvis Review: in progress\n\nJarvis is reviewing this PR…"]
     links = []
     ui_url = dashboard_thread_url(thread_id) if thread_id else None
     if ui_url:
         links.append(f"[Open in Web]({ui_url})")
     if trace_url:
-        links.append(f"[View Open SWE trace]({trace_url})")
+        links.append(f"[View Jarvis trace]({trace_url})")
     if links:
         parts.append(" • ".join(links))
     parts.append(status_comment_marker(pr_number))
