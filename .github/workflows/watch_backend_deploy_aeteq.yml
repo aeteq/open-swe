@@ -33,7 +33,8 @@ jobs:
       - name: Wait for the revision of this commit
         env:
           BRANCH: main
-          DEPLOYMENT_NAME: openswe-server
+          # OpenSWE-Server
+          DEPLOYMENT_ID: 9e86d4bb-9b8c-4644-9af2-c832f3af6a25
           EXPECTED_SHA: ${{ github.sha }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
           LANGSMITH_HOST_URL: https://aws.api.host.langchain.com

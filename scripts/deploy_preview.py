@@ -77,15 +77,6 @@ class Logs(BaseModel):
     logs: list[LogLine] = []
 
 
-class Deployment(BaseModel):
-    id: str
-    name: str
-
-
-class Deployments(BaseModel):
-    resources: list[Deployment]
-
-
 class Branch:
     def __init__(self, name: str) -> None:
         self.name = name
@@ -130,21 +121,6 @@ class Deployer:
         self.branch = branch
         self.expected_sha = expected_sha
         self.deadline = time.monotonic() + TIMEOUT_SECONDS
-
-    @classmethod
-    async def named(
-        cls, client: httpx.AsyncClient, name: str, branch: Branch, expected_sha: str
-    ) -> Deployer:
-        response = await client.get("/v2/deployments", params={"name_contains": name, "limit": 100})
-        response.raise_for_status()
-        matches = [
-            deployment
-            for deployment in Deployments.model_validate_json(response.content).resources
-            if deployment.name == name
-        ]
-        if len(matches) != 1:
-            raise DeployError(f"expected one deployment named {name}, found {len(matches)}")
-        return cls(client, matches[0].id, branch, expected_sha)
 
     async def check_superseded(self) -> None:
         current_sha = await self.branch.sha()
@@ -247,14 +223,12 @@ async def main() -> None:
         timeout=30,
         transport=httpx.AsyncHTTPTransport(retries=3),
     ) as client:
-        branch = Branch(os.environ.get("BRANCH") or "preview")
-        expected_sha = os.environ["EXPECTED_SHA"]
-        if deployment_id := os.environ.get("DEPLOYMENT_ID"):
-            deployer = Deployer(client, deployment_id, branch, expected_sha)
-        else:
-            deployer = await Deployer.named(
-                client, os.environ["DEPLOYMENT_NAME"], branch, expected_sha
-            )
+        deployer = Deployer(
+            client,
+            os.environ["DEPLOYMENT_ID"],
+            Branch(os.environ.get("BRANCH") or "preview"),
+            os.environ["EXPECTED_SHA"],
+        )
         await deployer.deploy()
 
 
