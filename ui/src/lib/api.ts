@@ -15,6 +15,15 @@ import {
   newRequestId,
 } from "./dashboard-fetch"
 
+export interface AppNotification {
+  id: string
+  title: string
+  body: string
+  url: string
+  /** The in-app route for `url`, or null when it points outside the dashboard. */
+  path: string | null
+}
+
 export interface AuditLogFilters {
   start_time: string
   end_time: string
@@ -234,6 +243,7 @@ export interface SessionUser {
   login: string
   auth_provider?: "github" | "langsmith"
   github_login?: string | null
+  requires_github_link?: boolean
   /** How the server labels this user's messages; empty until they have a name. */
   display_name?: string
   email: string | null
@@ -315,7 +325,6 @@ export interface OptionsPayload {
 }
 
 export interface Profile {
-  agent_workspace_tasks_supported?: boolean
   experimental_background_callbacks?: boolean | null
   login?: string
   email?: string
@@ -328,7 +337,9 @@ export interface Profile {
   concierge_mode?: boolean
   pr_failure_reactions?: boolean
   goal_mode?: boolean
+  experimental_conditional_approval?: boolean
   experimental_memory?: boolean
+  experimental_classify?: boolean
   draft_prs?: boolean
   review_draft_prs?: boolean | null
   slack_onboarding_dismissed?: boolean
@@ -346,7 +357,9 @@ export interface ProfileUpdate {
   concierge_mode?: boolean
   pr_failure_reactions?: boolean
   goal_mode?: boolean
+  experimental_conditional_approval?: boolean
   experimental_memory?: boolean
+  experimental_classify?: boolean
   draft_prs?: boolean
   review_draft_prs?: boolean | null
   slack_onboarding_dismissed?: boolean
@@ -457,13 +470,6 @@ export interface MCPConnectionUpdate {
   allowed_tools: string[]
   headers?: Record<string, string> | null
   oauth?: MCPOAuthUpdate | null
-}
-
-export interface LangSmithConnectionStatus {
-  available: boolean
-  connected: boolean
-  email?: string | null
-  updated_at?: string | null
 }
 
 export interface ManagedToolsGateway {
@@ -841,6 +847,14 @@ export interface WorkspaceOption {
   refresh_steps?: Array<WorkspaceRefreshStep>
 }
 
+/** A person in the Slack workspace, offered when mentioning someone in a composer. */
+export interface SlackUserOption {
+  id: string
+  name: string
+  display_name: string
+  real_name: string
+}
+
 /** A channel the Slack bot can see, offered when binding channels to a workspace. */
 export interface SlackChannelOption {
   id: string
@@ -1046,6 +1060,7 @@ export interface ReviewListPayload {
 }
 
 export interface OpenPullRequest {
+  author?: string | null
   detailsLoading?: boolean
   detailsError?: boolean
   repo: string
@@ -1069,6 +1084,7 @@ export interface OpenPullRequest {
   createdAt: string | null
   updatedAt: string | null
   ci: "passing" | "failing" | "pending" | "unknown" | "none"
+  requiredChecksPassing: boolean | null
   failingChecks: string[]
   pendingChecks: string[]
   // Required by the base branch but never reported on the head, so GitHub
@@ -1079,7 +1095,14 @@ export interface OpenPullRequest {
   unresolvedThreads: number | null
   // Why it is on the To Review list: Open SWE assigned it, may assign it once
   // its review goes unclaimed, or it was linked in a Slack thread naming you.
-  assignment?: "assigned" | "tentative" | "mentioned" | null
+  assignment?:
+    | "assigned"
+    | "requested"
+    | "tentative"
+    | "mentioned"
+    | "draft"
+    | "speculative"
+    | null
 }
 
 export interface PullRequestReviewer {
@@ -1263,8 +1286,13 @@ export interface PublishedReviewAssessment {
   review_id: number
   head_sha: string
   risk_score: number
-  decision: "would_approve" | "needs_human_review"
+  decision:
+    | "would_approve"
+    | "would_approve_conditionally"
+    | "needs_human_review"
   explanation: string
+  approval_condition?: string | null
+  auto_approved?: string | null
 }
 
 export interface ReviewAssessmentFeedbackInput {
@@ -1473,11 +1501,6 @@ function pullRequestThread(
 }
 
 export const api = {
-  recordPageView: (page_name: string) =>
-    request<void>("/analytics/page", {
-      method: "POST",
-      body: JSON.stringify({ page_name }),
-    }),
   me: () => request<SessionUser>("/me"),
   /** Model list and defaults for one workspace; model defaults are per workspace. */
   options: (workspace: string = DEFAULT_WORKSPACE_SLUG) =>
@@ -1684,6 +1707,13 @@ export const api = {
       `/workspaces/${encodeURIComponent(slug)}/settings`,
       { method: "PUT", body: JSON.stringify(overrides) }
     ),
+  pendingNotifications: () => request<AppNotification[]>("/notifications"),
+  acknowledgeNotification: (id: string) =>
+    request<{ ok: boolean }>(
+      `/notifications/${encodeURIComponent(id)}/delivered`,
+      { method: "POST" }
+    ),
+  listSlackUsers: () => request<{ users: SlackUserOption[] }>("/slack/users"),
   slackUserName: (userId: string) =>
     request<{ name: string }>(
       `/slack/users/${encodeURIComponent(userId)}/name`
@@ -1777,12 +1807,6 @@ export const api = {
       `/my-mcps/${encodeURIComponent(body.name)}/discover`,
       { method: "POST", body: JSON.stringify(body) }
     ),
-  getMyLangSmithStatus: () =>
-    request<LangSmithConnectionStatus>("/my-credentials/langsmith"),
-  disconnectLangSmith: () =>
-    request<LangSmithConnectionStatus>("/my-credentials/langsmith", {
-      method: "DELETE",
-    }),
   listManagedToolsGateways: () =>
     request<ManagedToolsGateway[]>("/managed-tools/gateways"),
   getMyManagedTools: () => request<ManagedToolsView>("/my-managed-tools"),
@@ -1955,6 +1979,16 @@ export const api = {
     request<ReviewDetail>(
       `/reviews/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`
     ),
+  updatePullRequestDescription: (
+    owner: string,
+    repo: string,
+    number: number,
+    body: string
+  ) =>
+    request<void>(
+      `/reviews/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/description`,
+      { method: "PATCH", body: JSON.stringify({ body }) }
+    ),
   getAssessmentFeedback: (
     owner: string,
     repo: string,
@@ -2115,19 +2149,14 @@ export const api = {
   logout: () => request<void>("/auth/logout", { method: "POST" }),
 }
 
-export function loginUrl(
-  redirectTo?: string,
-  provider: "github" | "langsmith" = "github"
-): string {
+export function loginUrl(redirectTo?: string): string {
   const target =
     redirectTo ??
     (typeof window !== "undefined"
       ? `${window.location.pathname}${window.location.search}${window.location.hash}`
       : "")
   const qs = target ? `?redirect_to=${encodeURIComponent(target)}` : ""
-  const path =
-    provider === "langsmith" ? "/auth/langsmith/login" : "/auth/login"
-  return `${API_BASE}/dashboard/api${path}${qs}`
+  return `${API_BASE}/dashboard/api/auth/login${qs}`
 }
 
 /**
@@ -2139,7 +2168,7 @@ export function loginUrl(
  * itself and resolves once the connection is stored.
  */
 export function connectService(
-  provider: "slack" | "langsmith",
+  provider: "slack" | "github",
   redirectTo?: string
 ) {
   const pending = window.openSweDesktop?.connectService(provider)
