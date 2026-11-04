@@ -36,11 +36,7 @@ from openswe.input_messages import (
 )
 from openswe.notion.notifications import record_pull_request_merged
 from openswe.prompts import prompt
-from openswe.review.approvals import (
-    ApprovalPolicy,
-    approval_mode_for,
-    approval_policy_for_review,
-)
+from openswe.review.approvals import approval_mode_for, approval_policy_for_review
 from openswe.review.findings import (
     FindingInteraction,
     ReviewerPRMeta,
@@ -349,7 +345,7 @@ async def trigger_pr_review_from_ref(
         "base_ref": base_ref,
         "author": (pr_metadata.get("user") or {}).get("login", ""),
     }
-    slack_thread_meta: ReviewerSlackThread = {}
+    slack_thread_meta: ReviewerSlackThread | None = None
     if slack_channel_id and slack_thread_ts:
         slack_thread_meta = {
             "channel_id": slack_channel_id,
@@ -924,12 +920,7 @@ async def _process_github_head_update(
         )
         and not (
             await approval_mode_for(context.owner, context.name) == "approve"
-            and (
-                await approval_policy_for_review(
-                    context.owner, context.name, pr_number, token=app_token
-                )
-                or ApprovalPolicy()
-            ).configured
+            and await approval_policy_for_review(context.owner, context.name, token=app_token)
         )
     ):
         await PullRequest(

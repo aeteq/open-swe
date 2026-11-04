@@ -38,7 +38,6 @@ from openswe.utils.build_info import backend_build_info
 from openswe.utils.dashboard_links import dashboard_api_base_url
 from openswe.utils.gateway import gateway_base_url
 from openswe.utils.json_types import JsonObject
-from openswe.utils.tracing import tracing_project
 
 EvalStatus = Literal["idle", "starting", "running", "completed", "failed"]
 ScoreMode = Literal["all_findings", "surfaced_findings"]
@@ -353,7 +352,8 @@ def _harness_args(config: ReviewerEvalConfig, limit: int | None) -> list[str]:
     args: list[str] = []
     for key in _HARNESS_ARGS:
         args += [f"--{key.replace('_', '-')}", str(config[key])]
-    args += ["--reviewer-langsmith-project", tracing_project()]
+    if reviewer_project := ENV.LANGSMITH_PROJECT.optional():
+        args += ["--reviewer-langsmith-project", reviewer_project]
     return args + (["--limit", str(limit)] if limit else [])
 
 

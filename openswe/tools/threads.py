@@ -452,17 +452,9 @@ async def list_threads(
     if pr_ref:
         items = [item for item in items if _summary_matches_pr(item, pr_ref.url)]
     try:
-        if compact:
-            results = []
-            for start in range(0, len(items), 8):
-                async with asyncio.TaskGroup() as tasks:
-                    batch = [
-                        tasks.create_task(_compact_list_item(item))
-                        for item in items[start : start + 8]
-                    ]
-                results.extend(task.result() for task in batch)
-        else:
-            results = [_list_item(item) for item in items]
+        results = [
+            await _compact_list_item(item) if compact else _list_item(item) for item in items
+        ]
     except Exception:
         logger.exception("Could not load thread outcomes")
         return _failure("Could not list threads")
@@ -741,7 +733,7 @@ async def _thread_cost(thread_id: str, run: Any) -> dict[str, Any]:
         snapshot = await get_langsmith_thread_cost(
             thread_id,
             invocation_id,
-            lookup_start=str(lookup_start) if lookup_start else None,
+            **({"lookup_start": str(lookup_start)} if lookup_start else {}),
         )
     except LangSmithCostUnavailable:
         return {"status": "unavailable", "total_usd": None}
@@ -989,11 +981,9 @@ async def get_thread(
             pending_runs_task = tasks.create_task(
                 client.runs.list(thread_id, status="pending", limit=1000)
             )
-            runs = await runs_task
-            cost_task = tasks.create_task(_thread_cost(thread_id, runs[0] if runs else None))
         thread = thread_task.result()
         thread_state = state_task.result()
-        cost = cost_task.result()
+        runs = runs_task.result()
         plan_content = plan_content_task.result()
         plan_comments = plan_comments_task.result()
         approvals = approvals_task.result()
@@ -1016,6 +1006,7 @@ async def get_thread(
     can_delete_plan_comment = any(
         comment.get("author_login") == actor.login for comment in plan_comments
     )
+    cost = await _thread_cost(thread_id, latest_run)
     pr = summary.get("pr")
     pr_url = pr.get("url") if isinstance(pr, Mapping) else None
     links = {
@@ -1116,25 +1107,7 @@ async def _send_message(
         return _failure(reply.detail or "Could not start thread run", status_code=status_code)
     result = reply.result
     mode = "steered" if result.steered else "queued" if result.queued else "started"
-    if isinstance(caller_thread_id, str) and caller_thread_id != thread_id:
-        from openswe.slack.routed_work import RoutedWork
-
-        work = RoutedWork(caller_thread_id)
-        try:
-            await work.track(thread_id)
-            await work.sync_slack_status()
-        except Exception:
-            logger.exception(
-                "Could not track routed thread progress",
-                extra={"origin_thread_id": caller_thread_id, "destination_thread_id": thread_id},
-            )
-    return {
-        "success": True,
-        "mode": mode,
-        "run_id": result.run_id,
-        "recipient_thread_id": thread_id,
-        "web_url": dashboard_thread_url(thread_id),
-    }
+    return {"success": True, "mode": mode, "run_id": result.run_id}
 
 
 class _CommandResult(BaseModel):

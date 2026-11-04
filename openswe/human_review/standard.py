@@ -12,7 +12,6 @@ approved reaction, and once its pull request has sat green and unapproved for
 the workspace auto-assignment timeout the agent picks a reviewer, the same way.
 """
 
-import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -248,7 +247,7 @@ async def review_blockers(pull: PullRequestClient) -> list[str] | None:
     return blockers
 
 
-async def target_channel(
+async def _target_channel(
     pr_ref: GitHubPrRef, pull: PullRequestClient, override: str
 ) -> SlackChannel | RequestResult:
     configured = override.strip()
@@ -517,7 +516,7 @@ async def _request_review(
                 supplementary_review_area,
             )
         if active.kind == "standard" and channel.strip():
-            target = await target_channel(pr_ref, pull, channel)
+            target = await _target_channel(pr_ref, pull, channel)
             if isinstance(target, RequestResult):
                 return target
             if target.id != active.slack_channel_id:
@@ -559,7 +558,7 @@ async def _request_review(
             + prompt("tools/human-review-blocked")
         )
 
-    target = await target_channel(pr_ref, pull, channel)
+    target = await _target_channel(pr_ref, pull, channel)
     if isinstance(target, RequestResult):
         return target
     recorded = await record_pull_request(pull)
@@ -836,7 +835,8 @@ async def assign(
     owns, and unasked only once someone approved. ``replace`` is a person naming the reviewer:
     Open SWE's pending picks for the same code are withdrawn first.
     """
-    approvers, coverage = await asyncio.gather(_github_approvers(request), Coverage.load(request))
+    approvers = await _github_approvers(request)
+    coverage = await Coverage.load(request)
     if approvers and (coverage is None or not coverage.uncovered(approvers)):
         names = ", ".join(f"@{login}" for login in approvers)
         return _failure(
@@ -1002,9 +1002,8 @@ class ReviewStatus(BaseModel):
                 )
             )
         requester = request.requested_by
-        approvers, coverage = await asyncio.gather(
-            _github_approvers(request), Coverage.load(request)
-        )
+        approvers = await _github_approvers(request)
+        coverage = await Coverage.load(request)
         assigned = [p.github_login for p in request.reviewers + request.picks]
         return cls(
             requested_by=requester.login_for("github") if requester else "",

@@ -17,7 +17,6 @@ use super::linear_channel::{self, LinearChannel};
 use super::trigger_channels::{self, PreparedTriggerChannel};
 use crate::channel::ChannelKind;
 use crate::compile::ChannelRequirements;
-use crate::error::{categorized, category_of, ErrorCategory};
 use crate::langsmith;
 use crate::project::Language;
 
@@ -248,25 +247,10 @@ fn combine_failures(mut failures: Vec<(&'static str, anyhow::Error)>) -> Result<
                 .iter()
                 .map(|(channel, error)| format!("{channel}: {error:#}"))
                 .collect();
-            // Their category when they share one, as a 401 from each would.
-            let category = failures
-                .iter()
-                .map(|(_, error)| category_of(error))
-                .reduce(|shared, next| {
-                    if shared == next {
-                        shared
-                    } else {
-                        ErrorCategory::Unclassified
-                    }
-                })
-                .unwrap_or(ErrorCategory::Unclassified);
-            Err(categorized(
-                category,
-                format!(
-                    "These channels did not finish setting up:\n{}",
-                    lines.join("\n")
-                ),
-            ))
+            anyhow::bail!(
+                "These channels did not finish setting up:\n{}",
+                lines.join("\n")
+            )
         }
     }
 }
@@ -398,23 +382,5 @@ mod tests {
         assert!(both.contains("Slack: no app"), "{both}");
         assert!(both.contains("Linear: no secret"), "{both}");
         assert!(!both.contains("GitHub"), "{both}");
-    }
-
-    #[test]
-    fn several_failures_keep_the_category_they_share() {
-        let unauthorized = || categorized(ErrorCategory::Authentication, "HTTP 401");
-
-        let one = combine_failures(vec![("Slack", unauthorized())]).unwrap_err();
-        let shared = combine_failures(vec![("Slack", unauthorized()), ("GitHub", unauthorized())])
-            .unwrap_err();
-        let mixed = combine_failures(vec![
-            ("Slack", unauthorized()),
-            ("Linear", categorized(ErrorCategory::Remote, "HTTP 502")),
-        ])
-        .unwrap_err();
-
-        assert_eq!(category_of(&one), ErrorCategory::Authentication);
-        assert_eq!(category_of(&shared), ErrorCategory::Authentication);
-        assert_eq!(category_of(&mixed), ErrorCategory::Unclassified);
     }
 }

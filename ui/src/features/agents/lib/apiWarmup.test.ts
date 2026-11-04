@@ -35,14 +35,12 @@ async function recordedSidebarUrl({
   includeAutomations = false,
   includeResolved = false,
   includeClaudeCode = true,
-  includeSlack = true,
-  repoMode = false,
-  sort = "updated",
+  repoMode = true,
+  sort = "created",
 }: {
   includeAutomations?: boolean
   includeResolved?: boolean
   includeClaudeCode?: boolean
-  includeSlack?: boolean
   repoMode?: boolean
   sort?: ChatSort
 } = {}): Promise<string> {
@@ -54,7 +52,6 @@ async function recordedSidebarUrl({
         includeAutomations,
         includeResolved,
         includeClaudeCode,
-        includeSlack,
         sort,
       }),
       limit: SIDEBAR_PAGE_SIZE,
@@ -158,9 +155,9 @@ describe("apiWarmupScript", () => {
       prefs: { filters: { sources: ["schedule"] } },
     },
     {
-      name: "repo mode",
-      expected: { repoMode: true, sort: "created" as ChatSort },
-      prefs: { organize: "repo" },
+      name: "list mode",
+      expected: { repoMode: false, sort: "updated" as ChatSort },
+      prefs: { organize: "list" },
     },
     {
       name: "resolved included",
@@ -173,19 +170,9 @@ describe("apiWarmupScript", () => {
       prefs: { filters: { includeClaudeCode: false } },
     },
     {
-      name: "repo mode sorted by last update",
-      expected: { repoMode: true, sort: "updated" as ChatSort },
-      prefs: { organize: "repo", sortChats: "updated" },
-    },
-    {
-      name: "Slack threads hidden",
-      expected: { includeSlack: false },
-      prefs: { filters: { includeSlack: false } },
-    },
-    {
-      name: "Slack and Claude Code hidden",
-      expected: { includeSlack: false, includeClaudeCode: false },
-      prefs: { filters: { includeSlack: false, includeClaudeCode: false } },
+      name: "sorted by last update",
+      expected: { sort: "updated" as ChatSort },
+      prefs: { sortChats: "updated" },
     },
   ])(
     "warms the exact sidebar URL the app requests ($name)",

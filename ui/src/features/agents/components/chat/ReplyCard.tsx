@@ -1,5 +1,4 @@
 import { Button } from "@langchain/macaw-components/Button"
-import { Link } from "@langchain/macaw-components/Link"
 import { createContext, memo, useContext, useState } from "react"
 import { toast } from "sonner"
 import { ChatCircleIcon } from "@phosphor-icons/react/dist/ssr/ChatCircle"
@@ -39,10 +38,8 @@ type Delivery = "pending" | "failed" | "delivered"
 
 // Reply tools report some failures as a `{"success": false}` result rather than raising.
 // A result that carries images arrives as content blocks, with that object as the first text.
-function replyResult(
-  output: string | undefined
-): Record<string, unknown> | undefined {
-  if (!output) return undefined
+function reportsFailure(output: string | undefined): boolean {
+  if (!output) return false
   try {
     const parsed: unknown = JSON.parse(output)
     if (Array.isArray(parsed)) {
@@ -51,13 +48,15 @@ function replyResult(
         !!first && typeof first === "object"
           ? (first as { text?: unknown }).text
           : undefined
-      return typeof text === "string" ? replyResult(text) : undefined
+      return typeof text === "string" && reportsFailure(text)
     }
-    return parsed && typeof parsed === "object"
-      ? (parsed as Record<string, unknown>)
-      : undefined
+    return (
+      !!parsed &&
+      typeof parsed === "object" &&
+      (parsed as { success?: unknown }).success === false
+    )
   } catch {
-    return undefined
+    return false
   }
 }
 
@@ -65,8 +64,7 @@ function delivery(chunk: ToolExecutionChunk): Delivery {
   if (chunk.status === "in_progress" || chunk.status === "pending") {
     return "pending"
   }
-  if (chunk.status === "error" || replyResult(chunk.output)?.success === false)
-    return "failed"
+  if (chunk.status === "error" || reportsFailure(chunk.output)) return "failed"
   return "delivered"
 }
 
@@ -270,22 +268,6 @@ function SlackReply({ chunk }: ReplyCardProps) {
 export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
   const kind = replyKind(chunk)
   const state = delivery(chunk)
-  const messageUrl =
-    kind === "slack" && state === "delivered"
-      ? replyResult(chunk.output)?.message_url
-      : undefined
-  const destination =
-    typeof messageUrl === "string" && URL.canParse(messageUrl)
-      ? new URL(messageUrl)
-      : undefined
-  const slackUrl =
-    destination?.protocol === "https:" &&
-    (destination.hostname === "slack.com" ||
-      destination.hostname.endsWith(".slack.com")) &&
-    /^\/archives\/[A-Z0-9]+\/p\d+$/.test(destination.pathname)
-      ? destination.href
-      : undefined
-  const label = HEADER_LABELS[kind][state]
   return (
     <div className="min-w-0 px-space-1 py-0.5">
       <div className="mb-space-1 flex items-center gap-space-2 text-xxs text-secondary">
@@ -294,22 +276,11 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
         ) : (
           <ChatCircleIcon size={12} weight="regular" aria-hidden />
         )}
-        {slackUrl ? (
-          <Link
-            href={slackUrl}
-            variant="xs"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {label}
-          </Link>
-        ) : (
-          <span
-            className={state === "failed" ? "text-error-secondary" : undefined}
-          >
-            {label}
-          </span>
-        )}
+        <span
+          className={state === "failed" ? "text-error-secondary" : undefined}
+        >
+          {HEADER_LABELS[kind][state]}
+        </span>
       </div>
       {kind === "slack" ? (
         <SlackReply chunk={chunk} />

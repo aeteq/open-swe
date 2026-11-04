@@ -8,7 +8,6 @@ import {
 
 import {
   dismissOnboardingIfShown,
-  seedRepoSidebar,
   waitForThreadIdle,
 } from "./helpers/dashboard";
 
@@ -73,7 +72,9 @@ function deferred() {
 async function loginAs(page: Page) {
   const response = await page.request.post("/control/login", { data: USER });
   expect(response.ok()).toBeTruthy();
-  await seedRepoSidebar(page);
+  await page.addInitScript((login) => {
+    localStorage.setItem(`open-swe.desktop.experience:${login}`, "coding");
+  }, USER.login);
 }
 
 function baseMetadata(
@@ -392,6 +393,83 @@ test.afterEach(async ({ request }) => {
 });
 
 test.describe("threads workspace", () => {
+  test("LangSmith Agent Workspace uses Open SWE threads without a mode switch", async ({
+    page,
+    request,
+  }) => {
+    await seedThreads(
+      request,
+      workspaceThreads().map((thread) => ({
+        ...thread,
+        metadata: { ...thread.metadata, experience: "agent_workspace" },
+      })),
+    );
+    await loginAs(page);
+    await page.addInitScript((login) => {
+      localStorage.setItem(
+        `open-swe.desktop.experience:${login}`,
+        "agent_workspace",
+      );
+      Object.defineProperty(window, "openSweDesktop", {
+        value: {
+          isDesktop: true,
+          setAppearance: () => Promise.resolve(),
+          onCommand: () => () => {},
+          setCommands: () => Promise.resolve(),
+          getUpdateState: () => Promise.resolve({ status: "idle" }),
+          onUpdateState: () => () => {},
+          listProjects: () => Promise.resolve([]),
+          onProjectsChanged: () => () => {},
+          listLocalThreads: () => Promise.resolve([]),
+          onLocalThreadsChanged: () => () => {},
+        },
+      });
+    }, USER.login);
+    await page.goto("/agents");
+    await dismissOnboardingIfShown(page);
+    const sidebar = page.locator("[data-sidebar-frame]");
+    await expect(sidebar.getByRole("tab")).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("link", { name: "New chat", exact: true }),
+    ).toBeVisible();
+    const row = sidebar.getByRole("link", {
+      name: TITLES.ready,
+      exact: true,
+    });
+    await expect(row).toHaveAttribute("href", `/agents/${THREAD_IDS.ready}`);
+    await row.hover();
+    await row
+      .locator("..")
+      .getByRole("button", { name: "Pin chat", exact: true })
+      .click();
+    await expect(
+      row
+        .locator("..")
+        .getByRole("button", { name: "Unpin chat", exact: true }),
+    ).toBeVisible();
+    await row.hover();
+    await row
+      .locator("..")
+      .getByRole("button", { name: "Archive chat", exact: true })
+      .click();
+    await expect(row).toBeHidden();
+    await sidebar
+      .getByRole("button", { name: "Archived", exact: true })
+      .click();
+    await expect(row).toBeVisible();
+    await row.hover();
+    await row
+      .locator("..")
+      .getByRole("button", { name: "Unarchive chat", exact: true })
+      .click();
+    await expect(row).toBeVisible();
+    await page.reload();
+    await expect(row).toBeVisible();
+    await expect(sidebar.getByRole("tab")).toHaveCount(0);
+    await page.goto(`/agents/chat?chat=${THREAD_IDS.ready}`);
+    await expect(page).toHaveURL(/\/agents\/?$/);
+  });
+
   test("pins and unpins a non-owned thread across sidebar views", async ({
     page,
     request,
@@ -480,7 +558,7 @@ test.describe("threads workspace", () => {
     await page.goto("/agents");
     await profileStarted.promise;
     await expect(
-      page.getByRole("heading", { name: "What should we work on?" }),
+      page.getByRole("heading", { name: "What should we build?" }),
     ).toBeVisible();
 
     await page.evaluate(() => {
@@ -538,7 +616,7 @@ test.describe("threads workspace", () => {
     await dismissOnboardingIfShown(page);
 
     const sidebar = page.locator("[data-sidebar-frame]");
-    await sidebar.getByRole("button", { name: "Projects options" }).click();
+    await sidebar.getByRole("button", { name: "Repositories options" }).click();
     await page
       .getByRole("menuitemradio", { name: "Last updated", exact: true })
       .click();
@@ -587,7 +665,7 @@ test.describe("threads workspace", () => {
     await betaGroup.click();
     await expect(workspaceLinks).toHaveCount(5);
 
-    await sidebar.getByRole("button", { name: "Projects options" }).click();
+    await sidebar.getByRole("button", { name: "Repositories options" }).click();
     await page
       .getByRole("menuitemcheckbox", { name: "Show archived", exact: true })
       .click();
@@ -619,7 +697,7 @@ test.describe("threads workspace", () => {
     });
   });
 
-  test("groups repository-less chats in a pinnable No project folder", async ({
+  test("groups repository-less chats in a pinnable No repository folder", async ({
     page,
     request,
   }, testInfo) => {
@@ -644,20 +722,22 @@ test.describe("threads workspace", () => {
       data: ADMIN_USER,
     });
     expect(loginResponse.ok()).toBeTruthy();
-    await seedRepoSidebar(page);
+    await page.addInitScript((login) => {
+      localStorage.setItem(`open-swe.desktop.experience:${login}`, "coding");
+    }, ADMIN_USER.login);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/agents");
     await dismissOnboardingIfShown(page);
 
     const sidebar = page.locator("[data-sidebar-frame]");
     const noRepo = sidebar.getByRole("button", {
-      name: "No project",
+      name: "No repository",
       exact: true,
     });
     await expect(noRepo).toBeVisible();
     await expect(sidebar).toContainText(TITLES.noRepo);
 
-    await sidebar.getByRole("button", { name: "Projects options" }).click();
+    await sidebar.getByRole("button", { name: "Repositories options" }).click();
     await expect(
       page.getByRole("menuitemradio", { name: "Created", exact: true }),
     ).toBeChecked();
@@ -670,7 +750,7 @@ test.describe("threads workspace", () => {
     await page.keyboard.press("Escape");
 
     const pinNoRepo = sidebar.getByRole("button", {
-      name: "Pin No project",
+      name: "Pin No repository",
       includeHidden: true,
     });
     // Rows seeded by earlier tests can still shift the folder after the hover lands.
@@ -680,14 +760,14 @@ test.describe("threads workspace", () => {
     }).toPass();
     await expect(sidebar.getByText("Pinned", { exact: true })).toBeVisible();
     await expect(
-      sidebar.getByRole("button", { name: "No project", exact: true }),
+      sidebar.getByRole("button", { name: "No repository", exact: true }),
     ).toBeVisible();
 
     await page.reload();
     await dismissOnboardingIfShown(page);
     await expect(sidebar).toContainText(TITLES.noRepo);
     const unpinNoRepo = sidebar.getByRole("button", {
-      name: "Unpin No project",
+      name: "Unpin No repository",
       includeHidden: true,
     });
     await expect(async () => {

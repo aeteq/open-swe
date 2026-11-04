@@ -217,6 +217,7 @@ async def recipient_config(thread_id: str) -> dict[str, JsonValue]:
         "workspace": metadata.workspace,
         "admin_thread": metadata.admin_thread,
         "repo_explicitly_none": metadata.repo_explicitly_none,
+        "experience": "coding",
     }
     if metadata.owner_type != "system":
         owner = await metadata.owner()
@@ -243,6 +244,7 @@ async def recipient_config(thread_id: str) -> dict[str, JsonValue]:
             config |= {
                 "user_id": str(owner.id),
                 "auth_provider": "langsmith",
+                "experience": metadata.experience,
             }
         else:
             config["github_login"] = login
@@ -408,6 +410,7 @@ def _worker_metadata(
             "repo_owner",
             "repo_name",
             "repo_explicitly_none",
+            "experience",
             "base_branch",
             "branch_prefix",
             "sandbox_id",

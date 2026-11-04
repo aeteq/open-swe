@@ -54,7 +54,6 @@ const pr: OpenPullRequest = {
   ci: "passing",
   failingChecks: ["lint"],
   pendingChecks: [],
-  requiredChecksPassing: true,
   missingChecks: [],
   unresolvedThreads: 1,
 }

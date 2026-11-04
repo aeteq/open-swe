@@ -11,7 +11,6 @@ import logging
 import httpx2
 
 from openswe.expedited_review.eligibility import (
-    FILE_PAGES,
     ChangedFile,
     Ineligible,
     assess_eligibility,
@@ -90,7 +89,7 @@ async def _merge_approved(
         await ReviewCard(approval).retire("cancelled", "the pull request was closed")
         return MergeResult("closed", "The pull request is closed; the expedited review ended.")
 
-    files = await ChangedFile.of_pull(pull, max_pages=FILE_PAGES)
+    files = await ChangedFile.of_pull(pull)
     if files is None:
         return MergeResult("error", "Could not read the pull request's changed files.")
     if not fingerprint_matches(files, approval.diff_fingerprint):
@@ -109,7 +108,7 @@ async def _merge_approved(
             return MergeResult(
                 "diff_changed",
                 "A commit since the card was posted changed the non-test diff, either what the "
-                "approver saw or what you excluded under the auto-approve rules. Nothing was discarded. "
+                "approver saw or what you excluded under APPROVALS.md. Nothing was discarded. "
                 "A changed excluded hunk is drawn on the card again. If the change does not "
                 "need the approver to look again, call `merge_expedited_pr` again with "
                 "`keep_approval_reason`; "

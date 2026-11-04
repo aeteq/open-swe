@@ -88,7 +88,7 @@ export function ReviewPage({ pr }: { pr: PullRequestRef }) {
     typeof window !== "undefined" && Boolean(window.openSweDesktop)
   const leftInset = sidebar?.collapsed
     ? isDesktop
-      ? "pl-48"
+      ? "pl-32"
       : "pl-space-8"
     : "pl-space-3"
 

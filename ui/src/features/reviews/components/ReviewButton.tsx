@@ -75,9 +75,6 @@ export function ReviewButton({
   onOpenReview,
   approveLabel = "Approve",
   onApproved,
-  readyLabel = "Mark ready",
-  nextLabel,
-  onNext,
 }: {
   owner: string
   repo: string
@@ -90,10 +87,6 @@ export function ReviewButton({
   onOpenReview: (verdict: PullRequestReviewEvent) => void
   /** Names what an approval also does, e.g. "Approve & next" while working through a queue. */
   approveLabel?: string
-  readyLabel?: string
-  /** Names the queue step shown when this PR has no action left, e.g. "Next". */
-  nextLabel?: string
-  onNext?: () => void
   /** Runs once GitHub accepts an approval, e.g. to open the next pull request. */
   onApproved?: () => void
 }) {
@@ -189,24 +182,10 @@ export function ReviewButton({
         if (!submit.isPending) setOpen(value)
       }}
     >
-      {nextLabel &&
-        onNext &&
-        (approved || (isAuthor && !status.data?.draft)) && (
-          <Button size="sm" onClick={onNext}>
-            {nextLabel}
-          </Button>
-        )}
       {isAuthor ? (
         status.data?.draft ? (
           <ButtonGroup size="sm" color="primary" variant="normal">
-            <MarkReadyButton
-              pr={status.data}
-              label={readyLabel}
-              onReady={() => {
-                refresh.status()
-                onApproved?.()
-              }}
-            />
+            <MarkReadyButton pr={status.data} onReady={refresh.status} />
             <PopoverTrigger asChild>
               <Button
                 tagText={pendingTag}
@@ -417,10 +396,8 @@ export function ReviewButton({
 function MarkReadyButton({
   pr,
   onReady,
-  label,
 }: {
   pr: OpenPullRequest
-  label: string
   onReady: () => void
 }) {
   const queryClient = useQueryClient()
@@ -439,7 +416,7 @@ function MarkReadyButton({
     >
       {actionLabel(
         {
-          idle: label,
+          idle: "Mark ready",
           pending: "Marking ready…",
           done: "Marked ready",
           retry: "Retry mark ready",

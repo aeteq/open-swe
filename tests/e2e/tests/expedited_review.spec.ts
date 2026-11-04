@@ -242,7 +242,7 @@ test.describe("Expedited Slack review", () => {
     await control(request, "/control/repo-file", {
       repo: `${REPO.owner}/${REPO.repo}`,
       files: {
-        ".open-swe/auto-approve-rules/generated-and-release-notes.md":
+        ".open-swe/APPROVALS.md":
           "Auto-approve release notes appended to CHANGELOG.md and the generated GENERATED_* table at the end of config.py.\n",
         "CHANGELOG.md": "# Changelog\n",
         "config.py": Array.from(
@@ -319,10 +319,10 @@ test.describe("Expedited Slack review", () => {
     await expect(diff).toBeVisible();
     await expect(diff).toHaveAttribute("alt", /config\.py.*greet\.py/);
     await expect(diff).not.toHaveAttribute("alt", /CHANGELOG/);
-    // 44 lines changed outside tests; only the 4 not covered by the auto-approve rule are
+    // 44 lines changed outside tests; only the 4 not covered by APPROVALS.md are
     // drawn, and the other 40 are listed by guideline.
     await expect(card(page)).toContainText(
-      /Open SWE judged these auto-approvable under `?\.open-swe\/auto-approve-rules\/`? \(not shown\)/,
+      /Open SWE judged these auto-approvable under `?\.open-swe\/APPROVALS\.md`? \(not shown\)/,
     );
     await expect(card(page)).toContainText(
       /Release notes_?: `?CHANGELOG\.md`? \+30 −0/,

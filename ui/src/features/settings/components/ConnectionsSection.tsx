@@ -1,14 +1,13 @@
-import { useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { Badge } from "@langchain/macaw-components/Badge"
 import { Button } from "@langchain/macaw-components/Button"
-import { GithubLogoIcon } from "@phosphor-icons/react/dist/ssr/GithubLogo"
 import { SlackLogoIcon } from "@phosphor-icons/react/dist/ssr/SlackLogo"
 
-import type { SessionUser } from "@/lib/api"
+import type { LangSmithConnectionStatus, SessionUser } from "@/lib/api"
 import { SettingsRow, SettingsSection } from "@/components/AppShell"
-import { connectService, loginUrl } from "@/lib/api"
-import { hasLinkedGitHub } from "@/lib/linkedGitHub"
+import { api, connectService } from "@/lib/api"
+import { optimisticUpdate } from "@/lib/optimistic"
 
 function StatusPill({ connected }: { connected: boolean }) {
   return (
@@ -73,55 +72,91 @@ function SlackRow({ user }: { user: SessionUser }) {
   )
 }
 
-/** Link (or relink) the signed-in person's GitHub account, which unlocks coding features. */
-export function LinkGitHubButton({
-  user,
+export const LANGSMITH_CONNECTION_KEY = ["myLangSmith"]
+
+/** The caller's own LangSmith connection, shared by every feature that calls LangSmith as them. */
+export function useLangSmithConnection() {
+  return useQuery({
+    queryKey: LANGSMITH_CONNECTION_KEY,
+    queryFn: api.getMyLangSmithStatus,
+  })
+}
+
+export function ConnectLangSmithButton({
   size = "xs",
   className,
 }: {
-  user: SessionUser
   size?: "xs" | "sm" | "md"
   className?: string
 }) {
   const qc = useQueryClient()
+  const status = useLangSmithConnection()
   const [connecting, setConnecting] = useState(false)
-  const linked = !!user.github_login
   return (
     <Button
       size={size}
-      color={linked ? "secondary" : "primary"}
-      variant={linked ? "outlined" : "normal"}
-      leftDecorator={GithubLogoIcon}
+      color="primary"
       className={className}
       onClick={() => {
         setConnecting(true)
-        void connectService("github", window.location.href)?.finally(() => {
+        void connectService("langsmith", window.location.href)?.finally(() => {
           setConnecting(false)
-          void qc.invalidateQueries({ queryKey: ["session"] })
+          void qc.invalidateQueries({ queryKey: LANGSMITH_CONNECTION_KEY })
         })
       }}
-      disabled={connecting}
+      disabled={connecting || status.isLoading}
     >
-      {connecting ? "Redirecting…" : linked ? "Relink" : "Link GitHub"}
+      {connecting ? "Redirecting…" : "Connect LangSmith"}
     </Button>
   )
 }
 
-function GitHubRow({ user }: { user: SessionUser }) {
-  const linked = !!user.github_login
+function LangSmithRow({ user }: { user: SessionUser }) {
+  const qc = useQueryClient()
+  const status = useLangSmithConnection()
+  const disconnect = useMutation({
+    meta: { errorTitle: "Couldn't disconnect LangSmith" },
+    mutationFn: () => api.disconnectLangSmith(),
+    onMutate: async () => ({
+      undo: await optimisticUpdate<LangSmithConnectionStatus>(
+        qc,
+        LANGSMITH_CONNECTION_KEY,
+        (current) => ({ ...current, connected: false, email: null })
+      ),
+    }),
+    onError: (_e, _v, ctx) => ctx?.undo(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: LANGSMITH_CONNECTION_KEY })
+      void qc.invalidateQueries({ queryKey: ["myManagedTools"] })
+    },
+  })
+  if (!status.data?.available) return null
+  const connected = status.data.connected
   return (
     <SettingsRow
-      label="GitHub"
+      label="LangSmith"
       description={
-        linked
-          ? `Linked to @${user.github_login}. Coding features act as this account.`
-          : "Link your GitHub account to use coding features and return to your existing coding threads."
+        user.auth_provider === "langsmith"
+          ? `Your sign-in account${status.data.email ? `: ${status.data.email}` : ""}. Sign out to change accounts.`
+          : connected
+            ? `Signed in${status.data.email ? ` as ${status.data.email}` : ""}. Open SWE can call LangSmith as you in your private threads.`
+            : "Sign in with LangSmith so Open SWE can call LangSmith as you in your private threads."
       }
       control={
         <div className="flex items-center gap-space-2">
-          <StatusPill connected={linked} />
-          {user.auth_provider === "langsmith" && (
-            <LinkGitHubButton user={user} />
+          <StatusPill connected={connected} />
+          {user.auth_provider === "langsmith" ? null : connected ? (
+            <Button
+              color="secondary"
+              variant="outlined"
+              size="xs"
+              onClick={() => disconnect.mutate()}
+              disabled={disconnect.isPending}
+            >
+              Disconnect
+            </Button>
+          ) : (
+            <ConnectLangSmithButton />
           )}
         </div>
       }
@@ -129,35 +164,10 @@ function GitHubRow({ user }: { user: SessionUser }) {
   )
 }
 
-/** Sends the person back through LangSmith sign-in, which renews the grant their tools use. */
-export function SignInWithLangSmithButton({
-  size = "xs",
-}: {
-  size?: "xs" | "sm" | "md"
-}) {
-  return (
-    <Button as={<a href={loginUrl()} />} size={size} color="primary">
-      Sign in again
-    </Button>
-  )
-}
-
-function LangSmithRow({ user }: { user: SessionUser }) {
-  if (user.auth_provider !== "langsmith") return null
-  return (
-    <SettingsRow
-      label="LangSmith"
-      description={`Your sign-in account${user.email ? `: ${user.email}` : ""}. Open SWE calls LangSmith as you with it. Sign out to change accounts.`}
-      control={<StatusPill connected />}
-    />
-  )
-}
-
 export function ConnectionsSection({ user }: { user: SessionUser }) {
   return (
     <SettingsSection title="Accounts">
-      <GitHubRow user={user} />
-      {hasLinkedGitHub(user) && <SlackRow user={user} />}
+      {user.auth_provider !== "langsmith" && <SlackRow user={user} />}
       <LangSmithRow user={user} />
     </SettingsSection>
   )

@@ -1,5 +1,4 @@
 import { parseSqlResult } from "../chat/SqlResultTable"
-import { routedMessageHref } from "./timeline/workEntry"
 import {
   parseManagedToolsCard,
   type ManagedToolsCardOffer,
@@ -50,7 +49,6 @@ export type RenderItem =
     }
   | { type: "sql-item"; key: string; chunk: ToolExecutionChunk }
   | { type: "tool-item"; key: string; chunk: ToolExecutionChunk }
-  | { type: "routed-message-item"; key: string; chunk: ToolExecutionChunk }
   | { type: "worker-launch-item"; key: string; chunk: ToolExecutionChunk }
 
 const REPLY_ITEM_TYPES = new Set<RenderItem["type"]>([
@@ -59,7 +57,6 @@ const REPLY_ITEM_TYPES = new Set<RenderItem["type"]>([
   "managed-tools-item",
   "iframe-item",
   "worker-launch-item",
-  "routed-message-item",
   "image-item",
 ])
 
@@ -271,15 +268,6 @@ export function buildRenderItems(
     if (!chunk) continue
 
     if (chunk.kind === "tool-execution") {
-      if (routedMessageHref(chunk)) {
-        flushGroups()
-        items.push({
-          type: "routed-message-item",
-          key: `tool-${chunk.toolCallId}`,
-          chunk,
-        })
-        continue
-      }
       if (chunk.toolName === "start_async_task") {
         flushGroups()
         items.push({

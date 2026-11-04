@@ -15,7 +15,6 @@ import { useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 
 import { api, type OpenPullRequest, type ReviewSummary } from "@/lib/api"
-import { RepositoryLabels } from "@/lib/repo"
 import { useRepos } from "@/lib/profile"
 import { expiresInBrowser } from "@/lib/query"
 import {
@@ -32,7 +31,6 @@ import {
   pullRequestStatusQuery,
   refreshPullRequest,
 } from "./lib/cache"
-import { awaitsViewer } from "./lib/reviewers"
 import { dateLabel } from "./lib/dateLabel"
 import { readPreference, writePreference } from "./lib/preferences"
 import { pullRequestKey, statusLabels } from "./lib/status"
@@ -142,21 +140,11 @@ export function OpenPullRequests({
   // have to pull the rest of the pages in before they can answer at all.
   const needsMorePages =
     query.hasNextPage &&
-    (scope === "review-assigned" ||
-      Boolean(filter?.length) ||
-      Boolean(search) ||
-      requested >= rows.length)
+    (Boolean(filter?.length) || Boolean(search) || requested >= rows.length)
   useEffect(() => {
     if (needsMorePages && !isFetching) void fetchNextPage()
   }, [needsMorePages, isFetching, fetchNextPage])
   const matchingRows = rows
-    .filter((pr) => {
-      if (scope !== "review-assigned") return true
-      const live = queryClient.getQueryData<OpenPullRequest | null>(
-        pullRequestStatusQuery(login, pr).queryKey
-      )
-      return awaitsViewer({ ...pr, ...live, assignment: pr.assignment }, login)
-    })
     .filter(
       (pr) =>
         !leftOpenList(
@@ -239,7 +227,6 @@ export function OpenPullRequests({
   const queue = (filter?.length ? filtered : matchingRows)
     .map(pullRequestKey)
     .slice(0, REVIEW_QUEUE_LIMIT)
-  const repoLabels = new RepositoryLabels(repoNames)
   const firstInQueue = parsePullRequestSelection(queue[0])
   const reviewOneByOne = () =>
     firstInQueue &&
@@ -252,6 +239,23 @@ export function OpenPullRequests({
       },
       search: { queue },
     })
+
+  const githubLink =
+    scope === "review-assigned" &&
+    latest &&
+    !query.hasNextPage &&
+    !query.isFetching &&
+    !detailsLoading &&
+    visible.length === filtered.length ? (
+      <div className="py-space-4 text-center">
+        <Button
+          variant="underlined"
+          onClick={() => onFiltersChange({ github: true, pr: undefined })}
+        >
+          Show my GitHub review requests
+        </Button>
+      </div>
+    ) : null
 
   const card = (pr: OpenPullRequest) => {
     const key = pullRequestKey(pr)
@@ -303,7 +307,7 @@ export function OpenPullRequests({
             <div className="flex items-center gap-space-2 text-xs text-secondary">
               <span>
                 {scope === "review-assigned"
-                  ? "Requested reviews, your drafts, then speculative reviews"
+                  ? "Open SWE assignments, then likely assignments and Slack mentions"
                   : "GitHub review requests"}
               </span>
               {scope === "review-requested" && (
@@ -314,7 +318,7 @@ export function OpenPullRequests({
                     onFiltersChange({ github: undefined, pr: undefined })
                   }
                 >
-                  Back to full review queue
+                  Back to Open SWE assignments
                 </Button>
               )}
               {firstInQueue && (
@@ -331,9 +335,7 @@ export function OpenPullRequests({
                 disableCloseOnSelect
                 size="sm"
                 className="h-6 flex-nowrap"
-                renderTags={(values) =>
-                  selectionSummary(values.map((name) => repoLabels.label(name)))
-                }
+                renderTags={selectionSummary}
                 aria-label="Filter by repository"
                 placeholder="All repositories"
                 emptyText={
@@ -344,10 +346,6 @@ export function OpenPullRequests({
                       : "No matches"
                 }
                 options={repoNames}
-                getOptionLabel={(name) => repoLabels.label(name)}
-                filterOptions={(options, { inputValue }) =>
-                  options.filter((name) => repoLabels.matches(name, inputValue))
-                }
                 value={repo}
                 onChange={(chosen) =>
                   onFiltersChange({ repo: chosen.length ? chosen : undefined })
@@ -517,6 +515,7 @@ export function OpenPullRequests({
                               ? "Nothing to review. You’re all caught up."
                               : "No pending GitHub review requests"
                       }
+                      action={githubLink || undefined}
                     />
                   )
                 ) : (
@@ -524,6 +523,7 @@ export function OpenPullRequests({
                     rows={visible}
                     available={matchingRows.length}
                     compact={railed}
+                    footer={githubLink}
                     // Unclamped: asking for more rows than are loaded is what
                     // makes the next GitHub page arrive, and reaching the end
                     // again is the only other thing that would grow it.

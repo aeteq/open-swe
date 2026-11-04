@@ -1,10 +1,9 @@
 import re
 from collections.abc import Mapping
-from typing import Annotated, Any
+from typing import Any
 
 from langgraph.config import get_config
 from langgraph_sdk.client import LangGraphClient
-from pydantic import Field
 
 from openswe.run_config import RunConfig
 from openswe.slack.breakout_destination import resolve_breakout_destination
@@ -17,7 +16,7 @@ from openswe.utils.json_types import thread_metadata
 from openswe.utils.thread_ops import langgraph_client
 
 _MESSAGE_MAX_CHARS = 2800
-_CHANNEL_ID_RE = re.compile(r"^[CGD][A-Z0-9]+$")
+_CHANNEL_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 
 
 async def _finish_existing_move(
@@ -41,11 +40,9 @@ async def _finish_existing_move(
 
 async def slack_move_thread(
     message: str,
-    destination: Annotated[str, Field(pattern=r"^[CGD][A-Z0-9]+$")],
+    channel_id: str | None = None,
 ) -> dict[str, Any]:
     """Implement the `slack_move_thread` tool."""
-    if not _CHANNEL_ID_RE.fullmatch(destination):
-        return {"success": False, "error": "destination must be a Slack channel ID"}
     config = get_config()
     configurable = config.get("configurable", {})
     thread_id = configurable.get("thread_id")
@@ -94,11 +91,13 @@ async def slack_move_thread(
                 "retryable": True,
             }
 
-    resolved = await resolve_breakout_destination(
-        active_channel, destination, workspace=RunConfig.from_runtime().workspace_slug
+    destination = await resolve_breakout_destination(
+        active_channel, channel_id, workspace=RunConfig.from_runtime().workspace_slug
     )
-    target_channel = resolved.channel_id
-    if error := await resolved.channel_error(active_channel):
+    target_channel = destination.channel_id
+    if not _CHANNEL_ID_RE.fullmatch(target_channel):
+        return {"success": False, "error": "channel_id must be a Slack channel ID"}
+    if error := await destination.channel_error(active_channel):
         return {"success": False, "error": error}
 
     return await move_slack_thread(client, thread_id, active, target_channel, clean_message)

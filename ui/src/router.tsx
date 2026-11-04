@@ -15,7 +15,6 @@ export function getRouter() {
     basepath: import.meta.env.BASE_URL,
 
     scrollRestoration: true,
-    scrollToTopSelectors: [".review-code-view"],
     defaultPreload: "intent",
     defaultErrorComponent: ({ error }) => <LoadError error={error} />,
     defaultPreloadStaleTime: 0,

@@ -198,8 +198,7 @@ impl std::error::Error for Recategorized {
     }
 }
 
-/// The category of an unsuccessful HTTP status from a LangSmith service.
-pub fn api_category(status: StatusCode) -> ErrorCategory {
+fn api_category(status: StatusCode) -> ErrorCategory {
     match status {
         StatusCode::UNAUTHORIZED => ErrorCategory::Authentication,
         StatusCode::FORBIDDEN => ErrorCategory::Permission,

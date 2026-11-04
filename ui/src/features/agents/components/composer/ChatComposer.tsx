@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query"
 import { PlusIcon, XIcon } from "@langchain/macaw-components/icons"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Banner } from "@langchain/macaw-components/Banner"
@@ -8,6 +7,14 @@ import {
   DropdownMenuTrigger,
 } from "@langchain/macaw-components/DropdownMenu"
 import { IconButton } from "@langchain/macaw-components/IconButton"
+import { Button } from "@langchain/macaw-components/Button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@langchain/macaw-components/Popover"
+import { SlidersHorizontalIcon } from "@phosphor-icons/react/dist/ssr/SlidersHorizontal"
+import { useAgentWorkspace } from "@/features/agents/lib/agentWorkspace"
 import { ImageSquareIcon } from "@phosphor-icons/react/dist/ssr/ImageSquare"
 
 import { ComposerCommandMenu } from "./ComposerCommandMenu"
@@ -23,11 +30,9 @@ import {
   type ContextWindowMeterProps,
 } from "./ContextWindowMeter"
 import { WorkspaceSelector } from "./WorkspaceSelector"
-import { ProjectSelector } from "@/features/projects/components/ProjectSelector"
-import type { Project } from "@/features/projects/lib/projects"
 import {
   LocalBranchSelector,
-  LocalProjectSelector,
+  LocalRepoSelector,
   LocalWorkspaceSelector,
   RunTargetSelector,
 } from "./RunTargetSelector"
@@ -53,7 +58,6 @@ import type {
 import type {
   FollowUpBehavior,
   ModelOption,
-  SessionUser,
   Skill,
   WorkspaceOption,
 } from "@/lib/api"
@@ -62,9 +66,7 @@ import type { PassageReply } from "@/features/agents/utils/passageReply"
 import type { ModelSelection } from "@/features/agents/lib/provider/useModelOptions"
 import { ModelPicker } from "@/features/agents/components/ModelPicker"
 import { RepoSelector } from "@/features/settings/components/RepoSelector"
-import { GitHubLinkRepoSelector } from "./GitHubLinkRepoSelector"
-import { api } from "@/lib/api"
-import type { SlackChannelOption, SlackUserOption } from "@/lib/api"
+import type { SlackChannelOption } from "@/lib/api"
 import { useRegisterAppCommands } from "@/lib/appCommands"
 import {
   rankSlackChannels,
@@ -130,41 +132,7 @@ export interface RestoredDraft {
   replacesSuggestion?: boolean
 }
 
-class ComposerDrafts {
-  private drafts = new Map<
-    string,
-    {
-      text: string
-      images: Array<ImageChunk>
-      replies: Array<PendingReply>
-    }
-  >()
-
-  read(key?: string) {
-    return key ? this.drafts.get(key) : undefined
-  }
-
-  write(
-    key: string | undefined,
-    text: string,
-    images: Array<ImageChunk>,
-    replies: Array<PendingReply>
-  ) {
-    if (!key) return
-    this.drafts.delete(key)
-    if (!text && !images.length && !replies.length) return
-    this.drafts.set(key, { text, images, replies })
-    if (this.drafts.size > 50) {
-      const oldest = this.drafts.keys().next().value
-      if (oldest) this.drafts.delete(oldest)
-    }
-  }
-}
-
-const composerDrafts = new ComposerDrafts()
-
 export interface ChatComposerProps {
-  draftKey?: string
   placeholder?: string
   autoFocus?: boolean
   compact?: boolean
@@ -194,8 +162,6 @@ export interface ChatComposerProps {
   repos?: Array<{ full_name: string }>
   selectedRepo?: string | null
   onRepoChange?: (repo: string | null) => void
-  /** The signed-in person while they must link GitHub; the repo picker then asks them to. */
-  gitHubLinkUser?: SessionUser
   /** Desktop-only execution target. Omit this prop to keep the control out of the web UI. */
   runTarget?: RunTarget
   onRunTargetChange?: (next: RunTarget) => void
@@ -209,16 +175,11 @@ export interface ChatComposerProps {
   localWorktreeLabel?: string
   onLocalWorkspaceModeChange?: (next: DesktopWorkspaceMode) => void
   onSelectLocalRepo?: (cwd: string) => void
-  onClearLocalRepo?: () => void
+  onUseTaskFolder?: () => void
   onAddLocalRepo?: () => void
   onRemoveLocalRepo?: (cwd: string) => void
   onRefreshLocalRepoBranch?: () => void
   onSelectLocalRepoBranch?: (branch: string) => void
-  /** Projects a new cloud thread can be filed in; the picker shows with `onProjectChange`. */
-  projects?: Array<Project>
-  selectedProjectId?: string | null
-  onProjectChange?: (projectId: string | null) => void
-  onCreateProject?: (name: string) => void
   /** Workspaces a new thread can boot from. The picker appears only when there are several. */
   workspaceOptions?: Array<WorkspaceOption>
   selectedWorkspace?: string | null
@@ -259,8 +220,7 @@ export function buildCommandItems(
   includeModelCommand = true,
   includeOffloadCommand = false,
   slackChannels: Array<SlackChannelOption> = [],
-  recentSlackChannels: ReadonlyArray<string> = [],
-  slackUsers: Array<SlackUserOption> = []
+  recentSlackChannels: ReadonlyArray<string> = []
 ): Array<ComposerCommandItem> {
   const query = trigger.query.toLowerCase()
 
@@ -313,41 +273,20 @@ export function buildCommandItems(
     ]
   }
 
-  const paths: Array<ComposerCommandItem> = mentionPaths
+  return mentionPaths
     .filter((path) => !query || path.toLowerCase().includes(query))
+    .slice(0, MAX_MENTION_SUGGESTIONS)
     .map((path) => ({
       id: `path:${path}`,
-      type: "path",
+      type: "path" as const,
       path,
       label: path.slice(path.lastIndexOf("/") + 1),
       description: path,
     }))
-  const people: Array<ComposerCommandItem> = slackUsers
-    .filter((user) =>
-      [user.name, user.display_name, user.real_name].some((name) =>
-        name.toLowerCase().includes(query)
-      )
-    )
-    .slice(
-      0,
-      paths.length > 0 ? MAX_MENTION_SUGGESTIONS / 2 : MAX_MENTION_SUGGESTIONS
-    )
-    .map((user) => ({
-      id: `user:${user.id}`,
-      type: "slack-user",
-      userId: user.id,
-      label: `@${user.display_name || user.name}`,
-      description:
-        user.real_name && user.real_name !== user.display_name
-          ? `${user.real_name} · @${user.name}`
-          : `@${user.name}`,
-    }))
-  return [...people, ...paths].slice(0, MAX_MENTION_SUGGESTIONS)
 }
 
 /** Prompt editor with autocomplete, model selection, attachments, and send/stop controls. */
 export const ChatComposer = memo(function ChatComposer({
-  draftKey,
   placeholder = "Ask Open SWE to build, fix bugs, explore",
   autoFocus = false,
   compact = false,
@@ -368,7 +307,6 @@ export const ChatComposer = memo(function ChatComposer({
   repos,
   selectedRepo = null,
   onRepoChange,
-  gitHubLinkUser,
   runTarget,
   onRunTargetChange,
   runTargetPending,
@@ -380,15 +318,11 @@ export const ChatComposer = memo(function ChatComposer({
   localWorktreeLabel,
   onLocalWorkspaceModeChange,
   onSelectLocalRepo,
-  onClearLocalRepo,
+  onUseTaskFolder,
   onAddLocalRepo,
   onRemoveLocalRepo,
   onRefreshLocalRepoBranch,
   onSelectLocalRepoBranch,
-  projects = [],
-  selectedProjectId = null,
-  onProjectChange,
-  onCreateProject,
   workspaceOptions = [],
   selectedWorkspace = null,
   onWorkspaceChange,
@@ -397,19 +331,12 @@ export const ChatComposer = memo(function ChatComposer({
   contextUsage,
   routed,
 }: ChatComposerProps) {
-  const [value, setValue] = useState(
-    () => composerDrafts.read(draftKey)?.text ?? ""
-  )
-  const [cursor, setCursor] = useState(value.length)
-  const [pendingImages, setPendingImages] = useState<Array<ImageChunk>>(
-    () => composerDrafts.read(draftKey)?.images ?? []
-  )
-  const [pendingReplies, setPendingReplies] = useState<Array<PendingReply>>(
-    () => composerDrafts.read(draftKey)?.replies ?? []
-  )
-  useEffect(() => {
-    composerDrafts.write(draftKey, value, pendingImages, pendingReplies)
-  }, [draftKey, value, pendingImages, pendingReplies])
+  const agentWorkspace = useAgentWorkspace()
+  const [contextOpen, setContextOpen] = useState(false)
+  const [value, setValue] = useState("")
+  const [cursor, setCursor] = useState(0)
+  const [pendingImages, setPendingImages] = useState<Array<ImageChunk>>([])
+  const [pendingReplies, setPendingReplies] = useState<Array<PendingReply>>([])
   const [appliedReply, setAppliedReply] = useState<typeof addedReply>(null)
   if (addedReply !== appliedReply) {
     setAppliedReply(addedReply)
@@ -493,12 +420,6 @@ export const ChatComposer = memo(function ChatComposer({
   const slackChannels = useSlackChannelDirectory(
     trigger?.kind === "slack-channel"
   ).data?.channels
-  const slackUsers = useQuery({
-    queryKey: ["slackUsers"],
-    queryFn: api.listSlackUsers,
-    enabled: trigger?.kind === "path",
-    staleTime: 300_000,
-  })
   const recentSlackChannels = useRecentSlackChannels()
   const skillNames = useMemo(
     () => new Set(skills.map((skill) => skill.name)),
@@ -514,8 +435,7 @@ export const ChatComposer = memo(function ChatComposer({
             models.length > 0,
             canOffload,
             slackChannels,
-            recentSlackChannels,
-            slackUsers.data?.users
+            recentSlackChannels
           )
         : [],
     [
@@ -526,12 +446,11 @@ export const ChatComposer = memo(function ChatComposer({
       canOffload,
       slackChannels,
       recentSlackChannels,
-      slackUsers.data,
     ]
   )
   const menuOpen =
     trigger !== null &&
-    (commandItems.length > 0 || trigger.kind === "path") &&
+    commandItems.length > 0 &&
     dismissedTriggerKey !== triggerKey
   const activeItem =
     commandItems.find((item) => item.id === activeItemId) ??
@@ -657,7 +576,6 @@ export const ChatComposer = memo(function ChatComposer({
       if (
         item.type === "path" ||
         item.type === "skill" ||
-        item.type === "slack-user" ||
         item.type === "slack-channel"
       ) {
         if (item.type === "slack-channel")
@@ -670,9 +588,7 @@ export const ChatComposer = memo(function ChatComposer({
             ? mentionReplacementText(item.path)
             : item.type === "slack-channel"
               ? `${slackChannelReference(item.channelId, item.name)} `
-              : item.type === "slack-user"
-                ? `<@${item.userId}> `
-                : `/${item.name} `
+              : `/${item.name} `
         )
         applyPrompt(next.text, next.cursor)
         return
@@ -694,10 +610,6 @@ export const ChatComposer = memo(function ChatComposer({
 
   const handleCommandKeyDown = useCallback(
     (key: ComposerCommandKey, event: KeyboardEvent): boolean => {
-      if (menuOpen && key === "Escape") {
-        setDismissedTriggerKey(triggerKey)
-        return true
-      }
       if (menuOpen && activeItem) {
         switch (key) {
           case "ArrowDown":
@@ -716,6 +628,9 @@ export const ChatComposer = memo(function ChatComposer({
           case "Enter":
           case "Tab":
             selectCommandItem(activeItem)
+            return true
+          case "Escape":
+            setDismissedTriggerKey(triggerKey)
             return true
         }
       }
@@ -861,6 +776,17 @@ export const ChatComposer = memo(function ChatComposer({
       value={runTarget}
     />
   )
+  const hasContextControls = Boolean(
+    onRepoChange ||
+    onWorkspaceChange ||
+    (runTarget === "local" && (onSelectLocalRepo || onSelectLocalRepoBranch))
+  )
+  const contextLabel =
+    runTarget === "local"
+      ? (localRepos.find((repo) => repo.cwd === selectedLocalRepoPath)?.name ??
+        selectedLocalRepoPath?.split("/").filter(Boolean).at(-1) ??
+        (agentWorkspace ? "Use a folder" : "Choose a folder"))
+      : (selectedRepo?.split("/").at(-1) ?? "Task context")
   const targetControls = (onRepoChange || runTarget || onWorkspaceChange) && (
     <>
       {runTarget !== "local" && onWorkspaceChange && (
@@ -871,48 +797,35 @@ export const ChatComposer = memo(function ChatComposer({
           side="top"
         />
       )}
-      {runTarget !== "local" && onProjectChange && onCreateProject && (
-        <ProjectSelector
-          onCreate={onCreateProject}
-          onRepoChange={gitHubLinkUser ? undefined : onRepoChange}
-          onSelect={onProjectChange}
-          projects={projects}
-          repos={gitHubLinkUser ? undefined : repos}
-          selectedId={selectedProjectId}
+      {runTarget !== "local" && onRepoChange && (
+        <RepoSelector
+          emptySelectionLabel="Don't work in a repository"
+          noMatchesLabel="No matching repositories"
+          onRepoChange={onRepoChange}
+          placeholder="Select repository"
+          repos={repos}
+          searchPlaceholder="Search repositories…"
           selectedRepo={selectedRepo}
-        />
-      )}
-      {runTarget !== "local" && onRepoChange && gitHubLinkUser && (
-        <GitHubLinkRepoSelector user={gitHubLinkUser} side="top" />
-      )}
-      {runTarget !== "local" &&
-        onRepoChange &&
-        !gitHubLinkUser &&
-        !onProjectChange && (
-          <RepoSelector
-            emptySelectionLabel="Don't work in a repository"
-            noMatchesLabel="No matching repositories"
-            onRepoChange={onRepoChange}
-            placeholder="Select repository"
-            repos={repos}
-            searchPlaceholder="Search repositories…"
-            selectedRepo={selectedRepo}
-            side="top"
-          />
-        )}
-      {runTarget === "local" && (
-        <LocalProjectSelector
-          onAdd={onAddLocalRepo}
-          onClear={onClearLocalRepo}
-          onRemove={onRemoveLocalRepo}
-          onSelect={onSelectLocalRepo}
-          projects={localRepos}
-          selectedPath={selectedLocalRepoPath}
           side="top"
         />
       )}
       {runTarget === "local" &&
-        localRepoBranches.length > 0 &&
+        onSelectLocalRepo &&
+        onAddLocalRepo &&
+        onRemoveLocalRepo && (
+          <LocalRepoSelector
+            onAddRepo={onAddLocalRepo}
+            onRemoveRepo={onRemoveLocalRepo}
+            onSelectRepo={onSelectLocalRepo}
+            repos={localRepos}
+            selectedRepoPath={selectedLocalRepoPath}
+            side="top"
+            placeholder={agentWorkspace ? "Automatic task folder" : undefined}
+            onUseTaskFolder={onUseTaskFolder}
+          />
+        )}
+      {runTarget === "local" &&
+        (!agentWorkspace || localRepoBranches.length > 0) &&
         onRefreshLocalRepoBranch &&
         onSelectLocalRepoBranch && (
           <LocalBranchSelector
@@ -924,7 +837,7 @@ export const ChatComposer = memo(function ChatComposer({
           />
         )}
       {runTarget === "local" &&
-        localRepoBranches.length > 0 &&
+        (!agentWorkspace || localRepoBranches.length > 0) &&
         onSelectLocalRepoBranch && (
           <LocalWorkspaceSelector
             onChange={onLocalWorkspaceModeChange}
@@ -962,9 +875,15 @@ export const ChatComposer = memo(function ChatComposer({
       <div
         data-chat-composer
         className={cn(
-          "relative z-floating-bar flex flex-col rounded-2xl border bg-elevated px-space-4 py-space-3 shadow-sm transition-[border-color,box-shadow] duration-slow",
+          "relative z-floating-bar flex flex-col rounded-xl border bg-elevated px-space-3 py-space-2 shadow-md transition-[border-color,box-shadow] duration-slow hover:shadow-lg",
           compact ? "min-h-[88px]" : "min-h-[106px]",
-          dragKind ? "border-brand" : "border-subtle dark:border-transparent"
+          agentWorkspace &&
+            "rounded-2xl px-space-4 py-space-3 shadow-sm focus-within:border-strong hover:shadow-sm",
+          dragKind
+            ? "border-brand"
+            : agentWorkspace
+              ? "border-subtle"
+              : "border-default"
         )}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -977,15 +896,6 @@ export const ChatComposer = memo(function ChatComposer({
             items={commandItems}
             onHighlight={setActiveItemId}
             onSelect={selectCommandItem}
-            emptyStateText={
-              trigger.kind === "path"
-                ? slackUsers.isPending
-                  ? "Loading people…"
-                  : slackUsers.isError
-                    ? "Could not load Slack people. Type @ again to retry."
-                    : "No matching people or files."
-                : undefined
-            }
             triggerKind={trigger.kind}
           />
         )}
@@ -1131,16 +1041,64 @@ export const ChatComposer = memo(function ChatComposer({
             }
             onStop={onStop}
             stoppable={stoppable}
-            stopOnEscape={!menuOpen && !modelPickerOpen && !extrasMenuOpen}
+            stopOnEscape={
+              !menuOpen && !modelPickerOpen && !extrasMenuOpen && !contextOpen
+            }
             submitting={isSubmitting}
           />
         </div>
       </div>
 
       {targetControls && (
-        <div className="mx-space-3 -mt-space-4 flex min-w-0 flex-wrap items-center gap-x-space-4 gap-y-space-2 rounded-b-xl border border-t-0 border-subtle bg-surface-level-2 px-space-4 pt-space-5 pb-space-2 text-xs dark:border-transparent">
-          {targetControls}
-          <div className="ml-auto">{executionTarget}</div>
+        <div
+          className={cn(
+            "mt-space-2 flex min-w-0 flex-wrap items-center gap-x-space-5 gap-y-space-2 px-space-3 text-xs",
+            agentWorkspace && "gap-x-space-3 px-space-1"
+          )}
+        >
+          {executionTarget}
+          {agentWorkspace
+            ? hasContextControls && (
+                <Popover open={contextOpen} onOpenChange={setContextOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      color="secondary"
+                      variant="plain"
+                      size="sm"
+                      aria-label={`Task context: ${contextLabel}`}
+                      className="max-w-full gap-space-2 rounded-full text-xs text-secondary"
+                    >
+                      <SlidersHorizontalIcon
+                        size={14}
+                        weight="regular"
+                        className="shrink-0"
+                      />
+                      <span className="truncate">{contextLabel}</span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    aria-label="Task context"
+                    side="top"
+                    align="start"
+                    className="w-80 max-w-[calc(100vw-2rem)] rounded-xl p-space-4"
+                  >
+                    <div className="flex flex-col gap-space-3">
+                      <div className="flex flex-col gap-space-1">
+                        <h2 className="text-sm font-medium">Task context</h2>
+                        <p className="text-xs leading-relaxed text-secondary">
+                          {runTarget === "local"
+                            ? "Each chat gets its own task folder. Use an existing folder when you need one."
+                            : "Add a repository or workspace when your task needs one."}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-start gap-space-3 text-xs">
+                        {targetControls}
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )
+            : targetControls}
         </div>
       )}
     </div>

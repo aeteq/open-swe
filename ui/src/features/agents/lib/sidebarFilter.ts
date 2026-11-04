@@ -5,7 +5,6 @@ export interface SidebarFilters {
   includeAutomations: boolean
   includeResolved: boolean
   ownedOnly: boolean
-  includeSlack: boolean
   /** Threads mirroring the viewer's own Claude Code sessions. */
   includeClaudeCode: boolean
 }
@@ -15,11 +14,10 @@ export const DEFAULT_SIDEBAR_FILTERS: SidebarFilters = {
   includeAutomations: false,
   includeResolved: false,
   ownedOnly: false,
-  includeSlack: true,
   includeClaudeCode: true,
 }
 
-/** The Claude Code thread source. */
+/** The thread source the sidebar can hide wholesale. */
 export const CLAUDE_CODE_SOURCE: AgentSource = "claude_code"
 
 interface FilterableThread {
@@ -53,7 +51,6 @@ export function filterThreads<T extends FilterableThread>(
       ((filters.includeAutomations ||
         !isAutomationThread(thread) ||
         filters.sources.includes("schedule")) &&
-        (filters.includeSlack || threadSource(thread) !== "slack") &&
         (filters.includeClaudeCode ||
           threadSource(thread) !== CLAUDE_CODE_SOURCE) &&
         (filters.sources.length === 0 ||
@@ -71,7 +68,6 @@ export function hasActiveFilters(filters: SidebarFilters): boolean {
     filters.sources.length > 0 ||
     filters.includeAutomations !== DEFAULT_SIDEBAR_FILTERS.includeAutomations ||
     filters.includeResolved !== DEFAULT_SIDEBAR_FILTERS.includeResolved ||
-    filters.includeSlack !== DEFAULT_SIDEBAR_FILTERS.includeSlack ||
     filters.includeClaudeCode !== DEFAULT_SIDEBAR_FILTERS.includeClaudeCode ||
     filters.ownedOnly
   )

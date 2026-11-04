@@ -320,7 +320,7 @@ class Run:
 
 def current_run() -> Run:
     """The run in progress, which every call the graph makes acts as."""
-    context = getattr(get_runtime(), "context", None)
+    context = get_runtime().context
     if not isinstance(context, RunContext):
         raise BackendCallError(
             "This run carries no Open SWE run context; start it through Open SWE"

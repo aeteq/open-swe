@@ -176,7 +176,6 @@ from openswe.tools import (
     auto_assign_human_reviewer,
     background_execute,
     background_task,
-    classify,
     code_channel_set_view,
     comment_on_notion_task,
     configure_repository,
@@ -184,7 +183,6 @@ from openswe.tools import (
     connect_managed_tools,
     create_automation,
     create_notion_design,
-    create_project,
     create_sandbox_file_download_url,
     decide_memory,
     delete_automation,
@@ -206,7 +204,6 @@ from openswe.tools import (
     list_automations,
     list_event_types,
     list_memories,
-    list_projects,
     list_threads,
     list_workspaces,
     listen_events,
@@ -216,7 +213,6 @@ from openswe.tools import (
     manage_thread,
     merge_expedited_pr,
     monitor,
-    move_thread_to_project,
     open_pull_request,
     output_iframe,
     plan_walkthrough,
@@ -239,7 +235,6 @@ from openswe.tools import (
     schedule_thread_wakeup,
     search_pull_requests,
     send_announcement,
-    share_project,
     slack_add_reaction,
     slack_attach_html,
     slack_breakout_thread,
@@ -258,9 +253,7 @@ from openswe.tools import (
     suggest_task,
     switch_to_performance_model,
     trigger_automation,
-    unshare_project,
     update_automation,
-    update_project,
     web_search,
     write_database_rows,
 )
@@ -296,7 +289,6 @@ from openswe.utils.authorship import (
 )
 from openswe.utils.dashboard_links import dashboard_base_url, dashboard_plan_url
 from openswe.utils.deferred_model import make_deferred_error_model
-from openswe.utils.jev import SystemOneGateway
 from openswe.utils.json_types import as_json_object, thread_metadata
 from openswe.utils.model import (
     DEFAULT_LLM_REASONING,
@@ -396,7 +388,7 @@ async def _resolve_prompt_default_repo(cfg: RunConfig) -> dict[str, str] | None:
     if cfg.repo:
         return {"owner": cfg.repo.owner, "name": cfg.repo.name}
 
-    if cfg.repo_explicitly_none is True:
+    if cfg.repo_explicitly_none is True or cfg.experience == "agent_workspace":
         return None
 
     try:
@@ -672,12 +664,6 @@ def _is_subagent_excluded_tool(name: str) -> bool:
         "connect_managed_tools",
         "discover_managed_tools",
         "save_user_settings",
-        "list_projects",
-        "create_project",
-        "update_project",
-        "share_project",
-        "unshare_project",
-        "move_thread_to_project",
         "remember",
         "forget",
         "list_memories",
@@ -736,7 +722,6 @@ AGENT_TOOLS: Final = (
     http_request,
     fetch_url,
     web_search,
-    classify,
     background_execute,
     background_task,
     monitor,
@@ -748,12 +733,6 @@ AGENT_TOOLS: Final = (
     decide_memory,
     publish_workspace_prompt,
     save_user_settings,
-    list_projects,
-    create_project,
-    update_project,
-    share_project,
-    unshare_project,
-    move_thread_to_project,
     save_user_skill,
     delete_user_skill,
     list_threads,
@@ -1592,7 +1571,7 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
                 sender_messages = self._participants_messages(state, participants)
         turn = TurnContext(
             working_dir=work_dir,
-            agent_workspace=cfg.repo_explicitly_none is True,
+            agent_workspace=cfg.experience == "agent_workspace",
             source="background_task" if cfg.background_task_completion else self._source,
             slack_context=cfg.slack_context,
             slack_ask=cfg.slack_ask_mode,
@@ -1656,7 +1635,7 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
                 else ""
             )
         return construct_system_prompt(
-            agent_workspace=cfg.repo_explicitly_none is True,
+            agent_workspace=cfg.experience == "agent_workspace",
             dashboard_base_url=dashboard_base_url(),
             artifact_url=dashboard_plan_url(self._thread_id),
             default_repo=default_repo,
@@ -1830,7 +1809,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     # stay off the critical path during worker load and retry storms.
     settings: WorkspaceSettings | None = None
     routing_defaults: dict[str, tuple[str, str | None]]
-    (settings, profile), admin_thread, tool_access, sender_preferences = await asyncio.gather(
+    (settings, profile), admin_thread, tool_access = await asyncio.gather(
         _timed(
             thread_id,
             "factory.settings_defaults",
@@ -1845,7 +1824,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         ),
         _timed(thread_id, "factory.admin_thread", _admin_thread(config, profile_login)),
         _timed(thread_id, "factory.tool_access", resolve_access(cfg, login=profile_login)),
-        User.preferences_for_login(profile_login or ""),
     )
     model_defaults = settings.default_model_pair("agent")
     routing_defaults = dict(settings.agent_routing_models)
@@ -1933,7 +1911,9 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     async with aphase(thread_id, "factory.sender_profile"):
         sender_profile = profile if profile is not None else await _cached_profile(profile_login)
     sender_draft_prs = profile_draft_prs(sender_profile)
-    goal_mode = sender_preferences.goal_mode
+    goal_mode = bool(profile_login) and (
+        (await User.preferences_for_login(profile_login)).goal_mode
+    )
     work_state_tool = _registered_tool_name(report_work_state)
     configurable["draft_prs"] = sender_draft_prs
     cfg.draft_prs = sender_draft_prs
@@ -2043,11 +2023,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         *(() if cli_result_required else (cli_result,)),
         *(() if bridge_client == "desktop" else (worktree_handoff,)),
         *(() if _writes_database_rows() else (execute_database_sql, write_database_rows)),
-        *(
-            ()
-            if sender_preferences.experimental_classify and SystemOneGateway.configured()
-            else (classify,)
-        ),
         *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
         *(
             tool

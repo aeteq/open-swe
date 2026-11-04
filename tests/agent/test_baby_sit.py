@@ -3,6 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid7
 
+import httpx
 import httpx2
 import pytest
 
@@ -93,12 +94,12 @@ async def test_github_read_failures_only_end_watches_when_persistent(
         monkeypatch.setattr(github_app, "GITHUB_APP_PRIVATE_KEY", "test-key")
         monkeypatch.setattr(github_app, "_TOKEN_CACHE", {})
 
-        def handle(request: httpx2.Request) -> httpx2.Response:
+        def handle(request: httpx.Request) -> httpx.Response:
             if token_failed:
                 if status_code is None:
-                    raise httpx2.ConnectError(body, request=request)
-                return httpx2.Response(status_code, json={"message": body})
-            return httpx2.Response(201, json={"token": "t", "expires_at": "2099-01-01T00:00:00Z"})
+                    raise httpx.ConnectError(body, request=request)
+                return httpx.Response(status_code, json={"message": body})
+            return httpx.Response(201, json={"token": "t", "expires_at": "2099-01-01T00:00:00Z"})
 
         mock_github_sdk(monkeypatch, handle)
     else:

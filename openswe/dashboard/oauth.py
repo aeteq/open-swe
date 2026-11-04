@@ -41,7 +41,7 @@ STATE_COOKIE_NAME = "osw_oauth_state"
 AUTH_PATH = "/dashboard/api/auth"
 GITHUB_CALLBACK_PATH = f"{AUTH_PATH}/callback"
 MCP_SIGN_IN_CALLBACK_PATH = f"{AUTH_PATH}/mcp/callback"
-DESKTOP_APP_ORIGIN = "open-swe://app"
+_DESKTOP_APP_ORIGIN = "open-swe://app"
 SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 STATE_TTL_SECONDS = 600
 HANDOFF_TTL_SECONDS = 120
@@ -542,7 +542,7 @@ async def require_session(
 
     principal = DashboardPrincipal.from_session(session)
     principal.authorize_path(request.url.path, request.scope.get("method", "GET"))
-    await principal.authorize(path=request.url.path)
+    await principal.authorize()
     bind_audit_session(request, session)
     return session
 
@@ -601,7 +601,7 @@ def require_same_origin(request: HTTPConnection) -> None:
     allowed = allowed_dashboard_origins()
     if not allowed:
         return
-    allowed.add(DESKTOP_APP_ORIGIN)
+    allowed.add(_DESKTOP_APP_ORIGIN)
     request_base_origin = _origin_of(str(request.base_url))
     if request_base_origin:
         allowed.add(request_base_origin)
@@ -781,7 +781,7 @@ def set_session_cookie(response: Response, jwt_token: str) -> None:
     )
 
 
-def set_state_cookie(response: Response, nonce: str, *, path: str = "/dashboard/api/auth") -> None:
+def set_state_cookie(response: Response, nonce: str) -> None:
     # SameSite=Lax so GitHub's top-level redirect back to /auth/callback
     # still presents this cookie; the cookie is single-purpose and lives
     # only for the duration of one OAuth round-trip.
@@ -793,13 +793,15 @@ def set_state_cookie(response: Response, nonce: str, *, path: str = "/dashboard/
         httponly=True,
         secure=secure,
         samesite="lax",
-        path=path,
+        path="/dashboard/api/auth",
     )
 
 
-def clear_state_cookie(response: Response, *, path: str = "/dashboard/api/auth") -> None:
+def clear_state_cookie(response: Response) -> None:
     secure, _ = cookie_security()
-    response.delete_cookie(STATE_COOKIE_NAME, path=path, samesite="lax", secure=secure)
+    response.delete_cookie(
+        STATE_COOKIE_NAME, path="/dashboard/api/auth", samesite="lax", secure=secure
+    )
 
 
 class DesktopConnectExchange(BaseModel):

@@ -39,7 +39,6 @@ import {
   isDatadogRumInitialized,
   subscribeToDatadogInitialization,
 } from "@/lib/datadog"
-import { productAnalytics } from "@/lib/posthog"
 import { clearCachedRepos } from "@/lib/repoCache"
 import { useTheme } from "@/lib/theme"
 
@@ -85,7 +84,6 @@ export function SidebarUserMenu({
   const onLogout = async () => {
     setOpen(false)
     await api.logout()
-    productAnalytics.reset()
     clearCachedRepos()
     qc.setQueryData(["session"], null)
     navigate({ to: "/login" })

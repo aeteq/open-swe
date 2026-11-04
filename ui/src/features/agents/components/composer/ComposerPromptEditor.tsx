@@ -38,7 +38,6 @@ import {
   KEY_TAB_COMMAND,
 } from "lexical"
 
-import { SlackUserMention } from "../messages/SlackMrkdwn"
 import { SkillBadge } from "../SkillBadge"
 import { splitPromptIntoSegments } from "./composerMentions"
 import { basenameOfPath, serializeComposerFileLink } from "./composerTrigger"
@@ -244,35 +243,30 @@ function $createComposerSkillNode(
   return $applyNodeReplacement(new ComposerSkillNode(name, source))
 }
 
-type SlackReferenceKind = "user" | "channel"
-
-type SerializedComposerSlackNode = Spread<
+type SerializedComposerChannelNode = Spread<
   {
-    kind: SlackReferenceKind
-    referenceId: string
+    channelId: string
     name: string
     source: string
-    type: "composer-slack"
+    type: "composer-channel"
     version: 1
   },
   SerializedLexicalNode
 >
 
-/** A Slack reference rendered as a chip over its canonical token. */
-class ComposerSlackNode extends DecoratorNode<React.ReactElement> {
-  __kind: SlackReferenceKind
-  __referenceId: string
+/** A Slack channel reference; the chip shows `#name` over Slack's `<#id|name>`. */
+class ComposerChannelNode extends DecoratorNode<React.ReactElement> {
+  __channelId: string
   __name: string
   __source: string
 
   static override getType(): string {
-    return "composer-slack"
+    return "composer-channel"
   }
 
-  static override clone(node: ComposerSlackNode): ComposerSlackNode {
-    return new ComposerSlackNode(
-      node.__kind,
-      node.__referenceId,
+  static override clone(node: ComposerChannelNode): ComposerChannelNode {
+    return new ComposerChannelNode(
+      node.__channelId,
       node.__name,
       node.__source,
       node.__key
@@ -280,38 +274,29 @@ class ComposerSlackNode extends DecoratorNode<React.ReactElement> {
   }
 
   static override importJSON(
-    serialized: SerializedComposerSlackNode
-  ): ComposerSlackNode {
-    return $createComposerSlackNode(
-      serialized.kind,
-      serialized.referenceId,
+    serialized: SerializedComposerChannelNode
+  ): ComposerChannelNode {
+    return $createComposerChannelNode(
+      serialized.channelId,
       serialized.name,
       serialized.source
     ).updateFromJSON(serialized)
   }
 
-  constructor(
-    kind: SlackReferenceKind,
-    referenceId: string,
-    name: string,
-    source: string,
-    key?: NodeKey
-  ) {
+  constructor(channelId: string, name: string, source: string, key?: NodeKey) {
     super(key)
-    this.__kind = kind
-    this.__referenceId = referenceId
+    this.__channelId = channelId
     this.__name = name
     this.__source = source
   }
 
-  override exportJSON(): SerializedComposerSlackNode {
+  override exportJSON(): SerializedComposerChannelNode {
     return {
       ...super.exportJSON(),
-      kind: this.__kind,
-      referenceId: this.__referenceId,
+      channelId: this.__channelId,
       name: this.__name,
       source: this.__source,
-      type: "composer-slack",
+      type: "composer-channel",
       version: 1,
     }
   }
@@ -340,47 +325,36 @@ class ComposerSlackNode extends DecoratorNode<React.ReactElement> {
         className={MENTION_CHIP_CLASS_NAME}
         contentEditable={false}
         spellCheck={false}
-        title={this.__referenceId}
+        title={this.__channelId}
       >
-        {this.__kind === "user" ? (
-          <span className="truncate leading-tight select-none">
-            <SlackUserMention userId={this.__referenceId} />
-          </span>
-        ) : (
-          <>
-            <HashIcon
-              aria-hidden
-              className="size-3.5 shrink-0 opacity-70"
-              weight="regular"
-            />
-            <span className="truncate leading-tight select-none">
-              {this.__name}
-            </span>
-          </>
-        )}
+        <HashIcon
+          aria-hidden
+          className="size-3.5 shrink-0 opacity-70"
+          weight="regular"
+        />
+        <span className="truncate leading-tight select-none">
+          {this.__name}
+        </span>
       </span>
     )
   }
 }
 
-function $createComposerSlackNode(
-  kind: SlackReferenceKind,
-  referenceId: string,
+function $createComposerChannelNode(
+  channelId: string,
   name: string,
   source: string
-): ComposerSlackNode {
-  return $applyNodeReplacement(
-    new ComposerSlackNode(kind, referenceId, name, source)
-  )
+): ComposerChannelNode {
+  return $applyNodeReplacement(new ComposerChannelNode(channelId, name, source))
 }
 
 function isDecoratorNode(
   node: unknown
-): node is ComposerMentionNode | ComposerSkillNode | ComposerSlackNode {
+): node is ComposerMentionNode | ComposerSkillNode | ComposerChannelNode {
   return (
     node instanceof ComposerMentionNode ||
     node instanceof ComposerSkillNode ||
-    node instanceof ComposerSlackNode
+    node instanceof ComposerChannelNode
   )
 }
 
@@ -564,14 +538,9 @@ function $setComposerPrompt(
       $appendTextWithLineBreaks(paragraph, segment.text)
     } else if (segment.type === "mention") {
       paragraph.append($createComposerMentionNode(segment.path, segment.source))
-    } else if (segment.type === "user") {
-      paragraph.append(
-        $createComposerSlackNode("user", segment.userId, "", segment.source)
-      )
     } else if (segment.type === "channel") {
       paragraph.append(
-        $createComposerSlackNode(
-          "channel",
+        $createComposerChannelNode(
           segment.channelId,
           segment.name,
           segment.source
@@ -816,7 +785,7 @@ export function ComposerPromptEditor(props: ComposerPromptEditorProps) {
     () => ({
       namespace: "open-swe-composer",
       editable: true,
-      nodes: [ComposerMentionNode, ComposerSkillNode, ComposerSlackNode],
+      nodes: [ComposerMentionNode, ComposerSkillNode, ComposerChannelNode],
       editorState: () => {
         $setComposerPrompt(
           initialValueRef.current,

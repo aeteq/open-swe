@@ -11,7 +11,7 @@ import { TextEditor } from "@/components/TextEditor"
 import {
   api,
   isGithubReauthError,
-  connectService,
+  loginUrl,
   type AgentInstructions,
 } from "@/lib/api"
 import { useRepos } from "@/lib/profile"
@@ -222,15 +222,8 @@ export function AgentInstructionsPanel() {
         <Banner intent="error" className="m-space-4">
           <span className="text-xs text-error-secondary">
             Your GitHub connection expired.{" "}
-            <MacawLink
-              href="#"
-              variant="sm"
-              onClick={(event) => {
-                event.preventDefault()
-                void connectService("github", window.location.href)
-              }}
-            >
-              Link GitHub again
+            <MacawLink href={loginUrl()} variant="sm">
+              Sign in with GitHub again
             </MacawLink>{" "}
             to list installed repos.
           </span>

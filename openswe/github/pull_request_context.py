@@ -1,6 +1,5 @@
 """Build actionable model context from a live GitHub pull request."""
 
-import asyncio
 import re
 from collections.abc import Mapping
 from typing import Any, Literal
@@ -584,10 +583,8 @@ async def get_pull_request_context(
     if identity is None:
         return None
     owner, repo, number = identity
-    reviews, checks = await asyncio.gather(
-        _fetch_reviews(github.http, owner, repo, number),
-        _fetch_checks(github.http, owner, repo, number),
-    )
+    reviews = await _fetch_reviews(github.http, owner, repo, number)
+    checks = await _fetch_checks(github.http, owner, repo, number)
     context: dict[str, Any] = {
         "repoFullName": f"{owner}/{repo}",
         "number": number,

@@ -5,8 +5,6 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { seedRepoSidebar } from "./helpers/dashboard";
-
 const USER = {
   login: "thread-tools-e2e",
   email: "thread-tools-e2e@example.com",
@@ -19,7 +17,9 @@ const SAME_ORIGIN_HEADERS = { origin: BASE_URL, referer: `${BASE_URL}/` };
 async function loginAs(page: Page) {
   const response = await page.request.post("/control/login", { data: USER });
   expect(response.ok()).toBeTruthy();
-  await seedRepoSidebar(page);
+  await page.addInitScript((login) => {
+    localStorage.setItem(`open-swe.desktop.experience:${login}`, "coding");
+  }, USER.login);
 }
 
 async function saveDefaultModel(page: Page) {

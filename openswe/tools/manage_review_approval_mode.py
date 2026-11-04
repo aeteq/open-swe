@@ -5,7 +5,7 @@ from typing import Literal
 from openswe.audit_logs.tools import audit_tool
 from openswe.dashboard.repo_access import require_repo_access_for_user
 from openswe.github.repo_names import normalize_repo_full_name
-from openswe.review.approvals import ApprovalPolicy
+from openswe.review.approvals import fetch_approvals_md
 from openswe.review.styles import (
     REVIEW_STYLES,
     ApprovalMode,
@@ -46,7 +46,6 @@ async def manage_review_approval_mode(
     return {
         "repository": repository,
         "mode": effective_approval_mode(record),
-        "approval_criteria_on_default_branch": (
-            await ApprovalPolicy.load(owner, name, token=token)
-        ).configured,
+        "approvals_file_on_default_branch": await fetch_approvals_md(owner, name, None, token=token)
+        is not None,
     }

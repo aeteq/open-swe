@@ -22,7 +22,7 @@ channel = channels.github(
             "issues": "write",
             "checks": "write",
             "statuses": "read",
-            "security_events": "write",
+            "security_events": "read",
             "actions": "read",
             "workflows": "write",
         }

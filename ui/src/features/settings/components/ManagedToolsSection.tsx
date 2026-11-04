@@ -14,7 +14,7 @@ import type {
   ManagedToolsMissingCredential,
   ManagedToolsView,
 } from "@/lib/api"
-import { SignInWithLangSmithButton } from "./ConnectionsSection"
+import { ConnectLangSmithButton } from "./ConnectionsSection"
 
 export const MANAGED_TOOLS_KEY = ["myManagedTools"]
 
@@ -291,8 +291,8 @@ export function ManagedToolsSection() {
       ) : !view.data?.langsmith_connected ? (
         <SettingsRow
           label="LangSmith"
-          description="Your LangSmith sign-in expired. Sign in again to use the managed tools Open SWE offers."
-          control={<SignInWithLangSmithButton />}
+          description="Connect LangSmith to use the managed tools Open SWE offers."
+          control={<ConnectLangSmithButton />}
         />
       ) : view.data.gateways.length === 0 ? (
         <p className="p-space-4 text-xs text-secondary">

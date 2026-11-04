@@ -46,7 +46,6 @@ export interface MessagesProps extends ApprovalCallbacks {
   streamIsLoading?: boolean
   /** When set, drives the thinking spinner (stream + pending). Falls back to streamIsLoading/isStreaming. */
   isThinking?: boolean
-  isWaitingForDelegatedWork?: boolean
   settingUpSandbox?: boolean
   isOffloading?: boolean
   /** Takes over the activity line while the event stream is reconnecting. */

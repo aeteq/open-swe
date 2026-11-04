@@ -52,7 +52,6 @@ from rt.backend import (
     reported_call,
 )
 from rt.git_evidence import turn_git
-from rt.session_handoff import HeldSessions
 
 logger = logging.getLogger(__name__)
 
@@ -259,8 +258,6 @@ async def _operate(
     for event in answer.events:
         runtime.stream_writer(event)
     turn_git(backend.run).found_pull_requests(answer.pull_requests, started)
-    if answer.sessions and (held := HeldSessions.of(backend)) is not None:
-        held.update(answer.sessions)
     return _result(answer, tool_call_id, spec.name)
 
 

@@ -352,11 +352,6 @@ export function Header({
             <span className="max-sm:hidden">Chat</span>
           </Button>
         )}
-        {detail && !isLive(detail) && queue && (
-          <Button size="sm" onClick={queue.advance}>
-            {queue.next ? "Next" : "Finish"}
-          </Button>
-        )}
         {detail && isLive(detail) && (
           <ReviewButton
             owner={pr.owner}
@@ -373,16 +368,7 @@ export function Header({
                   : "Approve & finish"
                 : undefined
             }
-            readyLabel={
-              queue
-                ? queue.next
-                  ? "Mark ready & next"
-                  : "Mark ready & finish"
-                : undefined
-            }
             onApproved={queue?.advance}
-            nextLabel={queue ? (queue.next ? "Next" : "Finish") : undefined}
-            onNext={queue?.advance}
           />
         )}
         <DropdownMenu>

@@ -180,7 +180,13 @@ async def get_dashboard_thread(
             else None
         ),
     )
-    if mark_viewed and status != "running":
+    if (
+        mark_viewed
+        and status != "running"
+        and not (
+            metadata.get("experience") == "agent_workspace" and metadata.get("transcript") == "v2"
+        )
+    ):
         with phase(record, "mark_viewed"):
             metadata = await _mark_thread_viewed(
                 client,
@@ -197,10 +203,8 @@ async def get_dashboard_thread(
             latest_run_id=latest_run_id,
         )
     with phase(record, "subagents"):
-        await asyncio.gather(
-            attach_subagents([summary]),
-            attach_task_workers(client, [summary], login, email),
-        )
+        await attach_subagents([summary])
+    await attach_task_workers(client, [summary], login, email)
     return summary
 
 
@@ -451,6 +455,7 @@ _CONTINUED_METADATA_KEYS = (
     "repo_owner",
     "repo_name",
     "repo_explicitly_none",
+    "experience",
     THREAD_SETTINGS_KEY,
 )
 

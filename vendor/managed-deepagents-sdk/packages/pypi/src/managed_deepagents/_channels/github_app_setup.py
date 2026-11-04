@@ -38,8 +38,6 @@ EVENT_PERMISSIONS: dict[str, tuple[str, PermissionLevel]] = {
     "push": ("contents", "read"),
     "status": ("statuses", "read"),
     "workflow_run.completed": ("actions", "read"),
-    "merge_group.checks_requested": ("merge_queues", "read"),
-    "merge_group.destroyed": ("merge_queues", "read"),
 }
 
 _MAX_PERMISSIONS = 50

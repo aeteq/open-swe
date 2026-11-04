@@ -62,7 +62,6 @@ export interface OwnershipPickerProps {
   workspaceSlug: string | null
   onChange: (ids: Array<string>) => void
   searchPlaceholder: string
-  matchesItem?: (item: PickerItem, search: string) => boolean
   filter?: PickerFilter
   filters?: Array<PickerFilter>
   manual?: ManualEntry
@@ -102,7 +101,6 @@ export function OwnershipPicker({
   workspaceSlug,
   onChange,
   searchPlaceholder,
-  matchesItem = matchesSearch,
   filter,
   filters,
   manual,
@@ -144,7 +142,7 @@ export function OwnershipPicker({
     .map((id) => rows.get(id))
     .filter((item): item is PickerItem => !!item)
   const rest = [...rows.values()].filter(
-    (item) => !draftSet.has(item.id) && matchesItem(item, search)
+    (item) => !draftSet.has(item.id) && matchesSearch(item, search)
   )
   const available = rest.filter(
     (item) => !ownedElsewhere(item) && passesFilter(item)
