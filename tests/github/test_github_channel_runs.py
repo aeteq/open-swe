@@ -31,7 +31,7 @@ def _issue_payload(**overrides: JsonValue) -> dict[str, JsonValue]:
             "id": 101,
             "number": 7,
             "title": "Crash on start",
-            "body": "@openswe please fix this",
+            "body": "@jarvis-aeteq please fix this",
             "html_url": "https://github.com/acme/api/issues/7",
             "user": {"login": "ada"},
         },
@@ -42,7 +42,9 @@ def _issue_payload(**overrides: JsonValue) -> dict[str, JsonValue]:
     return payload
 
 
-def _comment_payload(body: str = "@openswe try again", **issue: JsonValue) -> dict[str, JsonValue]:
+def _comment_payload(
+    body: str = "@jarvis-aeteq try again", **issue: JsonValue
+) -> dict[str, JsonValue]:
     payload = _issue_payload(action="created")
     payload["issue"] = {**payload["issue"], "body": "No mention here", **issue}
     payload["comment"] = {"id": 55, "body": body, "user": {"login": "ada"}}

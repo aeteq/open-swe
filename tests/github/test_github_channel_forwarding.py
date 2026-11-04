@@ -27,7 +27,7 @@ def _issue(**fields: JsonValue) -> dict[str, JsonValue]:
         "id": 101,
         "number": 7,
         "title": "Crash on start",
-        "body": "@openswe please fix this",
+        "body": "@jarvis-aeteq please fix this",
         "user": {"login": "ada"},
         **fields,
     }
@@ -80,7 +80,7 @@ def intake(monkeypatch: pytest.MonkeyPatch) -> dict[str, AsyncMock]:
             {
                 "action": "created",
                 "issue": _issue(body="no tag"),
-                "comment": {"id": 55, "body": "@openswe try again", "user": {"login": "ada"}},
+                "comment": {"id": 55, "body": "@jarvis-aeteq try again", "user": {"login": "ada"}},
                 "repository": REPO,
                 "sender": {"login": "ada"},
             },
@@ -118,7 +118,7 @@ async def test_pull_request_comments_stay_on_open_swe(intake: dict[str, AsyncMoc
     payload = {
         "action": "created",
         "issue": _issue(pull_request={"url": "https://api.github.com/pulls/7"}),
-        "comment": {"id": 55, "body": "@openswe try again", "user": {"login": "ada"}},
+        "comment": {"id": 55, "body": "@jarvis-aeteq try again", "user": {"login": "ada"}},
         "repository": REPO,
         "sender": {"login": "ada"},
     }
