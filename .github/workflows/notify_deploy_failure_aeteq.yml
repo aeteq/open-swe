@@ -1,7 +1,7 @@
 name: Notify deploy failures (aeteq)
 
-# Posts to #ai-assisted when a deploy of main fails. Cancelled runs were superseded
-# by a newer push, whose own run reports on it.
+# Posts to #ai-assisted when a deploy of main fails, times out or cannot start.
+# Cancelled runs were superseded by a newer push, whose own run reports on it.
 
 on:
   workflow_run:
@@ -17,7 +17,7 @@ jobs:
     name: Post to Slack
     if: >-
       github.repository == 'aeteq/open-swe'
-      && github.event.workflow_run.conclusion == 'failure'
+      && contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
