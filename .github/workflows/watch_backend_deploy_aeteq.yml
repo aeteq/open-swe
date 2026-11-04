@@ -1,0 +1,41 @@
+name: Watch openswe-server deploy (aeteq)
+
+# LangSmith deploys openswe-server itself on every push to main; this waits for that
+# revision so a failed build or deploy fails a run, which notify_deploy_failure_aeteq.yml
+# reports to Slack. A newer push supersedes the run: its own run checks the newer revision.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    name: Wait for the openswe-server revision
+    if: >-
+      github.repository == 'aeteq/open-swe'
+      && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    concurrency:
+      group: watch-backend-deploy
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Wait for the revision of this commit
+        env:
+          BRANCH: main
+          DEPLOYMENT_NAME: openswe-server
+          EXPECTED_SHA: ${{ github.sha }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          LANGSMITH_HOST_URL: https://aws.api.host.langchain.com
+          LANGSMITH_WORKSPACE_ID: 7657d5d9-dea8-46fd-a8ab-d26db7f80e5f
+        run: uv run scripts/deploy_preview.py
