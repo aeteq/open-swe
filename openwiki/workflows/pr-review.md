@@ -42,10 +42,10 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Pull Request Review Workflow
@@ -58,7 +58,7 @@ Open SWE reviews a pull request through a dedicated `reviewer` graph. A PR has o
 
 A review can begin through:
 
-- **Automatic first review:** `pull_request` actions `opened` and `ready_for_review`. The repository must appear in the enabled-review-repositories record; absence is disabled by default and a store failure also safely reads as disabled. Drafts additionally require the author's `review_draft_prs` setting, with the team setting as fallback.
+- **Automatic first review:** `pull_request` actions `opened` and `ready_for_review`. The repository must appear in the enabled-review-repositories store; absence is disabled by default and a store failure also safely reads as disabled. Drafts additionally require the author's `review_draft_prs` setting, with the team setting as fallback.
 - **Explicit request:** the main-agent tool `request_pr_review` accepts a GitHub PR URL, preserves an active Slack thread if present, and delegates to `trigger_pr_review_from_ref`. The dashboard calls that same entrypoint. It fetches PR metadata, ensures the reviewer thread exists, turns on `watch`, posts a temporary in-progress comment, and dispatches the reviewer.
 - **A later push:** a push only becomes a re-review for an open PR whose canonical reviewer thread exists and has `watch=true`.
 - **A reply to a reviewer comment:** a non-bot reply is separately routed before ordinary mention handling and can dispatch a focused reassessment run.

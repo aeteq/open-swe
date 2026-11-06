@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory, managed-deep-agents]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -27,16 +27,16 @@ sources:
     resource: repo://openswe/server.py
   - id: openwiki-source-659ef274df23f55f0ecc0366
     resource: repo://openswe/skill_store/run_skills.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 ---
 
 # Coding Agent Assembly and Execution
 
-Open SWE's coding agent runs on Managed Deep Agents (MDA), a remote LangGraph service. The server calls `plan_agent(config, surface)` to prepare and configure the graph before MDA executes it. This factory function is the customization seam for sandbox providers, model policy, tool surfaces, skills routes, subagents, and middleware. All per-thread state lives in the sandbox and thread metadata; the agent graph itself is stateless and rebuilt per thread.
+Open SWE's coding agent runs on Managed Deep Agents (MDA), a remote LangGraph service. The server calls `agent_catalog(config, surface)` to prepare and configure the graph before MDA executes it. This factory function is the customization seam for sandbox providers, model policy, tool surfaces, skills routes, subagents, and middleware. All per-thread state lives in the sandbox and thread metadata; the agent graph itself is stateless and rebuilt per thread.
 
 ## Entry and execution gate
 
-The factory function `plan_agent` receives a `RunnableConfig` carrying thread metadata and launch context in its `configurable` dict. It gates full assembly on the presence of a non-null `thread_id` within `RunConfig`, indicating an executable thread run. The function populates a `ToolSurface` object that MDA uses to configure the model loop, tools, middleware, models, and subagents.
+The factory function `agent_catalog` receives a `RunnableConfig` carrying thread metadata and launch context in its `configurable` dict. It gates full assembly on the presence of a non-null `thread_id` within `RunConfig`, indicating an executable thread run. The function populates a `ToolSurface` object that MDA uses to configure the model loop, tools, middleware, models, and subagents.
 
 `RunConfig` is the tolerant configuration contract: all declared fields are optional, unknown keys survive round trips, and parsing drops only invalid fields rather than losing an otherwise usable run configuration. This flexibility matters because different launchers and graph types add distinct keys.
 
@@ -171,7 +171,7 @@ sequenceDiagram
     participant Sandbox as SandboxBackend
 
     Client->>Server: POST /runs (with config)
-    Server->>Server: plan_agent(config, surface)
+    Server->>Server: agent_catalog(config, surface)
     
     Server->>Server: Resolve models, tools, middleware
     Server->>Server: Assemble subagent config

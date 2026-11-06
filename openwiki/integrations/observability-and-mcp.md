@@ -4,14 +4,14 @@ title: Observability, Tracing, and MCP
 description: LangSmith tracing and cost collection, analytics event capture, invocation and session cost tracking, MCP connections, and full-transcript recording for debugging and replay.
 tags: [observability, tracing, mcp, analytics, langsmith, credentials, costs, transcript, error-tracking, browser, image-fallback]
 sources:
-  - id: openwiki-source-3a54086e4213e64cb31a7617
-    resource: repo://openswe/agent_api/loop.py
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py
   - id: openwiki-source-b23248ea29f610c9e611ae8c
     resource: repo://openswe/analytics/usage.py
   - id: openwiki-source-1c10d1b4bdf51f06452acf76
     resource: repo://openswe/api/tracing.py
+  - id: openwiki-source-8edaced2842e8bdf5ec72158
+    resource: repo://openswe/dashboard/options.py
   - id: openwiki-source-8e86bc5c07d70c0696441776
     resource: repo://openswe/mcp/instance.py
   - id: openwiki-source-bcad329e419936bbe20b5ee9
@@ -28,8 +28,6 @@ sources:
     resource: repo://openswe/mcp/workspace.py
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
     resource: repo://openswe/middleware/dynamic_tools.py
-  - id: openwiki-source-f14e3b9027356fb68a4a9984
-    resource: repo://openswe/middleware/model_errors.py
   - id: openwiki-source-7f36425bcc9aa67f9d9ae31a
     resource: repo://openswe/middleware/trace.py
   - id: openwiki-source-39f8a68480d768367a7dd112
@@ -46,14 +44,12 @@ sources:
     resource: repo://openswe/threads/browser.py
   - id: openwiki-source-1b56c0378ee7dbe5ac66ab32
     resource: repo://openswe/threads/handlers.py
-  - id: openwiki-source-cd112cd02fc1d81c51e6f024
-    resource: repo://openswe/utils/errors.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Observability, Tracing, and MCP
@@ -66,7 +62,7 @@ The agent combines three observability and integration systems:
 
 3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, and user. Missing credentials or connection failures remove optional tools rather than blocking a run.
 
-Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call errors in thread metadata for observability and recovery, provides image model fallback so agents can handle image inputs even when the selected model does not support them, and enables browser automation through LangSmith's browser MDA.
+Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call error classification in completion handlers for observability and recovery, provides image model fallback so agents can handle image inputs even when the selected model does not support them, and enables browser automation through LangSmith's browser MDA.
 
 See [Authentication and security](../concepts/auth-and-security.md) for the broader trust model, [Tools](../concepts/tools.md) for dynamic tool availability, [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) for model selection, and [Configuration](../operations/configuration.md) for environment settings.
 
@@ -124,19 +120,20 @@ Events are queued and flushed asynchronously by a writer per run, with soft-buff
 
 ## Error tracking and recovery
 
-The system tracks model-call errors in thread metadata for observability and upstream error recovery:
+The system tracks model-call errors for observability and upstream error recovery:
 
-- **`ModelErrorMiddleware`** (`openswe/middleware/model_errors.py`): Logs full exception details on model-call failures and records an error classification in thread metadata under `LAST_MODEL_ERROR_KEY`.
-- **Error classification**: `openswe/utils/errors.py` provides `classify_exception` to categorize errors by code (e.g., "provider_overloaded", "rate_limited", "invalid_request"), distinguishing provider-specific failures from generic API errors by inspecting status codes and error bodies.
-- **Thread metadata**: The `last_model_error` metadata key carries the error type, run ID, and classification code. The run-completion reply can use this classification to decide recovery strategies, even when the exception message has been scrubbed by the platform.
+- **Error classification**: `openswe/utils/errors.py` provides `classify_exception` to categorize exceptions by code (e.g., "provider_rate_limited", "provider_overloaded", "provider_unavailable", "context_too_long", "model_unavailable") by inspecting status codes and error bodies. It uses both exception class names and provider-specific error codes to distinguish failures.
+- **Completion-time recovery**: The run-completion handler in `openswe/completion.py` reads the recorded error type from run status and thread metadata (under `last_model_error` key) to decide recovery strategies, even when the exception message has been scrubbed by the platform. Terminal failure reasons are classified and included in completion payloads and Slack failure replies.
+
+This classification enables human operators and automated recovery systems to distinguish transient provider overloads, rate limits, and context-length issues from unrecoverable failures.
 
 ## Image model fallback
 
 When an agent receives image inputs but the selected model does not support images, the system automatically selects a configured fallback vision model for that call. The vision model fallback operates through:
 
 - **Configuration**: During agent assembly, `openswe/server.py` determines a `vision_model` fallback when the primary model or any routed model does not support images. A vision model is selected via `default_vision_model_pair()` and configured in `SurfaceModels.vision`.
-- **Detection**: Before each model call, the agent API's `vision_for()` method in `openswe/agent_api/loop.py` checks if the selected model can handle images; if not and a vision fallback is available, it returns the fallback model.
-- **Substitution**: The fallback vision model is passed to the model call via the `before_model` hook in the agent API, allowing the deepagents runtime to transparently use the vision-capable model for that call only.
+- **Detection**: Before each model call, the agent checks if the selected model can handle images via `model_supports_images()`. If not and a vision fallback is available, the vision model is substituted.
+- **Substitution**: The fallback vision model is passed to the model call via agent API hooks, allowing the deepagents runtime to transparently use the vision-capable model for that call only.
 - **Graceful degradation**: If no vision fallback is configured, warnings are issued when queued images arrive for a text-only model, preserving the queued message but alerting the user that images will be skipped.
 
 This ensures the agent can handle image attachments from Slack, email, or file uploads without failing, even when the user pins a text-only model.
@@ -203,7 +200,7 @@ MCP tool loading flow: credential scope gates tool loading, then instance, works
 
 While assembling a non-local, non-summary agent for a run with known credential scope, the server loads:
 
-- **MCP tools** from instance, workspace, and user tiers using `_mcp_tools_for`.
+- **MCP tools** from instance, workspace, and user tiers using concurrent loading via asyncio.gather.
 
 Summary-stop and local/desktop runs skip optional tool loading. The tool loader is wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers the tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load the group and begin using its tools.
 
@@ -217,7 +214,7 @@ The combination of these systems enforces key invariants:
 - **Lazy tool availability**: MCP handshakes are deferred until explicitly requested, so unavailable or slow integrations do not block the first model call.
 - **Trace isolation**: Middleware trace policies omit sensitive input payloads from traces, and trace resource naming happens at the middleware boundary so platform-level APM can properly instrument routes.
 - **Cost attribution**: Session costs and invocation costs are tracked independently with bounded-retry scheduling, ensuring cost data eventually reaches Slack replies and analytics even if LangSmith is temporarily unavailable.
-- **Error recovery**: Model-call errors are classified and recorded on the thread so upstream systems and human operators can decide recovery strategies without relying on exception message inspection.
+- **Error recovery**: Model-call errors are classified and recorded so upstream systems and human operators can decide recovery strategies without relying on exception message inspection.
 - **Capability fallbacks**: Image model fallback and browser automation support ensure agents can handle diverse input types and navigate web interfaces even when model selection constraints or feature availability would otherwise pose obstacles.
 
 ## Focused verification
@@ -229,6 +226,6 @@ Relevant tests cover:
 - **Concurrent assembly**: Factory-level tool loading in `tests/agent/test_factory_tool_loading.py`.
 - **Transcript recording**: Transcript lifecycle and event flushing in tests under `tests/middleware/transcript/` and `tests/transcript/`.
 - **Cost tracking**: Invocation and session cost refresh in `tests/agent/test_agent_cost.py` and `tests/agent/test_session_cost.py`.
-- **Error tracking**: Model error classification and recording in `tests/middleware/` error tracking tests.
+- **Error tracking**: Model error classification and recording in completion handler tests in `tests/completion/`.
 - **Image model fallback**: Image fallback behavior tested in `tests/slack/test_slack_image_models.py` and queue-based image handling in `tests/middleware/` message queue tests.
 - **Browser automation**: Browser state management and cleanup in `tests/threads/test_thread_handlers.py` when sharing threads.

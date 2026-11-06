@@ -3,9 +3,6 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -29,12 +26,16 @@ sources:
     resource: repo://openswe/graphs/reviewer.py
   - id: openwiki-source-1501ebbb20af772307a3e518
     resource: repo://openswe/jobs/kinds.py
-  - id: openwiki-source-ff94e6d6f8e823f174c61b08
-    resource: repo://openswe/linear/routes.py
+  - id: openwiki-source-ab57de9770aafc1c1c0da3e6
+    resource: repo://openswe/linear/channel.py
+  - id: openwiki-source-18a55f72354dac8e1bec4586
+    resource: repo://openswe/notion/routes.py
   - id: openwiki-source-7a02c62499495310b04f21ef
     resource: repo://openswe/review/chat.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
+  - id: openwiki-source-2dbb6fddd1531095bb57d08e
+    resource: repo://openswe/sandboxes/state.py
   - id: openwiki-source-c1d629bf5196269b73880148
     resource: repo://openswe/slack/routes.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
@@ -45,7 +46,10 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Runtime and Product Architecture
@@ -79,20 +83,21 @@ All three graphs are re-exports of `openswe.graphs.read_only:read_only_graph`, w
 <!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
 ```text
 flowchart TD
-  Slack["Slack"] --> Webhooks["Webhook routers<br/>(GitHub, Linear, Slack)"]
-  Linear["Linear"] --> Webhooks
-  GitHub["GitHub"] --> Webhooks
-  Browser["Web dashboard"] --> Dashboard["Dashboard router"]
+  Slack["Slack"] --> WebhookRouters["Webhook routers<br/>(GitHub, Linear, Slack, Notion)"]
+  Linear["Linear"] --> WebhookRouters
+  GitHub["GitHub"] --> WebhookRouters
+  Notion["Notion"] --> WebhookRouters
+  Browser["Web dashboard"] --> DashboardRouter["Dashboard router"]
   JobQueue["Job queue"] --> BackgroundJobs["Background jobs<br/>(reconcile, watch, costs)"]
-  Dashboard --> Chat["PR chat proxy"]
+  DashboardRouter --> Chat["PR chat proxy"]
 
   subgraph App["FastAPI app"]
-    Webhooks
-    Dashboard
+    WebhookRouters
+    DashboardRouter
   end
 
-  Webhooks --> Dispatch["dispatch_agent_run"]
-  Dashboard --> Dispatch
+  WebhookRouters --> Dispatch["dispatch_agent_run"]
+  DashboardRouter --> Dispatch
   Dispatch --> ThreadRouter["ThreadRouter middleware"]
   ThreadRouter --> MDA["Managed Deep Agents execution"]
   MDA --> Agent["agent graph"]
@@ -113,19 +118,21 @@ New runs created via `dispatch_agent_run` route through `openswe.threads.router:
 
 PR chat is intentionally sandbox-less and read-only. Rather than being a separate graph, it is a FastAPI proxy in `openswe/review/chat.py` that proxies requests through to the main agent thread. The dashboard review-chat handlers seed the PR diff, findings, and overview via the existing agent thread's state. Filesystem tools can read that context, while `execute`, writes, edits, and deletion are excluded; GitHub-backed tools use a repository-scoped GitHub App token rather than a user credential.
 
-Background and scheduled work runs via the job queue (openswe/jobs), not as registered graphs. Job handlers dispatch to reconciliation (`reconcile_stale_runs`), watch evaluation (`evaluate_watch`), background-task monitoring, session-cost or agent-cost refresh, thread-feedback evaluation, human-review deadline management, or scheduled agent runs. Missing a watch key, thread ID, or schedule ID yields a structured status instead of launching ambiguous work.
+Background and scheduled work runs via the job queue (openswe/jobs), not as registered graphs. Job handlers dispatch to reconciliation (`reconcile_stale_runs`), watch evaluation (`evaluate_watch`), background-task monitoring (`monitor_background_tasks`), session-cost or agent-cost refresh, thread-feedback evaluation, human-review deadline management (`run_deadline`), merge-queue reconciliation, notification delivery, monitor polling, review-guide archival, workspace refresh, or scheduled agent runs via `launch_scheduled_agent_run`.
 
 ## HTTP composition and ingress
 
-`openswe/webapp.py` is a compatibility re-export of the application assembled by `openswe/api/app.py:create_app`. At import time the API pins one event loop before background workers are built, and repeated pinning in the lifespan hook ensures all workers share the same event loop. The app factory configures credentialed CORS from `DASHBOARD_ALLOWED_ORIGINS` and rejects `*`, then mounts dashboard, plan, workflow-approval, Linear, Notion, Slack, GitHub, health, and sandbox-tool routers plus the bundled dashboard UI. Its lifespan hook validates sandbox and local-development LLM configuration at startup, runs database migrations and user imports, activates analytics, starts listeners for transcripts and sandbox bridges, closes cached models on shutdown, and handles imports of legacy Store records (user mappings, concierge mode, automations).
+`openswe/webapp.py` is a compatibility re-export of the application assembled by `openswe/api/app.py:create_app`. At import time the API pins one event loop before background workers are built, and repeated pinning in the lifespan hook ensures all workers share the same event loop. The app factory configures credentialed CORS from `DASHBOARD_ALLOWED_ORIGINS` and rejects `*`, then mounts dashboard, plan, workflow-approval, Linear channel, Notion, Slack, GitHub, health, and sandbox-tool routers plus the bundled dashboard UI. It also includes the MDA-to-backend agent API router at a fixed path. Its lifespan hook validates sandbox and local-development LLM configuration at startup, runs database migrations and user imports, activates analytics, starts listeners for transcripts and sandbox bridges, closes cached models on shutdown, warms the agent build, and handles imports of legacy Store records (user mappings, concierge mode, automations).
 
 The dashboard router is rooted at `/dashboard/api` and applies a same-origin dependency to mutations. It is the browser-facing boundary for OAuth, profiles, team defaults, administration, repository and review-style configuration, and thread APIs. Importing `openswe.dashboard` does not eagerly load this large surface: a PEP 562 `__getattr__` imports and caches `routes.router` only when the web application mounts it. This prevents middleware and non-webapp modules from pulling in FastAPI and all downstream API/job dependencies.
 
-Slack, Linear, and GitHub webhook routes validate and normalize external events before scheduling their service work. They derive or resolve stable thread identities—for example, Linear uses the issue ID and reviewer runs use repository and PR coordinates—so later activity can recover the corresponding thread state rather than starting an unrelated session. GitHub rejects invalid webhook signatures; Slack rejects conflicting mapping rather than guessing an agent thread.
+Webhook ingress points normalize and validate external events before scheduling their work. **GitHub** webhooks validate signatures and record events; they route directly to work scheduling or background automations. **Slack** webhooks route messages and block actions through a unified request handler that resolves Slack threads to agent threads, validates bot permissions, and schedules follow-ups or commands. **Linear** webhooks in the MDA deployment verify delivery signatures and POST validated events with their thread to the backend's Linear channel endpoint (`/linear/channel/events`), which decides whether to start a run or only log and trigger automations. **Notion** webhooks validate secret tokens and record page and comment events for background processing.
+
+All webhook routers derive or resolve stable thread identities—for example, Linear uses the issue ID and reviewer runs use repository and PR coordinates—so later activity can recover the corresponding thread state rather than starting an unrelated session.
 
 ## Durable dispatch and state ownership
 
-`dispatch_agent_run` is the common run-creation contract used by Slack, Linear, GitHub, dashboard, and scheduled agent/reviewer triggers. `assistant_id` selects `agent` or `reviewer`; `source` determines input identity and is retained for metadata/logging, not graph selection. The dispatcher rejects ambiguous combinations of a prebuilt input with content or identity arguments, ensuring callers choose either a fully constructed `RunInput` or build one from content, context, and identities.
+`dispatch_agent_run` is the common run-creation contract used by Slack, Linear, GitHub, Notion, dashboard, and scheduled agent/reviewer triggers. `assistant_id` selects `agent` or `reviewer`; `source` determines input identity and is retained for metadata/logging, not graph selection. The dispatcher rejects ambiguous combinations of a prebuilt input with content or identity arguments, ensuring callers choose either a fully constructed `RunInput` or build one from content, context, and identities.
 
 The durable defaults are intentional:
 - **`multitask_strategy="interrupt"`** — a follow-up halts the active run (progress preserved by its checkpoints) and resumes the agent with full history plus the new message. On an idle thread it just starts. Background follow-ups such as scheduled work can explicitly opt into another strategy like `enqueue` for background queuing instead.
@@ -139,7 +146,7 @@ Thread execution context is durable: LangGraph checkpointing retains graph state
 
 ## Cloud and desktop product surfaces
 
-The cloud manifest currently pins Python 3.14 and LangGraph API version >~=0.15.0rc1. Its checkpointer TTL uses `delete`, sweeps every 60 minutes, and defaults to 43,200 minutes. The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
+The cloud manifest currently pins Python 3.14 and LangGraph API version >~=0.15.0rc1. Its checkpointer TTL uses `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes (30 days). The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
 
 The `ui/` application is a TanStack Router React client with routes for agent sessions and threads, local sessions, plans, automations, skills, reviews and styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes and selects `cloud` or `local` streaming transport from the active route. Router `basepath` follows Vite's build base, allowing the bundle to run below a configured mount prefix.
 

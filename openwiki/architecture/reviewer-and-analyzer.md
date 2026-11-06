@@ -3,9 +3,6 @@ type: architecture
 title: Reviewer Graph and Code Review
 description: Architecture of the isolated reviewer deep-agent graph, including repository preparation, durable finding reconciliation and publication, input safety, and differential code review.
 tags: [reviewer, code-review, findings, langgraph, sandbox, github, deep-agent]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -27,7 +24,10 @@ sources:
     resource: repo://openswe/tools/add_finding.py
   - id: openwiki-source-7cec199cafafc864b85fba49
     resource: repo://openswe/tools/publish_review.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Reviewer Graph and Code Review
@@ -42,20 +42,22 @@ For trigger routing and webhook behavior, see [PR Review Workflow](../workflows/
 
 The reviewer is read-only with respect to the repository. Its system prompt prohibits commits, pushes, and direct `gh pr review` or review-API calls. It has no coding, commit, push, or PR-opening tools: repository changes cannot be an agent action. GitHub review mutation is centralized in `publish_review` and the finding-thread tools.
 
-`plan_reviewer(config, surface)` constructs the graph per Managed Deep Agents run. The factory shallow-copies the outer config and its `configurable` mapping before supplying a default recursion limit, preserving the caller's configuration. If the run has no `thread_id`, the factory raises an error requiring a thread.
+The reviewer is registered in `langgraph.json` as the `reviewer` graph, which provides read-only access to threads created before Managed Deep Agents. New runs use the `ReviewerKind` integration through the Managed Deep Agents framework, which constructs the graph per run.
 
-For an executable run, the factory selects reviewer and subagent models from explicit configuration or team defaults, applies the Fable model gate, and attaches a cached sandbox backend with a reconnect closure. Its explicit tools are:
+`ReviewerKind` in the MDA framework prepares the reviewer using its `catalog` and `preparation` methods. The catalog exposes reviewer-specific tools and models; preparation returns a `PrepareReviewerRunMiddleware` that handles deterministic repository setup before the first model call. The factory conditionally loads MCP tools only for private-repository reviews (public reviews never receive them to prevent steering via attacker-controlled PR text).
+
+For an executable run, the reviewer selects models from explicit configuration or team defaults and applies the Fable model gate. Its explicit tools are:
 
 - review lifecycle: `fetch_review_diff`, `add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, and `reply_to_finding_thread`;
 - read-only external helpers: `web_search`, `fetch_url`, and `http_request`.
 
-It permits one `reviewer` subagent configured with an explicit system prompt. The parent assigns work by file partitioning; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication. MCP workspace tools are loaded only for private-repository reviews (public reviews never receive them to prevent steering via attacker-controlled PR text).
+It permits one `reviewer` subagent with an explicit system prompt, pinned in code at `REVIEWER_SUBAGENT_SYSTEM_PROMPT`. The parent assigns work by file partitioning; the subagent returns only candidate defects and has neither finding nor publication tools. The parent remains responsible for validation, persistence, and publication.
 
 ### Run preparation, GitHub access, and context
 
 `PrepareReviewerRunMiddleware` performs deterministic setup before the first model call. For a configured source repository it mints a repository-scoped GitHub App installation token, caches it as the thread's bot token, and supplies it to the sandbox GitHub proxy. It then ensures a sandbox with `abandon_unreachable=True`, clones or fetches the repository, force-checks out the PR head, and materializes trusted repository skills from the base revision.
 
-The middleware computes the review range and its unified diff, including delta-only re-review ranges, then derives the changed `(file, side, line)` set. It puts `diff_text` and `diff_line_set` in run state. This lets `add_finding` reject invalid anchors at creation time rather than waiting for GitHub to reject a batch.
+The middleware computes the review range and its unified diff, including delta-only re-review ranges, then derives the changed `(file, line, side)` set from that diff. It puts `diff_text` and `diff_line_set` in run state. This lets `add_finding` reject invalid anchors at creation time rather than waiting for GitHub to reject a batch.
 
 In parallel, preparation fetches PR title and body, existing GitHub review threads, saved repository custom style prompt, organization guidelines, root and scoped `AGENTS.md`/`CLAUDE.md` from the base SHA, an API standards skill, and optional review scout walkthrough. Existing threads are reconciled before their prompt block is rendered. Once the diff is available, scoped instructions are selected for changed files. The rendered prompt then selects first-review, re-review, or finding-reply guidance.
 

@@ -5,7 +5,7 @@ description: "Route readers through the wiki hierarchy based on their task: star
 tags: [quickstart, wiki, navigation, entrypoints, developer-setup, architecture]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -23,22 +23,12 @@ sources:
     resource: repo://openswe/graphs/read_only.py
   - id: openwiki-source-90b15fd6117126ebfe5b6b22
     resource: repo://openswe/graphs/reviewer.py
-  - id: openwiki-source-169564263f818f7bae30cd90
-    resource: repo://openswe/review_scout/graph.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
-  - id: openwiki-source-1b32e9f41fa7e64702b380f6
-    resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
     resource: repo://openswe/webapp.py
   - id: openwiki-source-5b54a58d1b51cd490b0e7162
     resource: repo://package.json
-  - id: openwiki-source-859f98720585f4648f0f7b2e
-    resource: repo://tests/e2e/playwright.config.ts
-  - id: openwiki-source-4b944ec14a3d793a6f771403
-    resource: repo://tests/e2e/playwright.desktop.config.ts
-  - id: openwiki-source-7ef60dc4372e1a33c7728fe6
-    resource: repo://tests/e2e/README.md
 generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 ---
 

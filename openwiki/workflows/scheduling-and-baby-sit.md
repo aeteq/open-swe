@@ -48,10 +48,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-21T13:36:13.083Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Scheduled and Background Work Dispatch
@@ -77,11 +77,17 @@ Diagram: the job queue stores due work and dispatches it to kind-specific handle
 
 The `openswe/jobs/kinds.py` module imports every handler and registers it with `WORKER`. When the webapp starts, it imports this module, making all handlers available. A handler is a coroutine that accepts a `Job` and either succeeds, raises (causing retry), or calls `job.finish()` / `job.stop()` / `job.retry_later()` to control lifecycle. The worker provides a heartbeat loop so a running job can renew its claim and be cancelled safely.
 
+### Handlers and retry semantics
+
+Every handler is registered by its job `kind`; the dispatch includes agent_schedule (dashboard recurring runs), reconcile (stale-run recovery), baby_sit (PR watch evaluation), background_tasks (sandbox completion monitoring), session_cost and agent_cost (deferred cost enrichment), announcements, human_review_deadline, workspace_refresh, thread_wakeup (one-shot thread restart), and specialized handlers for merge queues, monitors, GitHub forwarding, Slack directory sync, and others.
+
+When a handler raises an error, the job worker retries with exponential back-off (30 seconds × 2^(attempts-1), capped at 1 hour) up to MAX_ATTEMPTS (5). Cron jobs skip to their next scheduled fire on failure while one-shot jobs give up and finish after exhausting retries, so transient errors do not cause jobs to loop forever.
+
 ## Scheduled agent runs (dashboard automations)
 
 `openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage with `normalize_cron_schedule()`, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds (minute 0–59, hour 0–23, day-of-month 1–31, month 1–12, day-of-week 0–6). On a dashboard schedule fire, the queue stores a job with `kind=agent_schedule` and `schedule_id`.
 
-The handler `_agent_schedule` loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently. Deduplication via `event_claims` ensures a schedule that matures again during replay (after a deploy/crash) launches at most once.
+The handler `launch_scheduled_agent_run` loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently. Deduplication via `event_claims` ensures a schedule that matures again during replay (after a deploy/crash) launches at most once.
 
 ## Stale-run reconciliation
 
@@ -202,14 +208,12 @@ The agent may rerun only evidence-backed flaky GitHub Actions failures. After a 
 
 ## Focused verification
 
-Tests verify:
-- Job queue dispatch to correct handler by kind
-- Scheduled agent run launch and fire-once semantics
-- Baby-sit lifecycle: watch start, evaluation state transitions, retry capping
-- Baby-sit concurrency: webhook and cron trigger serialization under per-key lock; webhook deduplication by delivery_id
-- Baby-sit failure dispatch: dedupe by SHA/retry fingerprint; removal on dispatch failure
-- Signed CI webhook: X-Hub-Signature-256 verification, payload filtering
-- Stale-run pagination: per-thread isolation, skip malformed timestamps, counts accuracy
-- Cost refresh: bounded attempt limits, persistence and retrieval failure handling
-- Thread wakeups: budget enforcement per human message, lock-free purge of expired crons
-- Scheduling: cron validation (five-field expression, field ranges)
+Tests cover:
+- Job dispatch and worker claim/release/retry semantics
+- Scheduled agent runs with deduplication and missing-schedule recovery
+- Baby-sit lifecycle, concurrency, locking, and deduplication across webhook and polling triggers
+- Signed CI webhook routing and delivery ID deduplication
+- Stale-run reconciliation with pagination, per-thread error isolation, and timeout handling
+- Session and agent cost refresh with bounded retry budgets
+- Thread wakeup validation, budget enforcement, correlation, and cleanup
+- Expired cron purge with conservative matching and full pagination
