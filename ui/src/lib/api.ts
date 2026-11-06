@@ -239,6 +239,11 @@ async function loadPrDetails(
   }
 }
 
+/** The account the login page asks for: GitHub where LangSmith sign-in is not configured. */
+export interface SignInOptions {
+  provider: "github" | "langsmith"
+}
+
 export interface SessionUser {
   login: string
   auth_provider?: "github" | "langsmith"
@@ -1502,6 +1507,7 @@ function pullRequestThread(
 
 export const api = {
   me: () => request<SessionUser>("/me"),
+  signInOptions: () => request<SignInOptions>("/auth/options"),
   /** Model list and defaults for one workspace; model defaults are per workspace. */
   options: (workspace: string = DEFAULT_WORKSPACE_SLUG) =>
     request<OptionsPayload>(

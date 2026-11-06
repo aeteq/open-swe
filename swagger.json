@@ -7754,6 +7754,23 @@
         "title": "SessionCreateBody",
         "type": "object"
       },
+      "SignInOptions": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "github",
+              "langsmith"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "SignInOptions",
+        "type": "object"
+      },
       "SkillCreate": {
         "properties": {
           "description": {
@@ -11478,7 +11495,7 @@
     },
     "/dashboard/api/auth/login": {
       "get": {
-        "description": "Everyone signs in with LangSmith; locally without it, as the `gh` CLI's user.",
+        "description": "Sign in with LangSmith, or with GitHub where LangSmith sign-in is not configured.\n\nLocally, without either, sign in as the `gh` CLI's user.",
         "operationId": "auth_login_dashboard_api_auth_login_get",
         "parameters": [
           {
@@ -11495,6 +11512,40 @@
                 }
               ],
               "title": "Redirect To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desktop_handoff",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desktop Handoff"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desktop_port",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 65535,
+                  "minimum": 1024,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desktop Port"
             }
           }
         ],
@@ -11539,6 +11590,29 @@
           }
         },
         "summary": "Auth Logout",
+        "tags": [
+          "dashboard",
+          "auth"
+        ]
+      }
+    },
+    "/dashboard/api/auth/options": {
+      "get": {
+        "description": "Which account the login page asks for, before anyone is signed in.",
+        "operationId": "auth_options_dashboard_api_auth_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignInOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Options",
         "tags": [
           "dashboard",
           "auth"

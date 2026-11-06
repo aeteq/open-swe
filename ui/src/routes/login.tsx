@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useMemo } from "react"
 
@@ -7,7 +8,7 @@ import { Skeleton } from "@langchain/macaw-components/Skeleton"
 import { Text } from "@langchain/macaw-components/Text"
 
 import { LogoMark } from "@/components/Branding"
-import { loginUrl } from "@/lib/api"
+import { api, loginUrl } from "@/lib/api"
 import { appDistribution } from "@/lib/pageTitle"
 import { pageTitle } from "@/lib/pageTitle"
 import {
@@ -29,6 +30,12 @@ export const Route = createFileRoute("/login")({
 })
 function Login() {
   const session = useSession()
+  const signInOptions = useQuery({
+    queryKey: ["sign-in-options"],
+    queryFn: api.signInOptions,
+    staleTime: Infinity,
+  })
+  const signInWithGitHub = signInOptions.data?.provider === "github"
   const search = Route.useSearch()
   const redirectParam = search.redirect
   const intendedPath = useMemo(
@@ -42,7 +49,7 @@ function Login() {
     () => (session.data ? consumeAuthRedirect(redirectParam) : null),
     [redirectParam, session.data]
   )
-  if (session.isLoading) {
+  if (session.isLoading || signInOptions.isLoading) {
     return (
       <main className="flex min-h-svh items-center justify-center bg-surface-level-1 p-space-5">
         <Skeleton className="h-40 w-80" />
@@ -71,12 +78,14 @@ function Login() {
           size="md"
           className="w-full"
         >
-          Continue with LangSmith
+          {signInWithGitHub ? "Continue with GitHub" : "Continue with LangSmith"}
         </Button>
-        <Text as="p" variant="sm" color="secondary">
-          Link your GitHub account after signing in to use coding features and
-          return to your existing coding threads.
-        </Text>
+        {!signInWithGitHub && (
+          <Text as="p" variant="sm" color="secondary">
+            Link your GitHub account after signing in to use coding features and
+            return to your existing coding threads.
+          </Text>
+        )}
       </Card>
     </main>
   )
