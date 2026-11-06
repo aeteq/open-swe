@@ -27,7 +27,7 @@ class PublishDesignResult(TypedDict, total=False):
 def _task_page_id() -> str | None:
     cfg = RunConfig.from_runtime()
     page = cfg.notion_page
-    if cfg.source != "notion" or page is None or not page.id or page.is_mention:
+    if cfg.source != "notion" or page is None or not page.id or not page.is_task:
         return None
     return page.id
 

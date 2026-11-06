@@ -1,17 +1,21 @@
 """Behavior of Notion task events: assignment, the design gate, and comment follow-ups."""
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 from pydantic import JsonValue
 
-from openswe.notion import notifications
+from openswe.notion import design_review, notifications
 from openswe.notion import webhook as service
+from openswe.notion.design_review import DesignReview, ReviewedDesign
 from openswe.notion.models import WebhookEvent
 from openswe.notion.pending import PendingAssigner
 from openswe.thread_ids import notion_discussion_thread_id, notion_page_thread_id
+from openswe.users import User
 from tests.notion.fakes import (
+    ADRS_DS,
     ALICE,
     ASSIGNEE_ID,
     DESIGN_STATUS_ID,
@@ -125,7 +129,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Harness:
     monkeypatch.setattr(service.common, "get_workspace_settings", settings)
     monkeypatch.setattr(service.common, "get_profile_default_repo", none)
     monkeypatch.setattr(service.common, "is_repo_allowed", lambda repo: h.allowed)
-    monkeypatch.setattr(service.User, "login_for_email", login)
+    monkeypatch.setattr(User, "login_for_email", login)
     monkeypatch.setattr(service, "_thread_busy", not_busy)
     return h
 
@@ -657,3 +661,159 @@ async def test_reply_goes_into_the_discussion(harness: Harness) -> None:
     [(_, _, body)] = harness.notion.writes
     assert body["discussion_id"] == "d9"
     assert "parent" not in body
+
+
+@dataclass
+class Reviews:
+    queued: list[tuple[str, timedelta]] = field(default_factory=list)
+    reviewed: dict[str, str] = field(default_factory=dict)
+
+
+@pytest.fixture
+def reviews(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> Reviews:
+    r = Reviews()
+
+    async def schedule(page_id: str, *, settle: timedelta) -> None:
+        r.queued.append((page_id, settle))
+
+    async def markdown_of(page_id: str) -> str | None:
+        return r.reviewed.get(page_id)
+
+    async def record(page_id: str, markdown: str) -> None:
+        r.reviewed[page_id] = markdown
+
+    async def no_thread(thread_id: str) -> None:
+        return None
+
+    monkeypatch.setenv("NOTION_DESIGN_AUTO_REVIEW", "true")
+    monkeypatch.setenv("NOTION_ADR_DATA_SOURCE_ID", ADRS_DS)
+    monkeypatch.setattr(DesignReview, "schedule", schedule)
+    monkeypatch.setattr(ReviewedDesign, "markdown_of", markdown_of)
+    monkeypatch.setattr(ReviewedDesign, "record", record)
+    monkeypatch.setattr(design_review.THREADS, "get", no_thread)
+    return r
+
+
+def _in_review(doc_id: str = DOC, *, tags: list[str] | None = None) -> dict[str, JsonValue]:
+    return design_page(doc_id, status="In Review", tags=["Tech Design"] if tags is None else tags)
+
+
+@pytest.mark.parametrize(
+    ("event_type", "updated", "settle"),
+    [
+        ("page.created", [], design_review.ENTERED_REVIEW_SETTLE),
+        ("page.properties_updated", [DESIGN_STATUS_ID], design_review.ENTERED_REVIEW_SETTLE),
+        ("page.content_updated", [], design_review.EDITED_SETTLE),
+    ],
+)
+async def test_a_tech_design_in_review_queues_a_review_round(
+    harness: Harness, reviews: Reviews, event_type: str, updated: list[str], settle: timedelta
+) -> None:
+    harness.notion.add(_in_review())
+
+    await service.handle_notion_event(_event(event_type, DOC, updated=updated))
+
+    assert reviews.queued == [(DOC, settle)]
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        _in_review(tags=["Proposal"]),
+        design_page(DOC, status="Draft", tags=["Tech Design"]),
+    ],
+)
+async def test_only_a_tech_design_in_review_is_reviewed(
+    harness: Harness, reviews: Reviews, page: dict[str, JsonValue]
+) -> None:
+    harness.notion.add(page)
+
+    await service.handle_notion_event(_event("page.content_updated", DOC))
+
+    assert reviews.queued == []
+
+
+async def test_the_first_round_reviews_the_design_against_its_task_and_context(
+    harness: Harness, reviews: Reviews
+) -> None:
+    harness.notion.add(_in_review())
+    harness.notion.markdown[DOC.replace("-", "")] = "## 1. Context\nShow the version."
+    harness.notion.add(task_page(TASK, designs=[DOC]))
+    harness.notion.markdown[TASK.replace("-", "")] = "Acceptance: the footer shows 1.2.3"
+    harness.notion.add(
+        design_page(OTHER_DOC, status="Active", tags=["AI Context"], summary="Bets settle in UTC.")
+    )
+    adr = design_page(
+        "4444dddd-0000-0000-0000-000000000001",
+        status="Accepted",
+        title="ADR-007: UUIDv7 ids",
+        data_source_id=ADRS_DS,
+    )
+    harness.notion.add(adr)
+    harness.notion.markdown["4444dddd000000000000000000000001"] = "# ADR-007\nIds are UUIDv7."
+
+    assert await DesignReview.run(DOC) == "started"
+
+    [run] = harness.dispatched
+    assert run["thread_id"] == notion_page_thread_id(DOC)
+    configurable = _configurable_of(run)
+    assert configurable["repo"] == {"owner": "aeteq", "name": "sportsbook"}
+    notion_page = configurable["notion_page"]
+    assert isinstance(notion_page, dict)
+    assert notion_page["kind"] == "design-review"
+    prompt = "\n".join(harness.prompts())
+    assert "Show the version." in prompt
+    assert "Acceptance: the footer shows 1.2.3" in prompt
+    assert "Bets settle in UTC." in prompt
+    # An ADR nobody summarized is listed with the start of its text.
+    assert "ADR-007: UUIDv7 ids" in prompt and "Ids are UUIDv7." in prompt
+    assert reviews.reviewed[DOC] == "## 1. Context\nShow the version."
+    assert harness.notion.writes == []
+
+
+async def test_a_later_round_reviews_only_what_changed(harness: Harness, reviews: Reviews) -> None:
+    harness.notion.add(_in_review())
+    harness.notion.markdown[DOC.replace("-", "")] = "Show the version.\nCache it for 5 min."
+    harness.notion.comments[DOC.replace("-", "")] = [
+        comment("c-1", "Where is the version read from?", author=JARVIS, discussion_id="d-f1")
+    ]
+    reviews.reviewed[DOC] = "Show the version."
+
+    assert await DesignReview.run(DOC) == "started"
+
+    prompt = "\n".join(harness.prompts())
+    assert "+Cache it for 5 min." in prompt
+    assert "Discussion `d-f1`" in prompt
+    assert "**You**: Where is the version read from?" in prompt
+
+    harness.dispatched.clear()
+    assert await DesignReview.run(DOC) == "unchanged"
+    assert harness.dispatched == []
+
+
+async def test_a_reply_on_a_reviewed_design_stays_a_design_review(
+    harness: Harness, reviews: Reviews, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness.notion.add(_in_review())
+    harness.notion.comments[DOC.replace("-", "")] = [
+        comment("c-2", "The cache is per user.", page_id=DOC, discussion_id="d-f1")
+    ]
+
+    async def reviewed_thread(thread_id: str) -> dict[str, JsonValue] | None:
+        if thread_id != notion_page_thread_id(DOC):
+            return None
+        return {
+            "source": "notion",
+            "source_context": {"notion_page": {"id": DOC, "kind": "design-review"}},
+        }
+
+    monkeypatch.setattr(service.common, "get_thread_metadata_safe", reviewed_thread)
+
+    await service.handle_notion_event(_event("comment.created", "c-2", page_id=DOC))
+
+    [run] = harness.dispatched
+    notion_page = _configurable_of(run)["notion_page"]
+    assert isinstance(notion_page, dict)
+    # Not a task run, so it gets no design-publishing tools.
+    assert notion_page["kind"] == "design-review"
+    assert notion_page["discussion_id"] == "d-f1"
