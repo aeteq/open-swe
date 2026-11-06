@@ -18,10 +18,10 @@ sources:
     resource: repo://openswe/github/webhook.py
   - id: openwiki-source-836966ba5e0c4d710801c9a9
     resource: repo://openswe/input_messages.py
-  - id: openwiki-source-ff94e6d6f8e823f174c61b08
-    resource: repo://openswe/linear/routes.py
-  - id: openwiki-source-e1b58373b113650a4ad4b477
-    resource: repo://openswe/linear/webhook.py
+  - id: openwiki-source-ab57de9770aafc1c1c0da3e6
+    resource: repo://openswe/linear/channel.py
+  - id: openwiki-source-8150cb2d41bed45b1f3b10a4
+    resource: repo://openswe/linear/session.py
   - id: openwiki-source-8a63971e6f57fbbd7583054b
     resource: repo://openswe/schedules/store.py
   - id: openwiki-source-c1d629bf5196269b73880148
@@ -34,10 +34,10 @@ sources:
     resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -68,13 +68,15 @@ sequenceDiagram
 
 This shows the shared path: integration routes acknowledge after inexpensive admission checks, while dashboard commands proxy directly after enrichment. Webhook routes return `202 Accepted` immediately and process the event in the background; dashboard commands are synchronous proxies that return the response from LangGraph.
 
-`create_app` composes dashboard, plan, and workflow-approval routers with Linear, Slack, GitHub, Notion, and health/completion routers. It validates its CORS middleware configuration to reject wildcard origins when credentials are enabled, and its lifespan startup validates sandbox provider, local-development LLM model, and Slack configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
+`create_app` composes dashboard, plan, and workflow-approval routers with Linear (MDA channel), Slack, GitHub, and health/completion routers. It validates its CORS middleware configuration to reject wildcard origins when credentials are enabled, and its lifespan startup validates sandbox provider, local-development LLM model, and Slack configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
 
 ## Admission and asynchronous webhook work
 
-GitHub, Linear, Slack, and Notion read the raw request body and verify their respective platform signature (HMAC) before parsing JSON; invalid or missing signatures receive `401`. The verifiers fail closed when the signing secret is absent. Routes return `ignored`/`error`/`accepted` JSON rather than creating a run for malformed or ineligible events.
+GitHub and Slack webhooks read the raw request body and verify their respective platform signature (HMAC) before parsing JSON; invalid or missing signatures receive `401`. The verifiers fail closed when the signing secret is absent. Routes return `ignored`/`error`/`accepted` JSON rather than creating a run for malformed or ineligible events.
 
-For accepted GitHub and Linear events, and the normal Slack message path, a FastAPI `BackgroundTasks` job does remote API access, metadata construction, and dispatch after the HTTP response returns `202`. Slack claims an event id before scheduling to make delivery deduplication the gate to a run, preventing duplicate processing from retried webhook deliveries.
+For accepted GitHub events and the normal Slack message path, a FastAPI `BackgroundTasks` job does remote API access, metadata construction, and dispatch after the HTTP response returns `202`. Slack claims an event id before scheduling to make delivery deduplication the gate to a run, preventing duplicate processing from retried webhook deliveries.
+
+Linear integration works through an MDA (Managed Deep Agents) channel that receives events and manages its own run lifecycle. The channel handles its own authentication, credential validation, and issue-to-thread mapping, starting runs directly without queuing to the main webhook handler.
 
 Slack filters messages early: it rejects bots and self-messages, validates message-update identity and content change, and only handles an ordinary non-code-channel message if it is a mention, DM, ready-plan reply, or permitted untagged two-party reply. Code channels are different: every interaction shares the channel's session thread and is treated as directed at Open SWE. The `_retry_channel_verification` function enforces that bot messages from external sources must mention Open SWE explicitly to be processed.
 
@@ -108,9 +110,9 @@ Slack explicitly mentions and code-channel interactions use `multitask_strategy=
 
 ### Linear
 
-Linear accepts only a non-bot `Comment` `create` containing an Open SWE mention. Repository selection is intentionally deterministic in priority order: an explicit repository in the comment, the author's dashboard default, team/project mapping, then team default; the result must satisfy the repository allowlist. The background worker reacts 👀, uses the issue id as the thread key, fetches issue details, and selects the author email (falling back to creator then assignee) to map GitHub identity.
+Linear integration uses an MDA channel that handles all lifecycle and authentication. When a Linear issue receives a mention of Open SWE (through the Linear MDA channel subscription), the channel creates a session and starts an agent run on its own thread. The backend attribute the session to the person who created it and determines repository, workspace, and access policy. If the person lacks repository access or has not linked their GitHub account, the channel declines the session with an account-linking or repository-selection prompt.
 
-It upserts thread metadata with the Linear issue source context and builds a system issue description plus per-author human comment messages. Image URLs can cause a vision-model fallback when the selected model cannot accept images. The worker dispatches and posts a trace comment linking the resulting Open SWE thread.
+The Linear channel creates a deterministic thread (with `CHANNEL_METADATA_KEY="linear"` in metadata), fetches the issue context, introduces the issue text as system input with authored comments as human turns, and dispatches the run with the completion webhook attached. On completion (success or failure), the channel handles its own status replies in the Linear conversation.
 
 ### GitHub and reviewer runs
 
@@ -141,7 +143,7 @@ Inputs are not arbitrary prompt strings at the graph boundary. `human_input` and
 flowchart TD
     A["dispatch_agent_run<br/>thread_id, content, configurable"] --> B{Input provided?}
     B -->|Yes| C["Validate: input cannot<br/>mix with raw content"]
-    B -->|No| D["Synthesize input from<br/>content + source context"]
+    B -->|No| D["Synthesize input from<br/>content plus source context"]
     C --> E["create_durable_run"]
     D --> E
     E --> F["Prepare config with<br/>invocation_id, v2 markers"]
@@ -181,11 +183,9 @@ On `success`, completion schedules a deduplicated Slack session-cost refresh. On
 
 Invocation sources handle errors with varying strategies:
 
-- **Signature verification failures** (`401 Unauthorized`): GitHub, Linear, and Slack webhooks verify raw-body signatures before JSON parsing. Invalid or missing signatures return `401` immediately. Verifiers fail closed when the signing secret is absent.
+- **Signature verification failures** (`401 Unauthorized`): GitHub and Slack webhooks verify raw-body signatures before JSON parsing. Invalid or missing signatures return `401` immediately. Verifiers fail closed when the signing secret is absent.
 
-- **Stale deliveries**: Linear webhooks reject payloads older than 60 milliseconds based on webhook timestamp, returning `401` to signal GitHub/Linear to stop retrying and dropping the delivery.
-
-- **Missing credentials**: Slack prompts users to link GitHub accounts or re-authenticate rather than dispatching when a valid GitHub token is unavailable. This prevents silent failures.
+- **Missing credentials**: Slack prompts users to link GitHub accounts or re-authenticate rather than dispatching when a valid GitHub token is unavailable. Linear sessions decline with a sign-in prompt when the author lacks repository access or has not linked their GitHub account.
 
 - **Completion webhook failures**: If the completion webhook is misconfigured (relative URL, loopback address, or missing secret), dispatch degrades gracefully by omitting the webhook from run creation rather than failing the entire run. A warning is logged so operators notice the misconfiguration.
 

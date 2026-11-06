@@ -3,6 +3,9 @@ type: state-management concept
 title: Threads, Durable Runs, and State
 description: How Open SWE identifies durable LangGraph conversations, constructs follow-up inputs, owns thread metadata and Store records, and preserves sandbox continuity across product surfaces.
 tags: [threads, state, langgraph, durability, checkpoints, sandbox, slack, integrations]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -36,10 +39,7 @@ sources:
     resource: repo://openswe/utils/thread_participants.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 ---
 
 # Threads, Durable Runs, and State
@@ -56,27 +56,30 @@ Threads are created through `openswe.threads.creation.create_thread`, which is t
 
 `openswe/thread_ids.py` is the single home for deterministic thread-id derivation. Its exact keys and namespaces are persisted routing contracts: separate processes re-derive IDs from external identifiers, so changing a formula makes existing threads unreachable through their normal entrypoints.
 
-| Conversation or purpose | Derivation | Stable key |
-| --- | --- | --- |
-| Slack location | `slack_thread_id` | `slack:{channel}:{timestamp}:{nonce}` |
-| PR comment on a non-Open-SWE branch | `pr_comment_thread_id` | `{owner}/{repo}/pr/{pr_number}` |
-| Reviewer for a PR | `reviewer_thread_id` | `{owner}/{repo}/pr/{pr_number}/reviewer` |
-| Repository review style | `review_style_thread_id` | `{owner}/{repo}/review-style` |
-| Linear issue | `linear_issue_thread_id` | `linear-issue:{issue_id}` |
-| GitHub issue | `github_issue_thread_id` | `github-issue:{issue_id}` |
-| Baby-sit lock | `baby_sit_lock_thread_id` | `open-swe:baby-sit-lock:{key}` |
+| Conversation or purpose | Function | Stable key | Derivation |
+| --- | --- | --- | --- |
+| Slack location | `slack_thread_id` | `slack:{channel}:{timestamp}:{nonce}` | UUIDv5(NAMESPACE_URL, key) |
+| PR comment on a non-Open-SWE branch | `pr_comment_thread_id` | `{owner}/{repo}/pr/{pr_number}` | UUIDv5 |
+| Reviewer for a PR | `reviewer_thread_id` | `{owner}/{repo}/pr/{pr_number}/reviewer` | UUIDv5 |
+| Review scout for a PR | `review_scout_thread_id` | `{owner}/{repo}/pr/{pr_number}/review-scout` | UUIDv5 |
+| Review shadow for a PR | `review_shadow_thread_id` | `{owner}/{repo}/pr/{pr_number}/reviewer-shadow` | UUIDv5 |
+| Review chat for a PR | `review_chat_thread_id` | `{owner}/{repo}/pr/{pr_number}/chat/{login}` | UUIDv5 |
+| Notion page | `notion_page_thread_id` | `notion-page:{page_id}` | SHA-256 UUID |
+| Notion discussion | `notion_discussion_thread_id` | `notion-discussion:{discussion_id}` | SHA-256 UUID |
+| GitHub issue | `github_issue_thread_id` | `github-issue:{issue_id}` | SHA-256 UUID |
+| MDA successor thread | `mda_successor_thread_id` | `thread:{thread_id}:mda` | UUIDv5 |
 
-IDs are derived either as URL-namespace UUIDv5 values (Slack, PR-comment, reviewer, review-style, baby-sit lock) via `uuid.uuid5(NAMESPACE_URL, key)`, or as a SHA-256-derived UUID (Linear and GitHub issues) via `_sha256_uuid`. The reviewer key deliberately differs from the agent PR-comment key, so a PR's autonomous reviewer and its agent conversation cannot collide.
+IDs are derived either as URL-namespace UUIDv5 values via `uuid.uuid5(uuid.NAMESPACE_URL, key)`, or as a SHA-256-derived UUID via `_sha256_uuid`. The reviewer key deliberately differs from the agent PR-comment key, so a PR's autonomous reviewer and its agent conversation cannot collide.
 
-For a PR that Open SWE created, the GitHub PR-comment handler first extracts a UUID embedded in the branch with `thread_id_from_branch`; only a branch without one uses `pr_comment_thread_id`. Linear delivery uses `linear_issue_thread_id(issue_id)`, so redelivery stays on the issue's thread.
+For a PR that Open SWE created, the GitHub PR-comment handler first extracts a UUID embedded in the branch with `thread_id_from_branch`; only a branch without one uses `pr_comment_thread_id`. For all Slack locations, resolution checks an explicit database mapping, searches thread metadata, and falls back to deriving a deterministic ID that is then bound for future lookups.
 
 ```mermaid
 flowchart TD
-  Slack["Slack location"] --> SlackID["Resolve Slack thread id"]
+  Slack["Slack location"] --> SlackResolve["resolve_slack_thread_id"]
   Linear["Linear issue id"] --> LinearID["Derive issue thread id"]
   PR["GitHub PR comment"] --> Branch["Extract branch UUID when present"]
   Branch --> AgentThread["Agent thread"]
-  SlackID --> AgentThread
+  SlackResolve --> AgentThread
   LinearID --> AgentThread
   PR --> Reviewer["Derive reviewer thread id"]
   AgentThread --> Run["Create durable run"]
@@ -97,7 +100,7 @@ A code channel is one session for the whole channel, keyed by `CODE_CHANNEL_SESS
 
 Thread metadata is the durable cross-surface index and small per-thread state. `source_context` identifies the originating Slack location, Linear issue, GitHub issue, or PR; its Pydantic model permits unknown fields and preserves only supplied fields on output. It parses malformed historical metadata as an empty context rather than breaking a run. Upsert logic keeps the opening context rather than letting later activity repoint a thread, preserves the first title, and stores participant identities as metadata.
 
-Participant logins and emails use key-per-person maps such as `{"octocat": true}`, rather than lists. That shape permits a JSONB containment query for one participant. Reviewer threads additionally carry `kind = "reviewer"`, plus reviewer-specific metadata such as PR state, head SHA, watch flag, and findings. The kind is both a UI/query discriminator and a completion-handling boundary: normal agent Slack completion work is skipped for reviewer threads.
+Participant logins and emails use key-per-person maps such as `{"octocat": true}`, rather than lists. That shape permits a JSONB containment query for one participant. Reviewer threads additionally carry `kind = "reviewer"` or `kind = "reviewer-shadow"`, plus reviewer-specific metadata such as PR state, head SHA, watch flag, and findings. The kind is both a UI/query discriminator and a completion-handling boundary: normal agent Slack completion work is skipped for reviewer threads.
 
 Thread-level settings are a separate metadata snapshot under `agent_settings`. On the first run, model, effort, subagent model/effort, and repository instructions are chosen for the thread; sender identity, personal instructions, and PR preferences remain per-message. Later profile edits do not change the snapshot unless a caller explicitly stores a replacement, such as a model override. Reads cache for five minutes and reads/writes fail soft, so settings storage cannot prevent a run. Strict normalization drops invalid or obsolete settings rather than retaining arbitrary profile data.
 
@@ -105,9 +108,9 @@ The LangGraph Store in a LangGraph deployment holds separately namespaced applic
 
 ## Follow-up input and run configuration
 
-Each run supplies new messages; the graph retains its thread state. `build_run_input` serializes the authored request into an `<input-message>` envelope with a namespaced sender, surface, kind, optional channel, and structured data. It may precede that request with person, channel, and system `<dynamic-context>` introductions. Entity IDs are validated and text is escaped; Slack channel topic and purpose are marked untrusted.
+Each run supplies new messages; the graph retains its thread state. `build_run_input` serializes the authored request into messages using `build_input_messages`, which constructs a `RunMessage` envelope with a namespaced sender, surface, kind, optional channel, and structured data. It may precede that request with person, channel, and system dynamic context introductions. Entity IDs are validated and text is escaped; Slack channel topic and purpose are marked untrusted.
 
-Dynamic context blocks are content-hashed. `build_input_messages` excludes introductions already recorded in the injected-hash set. When summarization has moved early messages behind its cutoff, `visible_dynamic_context_hashes` treats those hidden blocks as no longer visible, allowing necessary identity context to be introduced again. This prevents deduplication state from making a summarized conversation lose information the model can no longer see.
+Dynamic context blocks are content-hashed via `dynamic_context_hash`. `build_input_messages` excludes introductions already recorded in the injected-hash set. When summarization has moved early messages behind its cutoff, visible_dynamic_context_hashes treats those hidden blocks as no longer visible, allowing necessary identity context to be introduced again. This prevents deduplication state from making a summarized conversation lose information the model can no longer see.
 
 `configurable` is the per-run transport contract, not durable thread state. `RunConfig` accepts unknown keys and dumps only fields that were supplied, so independent writers can enrich it without erasing one another's keys. Parsing is deliberately tolerant: invalid fields are dropped iteratively while valid fields, including a thread ID, survive. Its values are optional because each graph and trigger needs a different subset. The dictionary typically carries `thread_id`, `repo` (owner and name), `workspace`, `source` (webhook trigger name), `github_login`, `slack_thread` (for Slack-specific context), and per-run model/effort overrides (`agent_model_id`, `agent_effort`) that shadow thread-level settings.
 
@@ -133,7 +136,7 @@ sequenceDiagram
 
 A trigger creates a run on the selected durable thread using a normalized input and configuration.
 
-The standard defaults are `multitask_strategy="interrupt"`, `durability="async"`, `if_not_exists="create"`, non-resumable streaming (`stream_resumable=False`), the Protocol v3 stream modes, and subgraph streaming. Interrupt stops an active run while preserving its async checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.
+The standard defaults are `multitask_strategy="interrupt"`, `durability="async"`, `if_not_exists="create"`, non-resumable streaming (`stream_resumable=False`), the Protocol v3 stream modes (values, updates, messages, custom, tasks, checkpoints), and subgraph streaming. Interrupt stops an active run while preserving its async checkpoint, then runs with history plus the follow-up; background work such as baby-sit can choose `enqueue`. Webhook triggers therefore do not need an in-process busy lock. A Store FIFO remains for deliberate dashboard injection and Slack message edits; it caps `pending_messages` at `MAX_QUEUED_MESSAGES` (100), dropping oldest entries.
 
 A completion webhook is attached only if `RUN_COMPLETE_WEBHOOK_SECRET` is set and `COMPLETION_WEBHOOK_URL` is an absolute non-loopback HTTP(S) URL. Otherwise dispatch logs a warning and creates the run without the webhook, rather than allowing a platform-rejected URL to fail every run. The checkpointer has deletion TTL configured as 43,200 minutes (30 days) with a 60-minute sweep interval: checkpointed state of inactive threads eventually expires.
 

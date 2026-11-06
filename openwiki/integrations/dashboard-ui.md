@@ -44,10 +44,10 @@ sources:
     resource: repo://ui/src/lib/dashboard-fetch.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Dashboard and UI Integration
@@ -56,23 +56,23 @@ The dashboard is the human-facing surface for agent operations: a FastAPI router
 
 ## Composition and routing
 
-`openswe.api.app.create_app()` includes the dashboard router at line 165, then calls `mount_dashboard_ui(app)` at line 185. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
+`openswe.api.app.create_app()` mounts the dashboard router at line 174 via `app.include_router(dashboard_router)`, then calls `mount_dashboard_ui(app)` at line 198. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
 
-The dashboard router aggregates over 30 feature routers including threads, reviews, schedules, skills, workspaces, profiles, and integrations (Slack, MCP). Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
+The dashboard router aggregates over 30 feature routers including threads, reviews, schedules, skills, workspaces, profiles, and integrations (Slack, MCP). Additional routers mounted with the dashboard prefix include `plan_router` at `/dashboard/api/plan` and `workflow_approval_router` at `/dashboard/api/workflow-approval`, each with their own mutation-origin guard. Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
 
 ## Session and request security
 
 GitHub login creates signed state containing a hash of a nonce placed in a short-lived HTTP-only state cookie, then redirects to GitHub. The callback verifies the state cookie for normal browser login, exchanges the authorization code, resolves the GitHub user, applies the organization login gate, persists the token response, and redirects with a signed session cookie. A desktop handoff is different: after the same identity checks it returns a PKCE-challenge-bound code to the desktop loopback listener without setting a browser session; `POST /auth/desktop/exchange` requires the matching verifier before minting the desktop session.
 
-Cookie security is derived from the API URL and whether UI and API share an origin: HTTP is non-secure and `SameSite=Lax`; same-origin HTTPS is `Secure; SameSite=Lax`; split-origin HTTPS is `Secure; SameSite=None`. `require_session` turns a missing or invalid session cookie into `401`. Admin routes additionally enforce `is_admin`; no alternate authentication methods are currently supported for dashboard admin endpoints.
+Cookie security is derived from the API URL and whether UI and API share an origin: HTTP is non-secure and `SameSite=Lax`; same-origin HTTPS is `Secure; SameSite=Lax`; split-origin HTTPS is `Secure; SameSite=None`. `require_session` turns a missing or invalid session cookie into `401`. Admin routes additionally enforce `is_admin` via the `admin_session` dependency; no alternate authentication methods are currently supported for dashboard admin endpoints.
 
-The router-wide CSRF guard permits safe methods and requests authenticated only with an explicit bearer token. Cookie-authenticated mutations require an allowed `Origin` or `Referer`; WebSockets always receive the origin check. This control protects the ambient cookie, not business authority: individual endpoints still enforce administrator status, repository access, or thread postability. At app construction, credentialed CORS may be configured from `DASHBOARD_ALLOWED_ORIGINS`, but `*` is rejected because it is unsafe with credentials.
+The router-wide CSRF guard `require_same_origin_for_mutations` permits safe methods (GET, HEAD, OPTIONS) and requests authenticated only with an explicit bearer token. Cookie-authenticated mutations require an allowed `Origin` or `Referer`; WebSockets always receive the origin check. This control protects the ambient cookie, not business authority: individual endpoints still enforce administrator status, repository access, or thread postability. At app construction, credentialed CORS may be configured from `DASHBOARD_ALLOWED_ORIGINS`, but `*` is rejected because it is unsafe with credentials.
 
 ## Thread discovery and access
 
 Thread discovery and thread readability are intentionally different. Normal listings search participant login/email metadata, including legacy creator metadata. The `all=true` parameter is restricted to administrators. The paginated endpoint clamps `limit` to 1–100, normalizes negative offsets, validates `repo` as `owner/name`, and rejects `repo` together with `ownerless`. Metadata filtering occurs before summary construction; viewed/status filtering requires summaries. Potentially active latest runs are refreshed with a concurrency limit of eight.
 
-Any authenticated organization member can read a thread whose source is surfaced; unsurfaced threads return `404`. Posting applies that readable check and additionally requires an administrator for automation and `admin_thread` threads. `/threads/{thread_id}` returns a metadata-derived summary, not converted messages: the client stream provider obtains the transcript from the LangGraph state endpoint. A finished detail read normally writes viewed metadata but supports `mark_viewed=false`, never marks a running thread viewed, and treats metadata-write failure as non-fatal. An interrupted latest run is reported as interrupted even while the thread itself briefly remains busy.
+Any authenticated organization member can read a thread whose source is surfaced; unsurfaced threads return `404`. Posting applies that readable check and additionally requires an administrator for automation and `admin_thread` threads. `/threads/{thread_id}` returns a metadata-derived summary with status and latest run information; the client obtains the full transcript from the LangGraph state endpoint via a stream provider. A finished detail read normally writes viewed metadata but supports `mark_viewed=false`, never marks a running thread viewed, and treats metadata-write failure as non-fatal. An interrupted latest run is reported as interrupted even while the thread itself briefly remains busy.
 
 Projects are metadata-only groups of matching configured repositories, keyed case-insensitively and sorted by latest update; they omit ownerless work and default to excluding resolved and automation threads. Pins are stored per login, not in thread metadata. Pinning verifies readability; loading pins retrieves every saved ID independently and omits missing, failed, or no-longer-readable threads. Thus a pin never bypasses present access checks.
 
@@ -97,7 +97,7 @@ The stream first reports which subscribed topics were invalidated within their s
 - `threads/thread-id` — Thread queue messages, browser window state, and background work.
 - `announcements` — Admin announcements and delivery progress (admin-only).
 
-Authorization checks which topic keys a session may hear before allowing the subscription, ensuring that keyed topics do not expose private records.
+Authorization checks which topic keys a session may hear before allowing the subscription via the `Topic.audible()` classmethod, ensuring that keyed topics do not expose private records. Each `Topic` kind implements `authorize()` to determine which topic keys the session may receive, filtering appropriately for unkeyed topics (all-or-nothing) and keyed topics (per-key checking).
 
 ## Pull request reviews and findings display
 

@@ -3,9 +3,6 @@ type: integration reference
 title: Sandbox Providers and Configuration
 description: Sandbox backend selection, provisioning, and configuration. Covers LangSmith managed sandboxes, Managed Deep Agents lifecycle, bridge client for desktop, and sandbox reconnection patterns.
 tags: [sandbox, providers, langsmith, configuration, lifecycle, mda]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
 sources:
   - id: openwiki-source-3436762fd1bce7c774640399
     resource: repo://openswe/bridge/backend.py
@@ -21,7 +18,10 @@ sources:
     resource: repo://openswe/sandboxes/read_only_backend.py
   - id: openwiki-source-c5766699cee46f671b69bf81
     resource: repo://openswe/sandboxes/repo_prep.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Sandbox Providers and Configuration
@@ -49,9 +49,9 @@ Reconnection is the only operation the backend performs on existing sandboxes; c
 
 `connect_existing_sandbox(sandbox_id)` reconnects to a LangSmith sandbox created earlier. It calls `create_langsmith_sandbox(sandbox_id)` with only the id; resource options are not used on reconnection.
 
-`LangSmithProvider.get_or_create()` handles both creation (via MDA) and reconnection:
-- When creating, it accepts snapshot, CPU, memory, filesystem, TTL, and extra create fields
+`LangSmithProvider.get_or_create()` handles both reconnection and the provider's role in creation (via MDA):
 - When reconnecting (when `sandbox_id` is provided), it ignores creation-time parameters and simply connects to the existing box
+- When creating (via MDA), it accepts snapshot, CPU, memory, filesystem, TTL, and extra create fields
 - It enforces operation-specific timeouts and can retry transient failures
 
 ### Bridge reconnection for desktop
@@ -74,7 +74,7 @@ Reconnection distinguishes between two failure modes:
 
 - **`SandboxGoneError`** (from LangSmith `ResourceNotFoundError`): the sandbox was deleted, contains no working tree, and can be recreated by MDA
 - **`SandboxUnreachableError`** (other reconnection failures): the sandbox exists but is unreachable; normally stops the run rather than replacing it with a fresh empty sandbox, as replacement loses uncommitted working-tree state
-- **`allow_replacement=True`** permits replacement for reviewer and review-scout threads because their checkout is re-derived from the PR on every run
+- **`abandon_unreachable=True`** permits replacement for reviewer and review-scout threads because their checkout is re-derived from the PR on every run
 
 ### Initialization and binding ordering
 
@@ -96,7 +96,7 @@ New boxes use a configured snapshot or the platform root snapshot when omitted. 
 - 16 GiB memory
 - 128 GiB filesystem capacity
 - Two-hour idle TTL
-- 30-day delete-after-stop TTL
+- 7-day delete-after-stop TTL
 
 Setting either CPU or memory per call leaves the other as `None`, rather than mixing a partial override with the deployment default. Zero disables either TTL.
 

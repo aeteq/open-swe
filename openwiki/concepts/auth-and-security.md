@@ -32,8 +32,6 @@ sources:
     resource: repo://openswe/github/token_auth.py
   - id: openwiki-source-8d544a43b3113d48789eff4f
     resource: repo://openswe/github/token.py
-  - id: openwiki-source-1087d65aaa83434d4f7c209b
-    resource: repo://openswe/middleware/refresh_github_proxy.py
   - id: openwiki-source-d16a45e9fc6aa80a3708c88c
     resource: repo://openswe/sandboxes/providers/langsmith.py
   - id: openwiki-source-49cd80b1b712410f02d313d6
@@ -44,8 +42,6 @@ sources:
     resource: repo://openswe/tools/admin_gate.py
   - id: openwiki-source-1d8440f14c85812310a67572
     resource: repo://openswe/users/authorization.py
-  - id: openwiki-source-3087256f0cd599176fba3c38
-    resource: repo://openswe/webhooks/common.py
   - id: openwiki-source-3a1539e01daa921ba15e9617
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
@@ -53,7 +49,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries

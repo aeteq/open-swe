@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:2507a25905e0081168830e8aeb63a9ecf041d175f0206ef5ea954b9506c36efa",
+  "pageVersion": "sha256:618027ce61217cfd7815a6f6b5fa209cd9cb2a773732c4a086984b413754577b",
   "claims": [
     {
       "id": "claim_0e227b88b5d94fd5924bb5c89a53831e",
@@ -8,7 +8,7 @@
       "evidence": [
         {
           "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
+          "version": "repo-file-v1:sha256:70129746bb697186e5a7ad0b2364d625fb1c00d95b189afd72d160ddc3d2ee75"
         }
       ]
     },
@@ -18,7 +18,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         }
       ]
     },
@@ -38,25 +38,25 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         }
       ]
     },
     {
       "id": "claim_7c0acef30b314001ba9760696f5b0434",
-      "statement": "The local dev server's LangGraph constraints are set to langgraph-api==0.18.0.dev13 and langgraph-runtime-inmem==0.38.0.dev13 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.15.1-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
+      "statement": "The local dev server's LangGraph constraints are set to langgraph-api==0.19.0.dev3 and langgraph-runtime-inmem==0.39.0.dev3 in pyproject.toml (as constraint-dependencies), while langgraph.json declares api_version >~=0.15.0rc1; the standalone Docker image uses langchain/langgraph-api:0.16.9-py3.14 base with environment variable registrations for graphs and checkpointer instead of manifest declarations.",
       "evidence": [
         {
           "resource": "repo://Dockerfile",
-          "version": "repo-file-v1:sha256:d0ddb3959c1eda19cd3de9567f64a8e10afd1135e59dcee4b01f947251d43181"
+          "version": "repo-file-v1:sha256:bd50f0fa769b1df77fa784b7097ef7b224708253d77791b7cf1c1647d5fc58cc"
         },
         {
           "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
+          "version": "repo-file-v1:sha256:70129746bb697186e5a7ad0b2364d625fb1c00d95b189afd72d160ddc3d2ee75"
         },
         {
           "resource": "repo://pyproject.toml",
-          "version": "repo-file-v1:sha256:6b0b090846c879d6d3698262f3fdf4f1fad537f75a45397768a0171a9734efa3"
+          "version": "repo-file-v1:sha256:bb0ee8dad4a36aab75739dd9f38a80a3c1fb5fbe312683d22e25af1439f0502a"
         }
       ]
     },
@@ -66,7 +66,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:988176906adff58fde7c2484487c84613c2a0de23f22a618e40f4ba2def71bc1"
+          "version": "repo-file-v1:sha256:ad3d527fc37a9df5c18e80610cb4f9ef410c0fc44a4cdb02abc157660c274d46"
         }
       ]
     },
@@ -76,15 +76,11 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         },
         {
           "resource": "repo://package.json",
           "version": "repo-file-v1:sha256:aea836bb10fcc947065b5afdb0b746dab15c7b003fd344025e99162949843d7b"
-        },
-        {
-          "resource": "repo://ui/vite.config.ts",
-          "version": "repo-file-v1:sha256:a2c9cd04fd6800f6208d1e1ed0096ec10eac8d243966a1048a3162baa4d6d641"
         }
       ]
     },
@@ -114,7 +110,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:988176906adff58fde7c2484487c84613c2a0de23f22a618e40f4ba2def71bc1"
+          "version": "repo-file-v1:sha256:ad3d527fc37a9df5c18e80610cb4f9ef410c0fc44a4cdb02abc157660c274d46"
         }
       ]
     },
@@ -124,7 +120,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         }
       ]
     },
@@ -160,11 +156,11 @@
     },
     {
       "id": "claim_eadc4b3dcf5e4752bf245ed137ea5a67",
-      "statement": "The root Dockerfile builds the standalone production LangGraph API server image from langchain/langgraph-api:0.15.1-py3.14, installing the repository with uv and baking the three graph registrations (via LANGSERVE_GRAPHS), HTTP app (via LANGGRAPH_HTTP), and checkpointer TTL (via LANGGRAPH_CHECKPOINTER) into environment variables; it exposes port 8000.",
+      "statement": "The root Dockerfile builds the standalone production LangGraph API server image from langchain/langgraph-api:0.16.9-py3.14, installing the repository with uv and baking the three graph registrations (via LANGSERVE_GRAPHS), HTTP app (via LANGGRAPH_HTTP), and checkpointer TTL (via LANGGRAPH_CHECKPOINTER) into environment variables; it exposes port 8000.",
       "evidence": [
         {
           "resource": "repo://Dockerfile",
-          "version": "repo-file-v1:sha256:d0ddb3959c1eda19cd3de9567f64a8e10afd1135e59dcee4b01f947251d43181"
+          "version": "repo-file-v1:sha256:bd50f0fa769b1df77fa784b7097ef7b224708253d77791b7cf1c1647d5fc58cc"
         }
       ]
     },
@@ -174,17 +170,17 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:c5ee95aa56be5f72811d4f13a3ce8641871939068710bd27801ff66bbede932e"
+          "version": "repo-file-v1:sha256:9396abab67035953b9300d04137b087fcfade8c1079cc121409d61acff2d733a"
         }
       ]
     },
     {
       "id": "claim_e6d3592359f248b0bcf4650d579e5a8d",
-      "statement": "ui/Dockerfile is a multi-stage Node 24 Alpine build (run from the repo root) that installs the frozen pnpm workspace, builds open-swe-dashboard into a Nitro .output server, runs it as user node on port 8080, and reads the backend it fronts from DASHBOARD_API_URL at runtime so one image serves any deployment.",
+      "statement": "ui/Dockerfile is a multi-stage Node 26 Alpine build (run from the repo root) that installs the frozen pnpm workspace, builds open-swe-dashboard into a Nitro .output server, runs it as user node on port 8080, and reads the backend it fronts from DASHBOARD_API_URL at runtime so one image serves any deployment.",
       "evidence": [
         {
           "resource": "repo://ui/Dockerfile",
-          "version": "repo-file-v1:sha256:41da5dad3bba43f8faf3881f9d302893fe942603cf3d75b9f4e926495d27c536"
+          "version": "repo-file-v1:sha256:cb28e029a9f4cb2e763dea69f70154a4aef09b2775406ab0a98e19bd0292b99b"
         }
       ]
     },
@@ -204,7 +200,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:c5ee95aa56be5f72811d4f13a3ce8641871939068710bd27801ff66bbede932e"
+          "version": "repo-file-v1:sha256:9396abab67035953b9300d04137b087fcfade8c1079cc121409d61acff2d733a"
         }
       ]
     },
@@ -234,11 +230,11 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         },
         {
           "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
+          "version": "repo-file-v1:sha256:70129746bb697186e5a7ad0b2364d625fb1c00d95b189afd72d160ddc3d2ee75"
         },
         {
           "resource": "repo://ui/vite.config.ts",
@@ -252,7 +248,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         },
         {
           "resource": "repo://examples/ngrok/webhooks-only.yml",
@@ -266,11 +262,11 @@
       "evidence": [
         {
           "resource": "repo://Dockerfile",
-          "version": "repo-file-v1:sha256:d0ddb3959c1eda19cd3de9567f64a8e10afd1135e59dcee4b01f947251d43181"
+          "version": "repo-file-v1:sha256:bd50f0fa769b1df77fa784b7097ef7b224708253d77791b7cf1c1647d5fc58cc"
         },
         {
           "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
+          "version": "repo-file-v1:sha256:70129746bb697186e5a7ad0b2364d625fb1c00d95b189afd72d160ddc3d2ee75"
         }
       ]
     },
@@ -280,7 +276,7 @@
       "evidence": [
         {
           "resource": "repo://docs/INSTALLATION.md",
-          "version": "repo-file-v1:sha256:c5ee95aa56be5f72811d4f13a3ce8641871939068710bd27801ff66bbede932e"
+          "version": "repo-file-v1:sha256:9396abab67035953b9300d04137b087fcfade8c1079cc121409d61acff2d733a"
         }
       ]
     },
@@ -290,7 +286,7 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:10009d002ad275a701cbfc6c222446e81421bcb530907a33aa4af434b1317396"
+          "version": "repo-file-v1:sha256:9ce88c0e6002cfeb093e5dc3aedfae1dd0e67131363ba29c202dca3fbbbc84d4"
         }
       ]
     },
@@ -300,7 +296,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         }
       ]
     },
@@ -310,7 +306,7 @@
       "evidence": [
         {
           "resource": "repo://Makefile",
-          "version": "repo-file-v1:sha256:0da7aa0046b0bf2ae74367be0fa03cce693d89c9ce74fb795c03bc7c49907ca5"
+          "version": "repo-file-v1:sha256:159a91e3e929ffd93ef947753950483a169888fdf2385f8edb3fb9d0de73cd55"
         }
       ]
     },
@@ -330,7 +326,7 @@
       "evidence": [
         {
           "resource": "repo://desktop/README.md",
-          "version": "repo-file-v1:sha256:988176906adff58fde7c2484487c84613c2a0de23f22a618e40f4ba2def71bc1"
+          "version": "repo-file-v1:sha256:ad3d527fc37a9df5c18e80610cb4f9ef410c0fc44a4cdb02abc157660c274d46"
         }
       ]
     },
@@ -350,11 +346,11 @@
       "evidence": [
         {
           "resource": "repo://Dockerfile",
-          "version": "repo-file-v1:sha256:d0ddb3959c1eda19cd3de9567f64a8e10afd1135e59dcee4b01f947251d43181"
+          "version": "repo-file-v1:sha256:bd50f0fa769b1df77fa784b7097ef7b224708253d77791b7cf1c1647d5fc58cc"
         },
         {
           "resource": "repo://langgraph.json",
-          "version": "repo-file-v1:sha256:0031c0d6b752b036027ee94b93313ece1b105ae8caf78c7eddd4c444586e1d8a"
+          "version": "repo-file-v1:sha256:70129746bb697186e5a7ad0b2364d625fb1c00d95b189afd72d160ddc3d2ee75"
         }
       ]
     },
@@ -374,13 +370,13 @@
       "evidence": [
         {
           "resource": "repo://openswe/api/app.py",
-          "version": "repo-file-v1:sha256:10009d002ad275a701cbfc6c222446e81421bcb530907a33aa4af434b1317396"
+          "version": "repo-file-v1:sha256:9ce88c0e6002cfeb093e5dc3aedfae1dd0e67131363ba29c202dca3fbbbc84d4"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-02T18:01:41.066Z"
+    "at": "2026-11-06T15:47:54.369Z"
   }
 }
