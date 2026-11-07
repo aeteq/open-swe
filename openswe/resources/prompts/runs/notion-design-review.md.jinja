@@ -16,12 +16,15 @@ Review it before the team decides whether to approve it.
 {% endif %}
 ## What to check
 
-1. **The task.** The design delivers every requirement and acceptance criterion of the task it is linked from, and nothing outside the task's scope.
+1. **The task.**
+   The design delivers every requirement and acceptance criterion of the task it is linked from, and nothing outside the task's scope.
 {% if not task %}
    No task links this design; say so in your summary and review the rest.
 {% endif %}
-2. **Business rules.** The design contradicts none of the context documents or approved designs listed below.
-3. **Technical rules.** The design follows the repository's AGENTS.md (and the AGENTS.md of each app it touches) and every accepted ADR listed below.
+2. **Business rules.**
+   The design contradicts none of the context documents or approved designs listed below.
+3. **Technical rules.**
+   The design follows the repository's AGENTS.md (and the AGENTS.md of each app it touches) and every accepted ADR listed below.
    An accepted ADR outranks the design.
 {% if repository %}
    Check the API contracts and data models it proposes against the code as it is now.
