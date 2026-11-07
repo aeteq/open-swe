@@ -53,6 +53,7 @@ _TOOL_MODULES = {
     "publish_review": ".publish_review",
     "execute_database_sql": ".repair_data",
     "write_database_rows": ".repair_data",
+    "read_notion_page": ".read_notion_page",
     "read_only_sql": ".read_only_sql",
     "read_user_settings": ".read_user_settings",
     "record_human_input": ".record_human_input",
@@ -149,6 +150,7 @@ __all__ = [
     "publish_review",
     "execute_database_sql",
     "write_database_rows",
+    "read_notion_page",
     "read_only_sql",
     "read_user_settings",
     "record_human_input",
@@ -271,6 +273,7 @@ if TYPE_CHECKING:
     )
     from openswe.tools.publish_artifact import publish_artifact
     from openswe.tools.publish_review import publish_review
+    from openswe.tools.read_notion_page import read_notion_page
     from openswe.tools.read_only_sql import read_only_sql
     from openswe.tools.read_user_settings import read_user_settings
     from openswe.tools.record_human_input import record_human_input

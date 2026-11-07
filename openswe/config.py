@@ -405,6 +405,32 @@ ENV.var(
     "Comma-separated tags given to a design document the agent publishes.",
     default="Tech Design",
 )
+ENV.var(
+    "NOTION_DESIGN_AUTO_REVIEW",
+    "Whether the agent reviews, in comments, every design document tagged with one of "
+    "NOTION_DESIGN_TAGS while it is in NOTION_DESIGN_REVIEW_STATUS.",
+)
+ENV.var(
+    "NOTION_SUMMARY_PROPERTY",
+    "Text property summarizing a context document or ADR, shown to a design review.",
+    default="Summary",
+)
+ENV.var(
+    "NOTION_CONTEXT_TAGS",
+    "Comma-separated tags of the documents a design review checks business rules against.",
+    default="AI Context",
+)
+ENV.var(
+    "NOTION_CONTEXT_STATUSES",
+    "Comma-separated statuses of the context documents in force.",
+    default="Approved,Active",
+)
+ENV.var(
+    "NOTION_ADR_DATA_SOURCE_ID",
+    "Notion data source id of the architecture decision records a design review checks.",
+)
+ENV.var("NOTION_ADR_STATUS_PROPERTY", "Status or select property of an ADR.", default="Status")
+ENV.var("NOTION_ADR_ACCEPTED_STATUS", "Status of an ADR in force.", default="Accepted")
 
 # --- Dashboard ------------------------------------------------------------------------------
 ENV.var(

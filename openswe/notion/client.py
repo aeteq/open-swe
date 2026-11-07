@@ -25,7 +25,7 @@ from openswe.notion.models import (
     PageList,
     PageMarkdown,
 )
-from openswe.notion.settings import notion_settings
+from openswe.notion.settings import normalize_notion_id, notion_settings
 from openswe.utils.http import DEFAULT_HTTP_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -193,16 +193,31 @@ class NotionClient:
     async def get_user(self, user_id: str) -> NotionUser:
         return NotionUser.model_validate(await self._read("GET", f"/users/{user_id}"))
 
+    async def find_user(self, user_id: str | None) -> NotionUser | None:
+        """The user, or None when there is none or Notion cannot say."""
+        if not user_id:
+            return None
+        try:
+            return await self.get_user(user_id)
+        except NOTION_ERRORS as exc:
+            logger.warning(
+                "Could not read Notion user",
+                extra={"notion_user_id": user_id, "error_type": type(exc).__name__},
+            )
+            return None
+
     async def get_bot_user(self) -> NotionUser:
         return NotionUser.model_validate(await self._read("GET", "/users/me"))
 
     async def query_data_source(
-        self, data_source_id: str, filter_: JsonObject, *, limit: int = 100
+        self, data_source_id: str, filter_: JsonObject | None = None, *, limit: int = 100
     ) -> list[NotionPage]:
         pages: list[NotionPage] = []
         cursor: str | None = None
         while len(pages) < limit:
-            body: JsonObject = {"filter": filter_, "page_size": min(100, limit - len(pages))}
+            body: JsonObject = {"page_size": min(100, limit - len(pages))}
+            if filter_ is not None:
+                body["filter"] = filter_
             if cursor:
                 body["start_cursor"] = cursor
             result = PageList.model_validate(
@@ -242,6 +257,14 @@ class NotionClient:
                 break
             cursor = result.next_cursor
         return comments
+
+    async def has_discussion(self, page_id: str, discussion_id: str) -> bool:
+        """Whether ``discussion_id`` is an open comment discussion on the page itself."""
+        wanted = normalize_notion_id(discussion_id)
+        return any(
+            normalize_notion_id(comment.discussion_id) == wanted
+            for comment in await self.list_comments(page_id)
+        )
 
     async def update_page_properties(self, page_id: str, properties: JsonObject) -> NotionPage:
         return NotionPage.model_validate(

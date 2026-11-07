@@ -85,7 +85,8 @@ class NotionPageRef(BaseModel):
     identifier: str = ""
     url: str = ""
     title: str = ""
-    # "mention" for a question asked in a comment; a task run leaves it empty.
+    # "mention" for a question asked in a comment, "design-review" for a design in
+    # review; a task run leaves it empty.
     kind: str = ""
     # The comment discussion this run answers in, when a comment started it.
     discussion_id: str = ""
@@ -93,6 +94,10 @@ class NotionPageRef(BaseModel):
     @property
     def is_mention(self) -> bool:
         return self.kind == "mention"
+
+    @property
+    def is_task(self) -> bool:
+        return not self.kind
 
 
 class GitHubIssueRef(BaseModel):

@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-HANDLED_EVENT_TYPES = frozenset({"page.created", "page.properties_updated", "comment.created"})
+HANDLED_EVENT_TYPES = frozenset(
+    {"page.created", "page.properties_updated", "page.content_updated", "comment.created"}
+)
 
 
 @router.post("/webhooks/notion")

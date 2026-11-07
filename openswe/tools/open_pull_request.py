@@ -1297,8 +1297,8 @@ async def _record_on_notion_task(result: dict[str, Any], *, opened: bool) -> Non
     page = cfg.notion_page
     if cfg.source != "notion" or page is None or not page.id:
         return
-    # A question asked in a comment is not the page's task, unless that task is the agent's.
-    await record_pull_request(page.id, pr_url, opened=opened, agent_task_only=page.is_mention)
+    # Only a task run's own page is its task; another page records the PR only as the agent's task.
+    await record_pull_request(page.id, pr_url, opened=opened, agent_task_only=not page.is_task)
 
 
 def _ref_name(pr: dict[str, Any], side: str) -> str:
