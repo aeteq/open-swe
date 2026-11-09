@@ -36,7 +36,7 @@ from openswe.dashboard.principal import DashboardPrincipal
 from openswe.dashboard.profiles import upsert_access_token_from_github_response
 from openswe.encryption import decrypt_token, encrypt_token
 from openswe.users import User
-from openswe.utils.dashboard_links import dashboard_api_base_url
+from openswe.utils.dashboard_links import PublicOrigin
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,7 @@ class GitHubLink:
         query = urlencode(
             {
                 "client_id": client_id,
-                "redirect_uri": f"{dashboard_api_base_url()}{GITHUB_CALLBACK_PATH}",
+                "redirect_uri": f"{PublicOrigin.dashboard_api_base_url()}{GITHUB_CALLBACK_PATH}",
                 "state": state,
             }
         )
@@ -117,7 +117,7 @@ class GitHubLink:
             raise HTTPException(403, "Sign in with LangSmith to link a GitHub account")
         user = await principal.user()
         if user is None:
-            raise HTTPException(401, "Open SWE account not found — sign in again")
+            raise HTTPException(401, "Robin account not found — sign in again")
         joined = await user.join_github(
             str(self.account.id), login=self.account.login, email=self.email
         )

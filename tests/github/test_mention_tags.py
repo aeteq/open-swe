@@ -9,10 +9,12 @@ from openswe.github import comments as github_comments
     "body",
     [
         "@jarvis-aeteq please fix this",
+        "@Jarvis-Aeteq: please fix this",
+        "(@jarvis-aeteq)",
         "hey @jarvis-aeteq, take a look",
+        "please ask\n@jarvis-aeteq to help",
         "@Jarvis-Aeteq ping",
         "@jarvis-aeteq: do the thing",
-        "(@jarvis-aeteq)",
     ],
 )
 def test_matches_configured_handles(body: str) -> None:
@@ -22,8 +24,16 @@ def test_matches_configured_handles(body: str) -> None:
 @pytest.mark.parametrize(
     "body",
     [
+        "@jarvis please fix this",
+        "@Jarvis: please fix this",
+        "@jarvis-preview please fix this",
         "@jarvis-aeteq-preview please fix this",
         "@jarvis-aeteqfoo",
+        "me@jarvis.io",
+        "me@jarvis-aeteq.io",
+        "user.@jarvis-aeteq",
+        "user-@jarvis-aeteq",
+        "@@jarvis-aeteq",
         "no mention here",
         "",
         None,

@@ -63,6 +63,7 @@ import { api } from "@/lib/api"
 import { hasLinkedGitHub } from "@/lib/linkedGitHub"
 import { useProfile, useRepos } from "@/lib/profile"
 import { useSession } from "@/lib/session"
+import { productAnalytics } from "@/lib/analytics"
 import {
   requestNotificationPermission,
   setNotificationsPref,
@@ -537,7 +538,7 @@ export function AgentsHome({
       return
     }
     if (localRun && !localCheckout && !taskWorkspaces) {
-      setLocalError("Update Open SWE Desktop to start without a project.")
+      setLocalError("Update Robin Desktop to start without a project.")
       return
     }
     // Minted here so the seeded thread, the graph's HumanMessage and the
@@ -641,11 +642,19 @@ export function AgentsHome({
           setLocalError(
             error instanceof Error
               ? error.message
-              : "Could not start the Open SWE agent"
+              : "Could not start the Robin agent"
           )
         }
         return
       }
+      productAnalytics.track(
+        "agents_thread_created",
+        {
+          run_target: localRun ? "local" : "cloud",
+          has_attachments: images.length > 0,
+        },
+        session.data?.user_id ?? null
+      )
       // Seeded so the thread route renders the prompt immediately; the real
       // record lands with the next detail fetch.
       const thread: AgentThread = {

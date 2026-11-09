@@ -1,6 +1,7 @@
 """Expedited review nomination shared by dashboard requests and agent tools."""
 
 import hashlib
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID
@@ -31,11 +32,13 @@ from openswe.human_review.standard import Origin, summary_line
 from openswe.review.approvals import AUTO_APPROVE_RULES_DIR, ApprovalPolicy
 from openswe.review.assessment_feedback import PublishedAssessment
 from openswe.slack.channels import SlackChannel
-from openswe.slack.client import GitHubPrRef
+from openswe.slack.client import GitHubPrRef, delete_slack_message
 from openswe.slack.dm import send_dm
 from openswe.slack.http import SlackRequestError
 from openswe.users import User
 from openswe.utils.json_types import JsonObject
+
+logger = logging.getLogger(__name__)
 
 
 class ExpeditedReviewIneligible(Exception):
@@ -58,7 +61,7 @@ class ExpeditedReviewNomination:
                 "This diff already has an open card; no new one was posted. "
                 if reused
                 else "The approval card is posted. "
-            ) + "Once someone approves, Open SWE starts a thread that merges it. Do not poll."
+            ) + "Once someone approves, Robin starts a thread that merges it. Do not poll."
         if elsewhere:
             return (
                 "This diff already has a card, so it stays in the Slack thread named here, not "
@@ -87,6 +90,24 @@ class ExpeditedReviewNomination:
         async with HumanReviewRequest.locked(approval.id) as (session, row):
             if row is not None:
                 await session.delete(row)
+
+    async def rollback(
+        self, approval: HumanReviewRequest, displaced: HumanReviewRequest | None
+    ) -> None:
+        if approval.slack_message_ts and not await delete_slack_message(
+            approval.slack_channel_id, approval.slack_message_ts
+        ):
+            logger.error(
+                "Failed to remove orphaned expedited review card",
+                extra={
+                    "request_id": str(approval.id),
+                    "slack_channel": approval.slack_channel_id,
+                    "slack_message_ts": approval.slack_message_ts,
+                },
+            )
+        await self.discard(approval)
+        if displaced is not None:
+            await ReviewCard(displaced).reopen()
 
     async def resolve_exclusions(
         self,
@@ -238,14 +259,14 @@ class ExpeditedReviewNomination:
                 f"Eligible changes touch at most {MAX_CHANGED_LINES} lines outside tests and "
                 "exclusions, and every one of those files has to have a readable text diff. Test "
                 f"files are not counted, and `excluded` leaves out hunks that qualify under the "
-                f"target repository's `{AUTO_APPROVE_RULES_DIR}/`. When Open SWE's review of the current "
+                f"target repository's `{AUTO_APPROVE_RULES_DIR}/`. When Robin's review of the current "
                 "head would approve subject to human approval of the PR's condition, the card "
                 "shows that condition instead of the diff. Otherwise ask for a normal review."
             )
 
         if await User.for_login("github", payload.author) is None:
             raise ExpeditedReviewIneligible(
-                "Expedited review is only available for PRs authored by Open SWE users."
+                "Expedited review is only available for PRs authored by Robin users."
             )
         settings = await RepoSettings.cached(pr_ref.owner, pr_ref.repo)
         review_channel = settings.channel_for_files([file.filename for file in files])
@@ -314,7 +335,7 @@ class ExpeditedReviewNomination:
                 ),
             }
         if active is not None:
-            await ReviewCard(active).retire("superseded", "Replaced by a card for the newer diff.")
+            displaced = active
 
         pull_request = await PullRequest.load(pr_ref.owner, pr_ref.repo, pr_ref.number)
         pull_request.title = payload.title
@@ -337,7 +358,7 @@ class ExpeditedReviewNomination:
             is None
         ):
             return self.failure("The pull request's review request changed meanwhile. Try again.")
-        approval = await HumanReviewRequest(
+        approval = HumanReviewRequest(
             pull_request_id=pull_request.id,
             thread_id=thread_id,
             head_sha=head_sha,
@@ -349,43 +370,46 @@ class ExpeditedReviewNomination:
             awaiting_ready=payload.draft,
             slack_channel_id=channel_id,
             slack_thread_ts=thread_ts,
-            run_config=origin.run_config,
+            run_config={
+                **origin.run_config,
+                **(
+                    {"expedited_review_channel": broadcast_target.id if broadcast_target else ""}
+                    if not payload.draft
+                    else {}
+                ),
+            },
             requested_by_user_id=requester.id if requester is not None else None,
-        ).save()
-        if approval.awaiting_ready:
-            readiness_warning = await ReviewCard(approval).prompt_author_ready()
-            if readiness_warning:
-                await self.discard(approval)
-                if displaced is not None:
-                    await ReviewCard(displaced).reopen()
-                return self.failure(readiness_warning)
-            await ReviewCard(approval).remove_superseded()
-            return {
-                "success": True,
-                "approval_id": str(approval.id),
-                "pr_url": pr_ref.url,
-                "head_sha": head_sha,
-                "slack_channel_id": channel_id,
-                "slack_channel_name": await SlackChannel.name_for(channel_id),
-                "completion_reply_required": True,
-                "next": "The full draft card was sent only to the author by DM. The thread card "
-                "will be posted once they mark it ready. Keep a /baby-sit watch on the PR.",
-            }
+        )
         try:
+            approval = await approval.save()
+            if approval.awaiting_ready:
+                readiness_warning = await ReviewCard(approval).prompt_author_ready()
+                if readiness_warning:
+                    await self.discard(approval)
+                    if displaced is not None:
+                        await ReviewCard(displaced).reopen()
+                    return self.failure(readiness_warning)
+                await ReviewCard(approval).remove_superseded()
+                return {
+                    "success": True,
+                    "approval_id": str(approval.id),
+                    "pr_url": pr_ref.url,
+                    "head_sha": head_sha,
+                    "slack_channel_id": channel_id,
+                    "slack_channel_name": await SlackChannel.name_for(channel_id),
+                    "completion_reply_required": True,
+                    "next": "The full draft card was sent only to the author by DM. The thread card "
+                    "will be posted once they mark it ready. Keep a /baby-sit watch on the PR.",
+                }
             message_ts = await ReviewCard(approval).post_expedited(title=payload.title, files=files)
+            approval.slack_message_ts = message_ts
+            card = ReviewCard(await approval.save())
         except SlackRequestError as exc:
-            await self.discard(approval)
-            if displaced is not None:
-                await ReviewCard(displaced).reopen()
+            await self.rollback(approval, displaced)
             return self.failure(f"Could not post the approval card in Slack: {exc.code}")
         except BaseException:
-            await self.discard(approval)
-            if displaced is not None:
-                await ReviewCard(displaced).reopen()
+            await self.rollback(approval, displaced)
             raise
-        approval.slack_message_ts = message_ts
-        card = ReviewCard(await approval.save())
-        await card.link_on_github()
         await card.broadcast_configured()
         await card.remove_superseded()
         readiness_warning = await card.prompt_author_ready()
@@ -401,7 +425,7 @@ class ExpeditedReviewNomination:
             and await send_dm(
                 requester.slack_user_id,
                 f"Expedited review requested for <{pr_ref.url}|{pr_ref.repo}#{pr_ref.number}> "
-                f"in <#{channel_id}>. Open SWE merges it once someone approves.",
+                f"in <#{channel_id}>. Robin merges it once someone approves.",
             )
         ):
             next_step = f"{next_step} The person was sent a Slack DM pointing to the card."

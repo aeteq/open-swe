@@ -590,7 +590,7 @@ export function AutomationEditor({
                     />
                   </div>
                   {hint(
-                    "Top-level messages only. Open SWE must be in the channel; messages reach the run as untrusted context."
+                    "Top-level messages only. Robin must be in the channel; messages reach the run as untrusted context."
                   )}
                 </TriggerCard>
               )

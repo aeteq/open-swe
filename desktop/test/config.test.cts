@@ -65,7 +65,7 @@ test("renamed app retains original production and isolated development profiles"
   const appDataPath = path.join("/tmp", "open-swe-app-data");
   const expected = {
     isDevelopment: true,
-    name: "Open SWE Development",
+    name: "Robin Development",
     appUserModelId: "com.langchain.openswe.dev",
     userDataPath: path.join(appDataPath, "Open SWE Development"),
   };
@@ -81,7 +81,7 @@ test("renamed app retains original production and isolated development profiles"
     resolveAppRuntime({ argv: [], isPackaged: true, appDataPath }),
     {
       isDevelopment: false,
-      name: "Open SWE",
+      name: "Robin",
       appUserModelId: "com.langchain.openswe",
       userDataPath: path.join(appDataPath, "Open SWE"),
     },
@@ -295,6 +295,29 @@ test("opens only dashboard links from the configured backend", () => {
     "javascript:alert(1)",
   ])
     assert.equal(desktopDeepLinkUrl(url, backend), null);
+});
+
+test("opens dashboard links on the origins the backend names", () => {
+  const backend = "https://openswe.langchain.dev";
+  const origins = ["https://robin.langchain.dev", backend];
+  assert.equal(
+    desktopDeepLinkUrl(
+      "https://robin.langchain.dev/agents/thread-1?tab=plan#latest",
+      backend,
+      origins,
+    ),
+    `${APP_URL}agents/thread-1?tab=plan#latest`,
+  );
+  assert.equal(
+    desktopDeepLinkUrl("https://robin.langchain.dev/review", backend),
+    null,
+  );
+  for (const url of [
+    "http://robin.langchain.dev/agents/thread-1",
+    "https://robin.langchain.dev/dashboard/api/auth/callback?code=secret",
+    "https://other.langchain.dev/agents/thread-1",
+  ])
+    assert.equal(desktopDeepLinkUrl(url, backend, origins), null);
 });
 
 test("keeps static file resolution inside the bundled UI root", () => {

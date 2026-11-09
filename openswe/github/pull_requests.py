@@ -60,6 +60,7 @@ from openswe.github.repositories import Repository
 from openswe.review.findings import REVIEWER_THREAD_KIND
 from openswe.users.models import User, UserIdentity
 from openswe.utils.json_types import JsonObject, thread_metadata
+from openswe.utils.search import FuzzySearch
 from openswe.utils.thread_ops import langgraph_client
 
 logger = logging.getLogger(__name__)
@@ -206,8 +207,6 @@ class PullRequest(Base):
     @classmethod
     async def author_user_id_of(cls, pull_request_id: UUID) -> UUID | None:
         """The Open SWE person who opened that stored PR, or ``None``."""
-        if not postgres.configured():
-            return None
         async with postgres.session() as session:
             return await session.scalar(select(cls.author_user_id).where(cls.id == pull_request_id))
 
@@ -257,19 +256,32 @@ class PullRequest(Base):
         if not query.strip() or not repositories:
             return []
         tsquery = func.websearch_to_tsquery("english", query)
+        authorized = Repository.key.in_([repository.lower() for repository in repositories])
+        exact = (
+            select(cls)
+            .join(cls.repository)
+            .where(authorized, cls.search_vector.bool_op("@@")(tsquery))
+        )
         async with postgres.session() as session:
+            rows = list(
+                await session.scalars(
+                    cls._with_links(exact)
+                    .order_by(
+                        func.ts_rank_cd(cls.search_vector, tsquery).desc(),
+                        cls.updated_at.desc(),
+                        cls.id.desc(),
+                    )
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            if rows or await session.scalar(select(exact.exists())):
+                return rows
             rows = await session.scalars(
                 cls._with_links(select(cls))
                 .join(cls.repository)
-                .where(
-                    Repository.key.in_([repository.lower() for repository in repositories]),
-                    cls.search_vector.bool_op("@@")(tsquery),
-                )
-                .order_by(
-                    func.ts_rank_cd(cls.search_vector, tsquery).desc(),
-                    cls.updated_at.desc(),
-                    cls.id.desc(),
-                )
+                .where(authorized, FuzzySearch(query).condition(cls.title))
+                .order_by(cls.updated_at.desc(), cls.id.desc())
                 .limit(limit)
                 .offset(offset)
             )
@@ -281,7 +293,7 @@ class PullRequest(Base):
     ) -> dict[tuple[str, int], DiffStats]:
         """Stored line counts keyed by lowercased ``(repo_full_name, number)``."""
         keys = [(repo_full_name.lower(), number) for repo_full_name, number in prs]
-        if not keys or not postgres.configured():
+        if not keys:
             return {}
         async with postgres.session() as session:
             rows = await session.scalars(

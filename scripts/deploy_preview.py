@@ -44,7 +44,38 @@ class DeployError(Exception):
 
 
 class SupersededDeploy(Exception):
-    """The branch no longer points to the expected commit."""
+    """The preview branch no longer points to the published commit."""
+
+
+async def preview_sha() -> str:
+    ref = f"refs/heads/{os.environ.get('PREVIEW_BRANCH') or 'preview'}"
+    process = await asyncio.create_subprocess_exec(
+        "git",
+        "ls-remote",
+        "--exit-code",
+        "origin",
+        ref,
+        cwd=Path(__file__).resolve().parent.parent,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+    except TimeoutError as exc:
+        process.kill()
+        await process.communicate()
+        raise DeployError("timed out reading the preview branch") from exc
+    if process.returncode:
+        raise DeployError(f"could not read the preview branch: {stderr.decode().strip()}")
+    fields = stdout.decode().split()
+    if (
+        len(fields) != 2
+        or fields[1] != ref
+        or len(fields[0]) != 40
+        or any(character not in "0123456789abcdef" for character in fields[0])
+    ):
+        raise DeployError("invalid preview branch response")
+    return fields[0]
 
 
 class SourceRevisionConfig(BaseModel):

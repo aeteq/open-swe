@@ -33,12 +33,14 @@ import type { AgentThread } from "@/features/agents/lib/types"
 import {
   useContinueThreadPrivately,
   useDeleteAgentThread,
+  useSetAgentThreadViewed,
   usePinAgentThread,
   useResolveAgentThread,
   useShareThreadWithWorkspace,
   useSidebarPinnedThreads,
   useSidebarRepos,
 } from "@/features/agents/lib/queries"
+import { copyPageLink } from "@/features/reviews/lib/copyText"
 import type { ThreadVisibility } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { reportError } from "@/lib/errorReporting"
@@ -118,6 +120,7 @@ export function AgentThreadHeader({
   const pinThread = usePinAgentThread()
   const resolveThread = useResolveAgentThread()
   const deleteThread = useDeleteAgentThread()
+  const setViewed = useSetAgentThreadViewed()
   const continuePrivately = useContinueThreadPrivately()
   const shareWithWorkspace = useShareThreadWithWorkspace()
   const session = useSession()
@@ -172,6 +175,7 @@ export function AgentThreadHeader({
   const visibilityMenu = thread ? (
     <ThreadVisibilityMenu
       value={thread.visibility ?? "public"}
+      onCopyLink={thread.visibility === "private" ? undefined : copyPageLink}
       onChange={(next) => {
         if (next === "private") continueThreadPrivately()
         else if (canShare) setShareOpen(true)
@@ -212,6 +216,9 @@ export function AgentThreadHeader({
           pinThread.mutate({ threadId: current.id, pinned: !pinned })
         }
       }}
+      onToggleViewed={() =>
+        setViewed.mutate({ threadId: current.id, viewed: !current.viewed })
+      }
       onToggleArchived={() => {
         if (!resolveThread.isPending) {
           resolveThread.mutate({ threadId: current.id, resolved: !archived })
@@ -381,7 +388,7 @@ export function AgentThreadHeader({
             ? worktreeThread.managedTaskFolder
               ? `This deletes the conversation. Its task files are kept at ${worktreeThread.cwd}.`
               : worktreeThread.ownedWorktrees.length
-                ? "This deletes the worktree Open SWE created for it, including any uncommitted changes in it. Its branch and commits are kept."
+                ? "This deletes the worktree Robin created for it, including any uncommitted changes in it. Its branch and commits are kept."
                 : "This removes its history but does not revert changes made to your repository."
             : undefined
         }

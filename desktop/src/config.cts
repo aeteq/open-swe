@@ -2,8 +2,8 @@ const path = require("node:path");
 
 const APP_ORIGIN = "open-swe://app";
 const APP_URL = `${APP_ORIGIN}/`;
-const APP_NAME = "Open SWE";
-const DEVELOPMENT_APP_NAME = "Open SWE Development";
+const APP_NAME = "Robin";
+const DEVELOPMENT_APP_NAME = "Robin Development";
 const APP_USER_MODEL_ID = "com.langchain.openswe";
 const DEVELOPMENT_APP_USER_MODEL_ID = "com.langchain.openswe.dev";
 const DEVELOPMENT_USER_DATA_DIRECTORY = "Open SWE Development";
@@ -202,13 +202,19 @@ function localCallbackUrl(navigationUrl, backendUrl) {
   }
 }
 
-function desktopDeepLinkUrl(value, backendUrl) {
+/**
+ * The app URL for a dashboard link the app opens itself: a thread or review on the
+ * backend's origin, or on one of `dashboardOrigins`, the origins that backend says
+ * serve its dashboard (its canonical domain and aliases).
+ */
+function desktopDeepLinkUrl(value, backendUrl, dashboardOrigins = []) {
   try {
     const target = new URL(value);
     const backend = new URL(backendUrl);
     if (
       !["http:", "https:"].includes(target.protocol) ||
-      target.origin !== backend.origin ||
+      (target.origin !== backend.origin &&
+        !dashboardOrigins.includes(target.origin)) ||
       !/^\/(?:agents(?:\/|$)|review(?:\/|$))/.test(target.pathname)
     )
       return null;

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { queryOptions, useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useMemo } from "react"
 
@@ -21,20 +21,27 @@ import { useSession } from "@/lib/session"
 
 type LoginSearch = { redirect?: string }
 
+const signInOptionsQuery = queryOptions({
+  queryKey: ["sign-in-options"],
+  queryFn: api.signInOptions,
+  staleTime: Infinity,
+})
+
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
   }),
+  // Fetched while rendering so the server sends the sign-in button, not a skeleton.
+  loader: ({ context }) =>
+    context.queryClient
+      .ensureQueryData(signInOptionsQuery)
+      .catch(() => undefined),
   head: () => ({ meta: [{ title: pageTitle("Sign in") }] }),
   component: Login,
 })
 function Login() {
   const session = useSession()
-  const signInOptions = useQuery({
-    queryKey: ["sign-in-options"],
-    queryFn: api.signInOptions,
-    staleTime: Infinity,
-  })
+  const signInOptions = useQuery(signInOptionsQuery)
   const signInWithGitHub = signInOptions.data?.provider === "github"
   const search = Route.useSearch()
   const redirectParam = search.redirect
@@ -78,7 +85,9 @@ function Login() {
           size="md"
           className="w-full"
         >
-          {signInWithGitHub ? "Continue with GitHub" : "Continue with LangSmith"}
+          {signInWithGitHub
+            ? "Continue with GitHub"
+            : "Continue with LangSmith"}
         </Button>
         {!signInWithGitHub && (
           <Text as="p" variant="sm" color="secondary">

@@ -4,6 +4,7 @@ import type {
   AgentPullRequestStatusResponse,
   AgentBackgroundOutput,
   AgentBackgroundWork,
+  AgentThreadGoal,
   AgentQueuedMessage,
   AgentSchedule,
   AgentThread,
@@ -145,6 +146,26 @@ export interface ThreadBrowser {
   /** LangSmith's page for the window, minted for the dashboard to frame. */
   act_url: string
   expires_at: string
+}
+
+/** A tool the page offers Robin, as a message's `page_tools` carries it. */
+export interface PageToolOffer {
+  name: string
+  description: string
+  parameters: object
+}
+
+/** A command Robin queued for this tab's page, under the page's own name for its tool. */
+export interface PageCommand {
+  position: number
+  tool: string
+  arguments: Record<string, unknown>
+}
+
+export interface PageQueue {
+  /** The invalidation topic the queue changes under. */
+  topic: string
+  commands: Array<PageCommand>
 }
 
 export type ThreadScope = "all" | "interactive" | "automation" | "bot"
@@ -317,7 +338,7 @@ async function agentsBlobRequest(path: string): Promise<ThreadRecoveryPatch> {
     blob: await res.blob(),
     filename:
       filenameFromContentDisposition(res.headers.get("content-disposition")) ??
-      "open-swe-recovery.patch",
+      "robin-recovery.patch",
   }
 }
 
@@ -395,6 +416,21 @@ export const agentsApi = {
       `/threads/repos${buildReposQuery(params)}`
     ),
   listPinnedThreads: () => agentsRequest<Array<AgentThread>>("/threads/pinned"),
+  reorderSidebarThreads: (body: {
+    thread_ids: Array<string>
+    project?: string
+    repo?: string
+    ownerless?: boolean
+  }) =>
+    agentsRequest<{ ok: boolean }>("/threads/order", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  reorderPinnedThreads: (threadIds: Array<string>) =>
+    agentsRequest<{ ok: boolean }>("/threads/pinned/order", {
+      method: "PUT",
+      body: JSON.stringify({ thread_ids: threadIds }),
+    }),
   listThreadsPage: (params: ThreadsPageParams = {}) =>
     agentsRequest<ThreadsPage>(`/threads/page${buildThreadsPageQuery(params)}`),
   shareThreadWithWorkspace: (threadId: string) =>
@@ -456,11 +492,12 @@ export const agentsApi = {
     agentsRequest<void>(`/schedules/${encodeURIComponent(scheduleId)}`, {
       method: "DELETE",
     }),
-  getThread: (threadId: string, options?: { markViewed?: boolean }) =>
-    agentsRequest<AgentThread>(
-      `/threads/${encodeURIComponent(threadId)}${
-        options?.markViewed === false ? "?mark_viewed=false" : ""
-      }`
+  getThread: (threadId: string) =>
+    agentsRequest<AgentThread>(`/threads/${encodeURIComponent(threadId)}`),
+  setThreadViewed: (threadId: string, viewed: boolean) =>
+    agentsRequest<{ viewed: boolean }>(
+      `/threads/${encodeURIComponent(threadId)}/read-state`,
+      { method: "PUT", body: JSON.stringify({ viewed }) }
     ),
   getPullRequestChecks: (
     pullRequests: Array<{ repoFullName: string; number: number }>
@@ -472,6 +509,10 @@ export const agentsApi = {
   getThreadPullRequestStatus: (threadId: string) =>
     agentsRequest<AgentPullRequestStatusResponse>(
       `/threads/${encodeURIComponent(threadId)}/pull-request-status`
+    ),
+  getThreadGoal: (threadId: string) =>
+    agentsRequest<AgentThreadGoal | null>(
+      `/threads/${encodeURIComponent(threadId)}/goal`
     ),
   getThreadBackgroundWork: (threadId: string) =>
     agentsRequest<AgentBackgroundWork>(
@@ -570,5 +611,14 @@ export const agentsApi = {
     agentsRequest<ThreadBrowser>(
       `/threads/${encodeURIComponent(threadId)}/browser`,
       { method: "POST" }
+    ),
+  pageCommands: (pageSession: string) =>
+    agentsRequest<PageQueue>(
+      `/page-sessions/${encodeURIComponent(pageSession)}/commands`
+    ),
+  recordPageCommand: (pageSession: string, position: number, result: unknown) =>
+    agentsRequest<void>(
+      `/page-sessions/${encodeURIComponent(pageSession)}/commands/${position}/result`,
+      { method: "POST", body: JSON.stringify({ result }) }
     ),
 }
