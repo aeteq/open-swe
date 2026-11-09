@@ -241,7 +241,13 @@ export const Messages = memo(function MessagesComponent({
                   message.author === "user" ||
                   message.structuredSenderKind === "system"
                 ) {
-                  return <UserMessage key={message.id} message={message} />
+                  return (
+                    <UserMessage
+                      key={message.id}
+                      message={message}
+                      threadId={threadId}
+                    />
+                  )
                 }
 
                 return (
@@ -271,6 +277,14 @@ export const Messages = memo(function MessagesComponent({
               <WorkflowApprovalCard
                 threadId={threadId}
                 pollWhileActive={pollWorkflowApprovalsWhileActive}
+                latestUserMessageAt={
+                  visibleMessages.findLast(
+                    (message) =>
+                      message.author === "user" &&
+                      message.structuredSenderKind !== "system" &&
+                      !message.timestampIsFallback
+                  )?.timestamp
+                }
               />
             )}
             {/* Above the queue: the live run's activity, then what waits for it. */}

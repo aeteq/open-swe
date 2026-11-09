@@ -14,50 +14,19 @@ from openswe.github.sandbox_access import READ_ONLY_REVIEW_PERMISSIONS
 
 def test_reviewer_system_prompt_org_guidelines_precede_repo_style() -> None:
     prompt = reviewer._reviewer_system_prompt(
-        repo_owner="acme",
-        repo_name="repo",
-        pr_number=42,
         org_guidelines="Org rule text.",
         repo_style_prompt="Repo rule text.",
-    )
+    ).workspace
     assert prompt.index("Organization-wide review guidelines") < prompt.index(
         "Repository-specific review style"
     )
 
 
-async def test_reviewer_gets_only_read_only_shared_mcp_tools() -> None:
-    from langchain_core.tools import StructuredTool
-
-    from openswe.mcp.models import MCPToolProvenance
-
-    async def call() -> str:
-        return ""
-
-    def offered(connection: str, name: str) -> StructuredTool:
-        return StructuredTool.from_function(
-            coroutine=call,
-            name=f"mcp_{connection}_{name}",
-            description=name,
-            metadata={
-                "mcp_tool_name": name,
-                "mcp_provenance": MCPToolProvenance(
-                    connection_name=connection, scope="workspace", overridden_scopes=[]
-                ),
-            },
-        )
-
-    catalog = [
-        *(
-            offered("notion", name)
-            for name in ("fetch", "search", "create-pages", "update-page", "notion-create-comment")
-        ),
-        offered("webfetch", "fetch"),
-    ]
-    with patch.object(reviewer, "mcp_tools_for", AsyncMock(return_value=catalog)) as load:
-        tools = await reviewer.reviewer_mcp_tools("default")
-
-    load.assert_awaited_once_with(None, "default", None)
-    assert [tool.name for tool in tools] == ["mcp_notion_fetch", "mcp_notion_search"]
+def test_reviewer_approval_policy_stays_in_system_prompt_after_shared_parts() -> None:
+    prompt = reviewer._reviewer_system_prompt(approval_policy="Docs-only changes may merge.")
+    assert "Docs-only changes may merge." in prompt.thread
+    assert "Docs-only changes may merge." not in prompt.shared + prompt.workspace
+    assert "# Approval assessment" in prompt.shared
 
 
 def test_finding_reply_context_wraps_reply_as_untrusted_data() -> None:
@@ -451,6 +420,7 @@ async def test_re_review_context_appends_after_history_without_changing_system_p
         rendered = result.update["rendered_system_prompt"]
         assert isinstance(rendered, str)
         assert head not in rendered
+        assert "acme/repo#42" not in rendered
         if not repo_ready:
             assert f"git checkout --force {head}" in context.text
         assert state["messages"] == [*previous, context]

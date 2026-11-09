@@ -320,7 +320,7 @@ class ReviewAssessment(BaseModel):
         if self.decision == "would_approve":
             return "Would approve"
         if self.decision == "would_approve_conditionally":
-            return "Would approve subject to human approval of the stated condition"
+            return "Would approve once a person approves the change below"
         return "Needs human review"
 
     def settled(self, findings: list[Finding]) -> ReviewAssessment:
@@ -449,8 +449,8 @@ def render_review_body(
     parts = [headline, render_review_summary(summary)]
     if config_errors:
         parts.append(
-            "**Changes requested: invalid Open SWE configuration.** "
-            "This pull request changes Open SWE configuration that cannot be applied:\n\n"
+            "**Changes requested: invalid Robin configuration.** "
+            "This pull request changes Robin configuration that cannot be applied:\n\n"
             + "\n".join(f"- {escape(error)}" for error in config_errors)
         )
     if approval_errors:
@@ -471,11 +471,9 @@ def render_review_body(
         suffix = "automatic approval" if approved else "dry run" if dry_run else "advisory"
         parts.append(f"**Risk: {assessment.risk_score}/5 · {decision}** ({suffix})")
         if assessment.approval_condition:
-            parts.append(f"**Approval condition:** {escape(assessment.approval_condition)}")
+            parts.append(f"**Needs a person to approve:** {escape(assessment.approval_condition)}")
         if assessment.auto_approved:
-            parts.append(
-                f"**Already covered by auto-approval:** {escape(assessment.auto_approved)}"
-            )
+            parts.append(f"**Covered by auto-approve:** {escape(assessment.auto_approved)}")
         parts.append(
             "<details>\n<summary>Why?</summary>\n\n"
             f"{escape(assessment.explanation)}\n\n"
@@ -490,7 +488,7 @@ def render_review_body(
             + "\n\n</details>"
         )
         feedback_link = (
-            f", or [rate the latest assessment in Open SWE]({ui_url}#assessment-feedback)"
+            f", or [rate the latest assessment in Robin]({ui_url}#assessment-feedback)"
             if ui_url
             else ""
         )
@@ -543,9 +541,9 @@ def render_failed_status_comment(*, pr_number: int, thread_id: str, reason: str)
     it when it starts or publishes.
     """
     parts = [
-        "## ⚠️ Open SWE Review: couldn't run\n\n"
-        f"Open SWE stopped before it could review this PR: {reason}. "
-        "Push a commit or re-request a review from Open SWE to run it again."
+        "## ⚠️ Robin Review: couldn't run\n\n"
+        f"Robin stopped before it could review this PR: {reason}. "
+        "Push a commit or re-request a review from Robin to run it again."
     ]
     if ui_url := dashboard_thread_url(thread_id):
         parts.append(f"[Open in Web]({ui_url})")
@@ -650,7 +648,7 @@ async def settle_review_check_run(
     title: str,
     summary: str,
 ) -> None:
-    """Complete the tracked ``Open SWE Review`` check run, if one is open.
+    """Complete the tracked ``Robin Review`` check run, if one is open.
 
     The dispatching webhook stores ``review_check_run_id`` in reviewer thread
     metadata when it creates the check. No-op when none is tracked. The id is

@@ -2,7 +2,7 @@ import { Card } from "@langchain/macaw-components/Card"
 import { Button } from "@langchain/macaw-components/Button"
 import { useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { productAnalytics } from "@/lib/posthog"
+import { productAnalytics } from "@/lib/analytics"
 import { clearCachedRepos } from "@/lib/repoCache"
 import { api } from "@/lib/api"
 import { Text } from "@langchain/macaw-components/Text"
@@ -30,7 +30,7 @@ export function GitHubLinkPrompt({ user }: { user: SessionUser }) {
           </Text>
           <Text as="p" variant="sm" color="secondary">
             {user.requires_github_link
-              ? "Your email matches an existing Open SWE account. Link the GitHub account you used before to verify ownership and restore your threads and settings."
+              ? "Your email matches an existing Robin account. Link the GitHub account you used before to verify ownership and restore your threads and settings."
               : "Coding agents clone repositories, push branches and open pull requests as you. Link your GitHub account to use them and return to your existing coding threads."}
           </Text>
         </div>
