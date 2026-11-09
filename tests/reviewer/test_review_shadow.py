@@ -74,7 +74,7 @@ async def _publish(
         patch("openswe.tools.publish_review.get_config", return_value=config),
         patch("openswe.tools.publish_review.get_thread_id_from_runtime", return_value="shadow-1"),
     ):
-        return await publish_review(ranking=ranking, assessment=assessment)
+        return await publish_review(ranking=ranking, summary="Adds docs.", assessment=assessment)
 
 
 @pytest.mark.usefixtures("registry_db")

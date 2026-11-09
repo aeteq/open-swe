@@ -2,14 +2,13 @@
 
 import hmac
 import logging
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from openswe.config import ENV
 from openswe.dashboard.deps import SESSION_DEP, session_is_admin
 from openswe.dashboard.dev_login import GhUnavailable, dev_login_enabled, gh_credentials
 from openswe.dashboard.github_link import GitHubLink
@@ -18,9 +17,9 @@ from openswe.dashboard.langsmith_login import (
     LANGSMITH_STATE_COOKIE_PATH,
     LangSmithLogin,
 )
+from openswe.dashboard.langsmith_oauth import langsmith_oauth_configured
 from openswe.dashboard.oauth import (
     COOKIE_NAME,
-    GITHUB_CALLBACK_PATH,
     MCP_SIGN_IN_CALLBACK_PATH,
     SESSION_TTL_SECONDS,
     STATE_COOKIE_NAME,
@@ -38,7 +37,6 @@ from openswe.dashboard.oauth import (
     issue_connect_handoff,
     issue_desktop_handoff,
     issue_session,
-    issue_state,
     new_state_nonce,
     optional_session,
     rebind_session,
@@ -72,14 +70,40 @@ logger = logging.getLogger(__name__)
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 
 
+class SignInOptions(BaseModel):
+    provider: Literal["github", "langsmith"]
+
+
+@router.get("/auth/options")
+async def auth_options() -> SignInOptions:
+    """Which account the login page asks for, before anyone is signed in."""
+    return SignInOptions(provider="langsmith" if langsmith_oauth_configured() else "github")
+
+
 @router.get("/auth/login")
-async def auth_login(request: Request, redirect_to: str | None = None) -> RedirectResponse:
-    """Everyone signs in with LangSmith; locally without it, as the `gh` CLI's user."""
+async def auth_login(
+    request: Request,
+    redirect_to: str | None = None,
+    desktop_handoff: str | None = None,
+    desktop_port: int | None = Query(default=None, ge=1024, le=65535),
+) -> RedirectResponse:
+    """Sign in with LangSmith, or with GitHub where LangSmith sign-in is not configured.
+
+    Locally, without either, sign in as the `gh` CLI's user.
+    """
     if dev_login_enabled() and not request.query_params.get("desktop"):
         return RedirectResponse(
             "/dashboard/api/auth/dev-login?"
             + urlencode({"redirect_to": sanitize_redirect_to(redirect_to)}),
             status_code=302,
+        )
+    if not langsmith_oauth_configured():
+        # Not everyone has a LangSmith seat, so the GitHub App's OAuth is the sign-in.
+        return GitHubLink.authorize(
+            GITHUB_AUTHORIZE_URL,
+            redirect_to=redirect_to,
+            desktop_handoff=desktop_handoff,
+            desktop_port=desktop_port,
         )
     query = f"?{request.url.query}" if request.url.query else ""
     return RedirectResponse(f"/dashboard/api/auth/langsmith/login{query}", status_code=302)
@@ -93,26 +117,12 @@ async def github_link_login(
     _session: dict[str, Any] = SESSION_DEP,
 ) -> RedirectResponse:
     """Start linking a GitHub account to the signed-in LangSmith person."""
-    client_id = ENV.GITHUB_APP_CLIENT_ID.get()
-    if not client_id:
-        raise HTTPException(500, "GITHUB_APP_CLIENT_ID not configured")
-    nonce = new_state_nonce()
-    state = issue_state(
-        redirect_to=sanitize_redirect_to(redirect_to) or frontend_base_url(),
-        nonce_hash=hash_state_nonce(nonce),
-        handoff_challenge=valid_handoff_challenge(desktop_handoff),
-        handoff_port=desktop_port,
+    return GitHubLink.authorize(
+        GITHUB_AUTHORIZE_URL,
+        redirect_to=redirect_to,
+        desktop_handoff=desktop_handoff,
+        desktop_port=desktop_port,
     )
-    query = urlencode(
-        {
-            "client_id": client_id,
-            "redirect_uri": f"{PublicOrigin.dashboard_api_base_url()}{GITHUB_CALLBACK_PATH}",
-            "state": state,
-        }
-    )
-    response = RedirectResponse(f"{GITHUB_AUTHORIZE_URL}?{query}", status_code=302)
-    set_state_cookie(response, nonce)
-    return response
 
 
 @router.post("/github/desktop/exchange")
@@ -187,6 +197,20 @@ async def auth_callback(request: Request, state: str, code: str | None = None) -
         raise HTTPException(400, "oauth state mismatch — please retry")
 
     link = await GitHubLink.from_code(code)
+    redirect_to = sanitize_redirect_to(state_payload.get("redirect_to")) or frontend_base_url()
+    if not langsmith_oauth_configured():
+        user = await link.sign_in()
+        if handoff is not None:
+            challenge, port = handoff
+            response = RedirectResponse(
+                desktop_callback_url(port, link.own_desktop_handoff(user, challenge)),
+                status_code=302,
+            )
+        else:
+            response = RedirectResponse(redirect_to, status_code=302)
+            set_session_cookie(response, link.own_session(user))
+        clear_state_cookie(response)
+        return response
     if handoff is not None:
         # The app finishes the link under the session it holds.
         challenge, port = handoff
@@ -200,7 +224,6 @@ async def auth_callback(request: Request, state: str, code: str | None = None) -
     session = await require_session(request)
     principal = DashboardPrincipal.from_session(session)
     user = await link.join(principal)
-    redirect_to = sanitize_redirect_to(state_payload.get("redirect_to")) or frontend_base_url()
     response = RedirectResponse(redirect_to, status_code=302)
     set_session_cookie(response, GitHubLink.session(principal, user, session.get("email")))
     clear_state_cookie(response)
