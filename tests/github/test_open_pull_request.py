@@ -535,7 +535,7 @@ def test_public_repo_appends_plan_and_slack_reference(
     assert "- [Plan](https://dashboard.example/agents/thread-1/plan)" in sent_body
     assert "- [Slack thread](https://slack.example/p1)" in sent_body
     assert sent_body.count("Made by [") == 1
-    assert sent_body.splitlines()[-1].startswith("Made by [Robin]")
+    assert sent_body.splitlines()[-1].startswith("Made by [Jarvis]")
     assert "https://example.com/old" not in sent_body
 
 

@@ -78,7 +78,9 @@ function Login() {
           size="md"
           className="w-full"
         >
-          {signInWithGitHub ? "Continue with GitHub" : "Continue with LangSmith"}
+          {signInWithGitHub
+            ? "Continue with GitHub"
+            : "Continue with LangSmith"}
         </Button>
         {!signInWithGitHub && (
           <Text as="p" variant="sm" color="secondary">

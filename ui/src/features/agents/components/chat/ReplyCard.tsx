@@ -267,7 +267,7 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
   return (
     <div className="min-w-0 px-space-1 py-0.5">
       <div className="mb-space-1 flex items-center gap-space-2 text-xxs text-secondary">
-        {isLinear ? (
+        {kind !== "slack" ? (
           <ChatCircleIcon size={12} weight="regular" aria-hidden />
         ) : !slackUrl ? (
           <SlackLogoIcon size={12} weight="fill" aria-hidden />
