@@ -9161,6 +9161,23 @@
         "title": "SidebarThreadOrderBody",
         "type": "object"
       },
+      "SignInOptions": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "github",
+              "langsmith"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "SignInOptions",
+        "type": "object"
+      },
       "SkillCreate": {
         "properties": {
           "description": {
