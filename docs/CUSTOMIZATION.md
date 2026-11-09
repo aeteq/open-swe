@@ -654,6 +654,28 @@ The design is created in the documents database in review and linked through `NO
 With `NOTION_DESIGN_TEMPLATE_ID` set, the agent reads that page's content through `get_notion_design_template` before writing.
 Designs are created as the agent's Notion member when `NOTION_AGENT_API_KEY` is set, so that member needs edit access to the documents database and the task database.
 
+#### Reviewing designs
+
+With `NOTION_DESIGN_AUTO_REVIEW=true`, the agent reviews every design document tagged with one of `NOTION_DESIGN_TAGS` while it is in `NOTION_DESIGN_REVIEW_STATUS`, and reports only in comments: a discussion per finding and a summary with its verdict.
+It never edits the design or changes its status.
+It checks the design against the task linked to it through `NOTION_DESIGN_PROPERTY`, the context documents and approved designs in the documents database, the accepted ADRs, and the repository's `AGENTS.md` and code.
+It gets each document's name and summary, and reads in full, with `read_notion_page`, only those that bear on the design.
+
+A round starts a minute after a design enters review, and ten minutes after the last edit to a design already in review.
+The first round reviews the whole design; each later one reviews only what changed since the version last reviewed and replies in the discussions of its earlier findings.
+Replies on the design's comments reach the review's thread.
+Rounds need the `page.content_updated` webhook event alongside the others.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `NOTION_DESIGN_AUTO_REVIEW` | `false` | Review designs in review |
+| `NOTION_SUMMARY_PROPERTY` | `Summary` | Text property summarizing a context document or ADR; a page without one is described by the start of its text |
+| `NOTION_CONTEXT_TAGS` | `AI Context` | Comma-separated tags of the context documents |
+| `NOTION_CONTEXT_STATUSES` | `Approved,Active` | Statuses of the context documents in force |
+| `NOTION_ADR_DATA_SOURCE_ID` | — | Data source of the ADRs; without it, no ADRs are listed |
+| `NOTION_ADR_STATUS_PROPERTY` | `Status` | Status or select property of an ADR |
+| `NOTION_ADR_ACCEPTED_STATUS` | `Accepted` | Status of an ADR in force |
+
 ### Customizing Slack routing
 
 Slack repo resolution (`get_slack_repo_config` in `openswe/webapp.py`) checks, in order:

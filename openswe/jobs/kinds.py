@@ -42,6 +42,8 @@ from openswe.monitors.delivery import POLL_JOB_KIND as MONITOR_POLL
 from openswe.monitors.delivery import poll_monitors
 from openswe.notifications.service import JOB_KIND as NOTIFICATION_FALLBACK
 from openswe.notifications.service import AppNotification
+from openswe.notion.design_review import REVIEW_JOB as NOTION_DESIGN_REVIEW
+from openswe.notion.design_review import DesignReview
 
 __all__ = ["WORKER"]
 from openswe.reconcile import reconcile_stale_runs
@@ -239,6 +241,17 @@ async def _wake_thread(job: Job) -> None:
         logger.exception("Thread wakeup failed", extra={"job_id": str(job.id)})
         return
     logger.info("Thread woken", extra={"job_id": str(job.id), "run_id": run_id})
+
+
+@WORKER.register(NOTION_DESIGN_REVIEW)
+async def _notion_design_review(job: Job) -> None:
+    page_id = _text(job, "page_id")
+    if page_id is None:
+        return
+    outcome = await DesignReview.run(page_id)
+    logger.info(
+        "Job ran", extra={"job_kind": job.kind, "job_id": str(job.id), "job_result": outcome}
+    )
 
 
 @WORKER.register(NOTIFICATION_FALLBACK)

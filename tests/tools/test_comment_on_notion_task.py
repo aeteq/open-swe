@@ -3,6 +3,7 @@ import sys
 import pytest
 
 import openswe.tools.comment_on_notion_task  # noqa: F401
+from tests.notion.fakes import FakeNotion, comment
 
 tool = sys.modules["openswe.tools.comment_on_notion_task"]
 
@@ -64,3 +65,19 @@ async def test_refuses_outside_a_notion_run_or_with_empty_text(
 
     assert result["success"] is False
     assert posted == []
+
+
+async def test_replies_only_in_a_discussion_on_its_own_page(
+    monkeypatch: pytest.MonkeyPatch, posted: list[tuple[str, str, str]]
+) -> None:
+    notion = FakeNotion()
+    notion.comments["page1"] = [comment("c-1", "Finding", page_id="page-1", discussion_id="d-1")]
+    notion.install(monkeypatch)
+    monkeypatch.setenv("NOTION_API_KEY", "secret")
+    _config(monkeypatch, {"source": "notion", "notion_page": {"id": "page-1"}})
+
+    assert await tool.comment_on_notion_task("Fixed", discussion_id="d-1") == {"success": True}
+    refused = await tool.comment_on_notion_task("Fixed", discussion_id="d-elsewhere")
+
+    assert refused["success"] is False
+    assert posted == [("page-1", "Fixed", "d-1")]

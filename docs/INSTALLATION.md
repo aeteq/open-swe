@@ -671,7 +671,7 @@ A task that links design documents waits until every one of them is **Approved**
    The task database needs an `Assignee` people property, a `Status` status property with **Not started**, **In progress**, and **In review** options, a `Repository` select whose options are `owner/name` values, a `Pull Request URL` URL property, and optionally a `Design` relation to the design documents, whose `Status` includes **Approved**.
    Different names are configured in [Customizing Notion tasks](CUSTOMIZATION.md#customizing-notion-tasks).
 1. **Webhook.**
-   In the integration's **Webhooks** tab, create a subscription for `<URL>/webhooks/notion` with the events `page.created`, `page.properties_updated`, and `comment.created`.
+   In the integration's **Webhooks** tab, create a subscription for `<URL>/webhooks/notion` with the events `page.created`, `page.properties_updated`, `page.content_updated`, and `comment.created`.
    Notion then posts a verification token: while `NOTION_WEBHOOK_SECRET` is unset, Open SWE logs it (`Notion webhook verification token received`).
    Save it as `NOTION_WEBHOOK_SECRET`, restart, and paste it into Notion to verify the subscription.
 

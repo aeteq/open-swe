@@ -2,4 +2,5 @@ Post a comment on the Notion page that started this run.
 When a comment mentioning you started it, this replies in that comment's discussion.
 Use it for essential questions, meaningful progress, plan-review links, answers, and the final outcome; do not narrate routine steps.
 `text` is plain text; `[label](https://…)` links stay clickable.
+`discussion_id` replies in that open discussion on the page instead; leave it empty otherwise.
 Replies arrive as new messages in this thread.
