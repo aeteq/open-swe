@@ -65,7 +65,9 @@ def _issue_payload(**overrides: JsonValue) -> dict[str, JsonValue]:
     return payload
 
 
-def _comment_payload(body: str = "@jarvis-aeteq try again", **issue: JsonValue) -> dict[str, JsonValue]:
+def _comment_payload(
+    body: str = "@jarvis-aeteq try again", **issue: JsonValue
+) -> dict[str, JsonValue]:
     payload = _issue_payload(action="created")
     payload["issue"] = {**payload["issue"], "body": "No mention here", **issue}
     payload["comment"] = {"id": 55, "body": body, "user": {"login": "ada"}}
