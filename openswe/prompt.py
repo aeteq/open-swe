@@ -9,6 +9,7 @@ from runtime_api.provenance import Provenance
 from openswe.bridge.constants import BridgeClient
 from openswe.config import ENV
 from openswe.input_messages import RunMessage, dynamic_context_hash, run_context
+from openswe.notion.settings import notion_settings
 from openswe.prompts import prompt
 from openswe.sandboxes.providers.langsmith import LangSmithCreateOptions
 from openswe.utils.authorship import (
@@ -252,13 +253,17 @@ class TurnContext:
                 if self.slack_ask
                 else "slack"
             )
-        elif self.source in {"linear", "github", "schedule", "dashboard"}:
+        elif self.source in {"linear", "notion", "github", "schedule", "dashboard"}:
             name = self.source
         else:
             name = "generic"
         if name in {"slack", "schedule"}:
             guidance = prompt(
                 f"system/source-{name}", breakout=self.slack_breakout, slack=self.slack_context
+            )
+        elif name == "notion":
+            guidance = prompt(
+                "system/source-notion", designs=bool(notion_settings().documents_data_source_id)
             )
         else:
             guidance = prompt(f"system/source-{name}")

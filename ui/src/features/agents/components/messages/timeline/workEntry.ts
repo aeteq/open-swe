@@ -65,6 +65,7 @@ function iconForChunk(chunk: ToolExecutionChunk): WorkEntryIconName {
       return "bot"
     case "slack":
     case "linear":
+    case "notion":
       return "message-circle"
     case "task":
       return "hammer"
@@ -258,6 +259,7 @@ function toolActivityVerb(chunk: ToolExecutionChunk): string {
       return "Thinking"
     case "slack":
     case "linear":
+    case "notion":
       return "Sending update"
     case "managed-tools":
       return "Offering connection"

@@ -54,7 +54,7 @@ def _issue_payload(**overrides: JsonValue) -> dict[str, JsonValue]:
             "id": 101,
             "number": 7,
             "title": "Crash on start",
-            "body": "@openswe please fix this",
+            "body": "@jarvis-aeteq please fix this",
             "html_url": "https://github.com/acme/api/issues/7",
             "user": {"login": "ada"},
         },
@@ -65,7 +65,9 @@ def _issue_payload(**overrides: JsonValue) -> dict[str, JsonValue]:
     return payload
 
 
-def _comment_payload(body: str = "@openswe try again", **issue: JsonValue) -> dict[str, JsonValue]:
+def _comment_payload(
+    body: str = "@jarvis-aeteq try again", **issue: JsonValue
+) -> dict[str, JsonValue]:
     payload = _issue_payload(action="created")
     payload["issue"] = {**payload["issue"], "body": "No mention here", **issue}
     payload["comment"] = {"id": 55, "body": body, "user": {"login": "ada"}}
@@ -190,7 +192,7 @@ async def test_a_delivery_is_logged_with_what_open_swe_knows_of_its_repository(
     delivered = await _deliver(app, "pull_request", payload)
 
     assert delivered.facts.routable and delivered.facts.allowed and delivered.facts.auto_review
-    assert "@openswe" in delivered.facts.tags
+    assert "@jarvis-aeteq" in delivered.facts.tags
     channel.EventLog.record_once.assert_awaited_once()  # type: ignore[attr-defined]
     assert channel.EventLog.record_once.await_args.kwargs["delivery_id"] == "delivery-1"  # type: ignore[attr-defined]
     channel.Topic.PULL_REQUESTS.invalidate.assert_awaited_once()  # type: ignore[attr-defined]

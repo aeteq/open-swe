@@ -2,7 +2,7 @@
 # requires-python = ">=3.14"
 # dependencies = ["httpx>=0.28", "pydantic>=2.12"]
 # ///
-"""Wait for the automatic preview deployment and verify the published commit deploys."""
+"""Wait for a deployment's automatic revision of a branch and verify the branch's commit deploys."""
 
 import asyncio
 import os
@@ -40,7 +40,7 @@ IN_PROGRESS: frozenset[RevisionStatus] = frozenset(
 
 
 class DeployError(Exception):
-    """The preview revision did not reach DEPLOYED."""
+    """The revision did not reach DEPLOYED."""
 
 
 class SupersededDeploy(Exception):
@@ -108,18 +108,56 @@ class Logs(BaseModel):
     logs: list[LogLine] = []
 
 
+class Branch:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.ref = f"refs/heads/{name}"
+
+    async def sha(self) -> str:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "origin",
+            self.ref,
+            cwd=Path(__file__).resolve().parent.parent,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        except TimeoutError as exc:
+            process.kill()
+            await process.communicate()
+            raise DeployError(f"timed out reading the {self.name} branch") from exc
+        if process.returncode:
+            raise DeployError(f"could not read the {self.name} branch: {stderr.decode().strip()}")
+        fields = stdout.decode().split()
+        if (
+            len(fields) != 2
+            or fields[1] != self.ref
+            or len(fields[0]) != 40
+            or any(character not in "0123456789abcdef" for character in fields[0])
+        ):
+            raise DeployError(f"invalid {self.name} branch response")
+        return fields[0]
+
+
 class Deployer:
-    def __init__(self, client: httpx.AsyncClient, deployment_id: str, expected_sha: str) -> None:
+    def __init__(
+        self, client: httpx.AsyncClient, deployment_id: str, branch: Branch, expected_sha: str
+    ) -> None:
         self.client = client
         self.path = f"/v2/deployments/{deployment_id}"
+        self.branch = branch
         self.expected_sha = expected_sha
         self.deadline = time.monotonic() + TIMEOUT_SECONDS
 
     async def check_superseded(self) -> None:
-        current_sha = await preview_sha()
+        current_sha = await self.branch.sha()
         if current_sha != self.expected_sha:
             raise SupersededDeploy(
-                f"preview branch moved from {self.expected_sha} to {current_sha}; "
+                f"{self.branch.name} branch moved from {self.expected_sha} to {current_sha}; "
                 "this run is superseded, replacement deployment not verified"
             )
 
@@ -189,7 +227,7 @@ class Deployer:
                 await self.check_superseded()
         except SupersededDeploy as exc:
             print(f"::warning::{exc}", flush=True)
-            # The workflow skips the superseded tree's MDA deploy, so the newer tree's deploy starts.
+            # The preview workflow skips the superseded tree's MDA deploy, so the newer tree's deploy starts.
             if output := os.environ.get("GITHUB_OUTPUT"):
                 with open(output, "a") as file:
                     file.write("superseded=true\n")
@@ -201,7 +239,7 @@ class Deployer:
         if revision.commit != self.expected_sha:
             raise DeployError(
                 f"revision {revision.id} deployed {revision.commit or 'an unknown commit'}, "
-                f"not the published {self.expected_sha}"
+                f"not the expected {self.expected_sha}"
             )
         print(f"revision {revision.id} deployed {revision.commit}")
 
@@ -216,7 +254,12 @@ async def main() -> None:
         timeout=30,
         transport=httpx.AsyncHTTPTransport(retries=3),
     ) as client:
-        deployer = Deployer(client, os.environ["DEPLOYMENT_ID"], os.environ["EXPECTED_SHA"])
+        deployer = Deployer(
+            client,
+            os.environ["DEPLOYMENT_ID"],
+            Branch(os.environ.get("BRANCH") or "preview"),
+            os.environ["EXPECTED_SHA"],
+        )
         await deployer.deploy()
 
 

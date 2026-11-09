@@ -24,6 +24,7 @@ from openswe.mda_channels.api import router as mda_channel_api_router
 from openswe.mda_channels.github_deliveries import router as mda_github_deliveries_router
 from openswe.mda_channels.resolve_user import router as mda_resolve_user_router
 from openswe.mda_channels.slack_channel_events import router as mda_slack_channel_events_router
+from openswe.notion.routes import router as notion_webhook_router
 from openswe.openai_responses.routes import router as sandbox_openai_router
 from openswe.review.eval_report_routes import router as reviewer_eval_report_router
 from openswe.rollout_events import router as rollout_webhook_router
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
     app.include_router(mda_resolve_user_router)
     app.include_router(mda_slack_channel_events_router)
     app.include_router(mda_github_deliveries_router)
+    app.include_router(notion_webhook_router)
     app.include_router(slack_webhook_router)
     app.include_router(health_router)
     app.include_router(rollout_webhook_router)
