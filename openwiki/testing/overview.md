@@ -5,7 +5,7 @@ description: Test organization, fixture strategies, E2E setup, and focused valid
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -25,14 +25,10 @@ sources:
     resource: repo://tests/e2e/global-setup.ts
   - id: openwiki-source-859f98720585f4648f0f7b2e
     resource: repo://tests/e2e/playwright.config.ts
-  - id: openwiki-source-4b944ec14a3d793a6f771403
-    resource: repo://tests/e2e/playwright.desktop.config.ts
   - id: openwiki-source-7ef60dc4372e1a33c7728fe6
     resource: repo://tests/e2e/README.md
   - id: openwiki-source-86954185ec7b6e72d7a5a7a7
     resource: repo://tests/e2e/tests/desktop.spec.ts
-  - id: openwiki-source-4cedab06aadc98083b348ddb
-    resource: repo://tests/e2e/tests/full_flow.spec.ts
   - id: openwiki-source-ec3fbe14e1e05123704c4f28
     resource: repo://tests/reviewer/test_reviewer_outcomes.py
   - id: openwiki-source-f05d7497d4c60c3b322628eb
@@ -43,7 +39,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -134,7 +130,7 @@ For Electron main-process code, use Node's built-in test harness:
 pnpm --dir desktop run test
 ```
 
-The desktop package builds its main bundle first, then runs `node --test test/*.test.cjs`. Tests verify IPC, window lifecycle, git operations, and local-agent invocation without launching a full browser.
+The desktop package builds its main bundle first, then runs `node --test test/*.test.cts test/*.test.ts`. Tests verify IPC, window lifecycle, git operations, and local-agent invocation without launching a full browser.
 
 ### Root test delegation
 

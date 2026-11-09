@@ -3,6 +3,9 @@ type: workflow
 title: Follow-up Messages and Threaded Continuity
 description: Thread message routing, follow-up invocation from GitHub PR comments and Slack replies, run continuation and interruption coordination, and completion webhooks that coordinate concurrent work without losing user input.
 tags: [follow-up, message-queue, middleware, completion-webhook, baby-sit, background-tasks, stop, multitask-strategy, interrupt, enqueue, threaded-continuity]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-987be1dce6e9ba720855c2ed
     resource: repo://openswe/baby_sit.py
@@ -37,9 +40,6 @@ sources:
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
 generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
 ---
 
 # Follow-up Messages and Threaded Continuity

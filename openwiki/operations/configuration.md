@@ -32,10 +32,12 @@ sources:
     resource: repo://openswe/utils/gateway.py
   - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
     resource: repo://openswe/utils/model.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+  - id: openwiki-source-7b35cf61ea1491240ef4c804
+    resource: repo://openswe/workspaces/store.py
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Configuration and Startup Validation
@@ -43,7 +45,7 @@ verified:
 Open SWE has two configuration planes:
 
 - **Deployment configuration** is declared centrally in `openswe/config.py` and normally supplied through environment variables (including the `.env` file named by `langgraph.json`). It covers connectivity, credentials, provider selection, UI URLs, and deployment defaults.
-- **Persisted settings** are instance-wide (team settings) or per-workspace records in LangGraph Store, and change selected behavior without a redeploy: team-wide review toggles and model defaults, workspace-level base snapshot and custom resource sizing. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
+- **Persisted settings** are instance-wide (team settings) stored in a LangGraph Store record or per-workspace records in SQL, and change selected behavior without a redeploy: team-wide feature toggles and model defaults, workspace-level base snapshot and custom resource sizing. These are not substitutes for secrets or provider credentials, which remain deployment configuration.
 
 This page describes configuration ownership, validation behavior, and important patterns rather than cataloging every variable. `openswe/config.py` is the complete registry; [deployment](deployment.md) covers installation. See [models, profiles, and instructions](../concepts/models-profiles-instructions.md) for model selection semantics.
 
@@ -55,7 +57,7 @@ The canonical name wins over aliases. Deprecated names and aliases are registere
 
 ### Deployment topology
 
-`langgraph.json` registers the agent, reviewer, review-scout, chat, and scheduler graphs and mounts `openswe.webapp:app` (FastAPI) as the HTTP application. The checkpointer uses a delete-based TTL strategy with a 60-minute sweep interval and 43200-minute default TTL (30 days). The file declares `.env` as the environment file.
+`langgraph.json` registers the agent, reviewer, and review-scout graphs and mounts `openswe.webapp:app` (FastAPI) as the HTTP application. The checkpointer uses a delete-based TTL strategy with a 60-minute sweep interval and 43200-minute default TTL (30 days). The file declares `.env` as the environment file.
 
 ## Startup lifecycle and validation
 
@@ -73,7 +75,7 @@ flowchart TD
     CheckAuth -->|fail| Stop["Raise and abort startup"]
     CheckAuth -->|pass| CheckSandbox["Validate sandbox configuration"]
     CheckSandbox -->|fail| Stop
-    CheckSandbox -->|pass| CheckMDA["Validate MDA/remote runtime URL"]
+    CheckSandbox -->|pass| CheckMDA["Validate MDA runtime URL"]
     CheckMDA -->|fail| Stop
     CheckMDA -->|pass| CheckModel["Validate localhost model credentials"]
     CheckModel -->|fail| Stop
@@ -172,19 +174,11 @@ Run completion/failure replies require `RUN_COMPLETE_WEBHOOK_SECRET` and a usabl
 
 Dispatch attaches a completion webhook only when the secret is set and `COMPLETION_WEBHOOK_URL` is absolute (not relative) and non-loopback (not localhost or 127.0.0.1). A relative or loopback URL is logged as a warning and omitted (not a run failure) so invalid URLs cannot poison run creation. The dispatch URL carries the token as a query parameter for constant-time verification.
 
-## MCP server configuration
-
-Open SWE's agent graph includes an MCP (Model Context Protocol) server that can integrate with external tools and data sources. Each workspace can configure MCP servers and their parameters. Configuration is workspace-level, set through workspace settings or workspace-specific environment overrides.
-
-- **Per-workspace MCP config**: Workspaces can specify MCP server URLs, authentication tokens, and other parameters. These override deployment defaults.
-- **Fallback to deployment defaults**: When a workspace does not override an MCP setting, the deployment configuration applies.
-- **Local development**: The MCP server validates that the workspace can reach configured URLs at startup to fail fast in development.
-
 ## Operation and extension
 
 **Adding an environment variable**: Declare it in `openswe/config.py` with a description, defaults, secret status, and any aliases or deprecated names. Consume through `ENV.NAME` or `ENV["NAME"]`, never through direct `os.environ` reads, so late hydration and key rotation are observed.
 
-**Persisted settings**: Use the Store only for instance-wide team settings and workspace-level base snapshot/custom resources. Design changes to degrade gracefully when Store reads fail (unavailable or missing data return hardcoded defaults). Chat inherits agent model defaults, and reviewer grouping inherits reviewer subagent defaults, unless overridden.
+**Persisted settings**: Use the Store only for instance-wide team settings. Design changes to degrade gracefully when Store reads fail (unavailable or missing data return hardcoded defaults). Chat inherits agent model defaults, and reviewer grouping inherits reviewer subagent defaults, unless overridden. Workspace sandbox customization (base snapshot, resource overrides, create params) is persisted in SQL, not the Store.
 
 **Before deploying**: Exercise lifespan startup validation with the selected sandbox provider and model configuration. In local development, set an explicit `http://localhost...` `DASHBOARD_BASE_URL` to enable model-credential validation at boot.
 

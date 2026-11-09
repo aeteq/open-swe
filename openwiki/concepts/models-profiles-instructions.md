@@ -16,6 +16,8 @@ sources:
     resource: repo://openswe/dashboard/user_instructions.py
   - id: openwiki-source-775d5704fff1c9b4f3e91941
     resource: repo://openswe/dashboard/workspace_settings.py
+  - id: openwiki-source-2e8359c5702d5a31e2d5ea43
+    resource: repo://openswe/graphs/read_only.py
   - id: openwiki-source-836966ba5e0c4d710801c9a9
     resource: repo://openswe/input_messages.py
   - id: openwiki-source-c950a10d3272291deaffd090
@@ -32,10 +34,10 @@ sources:
     resource: repo://openswe/utils/model.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+    at: 2026-11-06T15:47:54.369Z
 ---
 
 # Models, Profiles, and Instructions
@@ -96,7 +98,14 @@ flowchart TD
 
 *Caption: Model selection precedence from team defaults through stored thread snapshot to explicit per-run override.*
 
-`build_agent` (in `openswe.server`) is the factory that seeds hosted runs from team defaults. It reads a sender profile only if the thread has no stored main model; a valid profile main pair also becomes the subagent pair unless a valid profile subagent pair is supplied. Stored thread settings then take precedence. Finally, a valid `cfg.agent_model_id` plus `cfg.agent_effort` (from explicit per-run override) replaces both pairs and is persisted. `agent_settings` lives in thread metadata via `store_thread_settings`, is cached for five minutes by `load_thread_settings`, accepts only its typed fields via `ThreadSettings`, and reads or writes fail soft; malformed legacy metadata becomes an empty snapshot via `normalize_thread_settings`.
+For a hosted agent run, `agent_catalog` (in `openswe.server`) is the factory that seeds the initial run from team defaults. Its model resolution path is:
+
+1. Start with workspace team defaults (main and subagent pairs resolved via `settings.default_model_pair("agent")`).
+2. If no stored thread model exists, apply the profile only: read the sender's profile via `load_profile` (fail-soft) and use its main and subagent pairs if valid.
+3. If stored thread settings exist, use them instead, overriding both team and profile.
+4. If explicit per-run `cfg.agent_model_id` and `cfg.agent_effort` are supplied (and valid), replace both pairs and persist them immediately via `store_thread_settings`.
+
+`agent_settings` lives in thread metadata under the `THREAD_SETTINGS_KEY` constant, is cached for five minutes by `load_thread_settings`, accepts only its typed fields via `ThreadSettings`, and reads or writes fail soft; malformed legacy metadata becomes an empty snapshot via `normalize_thread_settings`.
 
 For selection-only callers, `resolve_agent_model_id` applies supported per-thread id, then valid profile id, then team default. Dashboard run creation uses the full pair in the order team, profile, request. A deprecated request intentionally leaves the team default, rather than allowing the profile to take effect. If dashboard input contains images, a text-only resolved selection is replaced with `default_vision_model_pair()`; direct image-content construction rejects a missing or text-only model with HTTP 422.
 
@@ -138,7 +147,7 @@ Prompts are Jinja2 templates and static Markdown files loaded from `agent/resour
 
 Repository custom instructions are rendered into a dedicated section via `_render_repo_instructions_section`. Workspace instructions are rendered via `_render_workspace_section` and include org-level guidelines and workspace-specific repos. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block in `openswe/input_messages.py`. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
 
-Instruction caching leverages Anthropic's prompt caching middleware (`AnthropicPromptCachingMiddleware`), configured with a 1-hour TTL on all graph models to enable efficient multi-turn conversations by caching the stable portions of the system prompt and instructions, reducing token consumption and latency for subsequent turns in the same thread.
+Instruction caching leverages Anthropic's prompt caching middleware (`AnthropicPromptCachingMiddleware`), configured with a 1-hour TTL on read-only graph models to enable efficient multi-turn conversations by caching the stable portions of the system prompt and instructions, reducing token consumption and latency for subsequent turns in the same thread.
 
 ## Change and test guide
 

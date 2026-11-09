@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:a06115080932daa156dbb62b14520cfff640cce93de591e35f88d1e8eac8ce37",
+  "pageVersion": "sha256:5c4c1adb0339a83a6fdca8af6d0b74c772a145fa1448c83fde3f04c7cb359b5d",
   "claims": [
     {
       "id": "claim_851e23a08e794421a0ac06c407e8a9d0",
@@ -18,11 +18,11 @@
     },
     {
       "id": "claim_3682bb8bd72d486a95134e55f8c79184",
-      "statement": "Every job handler is registered in openswe/jobs/kinds.py and imported at startup; handlers route by `kind` to agent_schedule (dashboard recurring), reconcile (stale-run safety), baby_sit (PR watch evaluation), background_tasks (sandbox monitoring), session_cost/agent_cost (deferred cost enrichment), announcements, human_review_deadline, workspace_refresh, and thread_wakeup dispatch.",
+      "statement": "Every job handler is registered in openswe/jobs/kinds.py and imported at startup; handlers route by `kind` to agent_schedule (dashboard recurring), reconcile (stale-run safety), baby_sit (PR watch evaluation), background_tasks (sandbox monitoring), session_cost/agent_cost (deferred cost enrichment), announcements, human_review_deadline, workspace_refresh, thread_wakeup dispatch, and specialized handlers for merge queues, monitors, GitHub forwarding, Slack directory sync, and others.",
       "evidence": [
         {
           "resource": "repo://openswe/jobs/kinds.py#L1-L150",
-          "version": "repo-lines-v1:sha256:1fd1aebc136557431bde5ae89bfbb1af65eb866b1fd62acc6c0c741e925c9ad3:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3OWNkZDRkODcxY2U0Y2VjNjI5YWZjMmMyMGUyNDNkMzVjNGZhNjRlOWU4NzI4NmIzMjI5YTY5OTY2ODAxYzgzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0NTVkNGI5YTc5MjgzNTJjMDgxMDU1OTgxZTg3ZDIwMDY5MmJmNWZkNDVmYWE0YzBkNWRkMGQ2NGM1M2VkMTNkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiYTA0YjM3Mzc0MTQzOTAwY2NjZThiNmU1OTQxNzRhZmZiMjM5ZGMzMmIzYjI2M2JkYTg1NDA4ZDE2ZTUwNTE5In0"
+          "version": "repo-lines-v1:sha256:325215fcf58c3f1110831ad55d7bce77a8563f16ea08bc2e0c65e76ed441296b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTY2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI3OWNkZDRkODcxY2U0Y2VjNjI5YWZjMmMyMGUyNDNkMzVjNGZhNjRlOWU4NzI4NmIzMjI5YTY5OTY2ODAxYzgzIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI0NTVkNGI5YTc5MjgzNTJjMDgxMDU1OTgxZTg3ZDIwMDY5MmJmNWZkNDVmYWE0YzBkNWRkMGQ2NGM1M2VkMTNkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiYTA0YjM3Mzc0MTQzOTAwY2NjZThiNmU1OTQxNzRhZmZiMjM5ZGMzMmIzYjI2M2JkYTg1NDA4ZDE2ZTUwNTE5In0"
         }
       ]
     },
@@ -55,12 +55,12 @@
       "statement": "launch_scheduled_agent_run is the agent_schedule job handler: it loads a stored schedule record, creates a fresh agent run, and records last_thread_id / last_run_id / last_triggered_at (or last_error) in a separate schedule run-state namespace, with deduplication via event_claims ensuring the same schedule fire never launches twice even after deploy/crash.",
       "evidence": [
         {
-          "resource": "repo://openswe/jobs/kinds.py#L132-L145",
+          "resource": "repo://openswe/jobs/kinds.py#L148-L161",
           "version": "repo-lines-v1:sha256:d088838bcb18d0d702e5482c93f3f3fa141422f73291b9c01d6160585d1d94a6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMmI0OGE4OWUyN2FjNGI5MDNiN2UxZTE4OTBjMDA0NzhiZDFhYjljNTEwNzI1YmVhMWI2NTQ5YTNkNGQzODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhkNjJhNzE3MzFjYmRhNGQ0YzllYjI4MjljYjY0ZTY5ZmRhMDVmZmY2Yzg1MDhjM2YxNmMyNzAyNjc1NzZjNzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0NTM1NTQyMjE4ZTk4ZWY0N2E5MTY0NzY4NjA0YmUwYWM1NmQzNmViOGM2ZTUyMzJlZDIwYmQzNmVlMWE5NGIifQ"
         },
         {
-          "resource": "repo://openswe/schedules/store.py#L1664-L1670",
-          "version": "repo-lines-v1:sha256:6ef37077d8d231b5f9c8479d28a1cd00e801f86e634372533320c20ed565c5a0:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWY1MDlmZWM4ZGJmZWIxMWQ0MjMxZDEzOTNhNWE2OTRmNjM1OTAyOTMzMDIzZTAyYTc3NzAzN2YzZTU4NzE2MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTZhNzE1MjU3MmVlODRmMTA5MDZjNzRiOWYyYTkyNDM0ZGRhYjBlM2M0MjgxM2IwNGU1OTdlZmNlYzk1MWIyNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODFjMTliZTI1NGYyMzM1NTE3YWE4MzY0YmFhOTdkMzlmNGM3YWE4NjAxZDFhODkzMmQ2ZjAzN2ZkNjUwMTE3NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjcxOGJhMDVmMWY5MmNkMzMyMGNlZDljMDM3MmUxYWI3MzMzMmE5ZDE5ZDA1ZmVlZGM1N2M2NzBjM2QyNzIzYiJ9"
+          "resource": "repo://openswe/schedules/store.py#L1664-L1688",
+          "version": "repo-lines-v1:sha256:19133fbbfc7510e2e0af7af77c00eb84caa774e8bcdc4f6538eaa73f75a6410d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFmNTA5ZmVjOGRiZmViMTFkNDIzMWQxMzkzYTVhNjk0ZjYzNTkwMjkzMzAyM2UwMmE3NzcwMzdmM2U1ODcxNjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiMmY5MjBlZWViMWQxMDk3M2YzY2YxZmVmNGFkNzVkNWE4M2Y4NTgyOGQ1MDczNGZiYTcxNzhjZjVkNDUzM2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgxYzE5YmUyNTRmMjMzNTUxN2FhODM2NGJhYTk3ZDM5ZjRjN2FhODYwMWQxYTg5MzJkNmYwMzdmZDY1MDExNzYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyNDRhY2YxZmM0Y2RjN2JkZDM4OWFmNzc3NmNiM2Q3MjQ5MjhhZDY3ODU4OTUwOWQ0OWRiMTJhMzA5MjE1OWIifQ"
         }
       ]
     },
@@ -89,8 +89,8 @@
       "statement": "session-cost refresh is a self-terminating chain of stateless delayed jobs: agent completion schedules a `session_cost` job, and run_session_cost_refresh performs one bounded Slack-footer update attempt, enqueuing the next attempt on a transient `pending` result up to a fixed retry-delay list.",
       "evidence": [
         {
-          "resource": "repo://openswe/completion.py#L395-L406",
-          "version": "repo-lines-v1:sha256:6dfa49d8daf76f19dcdc9e34be5a85691c02d850ba44b607700e9f19e1256dcd:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFlNjczYWJkNDU3YTk3ZWVhMTdhNjAwNjJlYjBmYWVhNmJkZjA5NDg2OGNjNmI4ZjhjMGViZGEyZjYxZWQ0MmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg2NjRlNzAwZWE2MGMzZDVkMDFiNDQ1YjIzODViZjY2YTRmMTI0ZWMxNDk4YzcyNzMwMzUzY2UxZTYwMDQxNGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJiYjc0Yzg0ZWZlMTk2NDEzMWI0NTQ4MzZjYTQ3ZTdkNGM4NDZhMjI5NjZiYzdmY2ViNjkyOTVkMmM2ZTIzMTkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIyNTQ5MmEzMzZjZGRhYzg0ZWE0YzVkYWJjNjQ2Njg0NmMxYTJhYmE4ZTA2Mjk2MTkxNDE3YmFjOTY0MWQ4NWMifQ"
+          "resource": "repo://openswe/completion.py#L395-L422",
+          "version": "repo-lines-v1:sha256:811869bddd9d0b26a1665c9de5869ade8aa4be88aa61e342eb7f2bcc74d2c751:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRlNGFlNDUxMjIyMTFlYWVhMTMwYTUyZjg0ZGJlZTM3Mjk3MjZhZjU2NzRjNTVkZTJiODNmOTc2YzQwMjFmMDkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVjNTljNTE1NmVjYzZiODQyNzcyODQzYmEwMTE3MTllZTQ2YTNjYTk1N2M3MmVjNGEzODAzNTEwMDUzNzExYmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVlYjc1ZGZkNzA1ZmNiZmVhNTk2ZGIxNjcxZTg2YTU2MDY4MTRkYTUyMGE5NTQzNDNlYTMyZWMzZjdlYWFjOTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI2ZjUyZTRmMjI1NTEwZDU3ZDA3YjVhMzI1ZTBkOGY3YzUzMzVkYmY1OTYyYzMzMTcxNmYwNDMwNDM3Mzk2MTAifQ"
         },
         {
           "resource": "repo://openswe/session_cost.py#L1-L100",
@@ -145,8 +145,8 @@
           "version": "repo-lines-v1:sha256:b0f9e368d5c2b08cb7bfa763688af7bfd8be1a74f74f6fca410bd57b8661b86f:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI3MzZhOGMzZWRlYzAzYTZkM2Y2MzRhOTI0ZTQ4OWI1YzA1NjFkMjlhMTgwOWZhMTc3ODI0NDIwOGY5MmQxMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGU4MDAxM2RjZWUyM2UwYTA4Y2QxOTc0NjNjN2M2OWY3MGY5YWExNGJmYmY1NzdlMmI5MDExNWQyYzBiZTMwMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTBmMjJmMzExZDYzZmZiMTgxMjIzNzNkNGI1NDhkNzE0OTBlMWNkZWY2M2ZlODkwODVkZDYzMDMxODdiNDYxZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2I1ODA4NDMzNjRiZmEzMDk5OTI4MzkyMzhjNDc0ZWU5MzkxNDYxMmM3NmJiZGRkZjBlNzM0ZjJiOTE1NTc5NiJ9"
         },
         {
-          "resource": "repo://openswe/baby_sit.py#L47-L47",
-          "version": "repo-lines-v1:sha256:072d8b1f54b6c4d2670b6fcf9a0664a2f5660f8bdfc3739fb7c870ce104fce5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDcyZDhiMWY1NGI2YzRkMjY3MGI2ZmNmOWEwNjY0YTJmNTY2MGY4YmRmYzM3MzlmYjdjODcwY2UxMDRmY2U1YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWE3MWZmOTEwZGMyMTAwZjcwZDk3Y2ZkN2U0N2Q2MTkwNDVmZjU5OWU1MWZmZmQ0NmEwYzRkZmYwZDVkOWU2YiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiY2U2ZmJkMWViNDk4ODhiYzgyMzk2NGM3MWJmMDBiYmJhNGE4YWE2NzY3NDJiOGIyZjFjMTYyMDkyZjRkZjBhNyJ9"
+          "resource": "repo://openswe/baby_sit.py#L44-L48",
+          "version": "repo-lines-v1:sha256:6d164664661c754cb9ec9dd4da118e9d6ece520c9d1fb6ea3d9c5aafffe99e47:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjZiNTNjYmRjY2IyMDBkMzZhZjcyYzg2YzRjMTRiNWYyMjA5NWY5MWEzY2RlNzJlMjYxM2E2ZTExN2Q5MDNkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDcwMzZiOGVhNzNjNDMzZjMwZWM0MDU2NGUxYmJkMzMzN2FhYjdjZTE0NTFhNDEzMmEyNzIyNzc4ZjE5MDU2OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjYyZWQxZTYwZTk5YzhlMjY5OWU5NmY5NjZjNTBkMjVjYzk1MmMwYjczNDU1OWEzOTg5Y2QxOTczNzM4ZWRmOCJ9"
         }
       ]
     },
@@ -159,8 +159,8 @@
           "version": "repo-lines-v1:sha256:73044b61e069df89549a186dd6e622b4763f039b3a320c452cdaf4e84d712091:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBiNGZjNDBlNzcwZGNhZGVjZWRlN2ZhOGU3NjUwYjU4OGEzMzYyYmNhZmYzMjRmOWIzNWEyYTgwN2FlMzE5N2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFiYjEzZGEzODcyNjZjOWQzNWRkM2NhYTk2NWU4NTVkNjFjMjU3Y2VlMWU1ZDdhZmRkMDNjZmNjMGEwYzlmMGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImI5ODVjM2RhMTkxNjQ2ODA5NjdjNTJkNGM2MDkxYjkzNTAyMTdiMGMxMmMyYjUyOTdhZGEzMGQzMzg4MWEyMTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImU4NTM5YzM2MTRlMDI1ZThkZDUyMWRjMzdhZmE3ZTM5NTkwMDM3MzJhYzRmY2IzZjYyYzg2NTI3ZDRhMTYyNzQifQ"
         },
         {
-          "resource": "repo://openswe/github/routes.py#L31-L45",
-          "version": "repo-lines-v1:sha256:06d2fb9a8f981000d3b8d3ec671668eab8b91619ce4059d323af47a7efd0ef11:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOGQxYjkwZTExOWQ1ZDVhMDEzMWFjMzhiOWQ4M2Y5ZWUzNmY2OTFkMmJmMGY0NzM5MjAwN2ZiOWVhOTI3ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVhMDRiNWNjOWQzNjYwMDc5Yzg1Y2JiMWMxMDljNjdiZDFlZjkzMzQ4OWYzMmI2MzczN2U1MDM2OWEwZjJkNGUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkxODNmYTk2NmRkNDE3NGRmOWNmZmI1YWEzNWRkMjQyNmM5MGQ0MjU1ZWZlNDVlYmQwY2I3ZmYyMDU3ZTdjMzQifQ"
+          "resource": "repo://openswe/github/routes.py#L40-L50",
+          "version": "repo-lines-v1:sha256:84f5febb753dca826db0d1e84f95cc9c11d8b33fa2208c0b078f5882251d1f1e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkOGQxYjkwZTExOWQ1ZDVhMDEzMWFjMzhiOWQ4M2Y5ZWUzNmY2OTFkMmJmMGY0NzM5MjAwN2ZiOWVhOTI3ODEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkYzMzZjE3N2ZkMWE3MThiNGMwYzVlOWUxNWVmNzRkYzk5ZWJmYjMxZGUxYjVlNTY4MWI1YzhlYjM5MmQ1ZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVmMWRjMzA3NDZkYjYyOTEwZGMxZTI0MGQ5ZjgzYjI0NzY5NjhkMDI0MDAzOWVjMzE2ZDE5YjBkZGQwZjQxNDYifQ"
         }
       ]
     },
@@ -211,8 +211,8 @@
       "statement": "Flaky reruns are capped per head SHA at MAX_RETRIES_PER_HEAD (3), and record_retry increments the durable retry count (rejecting the call when the head changed or the cap is reached) while posting the flaky-CI Slack alert only on the first occurrence of a given check/URL for that head via alert_keys dedupe.",
       "evidence": [
         {
-          "resource": "repo://openswe/baby_sit.py#L48-L48",
-          "version": "repo-lines-v1:sha256:47036b8ea73c433f30ec40564e1bbd3337aab7ce1451a4132a2722778f190568:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDcwMzZiOGVhNzNjNDMzZjMwZWM0MDU2NGUxYmJkMzMzN2FhYjdjZTE0NTFhNDEzMmEyNzIyNzc4ZjE5MDU2OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDcwMzZiOGVhNzNjNDMzZjMwZWM0MDU2NGUxYmJkMzMzN2FhYjdjZTE0NTFhNDEzMmEyNzIyNzc4ZjE5MDU2OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGRlNGFlZDc0MDY5NWE2MmY1YWQ4YjkyNzk2Njk1YmEzMTI3ZmQ0YmJjNTUxZDljMDAwMDliYTJiNTQ2MDk3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjYyZWQxZTYwZTk5YzhlMjY5OWU5NmY5NjZjNTBkMjVjYzk1MmMwYjczNDU1OWEzOTg5Y2QxOTczNzM4ZWRmOCJ9"
+          "resource": "repo://openswe/baby_sit.py#L44-L52",
+          "version": "repo-lines-v1:sha256:e7aa9313aaf91b1d849adbe856bea026e6ca5f6e60b81db7c19db825cd48eb74:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjZiNTNjYmRjY2IyMDBkMzZhZjcyYzg2YzRjMTRiNWYyMjA5NWY5MWEzY2RlNzJlMjYxM2E2ZTExN2Q5MDNkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDIxM2EzYzQ5OGJhNzNhYTE5NGI4NTJmMzFlZWIxYzRhMDQxNzZlY2ZmODM0ZmMyZTg0NzA4NDE2YjVkNDI1OCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmNhYmI3OTNhNmZmNzE3ZDAwMjM1NThhOTJiOTAxYmQ2MTMwZDU0YTJlYTlkY2E5YzEzZTNkMDI1OGVjMDcxNyJ9"
         },
         {
           "resource": "repo://openswe/baby_sit.py#L751-L796",
@@ -307,8 +307,8 @@
           "version": "repo-lines-v1:sha256:441a7f81b4e51020e7c66e87fb427d50f3bfbddd44576d220cc916d2ceae51fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyMjE1ODU1YjUxMmE4MzA2MzgzZTAzNDgyNTI3NzAyY2Q3YTU5N2UxZjQwOTc1OTEyYmIyYTE4N2ZiOWQ0M2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzYTg3ZTdmNjA0ZjRiOTkxYTRhNDI0OTdmNzBjZmI2ZDRjZDhlMjI5OWQ5NjIyNzM2NDk0NmU2NjA5ZmM4NzIifQ"
         },
         {
-          "resource": "repo://openswe/jobs/kinds.py#L137-L145",
-          "version": "repo-lines-v1:sha256:38af9406eb65ea418eb961d5ecbe55b0435a956e3f7f85af3585ee43b06f06a5:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmUwYzhmMTg2N2RiZDU2OTE1M2VmMDUxZDNmNGY3ZmUyODhjYzZkODBkZjRkMGNiNWE1MWMxMTk1ZTgwOWIxNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMzBjMWYxODhmMTQyZWQ3YTgyNDY4MGIyMDcxNzJjNTUxOWJjNjE0YTQ4ZmRhN2NmMTY3ZWRiOGRkZjc5OTU2YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZWU1NTY4MGQwMmQ5MDc0NjM1OTUzODhhMDU4MjI2MjVlNDgxNTljM2M5MTI3N2NiMWY2YTNjYzE3MzM2N2VlNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNzQ1MzU1NDIyMThlOThlZjQ3YTkxNjQ3Njg2MDRiZTBhYzU2ZDM2ZWI4YzZlNTIzMmVkMjBiZDM2ZWUxYTk0YiJ9"
+          "resource": "repo://openswe/jobs/kinds.py#L169-L171",
+          "version": "repo-lines-v1:sha256:bd40b798ef173297c12050b3da148972c027cce5cad22b962455ddba12a21f11:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNGVlZThhNDExNzc3ZWY2MmFhNjlmMGJmOTRiYzM3MTk0NjNmNDAyNWEzNGFmMmYzNWFkMDkwYmQ2OGIyMmU1NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRmMjRiNmQwNzNhN2FjZmZjNmNjOGNjMzczNDkzNTQzNDZhNDljYzE1NWQ2YTE5ZjRlZDRmNjMwMTlkMmIyZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiODQ5MDQyZTkyYTRkNWY0M2E2MWRiY2MyMzU5OGNiMjgxMGFlMmZiODE3NDRjOWY5ZWU0NGMxNmYwZTMyMjE5NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOWRiOTZiMzRmY2M3Mjc4NTUyNWZiOTk3ZDNkNzMzZDk1YjFjNmRlYTZjZjJkNDA0NGM4ZmJkYTcyNDI4NzlmNyJ9"
         }
       ]
     },
@@ -332,7 +332,7 @@
         },
         {
           "resource": "repo://tests/agent/test_baby_sit.py",
-          "version": "repo-file-v1:sha256:03b33f3dfd27f0ffeefa211249d6e8e2a37183fcb14abdb92c68feb699a75092"
+          "version": "repo-file-v1:sha256:e4f49b6169803e4860f9f5a3d9db4843d895a69649388972b57adb28091a89b2"
         },
         {
           "resource": "repo://tests/agent/test_session_cost.py",
@@ -355,6 +355,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-02T18:01:41.066Z"
+    "at": "2026-11-06T15:47:54.369Z"
   }
 }

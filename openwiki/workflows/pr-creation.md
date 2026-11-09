@@ -1,17 +1,20 @@
 ---
 type: workflow
-title: Pull Request Creation and Workflow Approval
-description: How the agent creates and manages pull requests with attributed authorship, commits squashing, workflow-file change approval, and metadata recording.
+title: Pull Request Creation and Updates
+description: How the agent opens and updates pull requests with attributed authorship, commit squashing, workflow-file change approval, and metadata recording.
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-06T15:47:54.369Z
 sources:
+  - id: openwiki-source-0190f218684562b378eff2f1
+    resource: repo://openswe/agent_api/agent.py
   - id: openwiki-source-6ba47e09f2a30f358f5d7a36
     resource: repo://openswe/github/squash_message.py
   - id: openwiki-source-8028ebab3ac3beac1691bf84
     resource: repo://openswe/middleware/pr_creation_guard.py
   - id: openwiki-source-d618115330c9c5a6ad6a6eec
     resource: repo://openswe/middleware/workflow_push_guard.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
   - id: openwiki-source-d0f35aaf03e13e2fb9037d2b
     resource: repo://openswe/slack/tools/request_pr_review.py
   - id: openwiki-source-e67efdf2f809c51f0e5295bc
@@ -22,13 +25,10 @@ sources:
     resource: repo://openswe/tools/open_pull_request.py
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-28T14:57:39.210Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-02T18:01:41.066Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 ---
 
-# Pull Request Creation and Workflow Approval
+# Pull Request Creation and Updates
 
 The pull request creation workflow ensures that code is delivered through GitHub with the triggering user's attribution, workflow-file changes are approved before pushing, and all PR metadata connects back to the originating Slack thread, Linear ticket, or dashboard plan. The core flow is **commit → push (with workflow approval) → open_pull_request → record metadata**.
 
@@ -59,20 +59,21 @@ This diagram shows the pull request workflow from code commit through workflow a
 
 The agent commits work using the sandbox's Git configuration, typically with an author identity derived from run context. The commit message is crafted by the agent during code planning; squash-message synthesis (described below) applies when merging a multi-commit PR through the dashboard or a review tool.
 
-Pull request creation is deliberately centralized in `open_pull_request` to preserve the triggering user's GitHub attribution. The tool accepts `owner`, `repo`, `head`, `base`, `title`, `body`, `draft=True`, `resolves_thread=False`, and `retitle_thread=True`.
+Pull request creation is deliberately centralized in `open_pull_request` to preserve the triggering user's GitHub attribution. The tool accepts `owner`, `repo`, `head`, `base`, `title`, `body`, `draft=True`, `resolves_thread=False`, `retitle_thread=True`, and optional `author` parameters.
 
 **Do not use `gh pr create`** or other shell fallbacks. `PullRequestCreationGuardMiddleware` blocks them with a non-recoverable error, ensuring that if `open_pull_request` fails, that real failure is surfaced rather than hidden behind an unattributed fallback.
 
 ### Author token resolution and GitHub attribution
 
-`_resolve_pr_author_token` chooses which GitHub token will be used to author the PR. The triggering user's OAuth token is preferred when available:
+`_resolve_pr_author_token` chooses which GitHub token will be used to author the PR. The preferred precedence is:
 
-- **Slack/Linear/dashboard sources:** Look up the user's current OAuth token by their configured GitHub login.
-- **GitHub-triggered runs:** Use the GitHub App installation token (`open-swe[bot]`).
-- **Unmapped users or bot-only deployments:** Fall back to the app token.
-- **No token available:** Return a `no_github_token` failure instead of proceeding.
+1. **Requester's direct GitHub grant** (if the run carries a GitHub credential and it matches the requested author's login).
+2. **Slack/Linear/dashboard OAuth token**: Look up the user's current OAuth token by their configured GitHub login.
+3. **GitHub-triggered runs**: Use the GitHub App installation token (`open-swe[bot]`).
+4. **Unmapped users or bot-only deployments**: Fall back to the app token.
+5. **No token available**: Raise `GitHubUserAuthRequired` with a link to re-authenticate.
 
-If a user's token has been revoked, the preflight returns `github_user_auth_revoked` with a link to re-authenticate.
+If a user's token has been revoked, the preflight returns `github_user_auth_revoked` with a link to the dashboard settings page so the user can re-authenticate.
 
 ## Workflow approval gates pushing
 
@@ -102,10 +103,10 @@ Before attempting to create a PR, `_preflight_pr_access` validates that the toke
 
 Each check distinguishes specific failure codes:
 
+- `github_user_auth_revoked` (401 on repo GET with a user token)
 - `github_app_access_missing_or_repo_not_found` (403/404 on repo GET)
 - `github_pr_branch_not_visible` (404 on branch GET)
 - `github_pr_preflight_failed` (other non-success on repo/branch checks)
-- `github_user_auth_revoked` (401 on repo GET with a user token)
 
 Failure payloads report GitHub's actual HTTP status, selected diagnostic headers (rate-limit, auth headers), and a truncated response body so the agent can diagnose the issue directly without opaque errors.
 
@@ -121,7 +122,7 @@ Unless the body already contains a `## References` section, the tool optionally 
 - A link to the dashboard plan
 - Source references: Slack thread permalink, Linear ticket URL, or GitHub issue link
 
-Source references are only included when GitHub confirms the destination repository is **private**. For public repositories, private conversation links are never added. Lookup failures or uncertain visibility prevent the references from being appended, failing closed to avoid information leakage.
+Source references are only included when GitHub confirms the destination repository is **private** or the source is Slack. For public repositories with non-Slack sources, private conversation links are never added. Lookup failures or uncertain visibility prevent the references from being appended, failing closed to avoid information leakage.
 
 ### Linking and resolving threads
 
@@ -207,7 +208,7 @@ This footer is inserted before any `## References` section, preserving transpare
 
 The middleware tokenizes the command and recursively expands nested `-c` arguments in `bash`, `dash`, `sh`, and `zsh` calls (bounded at 3 levels of nesting). It rejects the command with a non-recoverable `PullRequestCreationFallbackBlocked` error, preserving the real `open_pull_request` failure instead of hiding it.
 
-The guard is installed in the main agent graph unconditionally. It is also installed in the general-purpose subagent's shell_guards, ensuring that any subagent invocation inherits the same enforcement.
+The guard is installed in the main agent's shell guards unconditionally (via `shell_guards` class attribute in `CodeAgent`). It is also installed in the general-purpose subagent's own middleware, ensuring that any subagent invocation inherits the same enforcement.
 
 ## Mutation protection and approval API
 
