@@ -42,7 +42,6 @@ async def test_stale_assessment_does_not_publish_or_advance_reviewed_commit() ->
             pr_number=7,
             head_sha="a" * 40,
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
             assessment=_assessment(),
@@ -78,7 +77,6 @@ async def test_invalid_open_swe_config_requests_changes_instead_of_assessing() -
             pr_number=7,
             head_sha="a" * 40,
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=True,
             assessment=_assessment(),
@@ -138,8 +136,7 @@ def _f(**overrides: Any) -> Finding:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_publish_review_pr_state() -> Iterator[AsyncMock]:
-    request_human_review = AsyncMock(return_value=None)
+def _isolate_publish_review_pr_state() -> Iterator[None]:
     with (
         patch(
             "openswe.tools.publish_review.get_workspace_settings",
@@ -158,9 +155,8 @@ def _isolate_publish_review_pr_state() -> Iterator[AsyncMock]:
                 side_effect=lambda thread_id, configurable: configurable.get("head_sha") or ""
             ),
         ),
-        patch("openswe.tools.publish_review.request_after_ai_review", request_human_review),
     ):
-        yield request_human_review
+        yield
 
 
 def _eval_config(**configurable: object) -> dict[str, object]:
@@ -201,7 +197,7 @@ async def test_publish_review_rejects_a_ranking_that_is_not_a_total_order(
         patch("openswe.tools.publish_review.mutate_findings", AsyncMock()) as mutate,
         patch("openswe.tools.publish_review.set_reviewer_thread_metadata", AsyncMock()) as set_meta,
     ):
-        result = await publish_review(ranking=ranking, summary="Adds docs.")
+        result = await publish_review(ranking=ranking)
 
     assert result["success"] is False
     assert result["expected_finding_ids"] == ["f_one", "f_two"]
@@ -227,7 +223,7 @@ async def test_publish_review_refuses_when_called_alongside_other_tools() -> Non
         ],
     )
     with patch("openswe.tools.publish_review._record_ranking", AsyncMock()) as record_ranking:
-        result = await publish_review(ranking=[], summary="Adds docs.", state={"messages": [turn]})
+        result = await publish_review(ranking=[], state={"messages": [turn]})
 
     assert result["success"] is False
     record_ranking.assert_not_awaited()
@@ -255,7 +251,7 @@ async def test_eval_run_publishes_the_findings_it_recorded_without_postgres() ->
         patch("openswe.tools.publish_review.get_thread_id_from_runtime", return_value="eval-tid"),
         patch("openswe.tools.publish_review.set_reviewer_thread_metadata", AsyncMock()) as set_meta,
     ):
-        result = await publish_review(ranking=["f_one"], summary="Adds docs.")
+        result = await publish_review(ranking=["f_one"])
 
     assert result["surfaced_count"] == 1
     assert set_meta.await_args.kwargs["last_reviewed_base_sha"] == "base-commit"
@@ -336,7 +332,6 @@ async def test_publish_review_skips_findings_already_published() -> None:
             pr_number=7,
             head_sha="sha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )
@@ -397,7 +392,6 @@ async def test_published_review_registry_failure_does_not_complete_or_invite_dup
                 pr_number=7,
                 head_sha="a" * 40,
                 token="t",
-                summary="Adds docs.",
                 severity_threshold="medium",
                 is_re_review=False,
                 assessment=_assessment("a" * 40) if assessment_mode else None,
@@ -501,7 +495,6 @@ async def test_publish_review_skips_post_on_re_review_with_no_new_findings(
                 pr_number=7,
                 head_sha="newsha",
                 token="t",
-                summary="Adds docs.",
                 severity_threshold="medium",
                 is_re_review=True,
             )
@@ -574,7 +567,6 @@ async def test_publish_review_does_not_surface_out_of_diff_finding() -> None:
             pr_number=7,
             head_sha="newsha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=True,
         )
@@ -619,7 +611,6 @@ async def test_publish_review_dedup_keys_off_durable_last_reviewed_sha() -> None
             pr_number=7,
             head_sha="newsha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )
@@ -698,7 +689,6 @@ async def test_re_review_backfills_and_resolves_duplicate_existing_threads() -> 
             pr_number=7,
             head_sha="newsha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=True,
         )
@@ -772,7 +762,6 @@ async def test_publish_review_backfills_from_threads_when_review_comments_are_em
             pr_number=7,
             head_sha="sha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )
@@ -822,7 +811,6 @@ async def test_re_review_only_posts_current_head_unpublished_findings() -> None:
             pr_number=7,
             head_sha="newsha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=True,
         )
@@ -878,7 +866,6 @@ async def test_publish_review_matches_comment_ids_by_marker_not_path_line_body()
             pr_number=7,
             head_sha="sha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )
@@ -956,7 +943,6 @@ async def test_publish_review_drops_unresolvable_findings_and_retries_once(
             pr_number=7,
             head_sha="a" * 40,
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
             assessment=_assessment(),
@@ -966,7 +952,6 @@ async def test_publish_review_drops_unresolvable_findings_and_retries_once(
     assert post_review.await_count == 2
     assert "Risk: 1/5" in post_review.await_args_list[0].kwargs["body"]
     assert "Risk:" not in post_review.await_args_list[1].kwargs["body"]
-    assert "Adds docs." in post_review.await_args_list[1].kwargs["body"]
     # Retry must contain only the in-diff finding.
     retry_inline = post_review.await_args_list[1].kwargs["inline_comments"]
     assert {c["path"] for c in retry_inline} == {"in_diff.py"}
@@ -1029,7 +1014,6 @@ async def test_publish_review_reports_unresolvable_when_retry_still_fails() -> N
             pr_number=7,
             head_sha="sha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )
@@ -1088,7 +1072,6 @@ async def test_publish_review_does_not_retry_when_no_findings_can_be_dropped() -
             pr_number=7,
             head_sha="sha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )
@@ -1126,7 +1109,7 @@ async def test_publish_review_tool_returns_structured_error_when_thread_missing(
         patch("openswe.tools.publish_review._publish_review_async", publish_async),
         patch("openswe.tools.publish_review._record_ranking", AsyncMock(return_value=None)),
     ):
-        result = await publish_review(ranking=[], summary="Adds docs.")
+        result = await publish_review(ranking=[])
 
     assert result["success"] is False
     assert result["error"] == "thread_not_found"
@@ -1214,7 +1197,6 @@ async def test_publication_respects_the_base_policy_and_current_mode(
             pr_number=7,
             head_sha="a" * 40,
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
             assessment=(
@@ -1356,7 +1338,6 @@ async def test_approval_publication_handles_github_rejections(
             pr_number=7,
             head_sha="a" * 40,
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
             assessment=_assessment(),
@@ -1453,7 +1434,6 @@ async def test_publish_review_fetches_pr_diff_when_diff_line_set_missing() -> No
             pr_number=7,
             head_sha="sha",
             token="t",
-            summary="Adds docs.",
             severity_threshold="medium",
             is_re_review=False,
         )

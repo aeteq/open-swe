@@ -245,7 +245,7 @@ def test_process_github_pr_comment_invalidates_and_reauths_on_401(
                 "comment": {
                     "id": 42,
                     "user": {"login": "octo"},
-                    "body": "@openswe please look",
+                    "body": "@jarvis-aeteq please look",
                     "created_at": "2026-01-01T00:00:00Z",
                 },
             },
@@ -297,7 +297,7 @@ async def test_publish_review_invalidates_cached_token_on_401(
     monkeypatch.setattr(publish_review_module, "get_thread_id_from_runtime", lambda: "thread-xyz")
     monkeypatch.setattr(publish_review_module, "_record_ranking", AsyncMock(return_value=None))
 
-    result = await publish_review_module.publish_review(ranking=[], summary="Adds docs.")
+    result = await publish_review_module.publish_review(ranking=[])
     assert result["success"] is False
     assert "401" in result["error"]
     assert invalidated["calls"] == 1
