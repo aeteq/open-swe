@@ -1,3 +1,4 @@
+import { productAnalytics } from "@/lib/analytics"
 import { LogoMark } from "@/components/Branding"
 import { LaptopRegularIcon } from "@langchain/macaw-components/icons"
 import {
@@ -28,6 +29,7 @@ import { LoadError, useLoadTimedOut } from "@/components/LoadError"
 import type {
   AgentPullRequest,
   AgentThread,
+  ComposerDraft,
   ImageChunk,
   Message,
   ThreadFixScope,
@@ -96,9 +98,16 @@ import {
   threadTranscriptPainted,
 } from "@/lib/perf/threadLoad"
 
+/**
+ * Drafts a page around a thread has already put in its composer. The page keeps
+ * handing over its last draft, so without this every remount of the view (the
+ * dock reopening, a layout change) would put the same draft there again.
+ */
+const appliedComposerDrafts = new WeakSet<ComposerDraft>()
+
 interface AgentThreadViewProps {
   thread: AgentThread
-  composerDraft?: { key: number; text: string }
+  composerDraft?: ComposerDraft
 }
 
 /** Paths the agent has edited this thread, newest last, for `@file` mentions. */
@@ -333,6 +342,17 @@ export function AgentThreadView({
         (followUpBehavior === "queue") !== (options?.alternate === true)
       const enqueue = isStreaming && queue
       const offload = content.trim() === "/offload"
+      const analyticsActorId = session.data?.user_id ?? null
+      const analyticsAction = productAnalytics.beginAction(
+        offload
+          ? "offload"
+          : enqueue
+            ? "queue"
+            : isStreaming
+              ? "steer"
+              : "new_turn",
+        analyticsActorId
+      )
       const messageId = crypto.randomUUID()
       // A message that goes straight into the transcript sits at the top while
       // the reply fills in below it. A queued one stays in the queue until its
@@ -351,6 +371,8 @@ export function AgentThreadView({
           images,
           replies,
           client_message_id: messageId,
+          analyticsActorId,
+          analyticsAction,
           model_id: activeSelection?.modelId ?? null,
           effort: activeSelection?.effort ?? null,
           model_selection_changed: carriesAutoSelection,
@@ -360,6 +382,7 @@ export function AgentThreadView({
             : {}),
         })
       } catch (error) {
+        analyticsAction.failed(error)
         restoreAutoSelection()
         throw error
       }
@@ -371,6 +394,7 @@ export function AgentThreadView({
       followUpBehavior,
       isStreaming,
       sendMessage,
+      session.data?.user_id,
     ]
   )
 
@@ -408,19 +432,17 @@ export function AgentThreadView({
     entry.message.chunks.filter((chunk) => chunk.kind === "image")
 
   const [restoreDraft, setRestoreDraft] = useState<RestoredDraft | null>(null)
-  const [appliedComposerDraft, setAppliedComposerDraft] =
-    useState<typeof composerDraft>(undefined)
-  if (composerDraft !== appliedComposerDraft) {
-    setAppliedComposerDraft(composerDraft)
-    if (composerDraft) {
-      setRestoreDraft((previous) => ({
-        key: (previous?.key ?? 0) + 1,
-        text: composerDraft.text,
-        images: [],
-        replacesSuggestion: true,
-      }))
-    }
-  }
+  useEffect(() => {
+    if (!composerDraft || appliedComposerDrafts.has(composerDraft)) return
+    appliedComposerDrafts.add(composerDraft)
+    // oxlint-disable-next-line react/set-state-in-effect
+    setRestoreDraft((previous) => ({
+      key: (previous?.key ?? 0) + 1,
+      text: composerDraft.text,
+      images: [...(composerDraft.images ?? [])],
+      replacesSuggestion: true,
+    }))
+  }, [composerDraft])
 
   const question = reviewChat?.question
   const clearQuestion = reviewChat?.clearQuestion
@@ -496,12 +518,19 @@ export function AgentThreadView({
   const withdrawQueued = useCallback(
     async (entry: QueuedTurn) => {
       if (entry.runId === null) return
-      if (source.kind === "stream") {
-        if (!(await source.cancelQueued(entry.turnId))) {
-          throw new Error("The queued message could not be cancelled.")
+      const action = productAnalytics.beginAction("queue_cancel")
+      try {
+        if (source.kind === "stream") {
+          if (!(await source.cancelQueued(entry.turnId))) {
+            throw new Error("The queued message could not be cancelled.")
+          }
+        } else {
+          await agentsApi.cancelRun(thread.id, entry.runId)
         }
-      } else {
-        await agentsApi.cancelRun(thread.id, entry.runId)
+        action.accepted()
+      } catch (error) {
+        action.failed(error)
+        throw error
       }
       restoreQueuedAutoSelection(entry.message.id)
     },
@@ -969,7 +998,9 @@ export function AgentThreadView({
           {!isHydrating && (
             <AgentComposerDock>
               <CodeChannelLink url={thread.codeChannelUrl} />
-              {!embedded && <ThreadGoalBar threadId={thread.id} />}
+              {!embedded && (
+                <ThreadGoalBar threadId={thread.id} editable={ownsThread} />
+              )}
               {!embedded && (
                 <ThreadPullRequests
                   pullRequests={
@@ -1006,7 +1037,7 @@ export function AgentThreadView({
                           ? "Mirrored from Claude Code. Continue this session there"
                           : canPost
                             ? hasConversation
-                              ? "Add a follow up"
+                              ? "Work with Robin"
                               : "Send the first message"
                             : "Only workspace admins can send messages in this thread"
                 }

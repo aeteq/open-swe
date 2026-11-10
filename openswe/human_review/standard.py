@@ -66,8 +66,8 @@ from openswe.human_review.requests import (
     AUTO_ASSIGN_ASKED,
     HumanReviewParticipant,
     HumanReviewRequest,
-    RequestKind,
 )
+from openswe.human_review.settling import SETTLED_KINDS, SettleTarget
 from openswe.human_review.supplementary import (
     STEP_PREFIX as SUPPLEMENTARY_STEP,
 )
@@ -103,7 +103,6 @@ AUTO_MERGE_AFTER_HOURS = 2
 SUMMARY_MAX_CHARS = 280
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 DeadlineStep = Literal["unclaimed", "pick_expiry", "auto_merge"]
-SETTLED_KINDS: tuple[RequestKind, ...] = ("standard", "posted")
 # A deadline run may start a little before the wait its timer was set for has passed.
 _SCHEDULER_EARLINESS = timedelta(minutes=1)
 _DEADLINE_RETRY = timedelta(minutes=5)
@@ -1265,16 +1264,18 @@ async def _settle(request: HumanReviewRequest, pull: PullRequestClient) -> bool:
     return True
 
 
-async def settle_pull_request(owner: str, repo: str, number: int) -> None:
+async def settle_pull_request(owner: str, repo: str, number: int, *, retries: int = 0) -> None:
     request = await HumanReviewRequest.active_for(owner, repo, number)
-    if request is not None:
-        await settle(request)
+    if request is not None and not await settle(request):
+        await SettleTarget.retry(owner, repo, number, retries)
 
 
 async def settle_repository(owner: str, repo: str) -> None:
     """Re-check every open standard or posted request in a repository, for events that name no PR."""
     for request in await HumanReviewRequest.open_in_repository(owner, repo, kinds=SETTLED_KINDS):
-        await settle(request)
+        if not await settle(request):
+            pr = request.pull_request
+            await SettleTarget.retry(pr.owner, pr.repo, pr.number)
 
 
 @dataclass(frozen=True, slots=True)

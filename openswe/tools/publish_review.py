@@ -14,15 +14,12 @@ from openswe.audit_logs.tools import audit_tool
 from openswe.dashboard.workspace_settings import get_workspace_settings
 from openswe.github.checks import review_check_conclusion
 from openswe.github.http import GitHubClient
-from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest, PullRequestPayload
 from openswe.github.thread_token import (
     GitHubAuthError,
     invalidate_cached_github_token,
     resolve_thread_github_token,
 )
-from openswe.human_review.standard import request_after_ai_review
-from openswe.prompts import escape_for_data_block, prompt
 from openswe.review.approvals import approval_mode_for
 from openswe.review.assessment_feedback import PublishedAssessment
 from openswe.review.diff import compute_diff_line_set, fetch_pr_diff, is_range_in_diff
@@ -75,17 +72,13 @@ from openswe.review.publish import (
 from openswe.review.reconcile import reconcile_findings_with_review_threads
 from openswe.review.shadow import ReviewShadow
 from openswe.run_config import RunConfig
-from openswe.slack.client import GitHubPrRef, post_slack_thread_reply
+from openswe.slack.client import post_slack_thread_reply
 from openswe.threads.goal import ThreadGoals
 from openswe.users import User
 from openswe.utils.dashboard_links import dashboard_review_url
 from openswe.utils.langsmith import get_langsmith_trace_url
 
 logger = logging.getLogger(__name__)
-
-# Each push re-runs the review, so findings would otherwise ping-pong forever.
-MAX_AUTHOR_HANDOFF_ROUNDS = 3
-_HANDOFF_DATA_TAGS = ("untrusted-review-finding",)
 
 
 async def _record_reviewer_usage(**kwargs: Any) -> None:
@@ -98,7 +91,6 @@ async def _record_reviewer_usage(**kwargs: Any) -> None:
 @audit_tool()
 async def publish_review(
     ranking: list[str],
-    summary: str,
     severity_threshold: Severity = "medium",
     state: Annotated[dict[str, Any] | None, InjectedState] = None,
     assessment: ReviewAssessment | None = None,
@@ -114,11 +106,6 @@ async def publish_review(
         }
     if severity_threshold not in {"low", "medium", "high", "critical"}:
         return {"success": False, "error": f"Invalid severity_threshold: {severity_threshold}"}
-    if not summary.strip():
-        return {
-            "success": False,
-            "error": "summary must describe the change. Nothing was published.",
-        }
 
     config = get_config()
     cfg = RunConfig.from_config(config)
@@ -171,7 +158,6 @@ async def publish_review(
             pr_number=pr_number,
             head_sha=head_sha,
             token=token,
-            summary=summary,
             base_sha=cfg.base_sha or "",
             severity_threshold=severity_threshold,
             is_re_review=is_re_review,
@@ -336,7 +322,6 @@ async def _publish_review_async(
     pr_number: int,
     head_sha: str,
     token: str,
-    summary: str,
     severity_threshold: Severity,
     is_re_review: bool,
     langgraph_run_id: str | None = None,
@@ -347,6 +332,7 @@ async def _publish_review_async(
 ) -> dict[str, Any]:
     thread_id = get_thread_id_from_runtime()
     dry_run = True
+    policy: object = None
     approval_errors = _state_errors(state, "review_approval_errors")
     config_errors = _state_errors(state, "review_config_errors")
     if config_errors:
@@ -491,8 +477,7 @@ async def _publish_review_async(
             token=token,
             findings=findings,
         )
-        pull_request = PullRequest(owner=owner, repo=repo, number=pr_number)
-        await pull_request.link_review(
+        await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
             reviewer_thread_id=thread_id, head_sha=head_sha, finding_count=0
         )
         await set_reviewer_thread_metadata(
@@ -523,7 +508,6 @@ async def _publish_review_async(
             title=check_title,
             summary=check_summary,
         )
-        await _request_human_review(pull_request, summary=summary)
         return {
             "success": True,
             "review_id": None,
@@ -546,7 +530,6 @@ async def _publish_review_async(
     for _ in range(2):
         review_body = render_review_body(
             pr_number=pr_number,
-            summary=summary,
             surfaced_count=len(inline_comments),
             trace_url=review_trace_url,
             ui_url=review_ui_url,
@@ -597,7 +580,6 @@ async def _publish_review_async(
             retry_inline = [p for _, p in valid_with_payload]
             retry_body = render_review_body(
                 pr_number=pr_number,
-                summary=summary,
                 surfaced_count=len(retry_inline),
                 trace_url=review_trace_url,
                 ui_url=review_ui_url,
@@ -697,6 +679,9 @@ async def _publish_review_async(
                 approved=approved,
                 dry_run=dry_run,
                 run_id=langgraph_run_id,
+                policy_sha256=PublishedAssessment.policy_digest(
+                    policy if isinstance(policy, str) else None
+                ),
             ).save()
             await set_reviewer_thread_metadata(thread_id, extra={"review_assessment_id": review_id})
         except Exception:
@@ -758,7 +743,7 @@ async def _publish_review_async(
     )
 
     try:
-        pull_request = await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
+        await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
             reviewer_thread_id=thread_id,
             github_review_id=review_id if isinstance(review_id, int) else None,
             head_sha=head_sha,
@@ -812,8 +797,6 @@ async def _publish_review_async(
         summary=check_summary,
     )
 
-    await _request_human_review(pull_request, summary=summary)
-
     result: dict[str, Any] = {
         "success": True,
         "review_id": review_id,
@@ -828,22 +811,6 @@ async def _publish_review_async(
             "call update_finding to fix or resolve them."
         )
     return result
-
-
-async def _request_human_review(pull_request: PullRequest, *, summary: str) -> None:
-    """Ask a person to review on repositories that opted in; the published review stands regardless."""
-    pr_ref = GitHubPrRef(
-        owner=pull_request.owner,
-        repo=pull_request.repo,
-        number=pull_request.number,
-        url=pull_request.url,
-    )
-    try:
-        await request_after_ai_review(pr_ref, summary=summary)
-    except Exception:
-        logger.exception(
-            "Could not request a human review after the AI review", extra={"pr_url": pr_ref.url}
-        )
 
 
 async def _withdraw_open_swe_approvals(
@@ -1189,83 +1156,6 @@ async def _filter_against_pr_diff(
             if isinstance(finding_id, str):
                 dropped.append(finding_id)
     return valid, dropped
-
-
-async def _hand_findings_to_author(
-    pull_request: PullRequest, *, review_url: str, findings: list[Finding]
-) -> None:
-    """Wake the agent thread that opened the PR to address the findings just published.
-
-    Each push re-runs the review, so the handoff stops after a few rounds, telling
-    the PR once that the rest is left to people.
-    """
-    if not pull_request.author_wakeable:
-        return
-    rounds = pull_request.review_rounds_with_findings
-    try:
-        if rounds > MAX_AUTHOR_HANDOFF_ROUNDS:
-            if rounds == MAX_AUTHOR_HANDOFF_ROUNDS + 1:
-                async with PullRequestClient.as_app(
-                    pull_request.owner, pull_request.repo, pull_request.number
-                ) as pull:
-                    await pull.comment(_handoff_cap_notice())
-            return
-        await pull_request.wake_author(
-            prompt(
-                "runs/reviewer-findings-handoff",
-                pr_url=pull_request.url,
-                review_url=review_url,
-                round=rounds,
-                max_rounds=MAX_AUTHOR_HANDOFF_ROUNDS,
-                findings=[_handoff_finding(pull_request.url, finding) for finding in findings],
-            )
-        )
-    except Exception:
-        logger.exception(
-            "Failed to hand review findings to the PR's agent thread",
-            extra={
-                "pr_repo_full_name": pull_request.repo_full_name,
-                "pr_number": pull_request.number,
-                "review_round": rounds,
-            },
-        )
-
-
-def _handoff_cap_notice() -> str:
-    return (
-        f"Jarvis has handed its findings back to the agent that opened this PR for "
-        f"{MAX_AUTHOR_HANDOFF_ROUNDS} rounds, so it stops doing that automatically now. "
-        "Please review the remaining findings, or mention the agent to have it keep going."
-    )
-
-
-# The reviewer writes findings after reading text anyone can put in the PR.
-def _finding_data(value: object) -> str:
-    return escape_for_data_block(str(value or ""), _HANDOFF_DATA_TAGS)
-
-
-def _one_line(value: object) -> str:
-    return _finding_data(" ".join(str(value or "").split()))
-
-
-def _handoff_finding(pr_url: str, finding: Finding) -> dict[str, str]:
-    start, end = finding.get("start_line"), finding.get("end_line")
-    if start is not None and end is not None and start != end:
-        lines = f"lines {start}-{end}"
-    elif end is not None or start is not None:
-        lines = f"line {end if end is not None else start}"
-    else:
-        lines = ""
-    comment_ids = comment_ids_for_finding(finding)
-    return {
-        "severity": str(finding.get("severity") or ""),
-        "title": _one_line(finding.get("title")),
-        "file": _one_line(finding.get("file")),
-        "lines": lines,
-        "description": _finding_data(finding.get("description")),
-        "suggestion": _finding_data(finding.get("suggestion")),
-        "comment_url": f"{pr_url}#discussion_r{comment_ids[0]}" if comment_ids else "",
-    }
 
 
 async def _maybe_post_slack_completion_reply(

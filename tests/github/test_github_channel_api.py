@@ -121,6 +121,7 @@ def prepared(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
         AsyncMock(
             return_value={
                 "ls_repo_provider": "github",
+                "billing_bucket": "user",
                 "user_id": "user-1",
                 "ls_attribution_identifier": "ada",
             }
@@ -409,7 +410,7 @@ async def test_an_installation_change_drops_the_cached_repository_listings(
     forget = AsyncMock()
     monkeypatch.setattr(channel, "forget_cached_repos", forget)
     forget_installations = AsyncMock()
-    monkeypatch.setattr(channel.REPO_INSTALLATIONS, "forget_all", forget_installations)
+    monkeypatch.setattr(channel.INSTALLATIONS, "forget_all", forget_installations)
     payload: dict[str, JsonValue] = {
         "action": action,
         "installation": {"id": 1, "account": {"id": 3, "login": "acme"}},

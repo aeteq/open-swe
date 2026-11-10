@@ -20,18 +20,26 @@ from openswe.agent_api.tool_sets import PURGE_JOB as TOOL_SETS_PURGE
 from openswe.agent_api.tool_sets import PURGE_SCHEDULE as TOOL_SETS_SCHEDULE
 from openswe.agent_api.tool_sets import purge_tool_sets
 from openswe.agent_cost import run_agent_cost_refresh
+from openswe.analytics.segment import SEGMENT_JOB, SegmentDelivery
 from openswe.announcements.delivery import ANNOUNCEMENT_TASK, deliver_announcement
 from openswe.baby_sit import WATCH_JOB_KIND, evaluate_watch
 from openswe.background_tasks import CRON_KIND as BACKGROUND_TASKS
 from openswe.background_tasks import monitor_background_tasks
+from openswe.event_claims import PURGE_JOB as EVENT_CLAIM_PURGE
+from openswe.event_claims import PURGE_SCHEDULE as EVENT_CLAIM_SCHEDULE
 from openswe.github.branch_config import REFRESH_JOB as REQUIRED_CHECK_REFRESH
 from openswe.github.branch_config import refresh_required_checks
+from openswe.github.quota import SAMPLE_JOB as GITHUB_QUOTA_SAMPLE
+from openswe.github.quota import SAMPLE_SCHEDULE as GITHUB_QUOTA_SCHEDULE
+from openswe.github.quota import InstallationQuota
 from openswe.human_review.deadlines import SCHEDULER_TASK as HUMAN_REVIEW_DEADLINE
-from openswe.human_review.standard import run_deadline
+from openswe.human_review.settling import SETTLE_JOB as HUMAN_REVIEW_SETTLE
+from openswe.human_review.settling import SettleTarget
+from openswe.human_review.standard import run_deadline, settle_pull_request, settle_repository
 from openswe.jobs import queue
 from openswe.jobs.cron_import import import_agent_server_crons
 from openswe.jobs.queue import Job
-from openswe.jobs.worker import WORKER
+from openswe.jobs.worker import WORKER, JobWorker
 from openswe.memories.curator import WAKE_JOB as CURATOR_WAKE
 from openswe.memories.curator import WAKE_SCHEDULE as CURATOR_SCHEDULE
 from openswe.memories.curator import WorkspaceCurator
@@ -42,6 +50,11 @@ from openswe.monitors.delivery import POLL_JOB_KIND as MONITOR_POLL
 from openswe.monitors.delivery import poll_monitors
 from openswe.notifications.service import JOB_KIND as NOTIFICATION_FALLBACK
 from openswe.notifications.service import AppNotification
+from openswe.plugins.records import (
+    ATTACHMENT_SWEEP_JOB,
+    ATTACHMENT_SWEEP_SCHEDULE,
+    AttachmentObjects,
+)
 
 __all__ = ["WORKER"]
 from openswe.reconcile import reconcile_stale_runs
@@ -73,8 +86,11 @@ SESSION_COST: Final = "session_cost"
 RECONCILE: Final = "reconcile"
 _FIRE_CLAIM_TTL: Final = timedelta(days=2)
 
+SEGMENT_WORKER: Final = JobWorker(max_in_flight=2)
+SEGMENT_WORKER.register(SEGMENT_JOB)(SegmentDelivery.deliver)
 WORKER.register(MERGE_QUEUE_RECONCILE)(reconcile_queue)
 WORKER.register(REQUIRED_CHECK_REFRESH)(refresh_required_checks)
+WORKER.register(GITHUB_QUOTA_SAMPLE)(InstallationQuota.sample)
 WORKER.register("event_subscription_timeout")(EventSubscription.wake_on_timeout)
 
 
@@ -183,6 +199,17 @@ async def _human_review_deadline(job: Job) -> object:
     return await run_deadline(request_id, step)
 
 
+@WORKER.register(HUMAN_REVIEW_SETTLE)
+async def _human_review_settle(job: Job) -> None:
+    target = SettleTarget.from_job(job)
+    if target is None:
+        return
+    if target.number is None:
+        await settle_repository(target.owner, target.repo)
+    else:
+        await settle_pull_request(target.owner, target.repo, target.number, retries=target.retries)
+
+
 @_sandbox_work(RECONCILE)
 async def _reconcile(_job: Job) -> object:
     return await reconcile_stale_runs()
@@ -221,7 +248,13 @@ async def _tool_sets_purge(_job: Job) -> None:
     logger.info("Tool sets purged", extra={"purged": await purge_tool_sets()})
 
 
+WORKER.register(EVENT_CLAIM_PURGE)(event_claims.purge_lapsed)
 WORKER.register(CURATOR_WAKE)(WorkspaceCurator.wake_pending)
+
+
+@WORKER.register(ATTACHMENT_SWEEP_JOB)
+async def _plugin_attachment_sweep(_job: Job) -> None:
+    await AttachmentObjects.sweep_configured()
 
 
 @WORKER.register(WAKE_THREAD_JOB)
@@ -265,7 +298,14 @@ async def start_jobs() -> None:
             REPORT_RECEIPT_PURGE, cron=REPORT_RECEIPT_SCHEDULE, key=REPORT_RECEIPT_PURGE
         ),
         lambda: queue.schedule(TOOL_SETS_PURGE, cron=TOOL_SETS_SCHEDULE, key=TOOL_SETS_PURGE),
+        lambda: queue.schedule(EVENT_CLAIM_PURGE, cron=EVENT_CLAIM_SCHEDULE, key=EVENT_CLAIM_PURGE),
         lambda: queue.schedule(CURATOR_WAKE, cron=CURATOR_SCHEDULE, key=CURATOR_WAKE),
+        lambda: queue.schedule(
+            GITHUB_QUOTA_SAMPLE, cron=GITHUB_QUOTA_SCHEDULE, key=GITHUB_QUOTA_SAMPLE
+        ),
+        lambda: queue.schedule(
+            ATTACHMENT_SWEEP_JOB, cron=ATTACHMENT_SWEEP_SCHEDULE, key=ATTACHMENT_SWEEP_JOB
+        ),
     ]
     for step in steps:
         try:

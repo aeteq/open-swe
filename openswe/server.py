@@ -1651,7 +1651,7 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
                 sender_messages = self._participants_messages(state, participants)
         turn = TurnContext(
             working_dir=work_dir,
-            agent_workspace=cfg.repo_explicitly_none is True,
+            working_folder=cfg.repo_explicitly_none is True,
             source="background_task" if cfg.background_task_completion else self._source,
             slack_context=cfg.slack_context,
             slack_ask=cfg.slack_ask_mode,
@@ -1746,7 +1746,6 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
                 else ("", [])
             )
         return construct_system_prompt(
-            agent_workspace=cfg.repo_explicitly_none is True,
             dashboard_base_url=dashboard_base_url(),
             artifact_url=dashboard_plan_url(self._thread_id),
             default_repo=default_repo,
@@ -1766,7 +1765,7 @@ def agent_sender(config: RunnableConfig, turn: AgentTurnSettings) -> RunSender:
     """Who an agent run's invocation is attributed to: whoever sent what started it."""
     cfg = RunConfig.from_config(config)
     return RunSender(
-        github_login=cfg.github_login if cfg.auth_provider == "langsmith" else turn.profile_login,
+        github_login=cfg.github_login if not cfg.github_linked else turn.profile_login,
         github_user_id=cfg.github_user_id,
         user_email=cfg.user_email,
         source=cfg.source or "dashboard",
@@ -2043,6 +2042,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             sender=profile_login,
             sender_goal_mode=sender_goal_mode,
             worker=goal_worker,
+            continues_goal=bool(cfg.goal_continuation),
         )
     except Exception:
         logger.exception("Could not ready the thread's task", extra={"agent_thread_id": thread_id})
