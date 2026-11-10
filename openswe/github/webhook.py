@@ -33,6 +33,7 @@ from openswe.input_messages import (
     system_input,
     system_introduction,
 )
+from openswe.notion.notifications import record_pull_request_merged
 from openswe.prompts import prompt
 from openswe.review.approvals import (
     ApprovalPolicy,
@@ -601,6 +602,14 @@ async def settle_human_review_on_close(payload: dict[str, Any]) -> None:
     await close_for_pull_request(*identity)
 
 
+async def record_merge_on_notion_tasks(payload: dict[str, Any]) -> None:
+    """Move the Notion tasks a merged PR links or names in its title to done."""
+    event = PullRequestEvent.parse(payload)
+    if event is None or not event.pull_request.merged or not event.pull_request.html_url:
+        return
+    await record_pull_request_merged(event.pull_request.html_url, event.pull_request.title)
+
+
 async def withdraw_superseded_approvals(payload: dict[str, Any]) -> None:
     """Dismiss Open SWE's approvals of earlier commits once new commits reach a pull request."""
     event = PullRequestEvent.parse(payload)
@@ -837,8 +846,8 @@ async def _process_github_head_update(
     if metadata is None or metadata.get("kind") != common.REVIEWER_THREAD_KIND:
         common.logger.info(
             "Push to %s/%s#%s ignored: no reviewer thread for this PR. "
-            "Trigger a first review (Slack `@Robin review <url>` or request "
-            "open-swe[bot] as a GitHub reviewer) to start watching.",
+            "Trigger a first review (Slack `@jarvis-aeteq review <url>` or request "
+            "jarvis-aeteq[bot] as a GitHub reviewer) to start watching.",
             repo_config["owner"],
             repo_config["name"],
             pr_number,
@@ -1223,10 +1232,10 @@ async def process_github_pr_comment(
     agent_thread_id: str | None = None,
     channel: PrCommentChannel | None = None,
 ) -> None:
-    """Process a GitHub PR comment that tagged @open-swe.
+    """Process a GitHub PR comment that tagged @jarvis-aeteq.
 
     Retrieves the existing thread token, reacts with 👀, fetches all comments
-    since the last @open-swe tag, then creates or queues a new run.
+    since the last @jarvis-aeteq tag, then creates or queues a new run.
 
     Args:
         payload: The parsed GitHub webhook payload.
@@ -1436,7 +1445,7 @@ async def process_github_pr_comment(
             authorized_login=github_login if common.thread_is_private(thread_metadata) else None,
         )
     if not comments:
-        common.logger.info("No comments found since last @open-swe tag for PR %s", pr_number)
+        common.logger.info("No comments found since last @jarvis-aeteq tag for PR %s", pr_number)
         return
 
     if (
@@ -1585,7 +1594,7 @@ async def process_github_review_finding_reply(payload: dict[str, Any]) -> None:
 
     sender = payload.get("sender", {})
     sender_login = sender.get("login") if isinstance(sender, dict) else None
-    if sender_login == "open-swe[bot]":
+    if sender_login == "jarvis-aeteq[bot]":
         return
 
     repo = payload.get("repository", {})

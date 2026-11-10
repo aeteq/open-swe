@@ -1,8 +1,8 @@
 {
-  "updatedAt": "2026-09-08T08:54:29.420Z",
+  "updatedAt": "2026-11-06T16:55:39.209Z",
   "command": "update",
-  "gitHead": "342559af5d7c56364601212f7632482892ce8583",
-  "model": "gpt-5.6-terra",
+  "gitHead": "0cc091a51cfaca8fe3058c21b5a526bbf0826dcb",
+  "model": "claude-haiku-4-5",
   "status": "complete",
   "language": "en"
 }

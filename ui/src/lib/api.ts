@@ -252,6 +252,11 @@ async function loadPrDetails(
   }
 }
 
+/** The account the login page asks for: GitHub where LangSmith sign-in is not configured. */
+export interface SignInOptions {
+  provider: "github" | "langsmith"
+}
+
 export interface SessionUser {
   login: string
   auth_provider?: "github" | "langsmith"
@@ -413,7 +418,6 @@ export interface AllowedSlackBotEntry {
 /** The settings record at either tier: the instance, or what a workspace's runs see. */
 export interface WorkspaceSettings {
   review_draft_prs: boolean
-  pr_summaries: boolean
   review_trace_links: boolean
   /** Tri-state adaptive model routing toggle; threads may override this workspace default. */
   model_routing_enabled?: boolean | null
@@ -1526,6 +1530,7 @@ function pullRequestThread(
 
 export const api = {
   me: () => request<SessionUser>("/me"),
+  signInOptions: () => request<SignInOptions>("/auth/options"),
   /** Model list and defaults for one workspace; model defaults are per workspace. */
   options: (workspace: string = DEFAULT_WORKSPACE_SLUG) =>
     request<OptionsPayload>(

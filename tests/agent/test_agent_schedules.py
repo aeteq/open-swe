@@ -960,7 +960,7 @@ async def test_open_swe_events_do_not_trigger_automations(
         "action": "opened",
         "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe", "private": True},
         "pull_request": {"number": 9},
-        "sender": {"login": "open-swe[bot]"},
+        "sender": {"login": "jarvis-aeteq[bot]"},
     }
 
     assert await _plan_github("pull_request", payload, "d-1") == []

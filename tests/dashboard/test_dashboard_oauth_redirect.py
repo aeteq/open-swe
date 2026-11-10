@@ -151,6 +151,7 @@ def test_sanitize_redirect_to_rejects_backslash_paths_without_a_dashboard_url(
 
 def test_login_hands_every_sign_in_to_langsmith(monkeypatch) -> None:
     monkeypatch.setenv("DASHBOARD_JWT_SECRET", "test-secret")
+    monkeypatch.setattr(auth_routes, "langsmith_oauth_configured", lambda: True)
 
     app = FastAPI()
     app.include_router(routes.router)
@@ -213,6 +214,7 @@ def linking(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(User, "join_github", fake_join)
     monkeypatch.setattr(DashboardPrincipal, "user", fake_user)
     monkeypatch.setattr(DashboardPrincipal, "authorize", AsyncMock())
+    monkeypatch.setattr(auth_routes, "langsmith_oauth_configured", lambda: True)
     collected["person"] = person
     collected["joined"] = joined
     return collected
@@ -296,6 +298,40 @@ def test_linking_github_through_an_alias_domain_stays_on_it(
 
     assert callback.status_code == 302
     assert callback.headers["location"] == f"{lands_on}/agents"
+
+
+def test_without_langsmith_sign_in_github_signs_people_in(
+    linking: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(auth_routes, "langsmith_oauth_configured", lambda: False)
+    signed_in = User()
+
+    async def fake_sign_in(cls: type[User], provider: str, external_id: str, **_: object) -> User:
+        assert (provider, external_id) == ("github", "42")
+        return signed_in
+
+    monkeypatch.setattr(User, "sign_in", classmethod(fake_sign_in))
+    app = FastAPI()
+    app.include_router(routes.router)
+    target = "/agents?from=slack"
+    with TestClient(app, base_url="https://dashboard.example") as client:
+        assert client.get("/dashboard/api/auth/options").json() == {"provider": "github"}
+        start = client.get(
+            "/dashboard/api/auth/login", params={"redirect_to": target}, follow_redirects=False
+        )
+        authorize = parse_qs(urlparse(start.headers["location"]).query)
+        callback = client.get(
+            "/dashboard/api/auth/callback",
+            params={"code": "oauth-code", "state": authorize["state"][0]},
+            follow_redirects=False,
+        )
+
+    assert callback.headers["location"] == f"https://dashboard.example{target}"
+    session = decode_session(callback.cookies[COOKIE_NAME])
+    assert (session["sub"], session["user_id"]) == ("alice", str(signed_in.id))
+    assert DashboardPrincipal.from_session(session).provider == "github"
+    assert linking["tokens"] == {"login": "alice", "email": "alice@example.com", "data": _TOKENS}
+    assert "join" not in linking
 
 
 def test_linking_github_rejects_a_callback_without_its_state_cookie(
