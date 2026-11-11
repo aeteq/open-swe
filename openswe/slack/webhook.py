@@ -18,7 +18,6 @@ from pydantic import JsonValue
 from runtime_api.slack import SlackNotice, SlackTurnDeclined, SlackTurnPrompt
 
 from openswe.dashboard.langsmith_login import LangSmithLogin
-from openswe.dashboard.langsmith_oauth import langsmith_oauth_configured
 from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
 from openswe.human_review.requests import HumanReviewRequest
 from openswe.input_messages import (
@@ -644,8 +643,9 @@ class SlackAuthorization:
         user = await User.for_identity("slack", slack_user_id) if slack_user_id else None
         if user is None:
             return cls(slack_user_id, None, None, "unlinked")
-        # Where GitHub is the sign-in, there is no LangSmith grant to check.
-        if langsmith_oauth_configured():
+        from openswe.dashboard.github_link import GitHubLink
+
+        if not GitHubLink.is_sign_in():
             try:
                 await LangSmithLogin().authorize_user(user)
             except HTTPException as exc:

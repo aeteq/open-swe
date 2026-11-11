@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from pydantic import JsonValue
 from runtime_api.slack import SlackNotice
 
+from openswe.dashboard.github_link import GitHubLink
 from openswe.slack import ask as slack_ask
 from openswe.slack import routes as slack_routes
 from openswe.slack import webhook as slack_service
@@ -19,11 +20,6 @@ from openswe.tasks import service as task_service
 from openswe.threads.listing import _metadata_matches_filters
 from openswe.users import User
 from openswe.users.models import UserIdentity
-
-
-@pytest.fixture(autouse=True)
-def langsmith_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(slack_service, "langsmith_oauth_configured", lambda: True)
 
 
 @pytest.fixture
@@ -498,7 +494,7 @@ async def test_slack_authorization_retains_only_the_same_persons_immutable_owner
 async def test_slack_authorization_needs_no_langsmith_where_github_is_the_sign_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(slack_service, "langsmith_oauth_configured", lambda: False)
+    monkeypatch.setattr(GitHubLink, "is_sign_in", staticmethod(lambda: True))
     user = User(identities=[UserIdentity(provider="github", external_id="1", login="ada")])
     monkeypatch.setattr(User, "for_identity", AsyncMock(return_value=user))
     monkeypatch.setattr(slack_ask.common, "account_link_reason", AsyncMock(return_value=None))

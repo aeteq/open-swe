@@ -10,3 +10,5 @@ ui/src/routes/login.tsx
 tests/dashboard/test_dashboard_principal.py
 tests/e2e/tests/plan_review.spec.ts
 openswe/slack/webhook.py
+tests/conftest.py
+tests/slack/test_slack_ask.py
