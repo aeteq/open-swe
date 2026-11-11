@@ -26,7 +26,7 @@ __all__ = ["github_headers"]
 
 logger = logging.getLogger(__name__)
 
-REVIEW_CHECK_RUN_NAME = "Robin Review"
+REVIEW_CHECK_RUN_NAME = "Jarvis Review"
 REVIEW_CHECK_TIMEOUT_JOB: Final = "review_check_timeout"
 # A review still open this long is hung; settle it so it never blocks the PR.
 REVIEW_CHECK_TIMEOUT: Final = timedelta(hours=1)

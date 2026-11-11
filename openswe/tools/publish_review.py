@@ -800,11 +800,11 @@ async def _withdraw_open_swe_approvals(
 ) -> None:
     """Leave standing only this publish's own approval, if it posted one."""
     if keep_review_id is not None:
-        reason = "Superseded by Robin's approval of the current head."
+        reason = "Superseded by Jarvis' approval of the current head."
     elif keep_commit is not None:
-        reason = "New commits were pushed after Robin approved this pull request."
+        reason = "New commits were pushed after Jarvis approved this pull request."
     else:
-        reason = "Robin's latest review of this pull request does not approve it."
+        reason = "Jarvis' latest review of this pull request does not approve it."
     try:
         async with GitHubClient.connect(token=token) as github:
             refused = await (
@@ -1158,10 +1158,10 @@ async def _maybe_post_slack_completion_reply(
         return
 
     if surfaced_count == 0:
-        headline = "*Robin Review*: No issues found."
+        headline = "*Jarvis Review*: No issues found."
     else:
         issue_word = "issue" if surfaced_count == 1 else "issues"
-        headline = f"*Robin Review* found {surfaced_count} potential {issue_word}."
+        headline = f"*Jarvis Review* found {surfaced_count} potential {issue_word}."
 
     review_url = f"https://github.com/{owner}/{repo}/pull/{pr_number}"
     if isinstance(review_id, int):

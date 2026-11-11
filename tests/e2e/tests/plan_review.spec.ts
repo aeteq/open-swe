@@ -71,11 +71,11 @@ test.describe("HTML artifacts", () => {
     await expect(loggedOut).toHaveURL(
       new RegExp(`/login\\?redirect=.*${threadId}.*plan`),
     );
-    await expect(loggedOut.getByText("Sign in to Robin")).toBeVisible({
+    await expect(loggedOut.getByText("Sign in to Jarvis")).toBeVisible({
       timeout: 30_000,
     });
     await loggedOut
-      .getByRole("link", { name: "Continue with LangSmith" })
+      .getByRole("link", { name: /Continue with (LangSmith|GitHub)/ })
       .click();
     await expect(loggedOut).toHaveURL(/\/fake-gh\/login\/oauth\/authorize/);
     await expect(loggedOut.getByTestId("fake-github-login")).toBeVisible();

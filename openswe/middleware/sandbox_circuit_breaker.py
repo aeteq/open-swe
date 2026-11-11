@@ -8,6 +8,7 @@ from typing import Any
 from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
 from openswe.github.thread_token import resolve_thread_github_token
+from openswe.notion.notifications import post_notion_comment
 from openswe.run_config import RunConfig
 from openswe.slack.client import (
     SANDBOX_UNREACHABLE_NOTICE,
@@ -46,7 +47,7 @@ def sandbox_unreachable_message(
     which = f" ({', '.join(identifiers)})" if identifiers else ""
     if reason:
         return warning(
-            f"Robin could not open this thread's sandbox{which}: `{reason.replace('`', "'")}`. "
+            f"Jarvis could not open this thread's sandbox{which}: `{reason.replace('`', "'")}`. "
             "Retrigger this thread to try again."
         )
     if handed_to_mda:
@@ -56,8 +57,8 @@ def sandbox_unreachable_message(
             "anything that was not pushed. Retrigger this thread to continue."
         )
     return warning(
-        f"This thread's sandbox{which} stopped responding, and Robin can't tell "
-        "whether it will come back. Robin will not start a replacement on its "
+        f"This thread's sandbox{which} stopped responding, and Jarvis can't tell "
+        "whether it will come back. Jarvis will not start a replacement on its "
         "own: a new sandbox is empty, so swapping one in would throw away anything "
         "not yet committed and pushed while still looking like a recovery. "
         "Retrigger this thread to try the same sandbox again, or start a new thread "
@@ -137,6 +138,12 @@ async def post_sandbox_unreachable_notification(
         else:
             await post_slack_thread_reply(channel_id, thread_ts, message, notice=notice)
         logger.info("Sent sandbox unreachable notification to Slack thread %s", thread_ts)
+        return
+
+    if cfg.notion_page and cfg.notion_page.id:
+        await post_notion_comment(
+            cfg.notion_page.id, message, discussion_id=cfg.notion_page.discussion_id
+        )
         return
 
     github_target = _get_github_target(cfg)

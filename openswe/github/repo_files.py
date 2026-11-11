@@ -6,7 +6,7 @@ import random
 from collections import Counter
 from datetime import timedelta
 from fnmatch import fnmatchcase
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -122,6 +122,9 @@ class RepoSettings(BaseModel):
     review_channel: str = Field("", alias="reviewChannel")
     review_channel_rules: list[ReviewChannelRule] = Field(
         default_factory=list, alias="reviewChannelRules"
+    )
+    assign_human_reviewer: Literal["after_ai_review", "off"] = Field(
+        "off", alias="assignHumanReviewer"
     )
 
     @field_validator("supplementary_reviews", mode="before")
