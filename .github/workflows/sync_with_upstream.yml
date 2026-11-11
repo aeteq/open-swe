@@ -79,12 +79,8 @@ jobs:
             fi
           fi
 
-      - name: Push sync branch
-        run: |
-          git remote set-url origin https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/aeteq/open-swe.git
-          git push -u origin sync-upstream --force
-
-      - name: Create or update PR
+      - name: Write the PR body
+        id: report
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           BASE: ${{ steps.base.outputs.sha }}
@@ -101,16 +97,35 @@ jobs:
           BODY="$RUNNER_TEMP/sync-body.md"
           python3 scripts/sync_upstream_report.py --base "$BASE" --head upstream/main \
             --conflicts "$CONFLICTS" --reported "$REPORTED" > "$BODY"
-          if [ ! -s "$BODY" ]; then
-            echo "PR #$PR already reports this upstream revision; kept its checklist."
-            exit 0
-          fi
           TITLE="chore: sync with upstream"
           if [ "$CLEAN" = "false" ]; then
             TITLE="$TITLE (manual conflict resolution needed)"
           fi
-          if [ -n "$PR" ]; then
-            gh pr edit "$PR" --repo aeteq/open-swe --title "$TITLE" --body-file "$BODY"
-          else
-            gh pr create --repo aeteq/open-swe --head sync-upstream --base main --title "$TITLE" --body-file "$BODY"
-          fi
+          {
+            echo "pr=$PR"
+            echo "body=$BODY"
+            echo "title=$TITLE"
+          } >> "$GITHUB_OUTPUT"
+
+      # Before the push, so the checklist check the push starts reads the new body, not stale ticks.
+      - name: Update the open PR
+        if: steps.report.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.report.outputs.pr }}
+          BODY: ${{ steps.report.outputs.body }}
+          TITLE: ${{ steps.report.outputs.title }}
+        run: gh pr edit "$PR" --repo aeteq/open-swe --title "$TITLE" --body-file "$BODY"
+
+      - name: Push sync branch
+        run: |
+          git remote set-url origin https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/aeteq/open-swe.git
+          git push -u origin sync-upstream --force
+
+      - name: Open the PR
+        if: steps.report.outputs.pr == ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BODY: ${{ steps.report.outputs.body }}
+          TITLE: ${{ steps.report.outputs.title }}
+        run: gh pr create --repo aeteq/open-swe --head sync-upstream --base main --title "$TITLE" --body-file "$BODY"

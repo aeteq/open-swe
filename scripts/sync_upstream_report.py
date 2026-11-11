@@ -20,6 +20,7 @@ ENV_DECLARATIONS = "openswe/config.py"
 ENV_VAR = re.compile(r'ENV\.var\(\s*"([A-Z0-9_]+)"')
 BREAKING = re.compile(r"^\w+(\([^)]*\))?!:|BREAKING[ -]CHANGE", re.MULTILINE)
 MARKER = re.compile(r"<!-- sync-upstream-report upstream=([0-9a-f]{40}) -->")
+TICKED = re.compile(r"^- \[[xX]\] \*\*([^*]+)\*\*", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -134,10 +135,14 @@ class UpstreamRange:
 
 
 class SyncReport:
-    def __init__(self, upstream: UpstreamRange, conflicts: list[str]) -> None:
+    def __init__(self, upstream: UpstreamRange, conflicts: list[str], reported: str) -> None:
         self.upstream = upstream
         self.conflicts = conflicts
         self.files = upstream.changed_files()
+        # Ticks carry over only while upstream stays put: new upstream changes need a new look.
+        marker = MARKER.search(reported)
+        same_upstream = marker is not None and marker[1] == upstream.head
+        self.ticked = set(TICKED.findall(reported)) if same_upstream else set()
 
     def _protected_area(self) -> ImpactArea:
         lines = PROTECTED_FILES.read_text().splitlines() if PROTECTED_FILES.exists() else []
@@ -153,7 +158,7 @@ class SyncReport:
 
     def _item(self, area: ImpactArea, details: list[str]) -> list[str]:
         return [
-            f"- [ ] **{area.title}**: {area.action}",
+            f"- [{'x' if area.title in self.ticked else ' '}] **{area.title}**: {area.action}",
             f"  <details><summary>{len(details)} changed</summary>",
             "",
             *(f"  - `{line}`" for line in details),
@@ -226,10 +231,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--reported",
         default="",
-        help="An existing PR body: print nothing when it already reports --head.",
+        help="The open sync PR's body, whose ticks are kept while it reports the same --head.",
     )
     args = parser.parse_args()
     upstream = UpstreamRange(args.base, args.head)
-    if (reported := MARKER.search(args.reported)) and reported[1] == upstream.head:
-        sys.exit(0)
-    sys.stdout.write(SyncReport(upstream, args.conflicts.split()).render())
+    sys.stdout.write(SyncReport(upstream, args.conflicts.split(), args.reported).render())
