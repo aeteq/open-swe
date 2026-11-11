@@ -99,9 +99,6 @@ jobs:
           # traces name as their revision.
           printf 'OPEN_SWE_BACKEND_URL=%s\nANTHROPIC_API_KEY=%s\nMDA_SERVICE_SECRET=%s\nMDA_INGRESS_SECRET=%s\nLANGSMITH_REVISION_ID=%s\n' \
             "$backend" "$ANTHROPIC_API_KEY" "$MDA_SERVICE_SECRET" "$MDA_SERVICE_SECRET" "$(git rev-parse HEAD)" >mda/.env
-          # The GitHub channel's App is Open SWE's own, whose webhook stays at the backend,
-          # which forwards issue mentions to the channel.
-          export MDA_GITHUB_WEBHOOK_ELSEWHERE="$backend/webhooks/github"
           # Deploy reads the App's key from a file. Set all of the App's values or none: an App ID
           # without its key fails the deploy.
           if [[ -n "$GITHUB_APP_PRIVATE_KEY" ]]; then
