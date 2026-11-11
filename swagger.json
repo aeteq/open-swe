@@ -11707,18 +11707,6 @@
             ],
             "title": "Org Guidelines"
           },
-          "pr_summaries": {
-            "agent_feature_flag": true,
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pr Summaries"
-          },
           "review_apps": {
             "anyOf": [
               {

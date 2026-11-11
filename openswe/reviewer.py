@@ -1137,7 +1137,7 @@ async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None
             mcp_tools = await reviewer_mcp_tools(cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG)
     use_gateway = models.use_gateway
 
-    surface.base_tools = reviewer_tools()
+    surface.base_tools = reviewer_tools(mcp_tools)
     if (app_tools := await ReviewAppTools.of_run(cfg)) is not None:
         await app_tools.offer(surface)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)

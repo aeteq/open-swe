@@ -268,7 +268,7 @@ export const ReplyCard = memo(function ReplyCard({ chunk }: ReplyCardProps) {
           messageUrl.startsWith(`${dashboardApiUrl("/slack/open")}?`)
         ? messageUrl
         : undefined
-  const label = HEADER_LABELS[isLinear ? "linear" : "slack"][state]
+  const label = HEADER_LABELS[kind][state]
   return (
     <div className="min-w-0 px-space-1 py-0.5">
       <div className="mb-space-1 flex items-center gap-space-2 text-xxs text-secondary">
