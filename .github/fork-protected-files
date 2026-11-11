@@ -1,0 +1,12 @@
+# Fork deltas the sync must not take wholesale from upstream.
+# When upstream changes one, the sync PR lists it so the fork's behavior is re-applied by hand.
+# GitHub sign-in where LangSmith OAuth is not configured (#175):
+openswe/dashboard/auth_routes.py
+openswe/dashboard/github_link.py
+openswe/dashboard/principal.py
+openswe/threads/identity.py
+ui/src/lib/api.ts
+ui/src/routes/login.tsx
+tests/dashboard/test_dashboard_principal.py
+tests/e2e/tests/plan_review.spec.ts
+openswe/slack/webhook.py

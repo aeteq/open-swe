@@ -126,8 +126,12 @@ class DashboardPrincipal:
 
     async def authorize(self, *, path: str | None = None) -> None:
         from openswe.dashboard.langsmith_login import LangSmithLogin
+        from openswe.dashboard.langsmith_oauth import langsmith_oauth_configured
 
         user = await self.user()
         if user is None:
             raise HTTPException(401, "Sign in with LangSmith to use Robin")
+        if self.provider == "github" and not langsmith_oauth_configured():
+            # GitHub is the sign-in here, so there is no LangSmith grant to check.
+            return
         await LangSmithLogin().authorize_user(user)

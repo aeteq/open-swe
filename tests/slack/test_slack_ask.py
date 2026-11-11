@@ -21,6 +21,11 @@ from openswe.users import User
 from openswe.users.models import UserIdentity
 
 
+@pytest.fixture(autouse=True)
+def langsmith_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(slack_service, "langsmith_oauth_configured", lambda: True)
+
+
 @pytest.fixture
 def signed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(slack_routes.common, "verify_slack_signature", lambda **_kwargs: True)
@@ -487,6 +492,22 @@ async def test_slack_authorization_retains_only_the_same_persons_immutable_owner
     assert authorization.subject_for({"owner_login": "ada"}) == "ada"
     assert authorization.subject_for({"owner_login": f"user:{user.id}"}) == f"user:{user.id}"
     assert authorization.subject_for({"owner_login": "someone-else"}) == "ada"
+
+
+@pytest.mark.asyncio
+async def test_slack_authorization_needs_no_langsmith_where_github_is_the_sign_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(slack_service, "langsmith_oauth_configured", lambda: False)
+    user = User(identities=[UserIdentity(provider="github", external_id="1", login="ada")])
+    monkeypatch.setattr(User, "for_identity", AsyncMock(return_value=user))
+    monkeypatch.setattr(slack_ask.common, "account_link_reason", AsyncMock(return_value=None))
+
+    authorization = await slack_service.SlackAuthorization.resolve("U1")
+
+    assert authorization.reason is None
+    assert authorization.identity is not None
+    assert authorization.identity.subject == "ada"
 
 
 @pytest.mark.asyncio
