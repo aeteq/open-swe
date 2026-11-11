@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from openswe.config import ENV
 from openswe.dashboard.admin import configured_admins, is_admin
+from openswe.dashboard.langsmith_oauth import langsmith_oauth_configured
 from openswe.dashboard.oauth import (
     GITHUB_CALLBACK_PATH,
     GithubUser,
@@ -46,6 +47,14 @@ class GitHubLink:
     account: GithubUser
     email: str
     tokens: Mapping[str, object]
+
+    @staticmethod
+    def is_sign_in() -> bool:
+        """Whether GitHub is the sign-in, which holds wherever LangSmith OAuth is not configured.
+
+        People who sign in with GitHub then hold no LangSmith grant to check.
+        """
+        return not langsmith_oauth_configured()
 
     @staticmethod
     def authorize(

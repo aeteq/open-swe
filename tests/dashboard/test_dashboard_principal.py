@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from openswe.dashboard.deps import session_is_admin
+from openswe.dashboard.github_link import GitHubLink
 from openswe.dashboard.langsmith_login import LangSmithLogin
 from openswe.dashboard.principal import DashboardPrincipal
 from openswe.threads.principals import Principal
@@ -107,6 +108,13 @@ async def test_every_dashboard_session_requires_langsmith(monkeypatch, provider)
         await principal.authorize()
     assert exc.value.status_code == 401
     authorize.assert_awaited_once_with(user)
+
+
+@pytest.mark.asyncio
+async def test_github_session_needs_no_langsmith_where_github_is_the_sign_in(monkeypatch):
+    monkeypatch.setattr(GitHubLink, "is_sign_in", staticmethod(lambda: True))
+    monkeypatch.setattr(DashboardPrincipal, "user", AsyncMock(return_value=User()))
+    await DashboardPrincipal("github", "alice", None).authorize()
 
 
 @pytest.mark.parametrize(

@@ -48,6 +48,17 @@ jobs:
           git remote add upstream https://github.com/langchain-ai/open-swe.git
           git fetch upstream
 
+      - name: Find upstream changes to fork-protected files
+        id: protected
+        run: |
+          BASE=$(git merge-base main upstream/main)
+          mapfile -t FILES < <(grep -vE '^\s*(#|$)' .github/fork-protected-files)
+          TOUCHED=$(git diff --name-only "$BASE" upstream/main -- "${FILES[@]}")
+          EOF_DELIM=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "files<<$EOF_DELIM" >> "$GITHUB_OUTPUT"
+          echo "$TOUCHED" >> "$GITHUB_OUTPUT"
+          echo "$EOF_DELIM" >> "$GITHUB_OUTPUT"
+
       - name: Create merge branch
         run: git checkout -B sync-upstream main
 
@@ -89,6 +100,15 @@ jobs:
             echo "PR #$EXISTING_PR already exists, force-pushed update."
             exit 0
           fi
+          PROTECTED_FILES="${{ steps.protected.outputs.files }}"
+          PROTECTED_NOTE=""
+          if [ -n "$PROTECTED_FILES" ]; then
+            PROTECTED_LIST=$(echo "$PROTECTED_FILES" | sed 's/^/- `/' | sed 's/$/`/')
+            PROTECTED_NOTE="
+
+            **🛡️ Upstream changed fork-protected files** (\`.github/fork-protected-files\`). Even if they merged cleanly, check the fork's behavior survived:
+            ${PROTECTED_LIST}"
+          fi
           if [ "${{ steps.merge.outputs.clean }}" = "false" ]; then
             CONFLICT_FILES="${{ steps.merge.outputs.conflicts }}"
             FILE_LIST=$(echo "$CONFLICT_FILES" | sed 's/^/- `/' | sed 's/$/`/')
@@ -99,7 +119,7 @@ jobs:
             **Conflicted files:**
             ${FILE_LIST}
 
-            Resolve locally: \`git fetch origin && git checkout sync-upstream && git merge upstream/main\`, fix conflicts, commit, push. rerere will remember your resolution for next time."
+            Resolve locally: \`git fetch origin && git checkout sync-upstream && git merge upstream/main\`, fix conflicts, commit, push. rerere will remember your resolution for next time.${PROTECTED_NOTE}"
             gh pr create --repo aeteq/open-swe --head sync-upstream --base main \
               --title "chore: sync with upstream (manual conflict resolution needed)" \
               --body "$BODY"
@@ -108,5 +128,5 @@ jobs:
               --title "chore: sync with upstream" \
               --body "Upstream merged cleanly (or auto-resolved via rerere).
 
-            **⚠️ Do NOT squash and merge this PR** — use a regular merge commit so upstream history is preserved. Squashing breaks future syncs."
+            **⚠️ Do NOT squash and merge this PR** — use a regular merge commit so upstream history is preserved. Squashing breaks future syncs.${PROTECTED_NOTE}"
           fi
