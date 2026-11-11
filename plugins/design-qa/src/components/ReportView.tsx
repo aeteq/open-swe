@@ -13,6 +13,8 @@ import type {
   FrontendScenario,
 } from "../lib/capture"
 import { pairedScenarios } from "../lib/coverage"
+import { useNearViewport } from "../lib/media"
+import { usePixelChange, type RunMedia } from "../lib/queries"
 import { scenarioLinks } from "../lib/links"
 import { repositoryOf, type PullRequestRef } from "../lib/pullRequest"
 import { AskAboutChange } from "./AskAboutChange"
@@ -139,18 +141,11 @@ export function ReportView({
               : run.status === "running"
                 ? "Capturing screenshots…"
                 : run.status === "blocked"
-                  ? run.auth_mode === "dummy"
-                    ? "Authentication required"
-                    : "Capture blocked"
+                  ? "Capture blocked"
                   : "Capture failed"}
           </h3>
+          {/* A review says why: a preview or base that won't load, or a sign-in it couldn't do. */}
           {run.error && <p className="text-sm text-secondary">{run.error}</p>}
-          {run.status === "blocked" && run.auth_mode === "dummy" && (
-            <p className="text-xs text-secondary">
-              No preview was contacted and no page was reviewed. A disposable QA
-              identity is required.
-            </p>
-          )}
         </Card>
       )}
       {scenarios.map((scenario, index) => (
@@ -170,13 +165,7 @@ export function ReportView({
                 {scenario.title}
               </h3>
               <div className="mt-space-1 flex flex-wrap items-center gap-x-space-3 gap-y-space-1 text-xs text-secondary">
-                {scenario.metrics && (
-                  <span
-                    title={`Saved pixel threshold: ${scenario.metrics.threshold}. Change extent is not issue severity.`}
-                  >
-                    {(scenario.metrics.changed_ratio * 100).toFixed(2)}% changed
-                  </span>
-                )}
+                <ChangedShare media={media} scenario={scenario} />
                 {scenarioLinks(run, scenario.path).map(({ label, href }) => (
                   <Link
                     key={label}
@@ -285,5 +274,33 @@ export function ReportView({
         </div>
       </details>
     </div>
+  )
+}
+
+/**
+ * The share of a pair's pixels that differ, measured once its card comes near
+ * the screen, as its screenshots load.
+ */
+function ChangedShare({
+  media,
+  scenario,
+}: {
+  media: RunMedia
+  scenario: FrontendScenario
+}) {
+  const [ref, near] = useNearViewport<HTMLSpanElement>()
+  const change = usePixelChange(media, scenario, near)
+  return (
+    <span ref={ref}>
+      {change.data ? (
+        <span title="Pixels that differ between the two screenshots. Change extent is not issue severity.">
+          {(change.data.ratio * 100).toFixed(2)}% changed
+        </span>
+      ) : change.data === null ? (
+        <span title="The screenshots differ in size, or are too large to compare here.">
+          Not compared
+        </span>
+      ) : null}
+    </span>
   )
 }

@@ -441,7 +441,7 @@ Both Slack URLs must point at the Robin deployment, and Block Kit buttons only w
 Slack messages are routed to the thread's repository, a `repo:owner/name` token in the message, or the team default repository.
 Robin refuses Slack Connect channels (`is_ext_shared`) and fails closed when it cannot verify a channel.
 
-`files:read` lets Robin download non-image files attached to a message (archives, logs, CSVs) and stage them in the thread's sandbox, where the agent reads them by path.
+`files:read` lets Robin download files attached to a message (images, archives, logs, CSVs) and stage them in the thread's sandbox, where the agent reads them by path; images also reach the model as vision input.
 Existing installations must add the scope in **OAuth & Permissions** and reinstall the app before attachments reach the agent; without it, uploads stay invisible and only the message text is used.
 
 Slack verifies the events Request URL the first time it can reach it; if the backend is not up yet when you create the app, use **Retry** under **Event Subscriptions** after step 7.
@@ -696,7 +696,8 @@ Issue events still reach workspace automations and `listen_events`: the channel 
 <summary><strong>Object storage for app files</strong></summary>
 
 Apps keep files beside their documents, such as Design QA's screenshots.
-Files of at most 256 KiB stay in PostgreSQL; larger ones, up to 8 MiB, go to an S3-compatible bucket, and without one they are refused.
+Files of at most 256 KiB stay in PostgreSQL; larger ones, up to 8 MiB, go to an S3-compatible bucket when one is set up, and otherwise stay in PostgreSQL too.
+A bucket is optional: set one up when files would grow the database more than you want.
 On GCS, Robin uses the XML API with an HMAC key, so it needs no Google credentials file:
 
 1. Create a bucket, and a service account with **Storage Object User** (`roles/storage.objectUser`) on it.
@@ -752,6 +753,27 @@ A question never changes a task's status.
 Comment events only arrive for pages shared with the integration, so share the teamspaces or pages where people should be able to ask.
 
 **Verify:** create a task with **Repository** set, assign it to the agent member, and watch its status move to **In progress** and a Notion thread appear in the dashboard.
+
+</details>
+
+<details id="review-apps">
+<summary><strong>Apps in reviews, such as Design QA screenshots</strong></summary>
+
+An app's [review step](PLUGINS.md#review-steps) has pull request reviews do work for it; Design QA's screenshots a frontend pull request's preview beside its base ([reference](../plugins/design-qa/README.md)).
+
+1. Publish the app in **Settings → Apps** (for Design QA, build `plugins/design-qa` with `pnpm --filter openswe-plugin-design-qa build` and upload `plugins/design-qa/bundle/index.html`), and mark it listed so others can add it.
+   To put it in everyone's sidebar, an instance admin turns it on under **Defaults → Apps for everyone**, and names the repositories it reads for everyone, such as the one its reviews capture.
+1. For apps whose review step uses the browser, an instance admin fills in **Defaults → Review browser**.
+   List the domains, each with its subdomains, the review's browser may sign in to: your previews' and their base site's, never production.
+   Optionally, name the instance or workspace MCP tool that returns a browser session, as `<connection>/<tool>`.
+   Workspaces can't override either.
+
+   The deployment's LangSmith workspace needs the LangSmith browser beta, as the coding agent's browser does.
+   Browser sessions install only on LangSmith sites, so a review signs in to LangSmith previews; it browses any other preview signed out.
+1. Add the app in a workspace's **Settings → Review → Apps in reviews**.
+   Only reviews of private repositories follow it.
+   Reviews follow the release that was newest when it was added; when its owner releases again, **Update** there moves reviews to the new one.
+1. Say where the previews' base site is in the workspace's review guidelines, so the review knows where to take "before" screenshots.
 
 </details>
 

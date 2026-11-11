@@ -6,10 +6,10 @@ import logging
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import ClassVar, Final
+from typing import Annotated, ClassVar, Final
 from uuid import UUID, uuid7
 
-from pydantic import ValidationError
+from pydantic import StringConstraints, ValidationError
 from sqlalchemy import (
     ColumnElement,
     ForeignKey,
@@ -22,6 +22,7 @@ from sqlalchemy import (
     case,
     cast,
     delete,
+    exists,
     func,
     literal,
     or_,
@@ -34,6 +35,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, aggregate_order_by, arr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, undefer
 
+from openswe.dashboard.settings_records import SettingsRecords
 from openswe.database import postgres
 from openswe.database.orm import NOW, Base
 from openswe.openai_responses.client_tools import ClientToolSpec
@@ -305,7 +307,8 @@ class App:
 class Installation:
     """One person's install of an app, pinned to a version.
 
-    ``repositories`` are the ones that person shared with it.
+    ``repositories`` are the ones that person shared with it, and ``added_by_robin`` says
+    Robin added it because an admin featured the app, and the person hasn't changed it since.
     """
 
     id: UUID
@@ -316,6 +319,7 @@ class Installation:
     repositories: tuple[str, ...]
     preview_of: str | None
     created_at: datetime | None
+    added_by_robin: bool = False
 
     @property
     def manifest(self) -> PluginManifest:
@@ -468,6 +472,64 @@ class PluginApps:
         return None if row is None else AppVersion.of(row)
 
     @staticmethod
+    async def releases(pinned: Mapping[UUID, UUID], *, listed: bool = False) -> list[AppVersion]:
+        """Each app's pinned release, by app id to release id, in ``pinned``'s order; an app
+        whose release is gone, unreadable, or is not its own, is left out, and with ``listed``
+        an app its owner doesn't list for anyone to add."""
+        if not pinned:
+            return []
+        query = select(PluginVersionRow).where(
+            PluginVersionRow.id.in_(list(pinned.values())),
+            PluginVersionRow.preview_of.is_(None),
+        )
+        if listed:
+            query = query.join(PluginRow, PluginRow.id == PluginVersionRow.plugin).where(
+                PluginRow.listed.is_(True)
+            )
+        found: dict[UUID, AppVersion] = {}
+        async with postgres.session() as session:
+            for row in await session.scalars(query):
+                if pinned.get(row.plugin) != row.id:
+                    continue
+                try:
+                    found[row.plugin] = AppVersion.of(row)
+                except ValidationError:
+                    # One app's unreadable release must not break the others it's pinned with.
+                    logger.warning(
+                        "Skipping a pinned app release with an unreadable manifest",
+                        extra={"plugin_version_id": str(row.id)},
+                        exc_info=True,
+                    )
+        return [found[app] for app in pinned if app in found]
+
+    @staticmethod
+    async def listed(app_ids: Collection[UUID]) -> frozenset[UUID]:
+        """Which of ``app_ids`` their owners list for anyone to add, whether or not their
+        releases still read."""
+        if not app_ids:
+            return frozenset()
+        async with postgres.session() as session:
+            found = await session.scalars(
+                select(PluginRow.id).where(
+                    PluginRow.id.in_(list(app_ids)), PluginRow.listed.is_(True)
+                )
+            )
+            return frozenset(found)
+
+    @staticmethod
+    async def review_writes(app_id: UUID) -> frozenset[str]:
+        """The collections any of the app's releases has reviews write, since a workspace can
+        keep reviews on an older release than the newest."""
+        async with postgres.session() as session:
+            manifests = await session.scalars(
+                select(PluginVersionRow.manifest).where(
+                    PluginVersionRow.plugin == app_id, PluginVersionRow.preview_of.is_(None)
+                )
+            )
+            steps = [PluginManifest.model_validate(manifest).review for manifest in manifests]
+        return frozenset(name for step in steps if step is not None for name in step.writes)
+
+    @staticmethod
     async def newest_preview(thread_id: str, owner: UUID) -> AppVersion | None:
         """The newest build ``owner``'s agent previewed in ``thread_id``, running or not."""
         async with postgres.session() as session:
@@ -546,6 +608,7 @@ class PluginInstallations:
                         repositories=tuple(repositories),
                         preview_of=row.preview_of,
                         created_at=row.created_at,
+                        added_by_robin=row.created_by is None and row.updated_by is None,
                     )
                 )
             except ValidationError:
@@ -586,6 +649,87 @@ class PluginInstallations:
             session.add(row)
             await session.flush()
             return row.id
+
+    @classmethod
+    async def feature(cls, user_id: UUID, versions: Sequence[AppVersion]) -> None:
+        """Adds each of ``versions``' apps to the person's web UI, as an install nobody made,
+        and moves such an install nobody has changed since to its version.
+
+        An app is left out where another of theirs has its name, and an install the person
+        made or changed stays as they left it.
+        """
+        if not versions:
+            return
+        names = {
+            installed.manifest.name: installed.plugin for installed in await cls.visible_to(user_id)
+        }
+        async with postgres.session() as session:
+            for version in versions:
+                if names.get(version.manifest.name, version.app) != version.app:
+                    continue
+                names[version.manifest.name] = version.app
+                await session.execute(
+                    insert(PluginInstallationRow)
+                    .values(id=uuid7(), plugin=version.app, user_id=user_id, version=version.id)
+                    .on_conflict_do_nothing(
+                        index_elements=[
+                            PluginInstallationRow.user_id,
+                            PluginInstallationRow.plugin,
+                        ],
+                        index_where=PluginInstallationRow.preview_of.is_(None),
+                    )
+                )
+                moved = await session.scalar(
+                    update(PluginInstallationRow)
+                    .where(
+                        PluginInstallationRow.user_id == user_id,
+                        PluginInstallationRow.plugin == version.app,
+                        PluginInstallationRow.preview_of.is_(None),
+                        PluginInstallationRow.created_by.is_(None),
+                        PluginInstallationRow.updated_by.is_(None),
+                        PluginInstallationRow.version != version.id,
+                    )
+                    .values(version=version.id, updated_at=func.clock_timestamp())
+                    .returning(PluginInstallationRow.id)
+                )
+                if moved is not None:
+                    await cls._drop_unused(session, version.app)
+
+    @staticmethod
+    async def robin_added(user_id: UUID) -> bool:
+        """Whether Robin added an app or shared a repository for the person, because an
+        admin featured an app, that is still as Robin left it."""
+        installs = select(PluginInstallationRow.id).where(
+            PluginInstallationRow.user_id == user_id,
+            PluginInstallationRow.preview_of.is_(None),
+            PluginInstallationRow.created_by.is_(None),
+            PluginInstallationRow.updated_by.is_(None),
+        )
+        grants = select(PluginRepositoryGrantRow.id).where(
+            PluginRepositoryGrantRow.user_id == user_id,
+            PluginRepositoryGrantRow.created_by.is_(None),
+        )
+        async with postgres.session() as session:
+            return bool(await session.scalar(select(or_(exists(installs), exists(grants)))))
+
+    @classmethod
+    async def retract(cls, user_id: UUID, featured: Collection[UUID]) -> None:
+        """Removes from the person's web UI each app Robin added that is no longer featured,
+        unless they changed its install since."""
+        async with postgres.session() as session:
+            gone = await session.scalars(
+                delete(PluginInstallationRow)
+                .where(
+                    PluginInstallationRow.user_id == user_id,
+                    PluginInstallationRow.preview_of.is_(None),
+                    PluginInstallationRow.created_by.is_(None),
+                    PluginInstallationRow.updated_by.is_(None),
+                    PluginInstallationRow.plugin.not_in(list(featured)),
+                )
+                .returning(PluginInstallationRow.plugin)
+            )
+            for app in set(gone):
+                await cls._drop_unused(session, app)
 
     @classmethod
     async def upgrade(cls, installation_id: UUID, version: AppVersion, *, by: UUID) -> None:
@@ -678,28 +822,81 @@ class PluginInstallations:
         return found[0] if found else None
 
     @staticmethod
-    async def share(installation_id: UUID, user_id: UUID, repositories: Sequence[str]) -> None:
-        """Let the install reach ``repositories`` for ``user_id``, who chose them."""
+    async def share(
+        installation_id: UUID,
+        user_id: UUID,
+        repositories: Sequence[str],
+        *,
+        added_by_robin: bool = False,
+    ) -> None:
+        """Let the install reach ``repositories`` for ``user_id``, who chose them, or for whom
+        Robin shares them because an admin named them for a featured app.
+
+        The person's choice outlasts the admin's: one they share that Robin already shared
+        becomes theirs, so dropping it from the admin's list leaves it, and Robin never
+        takes over one they shared.
+        """
         if not repositories:
             return
+        by = None if added_by_robin else user_id
+        statement = insert(PluginRepositoryGrantRow).values(
+            [
+                {
+                    "id": uuid7(),
+                    "installation": installation_id,
+                    "user_id": user_id,
+                    "repository": repository,
+                    "created_by": by,
+                    "updated_by": by,
+                }
+                for repository in repositories
+            ]
+        )
         async with postgres.session() as session:
             await session.execute(
-                insert(PluginRepositoryGrantRow)
-                .values(
-                    [
-                        {
-                            "id": uuid7(),
-                            "installation": installation_id,
-                            "user_id": user_id,
-                            "repository": repository,
-                            "created_by": user_id,
-                            "updated_by": user_id,
-                        }
-                        for repository in repositories
-                    ]
+                statement.on_conflict_do_nothing()
+                if added_by_robin
+                else statement.on_conflict_do_update(
+                    index_elements=[
+                        PluginRepositoryGrantRow.installation,
+                        PluginRepositoryGrantRow.user_id,
+                        PluginRepositoryGrantRow.repository,
+                    ],
+                    set_={
+                        "created_by": by,
+                        "updated_by": by,
+                        "updated_at": func.clock_timestamp(),
+                    },
                 )
-                .on_conflict_do_nothing()
             )
+
+    @staticmethod
+    async def unshare_unfeatured(user_id: UUID, featured: Mapping[UUID, Collection[str]]) -> None:
+        """Stops sharing each repository Robin shared for the person that ``featured``, by
+        app id, no longer names; what they shared themselves stays."""
+        async with postgres.session() as session:
+            rows = await session.execute(
+                select(
+                    PluginRepositoryGrantRow.id,
+                    PluginRepositoryGrantRow.repository,
+                    PluginInstallationRow.plugin,
+                )
+                .join(
+                    PluginInstallationRow,
+                    PluginInstallationRow.id == PluginRepositoryGrantRow.installation,
+                )
+                .where(
+                    PluginRepositoryGrantRow.user_id == user_id,
+                    PluginRepositoryGrantRow.created_by.is_(None),
+                )
+            )
+            gone = [
+                grant for grant, repository, app in rows if repository not in featured.get(app, ())
+            ]
+            if gone:
+                await session.execute(
+                    delete(PluginRepositoryGrantRow).where(PluginRepositoryGrantRow.id.in_(gone))
+                )
 
     @staticmethod
     async def unshare(installation_id: UUID, user_id: UUID, repository: str) -> None:
@@ -744,8 +941,10 @@ class PluginInstallations:
         """Forget ``app``'s versions no install runs, and bundles no version holds.
 
         Its newest releases stay, to go back to, and each thread's newest preview,
-        which may wait for the person's approval; older previews go at once.
+        which may wait for the person's approval; older previews go at once. So does every
+        release a setting pins, which reviews and everyone's web UI follow.
         """
+        pinned = await SettingsRecords.pinned_releases(session)
         installed = select(PluginInstallationRow.version).where(PluginInstallationRow.plugin == app)
         releases = (
             select(PluginVersionRow.id)
@@ -765,6 +964,7 @@ class PluginInstallations:
                 PluginVersionRow.id.not_in(installed),
                 PluginVersionRow.id.not_in(releases),
                 PluginVersionRow.id.not_in(previews),
+                PluginVersionRow.id.not_in(list(pinned)),
             )
         )
         await session.execute(
@@ -919,6 +1119,15 @@ class ConflictingDocumentWrites(RuntimeError):
         super().__init__(f"{key} kept changing while it was being created; try again")
 
 
+MAX_DOCUMENT_BYTES = 256_000
+DocumentKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._:@/-]{1,200}$")]
+MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+ATTACHMENT_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/webp", "image/gif", "video/webm", "video/mp4"}
+)
+AttachmentName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$")]
+# Files over this go to object storage where it is set up; without it, PostgreSQL keeps
+# every file, up to MAX_ATTACHMENT_BYTES.
 INLINE_ATTACHMENT_BYTES = 256 * 1024
 """The largest attachment kept in PostgreSQL; larger ones go to object storage."""
 
@@ -929,8 +1138,7 @@ ATTACHMENT_SWEEP_SCHEDULE: Final = "23 * * * *"
 class AttachmentStorageUnavailable(RuntimeError):
     def __init__(self) -> None:
         super().__init__(
-            f"files over {INLINE_ATTACHMENT_BYTES // 1024} KiB need object storage, "
-            "which this Robin instance has not set up"
+            "this file is in object storage, which this Robin instance no longer has set up"
         )
 
 
@@ -1002,7 +1210,10 @@ class AttachmentObjects:
 
 
 class PluginDocuments:
-    """One plugin's documents, the same for every installation of it."""
+    """One plugin's documents, the same for every installation of it.
+
+    A write's ``by`` is the person who made it, or ``None`` for the app's own writes.
+    """
 
     def __init__(self, plugin: UUID) -> None:
         self.plugin = plugin
@@ -1041,7 +1252,13 @@ class PluginDocuments:
             return [PluginDocument(row.key, row.document, row.updated_at) for row in rows]
 
     async def put(
-        self, collection: str, scope: DocumentScope, key: str, document: JsonObject, *, by: UUID
+        self,
+        collection: str,
+        scope: DocumentScope,
+        key: str,
+        document: JsonObject,
+        *,
+        by: UUID | None,
     ) -> PluginDocument:
         async with postgres.session() as session:
             row = (
@@ -1081,7 +1298,13 @@ class PluginDocuments:
             return PluginDocument(row.key, row.document, row.updated_at)
 
     async def create(
-        self, collection: str, scope: DocumentScope, key: str, document: JsonObject, *, by: UUID
+        self,
+        collection: str,
+        scope: DocumentScope,
+        key: str,
+        document: JsonObject,
+        *,
+        by: UUID | None,
     ) -> PluginDocument:
         """Stores ``document`` under ``key`` unless one is there; returns whichever is stored.
 
@@ -1142,6 +1365,50 @@ class PluginDocuments:
                 )
             return deleted is not None
 
+    async def delete_unattended_under(
+        self, collection: str, scope: DocumentScope, prefix: str
+    ) -> int:
+        """Deletes every document whose key starts with ``prefix`` that no person created or
+        changed, with its files; returns how many. Objects of deleted files are left for the
+        sweep."""
+        async with postgres.session() as session:
+            deleted = list(
+                await session.scalars(
+                    delete(PluginDocumentRow)
+                    .where(
+                        *self._where(collection, scope),
+                        PluginDocumentRow.key.startswith(prefix, autoescape=True),
+                        PluginDocumentRow.created_by.is_(None),
+                        PluginDocumentRow.updated_by.is_(None),
+                    )
+                    .returning(PluginDocumentRow.id)
+                )
+            )
+            if deleted:
+                await Topic.PLUGIN_DOCUMENTS.invalidate(
+                    session, key=scope.topic_key(self.plugin, collection)
+                )
+            return len(deleted)
+
+    @staticmethod
+    async def collections_under(scope: DocumentScope, prefix: str) -> list[tuple[UUID, str]]:
+        """Each app's collections with a document in ``scope`` whose key starts with ``prefix``."""
+        async with postgres.session() as session:
+            rows = await session.execute(
+                select(PluginDocumentRow.plugin, PluginDocumentRow.collection)
+                .where(
+                    PluginDocumentRow.repository.is_(None)
+                    if scope.repository is None
+                    else PluginDocumentRow.repository == scope.repository,
+                    PluginDocumentRow.user_id.is_(None)
+                    if scope.user_id is None
+                    else PluginDocumentRow.user_id == scope.user_id,
+                    PluginDocumentRow.key.startswith(prefix, autoescape=True),
+                )
+                .distinct()
+            )
+            return [(plugin, collection) for plugin, collection in rows.tuples()]
+
     def _document_id(self, collection: str, scope: DocumentScope, key: str) -> Select[UUID]:
         return select(PluginDocumentRow.id).where(
             *self._where(collection, scope), PluginDocumentRow.key == key
@@ -1156,14 +1423,15 @@ class PluginDocuments:
         content_type: str,
         content: bytes,
         *,
-        by: UUID,
+        by: UUID | None,
     ) -> Attachment | None:
         """Keeps ``content`` as ``name`` beside the document, replacing any file of that name.
 
         ``None`` when there is no document under ``key`` to attach it to. A file the row
         replaces, or one stored for a document deleted meanwhile, is left for the sweep.
         """
-        objects = None if len(content) <= INLINE_ATTACHMENT_BYTES else AttachmentObjects.of()
+        store = ObjectStore.configured() if len(content) > INLINE_ATTACHMENT_BYTES else None
+        objects = AttachmentObjects(store) if store is not None else None
         async with postgres.session() as session:
             if await session.scalar(self._document_id(collection, scope, key)) is None:
                 return None

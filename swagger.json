@@ -547,6 +547,25 @@
         "title": "AppNotification",
         "type": "object"
       },
+      "AppRelease": {
+        "description": "An app pinned to the release an admin approved, so its owner's later releases change\nnothing until an admin picks them up.",
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "release": {
+            "title": "Release",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "release"
+        ],
+        "title": "AppRelease",
+        "type": "object"
+      },
       "AppUser": {
         "description": "MDA's ``ResolvedAppUser``: run as this Open SWE user. The only answer besides ``None``.",
         "properties": {
@@ -1143,6 +1162,42 @@
           "attempts"
         ],
         "title": "BatchView",
+        "type": "object"
+      },
+      "BestView": {
+        "properties": {
+          "endReason": {
+            "title": "Endreason",
+            "type": "string"
+          },
+          "endTick": {
+            "title": "Endtick",
+            "type": "integer"
+          },
+          "flapDeltas": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Flapdeltas",
+            "type": "array"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seed",
+          "endTick",
+          "endReason",
+          "flapDeltas",
+          "score"
+        ],
+        "title": "BestView",
         "type": "object"
       },
       "BlockSuggestionResponse": {
@@ -2950,6 +3005,32 @@
         "title": "ExpeditedExclusions",
         "type": "object"
       },
+      "FeaturedApp": {
+        "description": "An app in everyone's web UI, and the repositories it reads for each person who can.",
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "release": {
+            "title": "Release",
+            "type": "string"
+          },
+          "repositories": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repositories",
+            "type": "array"
+          }
+        },
+        "required": [
+          "app",
+          "release"
+        ],
+        "title": "FeaturedApp",
+        "type": "object"
+      },
       "FeedbackResponse": {
         "properties": {
           "errors": {
@@ -3226,134 +3307,6 @@
           "events"
         ],
         "title": "GitHubTrigger",
-        "type": "object"
-      },
-      "Goal": {
-        "description": "What the thread's task keeps of its goal.",
-        "properties": {
-          "ask": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ask"
-          },
-          "objective": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Objective"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UserWaitReason"
-              },
-              {
-                "$ref": "#/components/schemas/PauseReason"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          },
-          "state": {
-            "default": "working",
-            "enum": [
-              "working",
-              "waiting",
-              "waiting_on_user",
-              "paused",
-              "complete"
-            ],
-            "title": "State",
-            "type": "string"
-          },
-          "updated_at_ms": {
-            "default": 0,
-            "title": "Updated At Ms",
-            "type": "integer"
-          },
-          "waits": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/GoalWait"
-            },
-            "title": "Waits",
-            "type": "array"
-          }
-        },
-        "title": "Goal",
-        "type": "object"
-      },
-      "GoalEdit": {
-        "description": "The person's own rewrite of their goal's objective.",
-        "properties": {
-          "objective": {
-            "maxLength": 20000,
-            "minLength": 1,
-            "title": "Objective",
-            "type": "string"
-          }
-        },
-        "required": [
-          "objective"
-        ],
-        "title": "GoalEdit",
-        "type": "object"
-      },
-      "GoalWait": {
-        "description": "One thing that wakes the thread again.",
-        "properties": {
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Detail"
-          },
-          "kind": {
-            "enum": [
-              "wakeup",
-              "command",
-              "monitor",
-              "event",
-              "review"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
-          "until": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Until"
-          }
-        },
-        "required": [
-          "kind"
-        ],
-        "title": "GoalWait",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3750,6 +3703,34 @@
           "selected"
         ],
         "title": "LabelChange",
+        "type": "object"
+      },
+      "LeaderRowView": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          },
+          "you": {
+            "title": "You",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "rank",
+          "name",
+          "score",
+          "you"
+        ],
+        "title": "LeaderRowView",
         "type": "object"
       },
       "LineComment": {
@@ -5444,16 +5425,6 @@
         "title": "PauseChange",
         "type": "object"
       },
-      "PauseReason": {
-        "enum": [
-          "stopped",
-          "requested",
-          "no_progress",
-          "failing_commands",
-          "error"
-        ],
-        "type": "string"
-      },
       "PendingReview": {
         "description": "The viewer's unsubmitted GitHub review on a PR, with its line comments.",
         "properties": {
@@ -5763,6 +5734,16 @@
             "title": "Permissions",
             "type": "array"
           },
+          "review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewStep"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sidebar": {
             "$ref": "#/components/schemas/SidebarEntry"
           },
@@ -5796,6 +5777,11 @@
       },
       "PluginSummary": {
         "properties": {
+          "featured": {
+            "default": false,
+            "title": "Featured",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -6209,40 +6195,6 @@
             ],
             "title": "Experimental Conditional Approval"
           },
-          "experimental_live_activity": {
-            "agent_feature_flag": true,
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Experimental Live Activity"
-          },
-          "experimental_memory": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Experimental Memory"
-          },
-          "goal_mode": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Goal Mode"
-          },
           "personal_kitchen_channel_id": {
             "anyOf": [
               {
@@ -6253,17 +6205,6 @@
               }
             ],
             "title": "Personal Kitchen Channel Id"
-          },
-          "pr_failure_reactions": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pr Failure Reactions"
           },
           "review_draft_prs": {
             "anyOf": [
@@ -7657,6 +7598,17 @@
             "title": "Requested Channel",
             "type": "string"
           },
+          "retry_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After Seconds"
+          },
           "reused": {
             "default": false,
             "title": "Reused",
@@ -8173,6 +8125,36 @@
           "started"
         ],
         "title": "ReviewScoutTrigger",
+        "type": "object"
+      },
+      "ReviewStep": {
+        "description": "What the app has a pull request's review do for it, once a workspace adds it to reviews.\n\nThe review follows ``instructions`` beside its own, writes only the collections in\n``writes`` (each app-written, so people cannot forge what it saves), and gets the\nthread's browser when ``browser`` asks for it.",
+        "properties": {
+          "browser": {
+            "default": false,
+            "title": "Browser",
+            "type": "boolean"
+          },
+          "instructions": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "writes": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Writes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "instructions"
+        ],
+        "title": "ReviewStep",
         "type": "object"
       },
       "ReviewStyle": {
@@ -9025,6 +9007,44 @@
         "title": "RoomUpdateBody",
         "type": "object"
       },
+      "RunResultView": {
+        "properties": {
+          "board": {
+            "items": {
+              "$ref": "#/components/schemas/LeaderRowView"
+            },
+            "title": "Board",
+            "type": "array"
+          },
+          "newBest": {
+            "title": "Newbest",
+            "type": "boolean"
+          },
+          "previousBest": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousbest"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "score",
+          "previousBest",
+          "newBest",
+          "board"
+        ],
+        "title": "RunResultView",
+        "type": "object"
+      },
       "ScheduleCreateBody": {
         "properties": {
           "admin_thread": {
@@ -9259,6 +9279,30 @@
           }
         },
         "title": "ScheduleUpdateBody",
+        "type": "object"
+      },
+      "SeasonView": {
+        "properties": {
+          "rulesVersion": {
+            "title": "Rulesversion",
+            "type": "integer"
+          },
+          "seasonId": {
+            "format": "uuid",
+            "title": "Seasonid",
+            "type": "string"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seasonId",
+          "rulesVersion",
+          "seed"
+        ],
+        "title": "SeasonView",
         "type": "object"
       },
       "SessionCreateBody": {
@@ -10552,6 +10596,17 @@
       },
       "UserPreferencesUpdate": {
         "properties": {
+          "auto_show_changes": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Show Changes"
+          },
           "default_visibility": {
             "enum": [
               "public",
@@ -10592,13 +10647,6 @@
         ],
         "title": "UserPreferencesUpdate",
         "type": "object"
-      },
-      "UserWaitReason": {
-        "enum": [
-          "blocked",
-          "ready"
-        ],
-        "type": "string"
       },
       "ValidationError": {
         "properties": {
@@ -11562,6 +11610,21 @@
             ],
             "title": "Fable Enabled"
           },
+          "featured_apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FeaturedApp"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Featured Apps"
+          },
           "gateway_enabled": {
             "agent_feature_flag": true,
             "anyOf": [
@@ -11643,6 +11706,47 @@
               }
             ],
             "title": "Org Guidelines"
+          },
+          "review_apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AppRelease"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Apps"
+          },
+          "review_browser_domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Browser Domains"
+          },
+          "review_browser_session_tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Browser Session Tool"
           },
           "review_draft_prs": {
             "agent_feature_flag": true,
@@ -13260,6 +13364,16 @@
                 }
               ],
               "title": "Redirect To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connect_slack",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Connect Slack",
+              "type": "boolean"
             }
           },
           {
@@ -16761,6 +16875,7 @@
     },
     "/dashboard/api/plugins": {
       "get": {
+        "description": "The viewer's apps, kept in line with the ones an admin added for everyone.",
         "operationId": "api_list_plugins_dashboard_api_plugins_get",
         "responses": {
           "200": {
@@ -16951,6 +17066,56 @@
           }
         ],
         "summary": "Api Publish App",
+        "tags": [
+          "dashboard",
+          "plugins"
+        ]
+      }
+    },
+    "/dashboard/api/plugins/apps/versions/{version_id}": {
+      "get": {
+        "description": "A release the viewer may add, of their own app or a listed one, with its manifest.",
+        "operationId": "api_get_app_version_dashboard_api_plugins_apps_versions__version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppVersionModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Get App Version",
         "tags": [
           "dashboard",
           "plugins"
@@ -24969,7 +25134,7 @@
     },
     "/dashboard/api/slack/callback": {
       "get": {
-        "description": "Link the verified Slack identity to the logged-in GitHub user.\n\nThe Slack member id and email come from Slack's verified OIDC claims, so a\nuser can only ever link their own Slack account \u2014 no self-asserted values.",
+        "description": "Link the verified Slack identity to the signed-in Robin person.",
         "operationId": "slack_callback_dashboard_api_slack_callback_get",
         "parameters": [
           {
@@ -25166,7 +25331,7 @@
     },
     "/dashboard/api/slack/login": {
       "get": {
-        "description": "Start the Sign in with Slack flow to link the current GitHub account.",
+        "description": "Start the Sign in with Slack flow to link the current Robin account.",
         "operationId": "slack_login_dashboard_api_slack_login_get",
         "parameters": [
           {
@@ -25249,6 +25414,85 @@
         "tags": [
           "dashboard",
           "slack",
+          "slack"
+        ]
+      }
+    },
+    "/dashboard/api/slack/open": {
+      "get": {
+        "operationId": "api_open_slack_dashboard_api_slack_open_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "channel",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "pattern": "^[CGD][A-Z0-9]{2,}$",
+              "title": "Channel",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "message_ts",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 27,
+                  "pattern": "^[0-9]{1,20}\\.[0-9]{1,6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Message Ts"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_ts",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 27,
+                  "pattern": "^[0-9]{1,20}\\.[0-9]{1,6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Ts"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Open Slack",
+        "tags": [
+          "dashboard",
           "slack"
         ]
       }
@@ -26741,130 +26985,6 @@
         ]
       }
     },
-    "/dashboard/api/threads/{thread_id}/goal": {
-      "get": {
-        "description": "The thread's goal, for someone allowed to read the thread; None without Goal mode.",
-        "operationId": "api_get_thread_goal_dashboard_api_threads__thread_id__goal_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "thread_id",
-            "required": true,
-            "schema": {
-              "title": "Thread Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/Goal"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Api Get Thread Goal Dashboard Api Threads  Thread Id  Goal Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "Api Get Thread Goal",
-        "tags": [
-          "dashboard",
-          "threads",
-          "threads"
-        ]
-      },
-      "patch": {
-        "description": "Rewrite the goal's objective, for the thread's owner: the agent is interrupted and told.",
-        "operationId": "api_edit_thread_goal_dashboard_api_threads__thread_id__goal_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "thread_id",
-            "required": true,
-            "schema": {
-              "title": "Thread Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GoalEdit"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/Goal"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Api Edit Thread Goal Dashboard Api Threads  Thread Id  Goal Patch"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "Api Edit Thread Goal",
-        "tags": [
-          "dashboard",
-          "threads",
-          "threads"
-        ]
-      }
-    },
     "/dashboard/api/threads/{thread_id}/history": {
       "post": {
         "operationId": "api_thread_history_dashboard_api_threads__thread_id__history_post",
@@ -28305,6 +28425,126 @@
         "tags": [
           "dashboard",
           "threads"
+        ]
+      }
+    },
+    "/dashboard/api/trace-flight/best": {
+      "get": {
+        "operationId": "api_best_dashboard_api_trace_flight_best_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BestView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Api Best Dashboard Api Trace Flight Best Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Best",
+        "tags": [
+          "dashboard",
+          "trace-flight"
+        ]
+      }
+    },
+    "/dashboard/api/trace-flight/leaderboard": {
+      "get": {
+        "operationId": "api_leaderboard_dashboard_api_trace_flight_leaderboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LeaderRowView"
+                  },
+                  "title": "Response Api Leaderboard Dashboard Api Trace Flight Leaderboard Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Leaderboard",
+        "tags": [
+          "dashboard",
+          "trace-flight"
+        ]
+      }
+    },
+    "/dashboard/api/trace-flight/runs": {
+      "post": {
+        "operationId": "api_submit_run_dashboard_api_trace_flight_runs_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResultView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Submit Run",
+        "tags": [
+          "dashboard",
+          "trace-flight"
+        ]
+      }
+    },
+    "/dashboard/api/trace-flight/season": {
+      "get": {
+        "operationId": "api_season_dashboard_api_trace_flight_season_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Season",
+        "tags": [
+          "dashboard",
+          "trace-flight"
         ]
       }
     },

@@ -261,7 +261,6 @@ export interface SessionUser {
   login: string
   auth_provider?: "github" | "langsmith"
   github_login?: string | null
-  requires_github_link?: boolean
   /** How the server labels this user's messages; empty until they have a name. */
   display_name?: string
   email: string | null
@@ -273,6 +272,8 @@ export interface SessionUser {
   base_orgs?: Array<string>
   /** Mirrors the user's preference: what Enter does while a run is live. */
   follow_up_behavior?: FollowUpBehavior
+  /** Mirrors the user's preference: open Changes when a run that edited files finishes. */
+  auto_show_changes?: boolean
   /** Whether the server records new threads into the transcript log. */
   transcript_recording?: boolean
   slack_oauth_enabled?: boolean
@@ -346,7 +347,6 @@ export interface OptionsPayload {
 
 export interface Profile {
   experimental_background_callbacks?: boolean | null
-  experimental_live_activity?: boolean | null
   login?: string
   email?: string
   default_repo?: string | null
@@ -356,10 +356,7 @@ export interface Profile {
   auto_fix_ci?: boolean
   auto_human_review_enabled?: boolean
   concierge_mode?: boolean
-  pr_failure_reactions?: boolean
-  goal_mode?: boolean
   experimental_conditional_approval?: boolean
-  experimental_memory?: boolean
   experimental_classify?: boolean
   draft_prs?: boolean
   review_draft_prs?: boolean | null
@@ -370,7 +367,6 @@ export interface Profile {
 
 export interface ProfileUpdate {
   experimental_background_callbacks?: boolean | null
-  experimental_live_activity?: boolean | null
   default_repo?: string | null
   workspace_default_repos?: Record<string, string>
   base_branch?: string | null
@@ -378,10 +374,7 @@ export interface ProfileUpdate {
   auto_fix_ci?: boolean
   auto_human_review_enabled?: boolean
   concierge_mode?: boolean
-  pr_failure_reactions?: boolean
-  goal_mode?: boolean
   experimental_conditional_approval?: boolean
-  experimental_memory?: boolean
   experimental_classify?: boolean
   draft_prs?: boolean
   review_draft_prs?: boolean | null
@@ -415,10 +408,29 @@ export interface AllowedSlackBotEntry {
   image_url: string
 }
 
+/** An app reviews follow, by id, pinned to the release (an app version id) an admin approved. */
+export interface AppRelease {
+  app: string
+  release: string
+}
+
+/** An app in everyone's web UI, and the repositories it reads for each person who can. */
+export interface FeaturedApp extends AppRelease {
+  repositories?: Array<string>
+}
+
 /** The settings record at either tier: the instance, or what a workspace's runs see. */
 export interface WorkspaceSettings {
   review_draft_prs: boolean
   review_trace_links: boolean
+  /** The apps whose review step reviews of private repositories follow, each at the release an admin approved. */
+  review_apps?: Array<AppRelease> | null
+  /** Instance only: listed apps added to everyone's web UI, each at the release an admin approved. */
+  featured_apps?: Array<FeaturedApp> | null
+  /** Instance only: the domains, each with its subdomains, a review's browser may sign in to. */
+  review_browser_domains?: Array<string> | null
+  /** Instance only: the `<connection>/<tool>` that signs a review's browser in. */
+  review_browser_session_tool?: string | null
   /** Tri-state adaptive model routing toggle; threads may override this workspace default. */
   model_routing_enabled?: boolean | null
   /** Tri-state LLM Gateway toggle; null inherits the LANGSMITH_GATEWAY_ENABLED default. */
@@ -807,6 +819,7 @@ export interface UserPreferences {
   default_visibility: ThreadVisibility
   default_workspace: string | null
   follow_up_behavior: FollowUpBehavior
+  auto_show_changes: boolean
 }
 
 export interface Skill {
@@ -2182,6 +2195,53 @@ export const api = {
       body: JSON.stringify(body),
     }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+  traceFlightSeason: (signal?: AbortSignal) =>
+    request<TraceFlightSeason>("/trace-flight/season", { signal }),
+  traceFlightBest: () => request<TraceFlightBest | null>("/trace-flight/best"),
+  submitTraceFlightRun: (body: TraceFlightSubmission) =>
+    request<TraceFlightResult>("/trace-flight/runs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+}
+
+/** The open Trace Flight season: the rules and the course every run is played on. */
+export interface TraceFlightSeason {
+  seasonId: string
+  rulesVersion: number
+  seed: number
+}
+
+/** Your best run this season, as inputs the game replays into your trace. */
+export interface TraceFlightBest {
+  seed: number
+  endTick: number
+  endReason: string
+  flapDeltas: Array<number>
+  score: number
+}
+
+export interface TraceFlightRow {
+  rank: number
+  name: string
+  score: number
+  you: boolean
+}
+
+export interface TraceFlightSubmission {
+  seasonId: string
+  rulesVersion: number
+  endTick: number
+  endReason: string
+  flapDeltas: ReadonlyArray<number>
+}
+
+/** The score is the server's replay of the run, never one the client sent. */
+export interface TraceFlightResult {
+  score: number
+  previousBest: number | null
+  newBest: boolean
+  board: Array<TraceFlightRow>
 }
 
 export function loginUrl(redirectTo?: string): string {

@@ -251,9 +251,16 @@ async def auth_desktop_exchange(body: DesktopHandoffExchange) -> dict[str, objec
 async def auth_logout(request: Request) -> Response:
     session = optional_session(request)
     if session is not None:
-        principal = DashboardPrincipal.from_session(session)
-        if principal.provider == "langsmith":
-            await LangSmithLogin().logout(principal.subject)
+        try:
+            principal = DashboardPrincipal.from_session(session)
+            key = principal.subject
+            if principal.provider == "github":
+                user = await principal.user()
+                if user is not None:
+                    key = f"user:{user.id}"
+            await LangSmithLogin().logout(key)
+        except Exception:
+            logger.warning("Could not revoke LangSmith grant during logout", exc_info=True)
     response = Response(status_code=204)
     secure, samesite = cookie_security()
     response.delete_cookie(COOKIE_NAME, path="/", samesite=samesite, secure=secure)
@@ -296,11 +303,7 @@ async def me(response: Response, session: dict[str, Any] = SESSION_DEP) -> dict[
         "login": principal.subject,
         "auth_provider": principal.provider,
         "github_login": principal.github_login,
-        "requires_github_link": (
-            await user.requires_github_link()
-            if principal.provider == "langsmith" and user is not None
-            else False
-        ),
+        "requires_github_link": False,
         "display_name": user.display_name if user else "",
         "email": session.get("email") or (user.email or None if user else None),
         "avatar_url": (user.avatar_url if user else None) or session.get("avatar_url"),
@@ -310,10 +313,11 @@ async def me(response: Response, session: dict[str, Any] = SESSION_DEP) -> dict[
         # The web UI shows these organizations' repositories by name alone; plugins never see the list.
         "base_orgs": list(allowed_orgs()),
         "follow_up_behavior": preferences["follow_up_behavior"],
+        "auto_show_changes": preferences["auto_show_changes"],
         # Whether new threads are stamped `transcript: v2` (`openswe/threads/runs.py`),
         # so the thread the UI seeds after `run.start` can carry the same stamp.
         "transcript_recording": True,
-        "slack_oauth_enabled": principal.github_login is not None and slack_oauth_configured(),
+        "slack_oauth_enabled": slack_oauth_configured(),
         "api_base_url": PublicOrigin.dashboard_api_base_url(),
         "slack_base_url": slack_base_url(),
         "build_info": build_info(),
@@ -323,10 +327,16 @@ async def me(response: Response, session: dict[str, Any] = SESSION_DEP) -> dict[
 @router.get("/auth/langsmith/login")
 async def auth_langsmith_login(
     redirect_to: str | None = None,
+    connect_slack: bool = False,
     desktop: bool = False,
     desktop_handoff: str | None = None,
     desktop_port: int | None = Query(default=None, ge=1024, le=65535),
 ) -> RedirectResponse:
+    if connect_slack:
+        if desktop or desktop_handoff is not None or desktop_port is not None:
+            raise HTTPException(400, "Slack onboarding requires browser sign-in")
+        if not slack_oauth_configured():
+            raise HTTPException(503, "Slack OAuth is not configured")
     challenge = valid_handoff_challenge(desktop_handoff)
     if (challenge is None) != (desktop_port is None):
         raise HTTPException(
@@ -339,6 +349,7 @@ async def auth_langsmith_login(
         nonce=nonce,
         handoff_challenge=challenge,
         handoff_port=desktop_port,
+        connect_slack=connect_slack,
     )
     response = RedirectResponse(url, status_code=302)
     set_state_cookie(response, nonce, path=LANGSMITH_STATE_COOKIE_PATH)
@@ -391,10 +402,10 @@ async def auth_langsmith_callback(
             provider="langsmith",
             langsmith_subject=account.sub,
         )
-        response = RedirectResponse(
-            sanitize_redirect_to(payload.get("redirect_to")) or frontend_base_url(),
-            status_code=302,
-        )
+        redirect_to = sanitize_redirect_to(payload.get("redirect_to")) or frontend_base_url()
+        if payload.get("connect_slack") is True:
+            redirect_to = PublicOrigin.dashboard_api_base_url() + "/dashboard/api/slack/login"
+        response = RedirectResponse(redirect_to, status_code=302)
         set_session_cookie(response, session_jwt)
         clear_state_cookie(response, path=LANGSMITH_STATE_COOKIE_PATH)
         return response

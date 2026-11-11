@@ -9,7 +9,7 @@ reference ``users.id`` instead of a provider-specific handle.
 """
 
 import logging
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, Self
 from uuid import UUID, uuid7
@@ -171,6 +171,17 @@ class User(Base):
     async def get(cls, user_id: UUID) -> Self | None:
         async with postgres.session() as session:
             return await cls._load(session, user_id)
+
+    @classmethod
+    async def for_ids(cls, user_ids: Collection[UUID]) -> dict[UUID, Self]:
+        """The people with these ids, identities loaded; ids with no row are left out."""
+        if not user_ids:
+            return {}
+        async with postgres.session() as session:
+            users = await session.scalars(
+                cls._with_identities(select(cls)).where(cls.id.in_(user_ids))
+            )
+            return {user.id: user for user in users}
 
     @classmethod
     async def for_session(cls, user_id: UUID | None, github_login: str) -> Self | None:
@@ -517,6 +528,19 @@ class User(Base):
         return await cls.for_login("github", handle)
 
     @classmethod
+    async def automation_creator(cls, record: Mapping[str, object]) -> Self | None:
+        """Who created an automation: by stable user id, or by login for rows saved before it."""
+        if user_id := record.get("created_by_user_id"):
+            try:
+                return await cls.get(UUID(str(user_id)))
+            except ValueError:
+                return None
+        login = record.get("created_by")
+        if not isinstance(login, str) or not login.strip():
+            return None
+        return await cls.for_login("github", login.strip())
+
+    @classmethod
     async def for_login(cls, provider: Provider, login: str) -> Self | None:
         """The person behind a mutable handle; the most recently seen one wins."""
         if login.startswith("user:"):
@@ -589,7 +613,7 @@ class User(Base):
         email: str = "",
         team_id: str = "",
     ) -> Self:
-        """Attach another provider account to this person, taking it over if needed."""
+        """Attach a provider account without moving another person's Slack identity."""
         if provider == "langsmith" or (
             provider == "github" and any(i.provider == "langsmith" for i in self.identities)
         ):
@@ -604,7 +628,7 @@ class User(Base):
                 email=email,
                 team_id=team_id,
             )
-            await session.execute(
+            result = await session.execute(
                 upsert.on_conflict_do_update(
                     index_elements=[UserIdentity.provider, UserIdentity.external_id],
                     set_={
@@ -612,8 +636,13 @@ class User(Base):
                         "last_seen_at": func.clock_timestamp(),
                         **_known(login=login, email=email, team_id=team_id),
                     },
-                )
+                    where=UserIdentity.user_id == self.id if provider == "slack" else None,
+                ).returning(UserIdentity.user_id)
             )
+            if result.scalar_one_or_none() is None:
+                raise AccountConflict(
+                    "This Slack account is already linked to another Robin account"
+                )
             await session.flush()
             stored = await cls._load(session, self.id)
         if stored is None:

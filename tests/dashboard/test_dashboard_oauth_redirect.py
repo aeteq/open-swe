@@ -27,7 +27,7 @@ from openswe.utils.dashboard_links import PUBLIC_ORIGIN_HEADER
 
 @pytest.mark.parametrize(
     ("unavailable", "status"),
-    [(False, 401), (True, 200)],
+    [(False, 401), (True, 500)],
 )
 def test_me_reauthenticates_only_a_confirmed_missing_account(
     monkeypatch: pytest.MonkeyPatch, unavailable: bool, status: int
@@ -44,11 +44,11 @@ def test_me_reauthenticates_only_a_confirmed_missing_account(
     monkeypatch.setattr(
         auth_routes,
         "get_user_preferences",
-        AsyncMock(return_value={"follow_up_behavior": "queue"}),
+        AsyncMock(return_value={"follow_up_behavior": "queue", "auto_show_changes": True}),
     )
     app = FastAPI()
     app.include_router(routes.router)
-    with TestClient(app) as client:
+    with TestClient(app, raise_server_exceptions=False) as client:
         client.cookies.set(
             COOKIE_NAME,
             issue_session(login="alice", email=None, avatar_url=None, user_id=str(User().id)),
@@ -58,6 +58,38 @@ def test_me_reauthenticates_only_a_confirmed_missing_account(
     assert response.status_code == status
     if status == 200:
         assert response.json()["login"] == "alice"
+
+
+@pytest.mark.parametrize("failure", ["lookup", "revocation"])
+def test_logout_clears_cookie_when_database_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    monkeypatch.setenv("DASHBOARD_JWT_SECRET", "test-session-signing-key-at-least-32-bytes")
+    monkeypatch.setattr(
+        DashboardPrincipal,
+        "user",
+        AsyncMock(
+            return_value=User(),
+            side_effect=RuntimeError("database unavailable") if failure == "lookup" else None,
+        ),
+    )
+    monkeypatch.setattr(
+        auth_routes.LangSmithLogin,
+        "logout",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+    app = FastAPI()
+    app.include_router(auth_routes.router, prefix="/dashboard/api")
+    with TestClient(app) as client:
+        client.cookies.set(
+            COOKIE_NAME,
+            issue_session(login="alice", email=None, avatar_url=None, user_id=str(User().id)),
+            domain="testserver.local",
+            path="/",
+        )
+        response = client.post("/dashboard/api/auth/logout")
+        assert response.status_code == 204
+        assert COOKIE_NAME not in client.cookies
 
 
 @pytest.mark.parametrize("provider", ["github", "langsmith"])
@@ -75,7 +107,7 @@ async def test_me_returns_current_avatar_on_first_load(
     monkeypatch.setattr(
         auth_routes,
         "get_user_preferences",
-        AsyncMock(return_value={"follow_up_behavior": "queue"}),
+        AsyncMock(return_value={"follow_up_behavior": "queue", "auto_show_changes": True}),
     )
     session = {
         "sub": f"user:{user.id}",

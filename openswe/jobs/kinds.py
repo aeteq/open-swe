@@ -27,8 +27,10 @@ from openswe.background_tasks import CRON_KIND as BACKGROUND_TASKS
 from openswe.background_tasks import monitor_background_tasks
 from openswe.event_claims import PURGE_JOB as EVENT_CLAIM_PURGE
 from openswe.event_claims import PURGE_SCHEDULE as EVENT_CLAIM_SCHEDULE
+from openswe.github.app import get_github_app_installation_token
 from openswe.github.branch_config import REFRESH_JOB as REQUIRED_CHECK_REFRESH
 from openswe.github.branch_config import refresh_required_checks
+from openswe.github.checks import REVIEW_CHECK_TIMEOUT_JOB
 from openswe.github.quota import SAMPLE_JOB as GITHUB_QUOTA_SAMPLE
 from openswe.github.quota import SAMPLE_SCHEDULE as GITHUB_QUOTA_SCHEDULE
 from openswe.github.quota import InstallationQuota
@@ -40,9 +42,6 @@ from openswe.jobs import queue
 from openswe.jobs.cron_import import import_agent_server_crons
 from openswe.jobs.queue import Job
 from openswe.jobs.worker import WORKER, JobWorker
-from openswe.memories.curator import WAKE_JOB as CURATOR_WAKE
-from openswe.memories.curator import WAKE_SCHEDULE as CURATOR_SCHEDULE
-from openswe.memories.curator import WorkspaceCurator
 from openswe.merge_queue.controller import start_queue
 from openswe.merge_queue.runtime import JOB_KIND as MERGE_QUEUE_RECONCILE
 from openswe.merge_queue.runtime import reconcile_queue
@@ -58,6 +57,12 @@ from openswe.plugins.records import (
 
 __all__ = ["WORKER"]
 from openswe.reconcile import reconcile_stale_runs
+from openswe.review.findings import get_thread_metadata
+from openswe.review.publish import (
+    ReviewCheckResult,
+    TrackedReviewCheck,
+    settle_review_check_run,
+)
 from openswe.review_guide.sessions import ARCHIVE_JOB as REVIEW_GUIDE_ARCHIVE
 from openswe.review_guide.sessions import ReviewGuideSession
 from openswe.sandboxes.retry import (
@@ -70,6 +75,9 @@ from openswe.session_cost import run_session_cost_refresh
 from openswe.slack.channel_options import DIRECTORY_JOB as SLACK_CHANNEL_DIRECTORY
 from openswe.slack.channel_options import ensure_directory_sync, sync_directory
 from openswe.slack.mda_forwarding import RETIRED_SWEEP_JOB as SLACK_LOST_REQUESTS
+from openswe.slack.tools.search import PURGE_JOB as SLACK_SEARCH_GRANT_PURGE
+from openswe.slack.tools.search import PURGE_SCHEDULE as SLACK_SEARCH_GRANT_SCHEDULE
+from openswe.slack.tools.search import SlackSearchGrant
 from openswe.threads.index_import import import_agent_server_threads
 from openswe.threads.stalls import fail_stalled_runs
 from openswe.threads.status import RECONCILE_JOB as THREAD_STATUS_RECONCILE
@@ -223,6 +231,32 @@ async def _thread_status_reconcile(_job: Job) -> object:
     }
 
 
+@WORKER.register(REVIEW_CHECK_TIMEOUT_JOB)
+async def _review_check_timeout(job: Job) -> None:
+    thread_id, owner, repo = _text(job, "thread_id"), _text(job, "owner"), _text(job, "repo")
+    check_run_id = job.payload.get("check_run_id")
+    if thread_id is None or owner is None or repo is None:
+        return
+    tracked = TrackedReviewCheck.model_validate(await get_thread_metadata(thread_id))
+    if tracked.review_check_run_id != check_run_id:
+        return
+    token = await get_github_app_installation_token()
+    if not token:
+        raise RuntimeError("No GitHub token to time out the review check")
+    # Neutral: a hung reviewer is an Open SWE problem, not the PR's.
+    result = tracked.review_check_pending_result or ReviewCheckResult(
+        conclusion="neutral",
+        title="Review timed out",
+        summary="Robin did not finish reviewing within an hour. "
+        "Push a commit or re-request a review from Robin to run it again.",
+    )
+    await settle_review_check_run(
+        thread_id=thread_id, owner=owner, repo=repo, token=token, **result.model_dump()
+    )
+    if (await get_thread_metadata(thread_id)).get("review_check_run_id") == check_run_id:
+        raise RuntimeError("Could not settle the timed-out review check")
+
+
 @WORKER.register(REVIEW_GUIDE_ARCHIVE)
 async def _review_guide_archive(job: Job) -> None:
     thread_id, head_sha = _text(job, "thread_id"), _text(job, "head_sha")
@@ -249,7 +283,11 @@ async def _tool_sets_purge(_job: Job) -> None:
 
 
 WORKER.register(EVENT_CLAIM_PURGE)(event_claims.purge_lapsed)
-WORKER.register(CURATOR_WAKE)(WorkspaceCurator.wake_pending)
+
+
+@WORKER.register(SLACK_SEARCH_GRANT_PURGE)
+async def _slack_search_grant_purge(_job: Job) -> None:
+    logger.info("Slack search grants purged", extra={"purged": await SlackSearchGrant.purge()})
 
 
 @WORKER.register(ATTACHMENT_SWEEP_JOB)
@@ -299,7 +337,11 @@ async def start_jobs() -> None:
         ),
         lambda: queue.schedule(TOOL_SETS_PURGE, cron=TOOL_SETS_SCHEDULE, key=TOOL_SETS_PURGE),
         lambda: queue.schedule(EVENT_CLAIM_PURGE, cron=EVENT_CLAIM_SCHEDULE, key=EVENT_CLAIM_PURGE),
-        lambda: queue.schedule(CURATOR_WAKE, cron=CURATOR_SCHEDULE, key=CURATOR_WAKE),
+        lambda: queue.schedule(
+            SLACK_SEARCH_GRANT_PURGE,
+            cron=SLACK_SEARCH_GRANT_SCHEDULE,
+            key=SLACK_SEARCH_GRANT_PURGE,
+        ),
         lambda: queue.schedule(
             GITHUB_QUOTA_SAMPLE, cron=GITHUB_QUOTA_SCHEDULE, key=GITHUB_QUOTA_SAMPLE
         ),

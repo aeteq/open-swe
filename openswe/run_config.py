@@ -23,7 +23,8 @@ trigger; a reviewer run has no ``agent_model_id`` and a Slack run has no
 
 import logging
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Self
+from uuid import UUID
 
 from langgraph.config import get_config
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
@@ -33,6 +34,9 @@ from openswe.invocation import resolve_invocation_id
 from openswe.openai_responses.client_tools import ClientToolSpec
 from openswe.page_commands.offers import PageSession
 from openswe.source_context import GitHubIssueRef, LinearIssueRef, NotionPageRef, SlackThreadRef
+
+if TYPE_CHECKING:
+    from openswe.users import User
 
 logger = logging.getLogger(__name__)
 
@@ -202,13 +206,14 @@ class RunConfig(BaseModel):
     admin_thread: bool | None = None
     slack_ask: bool | None = None
     slack_kickoff_eligible: bool | None = None
-    # The run keeps a live activity message in its Slack thread, which its final reply replaces.
-    slack_live_activity: bool | None = None
     # First run of a thread broken out from another Slack thread.
     slack_breakout: bool | None = None
     # Slash command callback the `/oswe` acknowledgement is replaced through.
     slack_ask_response_url: str | None = None
     slack_action_token: str | None = None
+    # The Slack message whose kept search grant this run may use. Only the turn that
+    # message starts sets it; runs that copy `slack_thread` later don't.
+    slack_search_message_ts: str | None = None
     # `@Open SWE /btw`: the Slack thread the one public answer is posted in.
     slack_by_the_way_thread_ts: str | None = None
     slack_by_the_way_message_ts: str | None = None
@@ -226,7 +231,6 @@ class RunConfig(BaseModel):
     watch_key: str | None = None
     schedule_id: str | None = None
     background_task_completion: bool | None = None
-    goal_continuation: bool | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -410,3 +414,25 @@ class RunConfig(BaseModel):
             if isinstance(value, str) and value.strip():
                 return value.strip()
         return None
+
+    async def automation_creator(self) -> User | None:
+        """Who created the automation this run executes on its own thread, to credit its spend to.
+
+        Only for attribution: an automation run never acts as, or with the credentials
+        of, its creator.
+        """
+        from openswe.schedules.store import get_agent_schedule, schedule_thread_metadata
+        from openswe.users import User
+
+        if not self.schedule_id:
+            return None
+        metadata = await schedule_thread_metadata(self)
+        if metadata is None or metadata.get("schedule_id") != self.schedule_id:
+            return None
+        if creator_id := metadata.get("automation_creator_user_id"):
+            try:
+                return await User.get(UUID(str(creator_id)))
+            except ValueError:
+                return None
+        record = await get_agent_schedule(self.schedule_id)
+        return await User.automation_creator(record) if record is not None else None

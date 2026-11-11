@@ -7,12 +7,17 @@ from openswe.slack.client import (
     get_slack_permalink,
     post_slack_thread_reply,
 )
+from openswe.slack.links import SlackLink
 from openswe.slack.request import SlackRequest
 from openswe.utils.dashboard_links import dashboard_thread_url
 
 
-def breakout_root_blocks(text: str, dashboard_url: str | None) -> list[Block]:
+def breakout_root_blocks(
+    text: str, dashboard_url: str | None, details: str | None = None
+) -> list[Block]:
     blocks: list[Block] = [section(text)]
+    if details:
+        blocks.append({**section(details), "expand": False})
     footer = format_slack_web_link_footer(dashboard_url)
     if footer:
         blocks.append(context(footer))
@@ -35,7 +40,7 @@ async def mark_broken_out(
     """Link the breakout thread from the source thread."""
     permalink = (
         await get_slack_permalink(breakout_channel_id, breakout_ts)
-        or f"https://slack.com/archives/{breakout_channel_id}/p{breakout_ts.replace('.', '')}"
+        or SlackLink(breakout_channel_id, breakout_ts).url
     )
     where = "" if breakout_channel_id == channel_id else f" in <#{breakout_channel_id}>"
     text = f"Continued in <{permalink}|the breakout thread>{where}."

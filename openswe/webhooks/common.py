@@ -24,6 +24,7 @@ from openswe.dashboard.agent_overrides import (
     get_profile_default_repo,
     resolve_agent_model_id,  # noqa: F401
 )
+from openswe.dashboard.langsmith_login import LangSmithLogin
 from openswe.dashboard.oauth import build_settings_url
 from openswe.dashboard.options import (
     default_vision_model_pair,
@@ -42,6 +43,8 @@ from openswe.github.app import (
     get_github_app_installation_token_with_expiry,
 )
 from openswe.github.checks import (  # noqa: F401
+    REVIEW_CHECK_TIMEOUT,
+    REVIEW_CHECK_TIMEOUT_JOB,
     complete_review_check_run,
     create_review_check_run,
 )
@@ -66,6 +69,7 @@ from openswe.github.thread_token import (
 )
 from openswe.github.token_scope import GITHUB_TOKEN_REPOSITORIES_KEY, event_token_repositories
 from openswe.input_messages import PersonIdentity
+from openswe.jobs import queue
 from openswe.prompts import prompt
 from openswe.review.enabled_repos import is_review_repo_enabled
 from openswe.review.findings import (
@@ -141,6 +145,7 @@ from openswe.slack.records import (  # noqa: F401
 from openswe.slack.stop import process_agent_session_stopped
 from openswe.source_context import SourceContext
 from openswe.threads.creation import create_thread, ensure_titled_thread
+from openswe.threads.identity import ThreadIdentity
 from openswe.threads.summary import (
     SLACK_BOT_TRIGGER_KIND,
     TRIGGERING_BOT_KEY,
@@ -531,6 +536,7 @@ async def upsert_agent_thread_metadata(
     owner_type: str = "user",
     unlisted: bool = False,
     token_repositories: Sequence[str] | None = None,
+    identity: ThreadIdentity | None = None,
 ) -> bool:
     """Persist source/participant metadata so the dashboard can surface non-dashboard threads.
 
@@ -605,13 +611,17 @@ async def upsert_agent_thread_metadata(
             != (expected_bot.team_id, expected_bot.triggering_bot_id)
         ):
             return False
-    sender_login = github_login or await User.login_for_email(user_email) or ""
+    sender_login = (
+        identity.github_login or ""
+        if identity is not None
+        else github_login or await User.login_for_email(user_email) or ""
+    )
     slack_ids = set(slack_participant_user_ids)
     triggering_slack = source_context.slack_thread if source_context else None
     if triggering_slack and triggering_slack.triggering_user_id:
         slack_ids.add(triggering_slack.triggering_user_id)
     slack_logins = await asyncio.gather(*(User.login_for_slack(user_id) for user_id in slack_ids))
-    people: list[PersonIdentity] = []
+    people: list[PersonIdentity] = [identity.person] if identity is not None else []
     for user_id, login in zip(slack_ids, slack_logins, strict=True):
         person: PersonIdentity = {"id": f"slack:{user_id}"}
         if triggering_slack and user_id == triggering_slack.triggering_user_id:
@@ -621,7 +631,10 @@ async def upsert_agent_thread_metadata(
         people.append(person)
     metadata.update(
         await participant_metadata(
-            existing_meta, login=sender_login, email=user_email, people=people
+            existing_meta,
+            login=sender_login,
+            email=None if identity is not None else user_email,
+            people=people,
         )
     )
     # The context that opened the thread identifies it; later messages arrive
@@ -738,8 +751,7 @@ async def get_slack_repo_config(
     Priority, the first two explicit and the rest defaults:
         1. Repo carried over from the existing Slack thread's metadata.
         2. A ``repo:owner/name`` token in the channel's topic/purpose.
-        3. The triggering user's dashboard ``default_repo`` (if they have a
-           profile and their Slack email maps to a known GitHub login).
+        3. The explicitly linked Slack user's dashboard ``default_repo``.
         4. The default repo of the workspace this channel is bound to.
         5. ``SLACK_REPO_*`` env defaults.
 
@@ -791,13 +803,7 @@ async def get_slack_repo_config(
 
     if not repo_config and slack_user_id:
         try:
-            slack_user = await get_slack_user_info(slack_user_id)
-            slack_email = (
-                (slack_user or {}).get("profile", {}).get("email")
-                if isinstance(slack_user, dict)
-                else None
-            )
-            profile_repo = await get_profile_default_repo(await User.login_for_email(slack_email))
+            profile_repo = await get_profile_default_repo(await User.login_for_slack(slack_user_id))
             if profile_repo:
                 logger.info(
                     "Applying dashboard default_repo for Slack user %s: %s/%s",
@@ -1002,26 +1008,25 @@ async def post_account_link_prompt(
     reason: AccountLinkReason = "unlinked",
     agent_thread_id: str | None = None,
     ephemeral: bool = False,
+    langsmith: bool = False,
 ) -> None:
-    """Prompt a Slack user to connect their account via the dashboard.
-
-    ``reason`` is ``"unlinked"`` (never signed in with GitHub) or ``"revoked"``
-    (signed in before, but the stored GitHub authorization is no longer usable).
-    Open SWE opens PRs as the triggering user, so it cannot start until the user
-    has signed in with GitHub and connected their Slack account in the dashboard.
-
-    Posts a plain, token-free dashboard link as a visible threaded reply. The
-    link carries no per-user identity, so it's safe to show in a shared channel:
-    the user signs in with GitHub from their own session and connects Slack via
-    verified OIDC on the settings page.
-    """
-    settings_url = build_settings_url()
+    """Prompt a Slack user with a token-free, verified account-onboarding link."""
+    settings_url = LangSmithLogin.slack_onboarding_url() if langsmith else build_settings_url()
     if not settings_url:
         logger.debug(
             "Dashboard settings URL unavailable (DASHBOARD_BASE_URL unset); skipping prompt"
         )
         return
-    if reason == "revoked":
+    if langsmith:
+        text = (
+            "🔐 Your LangSmith sign-in needs to be renewed. "
+            if reason == "revoked"
+            else "👋 Sign in with LangSmith to chat with Robin. "
+        ) + (
+            f"<{settings_url}|Sign in with LangSmith> and follow the prompts to link Slack, "
+            "then tag me again. GitHub is optional and only needed for coding features."
+        )
+    elif reason == "revoked":
         text = (
             "🔐 Your GitHub sign-in is no longer valid, so I can't resolve your GitHub "
             f"account. Re-connect it in <{settings_url}|your Jarvis settings>, then tag me again."
@@ -1291,6 +1296,17 @@ async def track_review_check_run(
             "superseded_review_check_run_ids": unsettled,
         },
     )
+    try:
+        await queue.schedule(
+            REVIEW_CHECK_TIMEOUT_JOB,
+            {"thread_id": thread_id, "owner": owner, "repo": repo, "check_run_id": check_run_id},
+            due_at=datetime.now(UTC) + REVIEW_CHECK_TIMEOUT,
+            key=f"{REVIEW_CHECK_TIMEOUT_JOB}:{thread_id}",
+        )
+    except Exception:
+        logger.exception(
+            "Could not schedule the review check timeout", extra={"thread_id": thread_id}
+        )
 
 
 async def build_reviewer_configurable(

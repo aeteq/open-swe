@@ -42,6 +42,15 @@ export interface PluginManifest {
   description: string
   sidebar: { label: string; icon: SidebarIcon }
   permissions: Array<PluginPermission>
+  /** What reviews do for the app in workspaces that add it to them. */
+  review?: ReviewStep | null
+}
+
+/** An app's step in pull request reviews: instructions, what it writes, and a browser. */
+export interface ReviewStep {
+  instructions: string
+  writes: Array<string>
+  browser: boolean
 }
 
 /** One immutable build of an app. */
@@ -77,6 +86,8 @@ export interface InstalledPlugin {
   /** The repositories the viewer shared with it. */
   repositories: Array<string>
   installed_at: string | null
+  /** Whether an admin added the app for everyone, so the viewer can't remove it. */
+  featured?: boolean
 }
 
 /** The app an agent builds in a thread, as it runs beside it. */
@@ -310,6 +321,11 @@ export function roomsStreamUrl(
 export const pluginsApi = {
   list: () => agentsRequest<Array<InstalledPlugin>>("/plugins"),
   apps: () => agentsRequest<Array<App>>("/plugins/apps"),
+  /** A release the viewer may add, of their own app or a listed one. */
+  appVersion: (id: string) =>
+    agentsRequest<AppVersion>(
+      `/plugins/apps/versions/${encodeURIComponent(id)}`
+    ),
   publish: (html: string) =>
     agentsRequest<AppVersion>("/plugins/apps", {
       method: "POST",

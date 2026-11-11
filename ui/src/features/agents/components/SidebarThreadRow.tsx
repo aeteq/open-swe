@@ -9,33 +9,33 @@ import {
   ContextMenuTrigger,
 } from "@langchain/macaw-components/ContextMenu"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@langchain/macaw-components/DropdownMenu"
+import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from "@langchain/macaw-components/HoverCard"
 import type { IconComponent } from "@langchain/macaw-components/Icon"
+import { IconButton } from "@langchain/macaw-components/IconButton"
 import { Spinner } from "@langchain/macaw-components/Spinner"
-import { BookOpenTextIcon } from "@phosphor-icons/react/dist/ssr/BookOpenText"
-import { CalendarBlankIcon } from "@phosphor-icons/react/dist/ssr/CalendarBlank"
-import { ChatCircleIcon } from "@phosphor-icons/react/dist/ssr/ChatCircle"
 import { CheckCircleIcon } from "@phosphor-icons/react/dist/ssr/CheckCircle"
 import { CloudIcon } from "@phosphor-icons/react/dist/ssr/Cloud"
+import { DotsThreeIcon } from "@phosphor-icons/react/dist/ssr/DotsThree"
 import { FolderIcon } from "@phosphor-icons/react/dist/ssr/Folder"
 import { GitMergeIcon } from "@phosphor-icons/react/dist/ssr/GitMerge"
 import { GitPullRequestIcon } from "@phosphor-icons/react/dist/ssr/GitPullRequest"
-import { GithubLogoIcon } from "@phosphor-icons/react/dist/ssr/GithubLogo"
 import { LockIcon } from "@phosphor-icons/react/dist/ssr/Lock"
 import { RobotIcon } from "@phosphor-icons/react/dist/ssr/Robot"
-import { SlackLogoIcon } from "@phosphor-icons/react/dist/ssr/SlackLogo"
-import { TerminalWindowIcon } from "@phosphor-icons/react/dist/ssr/TerminalWindow"
 import { WarningCircleIcon } from "@phosphor-icons/react/dist/ssr/WarningCircle"
 import { Link, useSearch } from "@tanstack/react-router"
 import { useRef, useState } from "react"
-import type { SVGProps } from "react"
 
 import type { PullRequestSnapshot } from "@/features/agents/lib/api"
 import type {
-  AgentSource,
   AgentSubagentSummary,
   AgentThread,
 } from "@/features/agents/lib/types"
@@ -44,6 +44,7 @@ import { DeleteThreadDialog } from "@/features/agents/components/DeleteThreadDia
 import { parsePullRequestReference } from "@/features/reviews/search"
 import { RenameThreadDialog } from "@/features/agents/components/RenameThreadDialog"
 import { ThreadMenuItems } from "@/features/agents/components/ThreadMenuItems"
+import { DropdownMenuItem } from "@/components/MenuItem"
 import { runsOnAMac, useLocalThread } from "@/features/agents/lib/desktopLocal"
 import { useSidebarPrefs } from "@/features/agents/lib/sidebarPrefs"
 import {
@@ -58,63 +59,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 
-/** Phosphor has no Linear or Notion mark; these are the brands' own logos. */
-function brandLogo(path: string) {
-  return function BrandLogoIcon({
-    size = 16,
-    weight: _weight,
-    mirrored: _mirrored,
-    ...props
-  }: SVGProps<SVGSVGElement> & {
-    size?: string | number
-    weight?: unknown
-    mirrored?: boolean
-  }) {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        width={size}
-        height={size}
-        fill="currentColor"
-        {...props}
-      >
-        <path d={path} />
-      </svg>
-    )
-  }
-}
-
-const LinearLogoIcon = brandLogo(
-  "M2.886 4.18A11.982 11.982 0 0 1 11.99 0C18.624 0 24 5.376 24 12.009c0 3.64-1.62 6.903-4.18 9.105L2.887 4.18ZM1.817 5.626l16.556 16.556c-.524.33-1.075.62-1.65.866L.951 7.277c.247-.575.537-1.126.866-1.65ZM.322 9.163l14.515 14.515c-.71.172-1.443.282-2.195.322L0 11.358a12 12 0 0 1 .322-2.195Zm-.17 4.862 9.823 9.824a12.02 12.02 0 0 1-9.824-9.824Z"
-)
-
-const NotionLogoIcon = brandLogo(
-  "M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"
-)
-
 const ICON_SIZE = 14
-
-const SOURCE_META: Record<AgentSource, { icon: IconComponent; label: string }> =
-  {
-    dashboard: { icon: ChatCircleIcon, label: "Started from the dashboard" },
-    github: { icon: GithubLogoIcon, label: "Triggered from GitHub" },
-    slack: { icon: SlackLogoIcon, label: "Triggered from Slack" },
-    linear: { icon: LinearLogoIcon, label: "Triggered from Linear" },
-    notion: { icon: NotionLogoIcon, label: "Triggered from Notion" },
-    schedule: { icon: CalendarBlankIcon, label: "Triggered from a schedule" },
-    claude_code: {
-      icon: TerminalWindowIcon,
-      label: "Mirrored from Claude Code",
-    },
-  }
-
-const THIS_MAC_META = { icon: LaptopRegularIcon, label: "Runs on this Mac" }
-
-function sourceMeta(item: SidebarThreadItem) {
-  if (item.source && item.source !== "dashboard")
-    return SOURCE_META[item.source]
-  return runsOnAMac(item.thread) ? THIS_MAC_META : null
-}
 
 type PrState = NonNullable<AgentThread["pr"]>["state"]
 
@@ -287,34 +232,40 @@ function ErrorIndicator({ label }: { label: string }) {
 function PullRequestIcon({
   state,
   live,
-  className,
 }: {
   state: PrState
   live?: PullRequestSnapshot
-  className?: string
 }) {
-  // Thread metadata records the state the PR had when it was opened; live
-  // truth wins so a merged PR stops rendering as open.
   const meta = PR_STATE_META[live?.state ?? state]
   const Glyph = meta.icon
   return (
-    <span
-      className={cn("relative flex shrink-0", className)}
-      title={meta.label}
-    >
-      <Glyph
-        size={ICON_SIZE}
-        weight="regular"
-        className={meta.className}
-        aria-label={meta.label}
-      />
-      {(live?.state ?? state) !== "draft" && live?.checks === "failing" && (
-        <span
-          className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-error-strong ring-2 ring-surface-level-2"
-          aria-label="Checks failing"
-        />
-      )}
-    </span>
+    <Glyph
+      size={ICON_SIZE}
+      weight="regular"
+      className={cn("shrink-0", meta.className)}
+      aria-label={meta.label}
+    />
+  )
+}
+
+function PullRequestMenuItem({
+  pr,
+  live,
+}: {
+  pr: NonNullable<AgentThread["pr"]>
+  live?: PullRequestSnapshot
+}) {
+  // Thread metadata records the state the PR had when it was opened; live
+  // truth wins so a merged PR stops rendering as open.
+  const meta = PR_STATE_META[live?.state ?? pr.state]
+  const Glyph = meta.icon
+  return (
+    <DropdownMenuItem asChild>
+      <a href={pr.url} target="_blank" rel="noreferrer">
+        <Glyph size={ICON_SIZE} weight="regular" className={meta.className} />
+        {meta.label} #{pr.number}
+      </a>
+    </DropdownMenuItem>
   )
 }
 
@@ -424,6 +375,8 @@ export function SidebarThreadRow({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const menuNavigated = useRef(false)
   const marquee = useTitleMarquee()
   const { prefs, toggleSubagentsCollapsed } = useSidebarPrefs()
   const activeSubagentId =
@@ -460,8 +413,6 @@ export function SidebarThreadRow({
   const rowIsActive =
     (isActive && (!activeSubagent || subagentsCollapsed)) ||
     (Boolean(activeWorkerId) && !workersExpanded)
-  const source = sourceMeta(item)
-  const SourceIcon = source?.icon
   const unread = !item.viewed
   const isDeleting =
     deleteThread.isPending && deleteThread.variables === item.id
@@ -476,7 +427,7 @@ export function SidebarThreadRow({
   }
 
   const handleNavigate = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (contextMenuOpen) {
+    if (contextMenuOpen || moreMenuOpen) {
       event.preventDefault()
       return
     }
@@ -486,7 +437,6 @@ export function SidebarThreadRow({
 
   const rowContent = (
     <>
-      <SidebarRowTitle marquee={marquee} title={item.title} />
       {hasSubagents && (
         <DisclosureCaret
           expanded={!subagentsCollapsed}
@@ -501,31 +451,18 @@ export function SidebarThreadRow({
           onToggle={() => setWorkersExpanded((expanded) => !expanded)}
         />
       )}
+      <SidebarRowTitle marquee={marquee} title={item.title} />
 
-      <span className="flex shrink-0 items-center gap-space-2">
-        {item.status === "error" && <ErrorIndicator label="Thread error" />}
-        {item.reviewPage ? (
-          <BookOpenTextIcon
-            size={ICON_SIZE}
-            weight="regular"
-            className="text-icon-tertiary"
-            aria-label="Pull request review"
-          />
-        ) : (
-          <>
-            {source && SourceIcon && (!item.pr || source === THIS_MAC_META) && (
-              <SourceIcon
-                size={ICON_SIZE}
-                weight="regular"
-                className="text-icon-tertiary"
-                aria-label={source.label}
-              />
-            )}
-            {item.pr && <PullRequestIcon state={item.pr.state} live={live} />}
-          </>
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-end gap-space-2 group-hover/row:invisible group-hover/row:min-w-6",
+          moreMenuOpen && "invisible min-w-6"
         )}
+      >
         {item.status === "running" || item.waitingForDelegatedWork ? (
           <RunningIndicator label="Thread running" />
+        ) : item.status === "error" ? (
+          <ErrorIndicator label="Thread error" />
         ) : unread ? (
           <span
             className="size-2 rounded-full bg-brand"
@@ -568,6 +505,23 @@ export function SidebarThreadRow({
     </Link>
   )
 
+  const menuItems = (menu: "context" | "dropdown") => (
+    <ThreadMenuItems
+      menu={menu}
+      thread={thread}
+      pinned={pinned}
+      archived={archived}
+      isDeleting={isDeleting}
+      onRename={() => setRenameOpen(true)}
+      onTogglePin={onTogglePin}
+      onToggleViewed={() =>
+        setViewed.mutate({ threadId: item.id, viewed: !item.viewed })
+      }
+      onToggleArchived={onToggleArchived}
+      onDelete={() => setDeleteOpen(true)}
+    />
+  )
+
   return (
     <>
       <ContextMenu onOpenChange={setContextMenuOpen}>
@@ -584,23 +538,46 @@ export function SidebarThreadRow({
               trigger={link}
               card={<ThreadHoverCard item={item} live={live} />}
             />
+            <DropdownMenu onOpenChange={setMoreMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <IconButton
+                  icon={DotsThreeIcon}
+                  label="Thread actions"
+                  size="xs"
+                  color="secondary"
+                  variant="plain"
+                  className={cn(
+                    "absolute top-1/2 right-1 -translate-y-1/2 text-tertiary opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-primary focus-visible:opacity-100",
+                    moreMenuOpen && "opacity-100"
+                  )}
+                />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="min-w-[10rem] border-default bg-elevated"
+                onClickCapture={(event) => {
+                  menuNavigated.current = Boolean(
+                    (event.target as HTMLElement).closest("a[href]")
+                  )
+                }}
+                onCloseAutoFocus={(event) => {
+                  if (menuNavigated.current) event.preventDefault()
+                  menuNavigated.current = false
+                }}
+              >
+                {item.pr && (
+                  <>
+                    <PullRequestMenuItem pr={item.pr} live={live} />
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {menuItems("dropdown")}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="min-w-[10rem]">
-          <ThreadMenuItems
-            menu="context"
-            thread={thread}
-            pinned={pinned}
-            archived={archived}
-            isDeleting={isDeleting}
-            onRename={() => setRenameOpen(true)}
-            onTogglePin={onTogglePin}
-            onToggleViewed={() =>
-              setViewed.mutate({ threadId: item.id, viewed: !item.viewed })
-            }
-            onToggleArchived={onToggleArchived}
-            onDelete={() => setDeleteOpen(true)}
-          />
+        <ContextMenuContent className="min-w-[10rem] border-default bg-elevated">
+          {menuItems("context")}
         </ContextMenuContent>
       </ContextMenu>
       {hasSubagents && !subagentsCollapsed && (
@@ -921,7 +898,6 @@ function SidebarTaskWorkerRow({
           depth: 1,
         })}
       >
-        <SidebarRowTitle marquee={marquee} title={worker.title} />
         {subagents.length > 0 && (
           <DisclosureCaret
             expanded={!subagentsCollapsed}
@@ -933,6 +909,7 @@ function SidebarTaskWorkerRow({
             onToggle={() => toggleSubagentsCollapsed(`cloud:${worker.id}`)}
           />
         )}
+        <SidebarRowTitle marquee={marquee} title={worker.title} />
         <span className="flex shrink-0 items-center gap-space-1 text-xxs text-secondary">
           {worker.status === "running" && (
             <RunningIndicator label="Worker running" />

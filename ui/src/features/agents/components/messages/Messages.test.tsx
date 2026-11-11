@@ -74,12 +74,16 @@ describe("Messages", () => {
       />,
       { wrapper }
     )
+    const failedMessage = screen.getByRole("button", {
+      name: "Failed to send · Copy debug details",
+    })
+    expect(failedMessage.textContent).toBe("Failed to send")
+    fireEvent.focus(failedMessage)
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "the message could not be started"
+    )
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: "Failed to send · the message could not be started · Copy debug details",
-        })
-      )
+      fireEvent.click(failedMessage)
     })
     expect(writeText).toHaveBeenCalledWith(
       JSON.stringify(
@@ -169,7 +173,7 @@ describe("Messages", () => {
       name: "View message from Alice in Slack",
     })
     expect(link.getAttribute("href")).toBe(
-      "https://slack.com/archives/C123/p1787165487000034"
+      "/dashboard/api/slack/open?channel=C123&message_ts=1787165487.000034"
     )
     expect(link.getAttribute("target")).toBe("_blank")
     expect(screen.getByRole("img", { name: "Slack" })).toBeTruthy()

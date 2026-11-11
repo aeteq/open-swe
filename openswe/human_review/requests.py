@@ -19,7 +19,6 @@ from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Literal, Self, TypedDict
-from urllib.parse import quote
 from uuid import UUID, uuid7
 
 from pydantic import JsonValue
@@ -266,6 +265,7 @@ class HumanReviewRequest(Base):
     async def card_url(self) -> str:
         """Link to the card even when Slack's permalink lookup is unavailable."""
         from openswe.slack.client import get_slack_permalink
+        from openswe.slack.links import SlackLink
 
         channel, timestamp = self.slack_channel_id, self.slack_message_ts
         if not channel or not timestamp:
@@ -273,7 +273,7 @@ class HumanReviewRequest(Base):
         permalink = await get_slack_permalink(channel, timestamp)
         if permalink:
             return permalink
-        return f"https://app.slack.com/archives/{quote(channel, safe='')}/p{quote(timestamp.replace('.', ''), safe='')}"
+        return SlackLink(channel, timestamp, self.slack_thread_ts).url
 
     @property
     def slack_location(self) -> tuple[str, str] | None:
@@ -701,13 +701,6 @@ class HumanReviewRequest(Base):
                     await row.invalidate(session)
         for row in requests:
             await row.log_changes(before[row.id])
-
-    @classmethod
-    async def withdraw_failure_notice(cls, request_id: UUID, notice: str, previous: object) -> None:
-        """Forget a post's failure notice that never reached its owner, so the next settle retries."""
-        async with cls.locked(request_id) as (_, row):
-            if row is not None and row.run_config.get("posted_failure_notice") == notice:
-                row.run_config = {**row.run_config, "posted_failure_notice": previous}
 
     async def record_pick_message(self, user_id: UUID, message: PickMessage) -> None:
         """Remember the DM that asked ``user_id`` to take their pick, so it can be edited later."""

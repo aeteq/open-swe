@@ -56,7 +56,11 @@ Past it, requests fail with status 429.
   Open SWE keeps every version someone runs, the newest five releases besides, and each thread's newest preview.
 - **An install** is one person adding an app to their sidebar, pinned to a version.
   It moves only when they press **Update**, and a version asking for more permissions waits for them to approve them.
-  Nobody installs for anyone else.
+  An instance admin can add a listed app to everyone's sidebar instead, under **Defaults → Apps for everyone**, approving its permissions for them and naming repositories it reads for each person who can read them on GitHub.
+  Such an install follows the release the admin approves until the person updates it themselves, and they can't remove it while it stays featured.
+  Every install of a featured app, one a person added themselves included, reads the repositories the admin names, and nobody stops sharing those while it's featured.
+  Turned off, or unlisted by its owner, it leaves the sidebars of everyone who never changed it, and Robin stops sharing what it shared; what a person shared stays.
+  The admin approves the permissions it asks for, for everyone, when turning it on and when updating to a release that asks for more.
 - **A preview** is the build an agent runs beside its thread.
   Each preview replaces the one before; it never reaches the sidebar until someone keeps it.
 
@@ -101,6 +105,7 @@ The manifest is a JSON script inside the bundle, read when a version is publishe
 | `sidebar.icon` | One of `puzzle-piece`, `notebook`, `file-text`, `book-open`, `kanban`, `chart-bar`, `chat-circle`, `calendar`, `lightbulb`. |
 | `permissions` | What the plugin may ask for; see below. |
 | `collections` | Optional rules for storage collections, by name: `{ "captures": { "write": "app" } }`; see [Who writes a collection](#who-writes-a-collection). |
+| `review` | Optional work pull request reviews do for the app: `{ "instructions": "…", "writes": ["captures"], "browser": true }`; see [Review steps](#review-steps). |
 
 ### Permissions
 
@@ -323,9 +328,35 @@ Another owner's app of the same name never sees it.
 
 Anyone using the app who may read a scope may change it: write, create and delete its documents, and attach and detach their files.
 A collection the manifest marks `"write": "app"` is written only by the app's own server-side work; people read it, and every change they make, from the frame or straight over HTTP, fails with status 403.
-Robin runs no app code on the server yet, so for now nothing writes such a collection through this API.
+Today that work is the app's [review step](#review-steps): reviews write the collections it names.
 
 A rule binds the app's data as soon as the version that declares it runs: an install still pinned to an older version, or a preview, can't change a collection the newest release marks `app`.
+
+#### Review steps
+
+An app can have pull request reviews do work for it, such as screenshotting a frontend change, by declaring a review step:
+
+```json
+"review": {
+  "instructions": "Screenshot the routes the diff changes on the preview and on the base…",
+  "writes": ["captures"],
+  "browser": true
+}
+```
+
+- `instructions`, at most 8,000 characters, are what the review does for the app, after reviewing the code.
+  Reviews read them inside the app's own block; they can't change the review's rules, add tools, or widen where it writes.
+- `writes` names collections the manifest marks `"write": "app"`, so what a review saves can't be forged or deleted by people.
+  The review saves with `save_app_document`: a document and files from its sandbox as attachments, in the reviewed repository's scope, only under keys starting `pulls/<number>/` of that pull request.
+  A key ending in `/` gets a time-ordered id, so the newest of a prefix reads first.
+  A save keeps its document only once every file is attached.
+  A PNG is kept as a lossless WebP, under the name the review gave it, whenever that is smaller and changes no pixel, so take a file's type from its Blob, not its name.
+  When the pull request closes, merged or not, Robin deletes what reviews saved under its `pulls/<number>/` in these collections, with the files; a document a person created or changed stays, as does anything in the app's other collections.
+- `browser` gives the review the thread's LangSmith browser.
+  The browser never reaches the review's sandbox, and signs in only to the domains an instance admin lists under **Defaults → Review browser**, with the one MCP tool named there; sessions install only on LangSmith sites.
+
+A workspace admin adds apps to reviews in **Settings → Review → Apps in reviews**, or with `manage_review_apps`.
+Reviews follow the release that was newest when the admin added the app, so a later release changes no review until an admin updates it, and only on private repositories, whose previews run only code the organization's members pushed.
 
 ### GitHub
 
