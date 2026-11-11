@@ -12,14 +12,12 @@ sources:
     resource: repo://openswe/completion.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
-  - id: openwiki-source-d0edf7555209b3e6418b5c5f
-    resource: repo://openswe/github/routes.py
+  - id: openwiki-source-657c0da6093807548cc5e23d
+    resource: repo://openswe/github/channel.py
   - id: openwiki-source-9ad7888a549990068f28dbdc
     resource: repo://openswe/github/webhook.py
   - id: openwiki-source-836966ba5e0c4d710801c9a9
     resource: repo://openswe/input_messages.py
-  - id: openwiki-source-ab57de9770aafc1c1c0da3e6
-    resource: repo://openswe/linear/channel.py
   - id: openwiki-source-8150cb2d41bed45b1f3b10a4
     resource: repo://openswe/linear/session.py
   - id: openwiki-source-8a63971e6f57fbbd7583054b
@@ -30,14 +28,12 @@ sources:
     resource: repo://openswe/slack/webhook.py
   - id: openwiki-source-53ea9aa9c1bc2a186e16ba04
     resource: repo://openswe/thread_ids.py
-  - id: openwiki-source-4b5283763f4ffcc761aa1c9f
-    resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Inbound Invocation to Durable Run
@@ -68,7 +64,7 @@ sequenceDiagram
 
 This shows the shared path: integration routes acknowledge after inexpensive admission checks, while dashboard commands proxy directly after enrichment. Webhook routes return `202 Accepted` immediately and process the event in the background; dashboard commands are synchronous proxies that return the response from LangGraph.
 
-`create_app` composes dashboard, plan, and workflow-approval routers with Linear (MDA channel), Slack, GitHub, and health/completion routers. It validates its CORS middleware configuration to reject wildcard origins when credentials are enabled, and its lifespan startup validates sandbox provider, local-development LLM model, and Slack configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
+`create_app` composes dashboard, plan, and workflow-approval routers with Linear (MDA channel), Slack, GitHub, and health/completion routers, including MDA channel APIs for GitHub and Slack deliveries. It validates its CORS middleware configuration to reject wildcard origins when credentials are enabled, and its lifespan startup validates sandbox provider, local-development LLM model, and Slack configuration before serving. This makes route composition and startup validation part of the invocation boundary rather than responsibility of each webhook.
 
 ## Admission and asynchronous webhook work
 
@@ -76,9 +72,9 @@ GitHub and Slack webhooks read the raw request body and verify their respective 
 
 For accepted GitHub events and the normal Slack message path, a FastAPI `BackgroundTasks` job does remote API access, metadata construction, and dispatch after the HTTP response returns `202`. Slack claims an event id before scheduling to make delivery deduplication the gate to a run, preventing duplicate processing from retried webhook deliveries.
 
-Linear integration works through an MDA (Managed Deep Agents) channel that receives events and manages its own run lifecycle. The channel handles its own authentication, credential validation, and issue-to-thread mapping, starting runs directly without queuing to the main webhook handler.
+Linear integration works through an MDA (Managed Deep Agents) channel that receives events and manages its own run lifecycle. The channel handles its own authentication, credential validation, and issue-to-thread mapping, starting runs directly on its own thread without queuing to the main webhook handler. GitHub also uses an MDA channel that the backend supports through defined API entry points for automation rules, issue facts, and delivery actions.
 
-Slack filters messages early: it rejects bots and self-messages, validates message-update identity and content change, and only handles an ordinary non-code-channel message if it is a mention, DM, ready-plan reply, or permitted untagged two-party reply. Code channels are different: every interaction shares the channel's session thread and is treated as directed at Open SWE. The `_retry_channel_verification` function enforces that bot messages from external sources must mention Open SWE explicitly to be processed.
+Slack filters messages early: it rejects bots and self-messages, validates message-update identity and content change, and only handles an ordinary non-code-channel message if it is a mention, DM, ready-plan reply, or permitted untagged two-party reply. Code channels are different: every interaction shares the channel's session thread and is treated as directed at Open SWE.
 
 Slack first obtains channel context. Operations are permitted only in DMs or channels confirmed not externally shared; an app mention in an external shared channel gets one deduplicated refusal reply and no run. Signed slash commands, code-channel actions, and supported Block Kit actions turn into explicit code-channel turns; plan/workflow approval actions instead update their approval state or enqueue the prescribed follow-up.
 
@@ -110,13 +106,13 @@ Slack explicitly mentions and code-channel interactions use `multitask_strategy=
 
 ### Linear
 
-Linear integration uses an MDA channel that handles all lifecycle and authentication. When a Linear issue receives a mention of Open SWE (through the Linear MDA channel subscription), the channel creates a session and starts an agent run on its own thread. The backend attribute the session to the person who created it and determines repository, workspace, and access policy. If the person lacks repository access or has not linked their GitHub account, the channel declines the session with an account-linking or repository-selection prompt.
+Linear integration uses an MDA channel that handles all lifecycle and authentication. When a Linear issue receives a mention of Open SWE (through the Linear MDA channel subscription), the channel creates a session and starts an agent run on its own thread. The backend attributes the session to the person who created it and determines repository, workspace, and access policy. If the person lacks repository access or has not linked their GitHub account, the channel declines the session with an account-linking or repository-selection prompt.
 
 The Linear channel creates a deterministic thread (with `CHANNEL_METADATA_KEY="linear"` in metadata), fetches the issue context, introduces the issue text as system input with authored comments as human turns, and dispatches the run with the completion webhook attached. On completion (success or failure), the channel handles its own status replies in the Linear conversation.
 
 ### GitHub and reviewer runs
 
-The GitHub route accepts a broader event family: issue/comment work directed at Open SWE, PR state events, auto-review triggers, pushes, and CI. It filters unsupported actions, enforces the repo allowlist where applicable, applies the public-repository organization gate, and requires an Open SWE mention for normal issue/comment work. PR open/ready events can start automatic review when that repository enables it; pushes evaluate watched PRs; replies to a review finding route to the reviewer path.
+The GitHub route accepts a broader event family through its MDA channel integration: issue/comment work directed at Open SWE, PR state events, auto-review triggers, pushes, and CI. It filters unsupported actions, enforces the repo allowlist where applicable, applies the public-repository organization gate, and requires an Open SWE mention for normal issue/comment work. PR open/ready events can start automatic review when that repository enables it; pushes evaluate watched PRs; replies to a review finding route to the reviewer path.
 
 A coding PR-comment run recovers an Open SWE-created branch's embedded UUID; otherwise it derives the PR-comment thread id from owner, repository, and PR number. It resolves the author's mapped email/token, retries once after a GitHub authentication failure, reacts 👀, fetches comments since the last tag, introduces each author, and dispatches the accumulated human input. Issue runs use their own deterministic issue id. Reviewer work always uses the separate `reviewer_thread_id` namespace and `assistant_id="reviewer"`, keeping review state and the coding-agent graph isolated.
 

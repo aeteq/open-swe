@@ -3,6 +3,9 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -14,8 +17,6 @@ sources:
     resource: repo://openswe/dashboard/routes.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
-  - id: openwiki-source-d0edf7555209b3e6418b5c5f
-    resource: repo://openswe/github/routes.py
   - id: openwiki-source-813c25f6bac2408de322a1f5
     resource: repo://openswe/graphs/agent.py
   - id: openwiki-source-2e8359c5702d5a31e2d5ea43
@@ -28,12 +29,12 @@ sources:
     resource: repo://openswe/jobs/kinds.py
   - id: openwiki-source-ab57de9770aafc1c1c0da3e6
     resource: repo://openswe/linear/channel.py
+  - id: openwiki-source-571dbe4982097a7108855961
+    resource: repo://openswe/mda_channels/github_deliveries.py
   - id: openwiki-source-18a55f72354dac8e1bec4586
     resource: repo://openswe/notion/routes.py
   - id: openwiki-source-7a02c62499495310b04f21ef
     resource: repo://openswe/review/chat.py
-  - id: openwiki-source-96bcad07b4fe7078402bc2b8
-    resource: repo://openswe/reviewer.py
   - id: openwiki-source-2dbb6fddd1531095bb57d08e
     resource: repo://openswe/sandboxes/state.py
   - id: openwiki-source-c1d629bf5196269b73880148
@@ -46,19 +47,16 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
 # Runtime and Product Architecture
 
-Open SWE is a LangGraph deployment with a custom FastAPI application. The HTTP layer accepts browser and integration traffic, while durable LangGraph runs execute coding or review work against thread-scoped state and—except for PR chat—a backend. Three registered graph entrypoints power read access to pre-Managed Deep Agents threads, while execution runs on Managed Deep Agents. PR chat flows through a FastAPI proxy to the main agent thread, and background work runs via the job queue, not as registered graphs.
+Robin is a LangGraph deployment with a custom FastAPI application. The HTTP layer accepts browser and integration traffic, while durable LangGraph runs execute coding or review work against thread-scoped state and—except for PR chat—a backend. Three registered graph entrypoints power read access to pre-Managed Deep Agents threads, while execution runs on Managed Deep Agents. PR chat flows through a FastAPI proxy to the main agent thread, and background work runs via the job queue, not as registered graphs.
 
 ## Mission and workflow
 
-Open SWE turns engineering work into a repeatable system:
+Robin turns engineering work into a repeatable system:
 
 1. **Investigate** — Understand the codebase and requirements
 2. **Implement in a sandbox** — Make changes in an isolated, persistent backend
@@ -122,7 +120,7 @@ Background and scheduled work runs via the job queue (openswe/jobs), not as regi
 
 ## HTTP composition and ingress
 
-`openswe/webapp.py` is a compatibility re-export of the application assembled by `openswe/api/app.py:create_app`. At import time the API pins one event loop before background workers are built, and repeated pinning in the lifespan hook ensures all workers share the same event loop. The app factory configures credentialed CORS from `DASHBOARD_ALLOWED_ORIGINS` and rejects `*`, then mounts dashboard, plan, workflow-approval, Linear channel, Notion, Slack, GitHub, health, and sandbox-tool routers plus the bundled dashboard UI. It also includes the MDA-to-backend agent API router at a fixed path. Its lifespan hook validates sandbox and local-development LLM configuration at startup, runs database migrations and user imports, activates analytics, starts listeners for transcripts and sandbox bridges, closes cached models on shutdown, warms the agent build, and handles imports of legacy Store records (user mappings, concierge mode, automations).
+`openswe/webapp.py` is a compatibility re-export of the application assembled by `openswe/api/app.py:create_app`. At import time the API pins one event loop before background workers are built, and repeated pinning in the lifespan hook ensures all workers share the same event loop. The app factory configures credentialed CORS from `DASHBOARD_ALLOWED_ORIGINS` and rejects `*`, then mounts dashboard, plan, workflow-approval, MDA channel API, MDA resolve user, MDA Slack channel events, MDA GitHub deliveries, Notion, Slack, health, rollout, sandbox-tool, short-link, sandbox OpenAI, and reviewer-eval-report routers plus the bundled dashboard UI. It also includes the MDA-to-backend agent API router at a fixed path via `agent_api_server.API_PATH`. Its lifespan hook validates sandbox and local-development LLM configuration at startup, runs database migrations and user imports, activates analytics, starts listeners for transcripts and sandbox bridges, closes cached models on shutdown, warms the agent build, and handles imports of legacy Store records (user mappings, concierge mode, automations).
 
 The dashboard router is rooted at `/dashboard/api` and applies a same-origin dependency to mutations. It is the browser-facing boundary for OAuth, profiles, team defaults, administration, repository and review-style configuration, and thread APIs. Importing `openswe.dashboard` does not eagerly load this large surface: a PEP 562 `__getattr__` imports and caches `routes.router` only when the web application mounts it. This prevents middleware and non-webapp modules from pulling in FastAPI and all downstream API/job dependencies.
 

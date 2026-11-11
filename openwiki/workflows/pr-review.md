@@ -3,11 +3,14 @@ type: workflow
 title: Pull Request Review Workflow
 description: How Open SWE starts GitHub pull-request reviews, prepares a diff-grounded reviewer run, persists and publishes findings, and reconciles replies, resolutions, and review checks across later pushes.
 tags: [reviewer, pr-review, github, webhooks, findings, reconciliation, review-scout, style-guidance]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-  - id: openwiki-source-d0edf7555209b3e6418b5c5f
-    resource: repo://openswe/github/routes.py
+  - id: openwiki-source-657c0da6093807548cc5e23d
+    resource: repo://openswe/github/channel.py
   - id: openwiki-source-9ad7888a549990068f28dbdc
     resource: repo://openswe/github/webhook.py
   - id: openwiki-source-7f78050909c084a5110d4c49
@@ -42,42 +45,40 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
 # Pull Request Review Workflow
 
-Open SWE reviews a pull request through a dedicated `reviewer` graph. A PR has one durable reviewer thread and one evolving findings list: later pushes and human replies re-enter that thread rather than creating independent reviews. Findings live in PostgreSQL and are keyed by an immutable per-PR reviewer thread ID. See [Reviewer and Analyzer Architecture](../architecture/reviewer-and-analyzer.md), [Invocation Workflow](invocation.md), and [PR Creation Workflow](pr-creation.md) for adjacent responsibilities.
+Open SWE reviews a pull request through a dedicated `reviewer` graph. A PR has one durable reviewer thread and one evolving findings list: later pushes and human replies re-enter that thread rather than creating independent reviews. Findings live in PostgreSQL and are keyed by an immutable per-PR reviewer thread ID. See [Reviewer Graph and Code Review](../architecture/reviewer-and-analyzer.md), [Inbound Invocation to Durable Run](invocation.md), and [PR Creation Workflow](pr-creation.md) for adjacent responsibilities.
 
 ## Entrypoints and admission
 
-`POST /webhooks/github` is the signed ingress. It verifies `X-Hub-Signature-256` HMAC, ignores unsupported event types or PR actions, parses JSON, and schedules accepted handlers as FastAPI background tasks. The route applies the public-repository organization gate to first-review and comment/reply paths. Thus webhook processing responds promptly; review execution is asynchronous.
+GitHub webhooks are delivered to the MDA (Managed Deep Agents) deployment's GitHub channel, which verifies each delivery's signature and dispatches it to the backend via `record_github_delivery`. The backend runs work handlers synchronously (like background tasks, not a separate route) and answers MDA's queries about repository state. Work handlers verify X-Hub-Signature-256 HMAC signatures, ignore unsupported event types or PR actions, and admit them subject to public-repository and organization gates. Processing is asynchronous: webhooks return quickly and work proceeds in the background.
 
 A review can begin through:
 
-- **Automatic first review:** `pull_request` actions `opened` and `ready_for_review`. The repository must appear in the enabled-review-repositories store; absence is disabled by default and a store failure also safely reads as disabled. Drafts additionally require the author's `review_draft_prs` setting, with the team setting as fallback.
+- **Automatic first review:** `pull_request` actions `opened` and `ready_for_review`. The repository must be opted into auto-review via the enabled-review-repositories store; absence is disabled by default and a store failure also safely reads as disabled. Drafts additionally require the author's `review_draft_prs` setting, with the team setting as fallback.
 - **Explicit request:** the main-agent tool `request_pr_review` accepts a GitHub PR URL, preserves an active Slack thread if present, and delegates to `trigger_pr_review_from_ref`. The dashboard calls that same entrypoint. It fetches PR metadata, ensures the reviewer thread exists, turns on `watch`, posts a temporary in-progress comment, and dispatches the reviewer.
-- **A later push:** a push only becomes a re-review for an open PR whose canonical reviewer thread exists and has `watch=true`.
-- **A reply to a reviewer comment:** a non-bot reply is separately routed before ordinary mention handling and can dispatch a focused reassessment run.
+- **A later push:** a push to a watched PR's head branch only becomes a re-review when the PR remains open and its canonical reviewer thread has `watch=true`.
+- **A reply to a reviewer comment:** a non-bot reply to an Open SWE review comment is routed separately before ordinary mention handling and can dispatch a focused reassessment run.
 
-```mermaid
+<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
+```text
 flowchart TD
-  Ingress["GitHub webhook"] --> Verify["Verify signature and event"]
-  Verify --> First{"PR opened or ready"}
-  Verify --> Push{"Push event"}
-  Verify --> Reply{"Review-comment reply"}
-  First --> Gate{"Repository and draft gates"}
-  Gate -->|"accepted"| Start["Create or update reviewer thread"]
-  Push --> Watch{"Watched PR and changed diff"}
-  Watch -->|"yes"| Start
-  Reply --> Start
-  Start --> Scout["Run review-scout on PR"]
-  Scout --> Check["Create in-progress check"]
-  Check --> Run["Dispatch reviewer graph"]
-  Run --> Publish["Persist and publish findings"]
+  Webhook["GitHub webhook"] --> Verify["Verify signature"]
+  Verify --> Action{"PR opened, ready,<br/>or push?"}
+  Webhook --> Reply{"Review-comment reply?"}
+  Action -->|"opened / ready"| Gate["Repository and<br/>draft gates"]
+  Gate -->|"accepted"| ThreadID["Derive or<br/>update thread"]
+  Action -->|"push"| Watch{"Thread exists<br/>and watching?"}
+  Watch -->|"yes"| ThreadID
+  Reply -->|"yes"| ThreadID
+  ThreadID --> Scout["Run review-scout<br/>on PR"]
+  Scout --> Check["Create in-progress<br/>check run"]
+  Check --> Run["Dispatch reviewer<br/>graph"]
+  Run --> Publish["Reconcile and<br/>publish findings"]
+  Publish --> Gate
 ```
 
 The trigger paths converge on the same per-PR reviewer state. An automatic review-first entrypoint optionally runs a lightweight `review-scout` graph that analyzes PR scope and structure to determine review necessity.

@@ -24,8 +24,6 @@ sources:
     resource: repo://openswe/github/app.py
   - id: openwiki-source-783616155a6663ff5d3b0dfa
     resource: repo://openswe/github/comments.py
-  - id: openwiki-source-d0edf7555209b3e6418b5c5f
-    resource: repo://openswe/github/routes.py
   - id: openwiki-source-0c4b1aac46b8420871177918
     resource: repo://openswe/github/thread_token.py
   - id: openwiki-source-4194ce777e6975dfc2a2c3d1
@@ -42,14 +40,16 @@ sources:
     resource: repo://openswe/tools/admin_gate.py
   - id: openwiki-source-1d8440f14c85812310a67572
     resource: repo://openswe/users/authorization.py
+  - id: openwiki-source-3087256f0cd599176fba3c38
+    resource: repo://openswe/webhooks/common.py
   - id: openwiki-source-3a1539e01daa921ba15e9617
     resource: repo://tests/dashboard/test_dashboard_oauth_redirect.py
   - id: openwiki-source-d8c75a797d0ce06ee3b8d9fb
     resource: repo://tests/dashboard/test_github_token_auth.py
-generated: { by: "openwiki/0.4.2", at: "2026-10-22T13:38:02.092Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Authentication, Authorization, and Secret Boundaries
@@ -172,10 +172,12 @@ Slack account linking uses Slack OIDC claims rather than user-supplied identity.
 
 Webhook verifiers operate on raw request bodies and fail closed when their secret is missing:
 
-- GitHub computes `sha256=HMAC(GITHUB_WEBHOOK_SECRET, body)`, constant-time compares `X-Hub-Signature-256`, and the GitHub route rejects failures before parsing the payload.
 - Slack constant-time compares the HMAC of `v0:timestamp:body` and rejects timestamps more than 300 seconds from now, limiting replay.
+- Notion constant-time compares the HMAC of the raw body against `X-Notion-Signature` (sha256=hex).
 - Linear constant-time compares its raw-body HMAC-SHA256 against `Linear-Signature`.
 - `/webhooks/run-complete` compares its query token with `RUN_COMPLETE_WEBHOOK_SECRET` in constant time. Without that secret every call is rejected and run-failure replies remain disabled.
+
+GitHub webhook verification is handled at the MDA-channel level through the standard-webhooks library, which validates HMAC signatures. The MDA deployment's GitHub webhook endpoints enforce verification before processing payloads.
 
 ## Credential storage and authorization gates
 

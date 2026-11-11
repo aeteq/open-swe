@@ -3,9 +3,6 @@ type: operations-guide
 title: Development, Deployment, and Serving
 description: Deploy Open SWE as a single LangGraph service across multiple topologies — local development with Docker PostgreSQL, standalone Docker, LangGraph Platform, Electron desktop, and multiple replicas. Covers environment setup, dashboard mounting, webhook exposure, authentication modes, checkpointer durability, and health checks.
 tags: [deployment, development, docker, langgraph, dashboard, webhooks, desktop, postgresql, operations, migrations, checkpointer]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
@@ -45,7 +42,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Development, Deployment, and Serving
@@ -58,9 +58,9 @@ See [Configuration](../operations/configuration.md) for the complete environment
 
 ### Manifest and runtime versions
 
-Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.19.0.dev3` and `langgraph-runtime-inmem==0.39.0.dev3` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
+Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.19.0.dev3` and `langgraph-runtime-inmem==0.39.0.dev5` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
 
-For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build using Node 26 and pnpm 11.22.0: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.16.9-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
+For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build using Node 26 and pnpm 11.22.0: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.17.1-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
 
 ### Startup sequence
 
@@ -79,22 +79,18 @@ sequenceDiagram
   participant Build as Build
   participant Ready as Ready to serve
 
-  Boot->>Validation: Validate config (GitHub allowlist, sandbox, LLM)
+  Boot->>Validation: Validate config (GitHub allowlist, sandbox, LLM, MDA, Slack)
   Boot->>Validation: Require POSTGRES_URI configured
   Boot->>DB: Acquire advisory lock
   Boot->>DB: Create schema if missing
   Boot->>Migrations: Run alembic migrations to head
-  Boot->>Store: Import user mappings (idempotent)
-  Boot->>Store: Import concierge mode (idempotent)
-  Boot->>Store: Import user records (idempotent)
-  Boot->>Store: Import automations (idempotent)
-  Boot->>Store: Import skills (idempotent)
   Boot->>DB: Delete analyzer crons (cleanup)
   Boot->>Admin: Sync admin flags from config
   Boot->>Analytics: Load workspace metadata
   Boot->>Analytics: Start pooled worker
   Boot->>Listeners: Start transcript listener
   Boot->>Listeners: Start sandbox-bridge listener
+  Boot->>Listeners: Start plugin rooms listener
   Boot->>Listeners: Start UI invalidation hub
   Boot->>Listeners: Start notification listener
   Boot->>Build: Warm agent build
@@ -105,15 +101,14 @@ sequenceDiagram
 
 The FastAPI lifespan startup runs in this order:
 
-1. **Configuration validation:** Validates GitHub login allowlist, sandbox provider startup config, and local dev LLM config. Requires `POSTGRES_URI` to be set.
+1. **Configuration validation:** Validates GitHub login allowlist, sandbox provider startup config, local dev LLM config, MDA startup config, and Slack config. Requires `POSTGRES_URI` to be set.
 2. **Event loop:** Pins a single event loop before queue worker initialization to ensure workers land on the correct loop.
 3. **Database setup:** Acquires an advisory lock (XID `557314367248862439`), creates the `open_swe` schema if it does not exist, and runs Alembic migrations to the latest revision using SQLAlchemy async connections.
-4. **Store imports:** Migrates user mappings, concierge preferences, user records, automations, and skills from LangGraph Store to Postgres (each is idempotent, run once). Failures log warnings.
-5. **Cleanup:** Deletes legacy review-style analyzer crons that can no longer fire. Failures log warnings.
-6. **Admin sync:** Admin flags are synced from `CONFIGURED_ADMINS` into the user table.
-7. **Analytics activation:** Workspace records are loaded and reporting metadata is initialized; a pooled analytics event worker starts (reads the Store, writes to Postgres). Failures log warnings.
-8. **Listeners:** Transcript, sandbox-bridge, UI invalidation, and database notification listeners start (handle multi-replica notifications). Failures log warnings.
-9. **Build warming and ready:** The agent build is warmed for faster first use, then the LangGraph runtime opens all registered graphs. Failures log warnings.
+4. **Cleanup:** Deletes legacy review-style analyzer crons that can no longer fire.
+5. **Admin sync:** Admin flags are synced from `CONFIGURED_ADMINS` into the user table.
+6. **Analytics activation:** Workspace records are loaded and reporting metadata is initialized; a pooled analytics event worker starts (reads the Store, writes to Postgres). Failures log warnings.
+7. **Listeners:** Transcript, sandbox-bridge, plugin rooms, UI invalidation, and database notification listeners start (handle multi-replica notifications). Failures log warnings.
+8. **Build warming and ready:** The agent build is warmed for faster first use, then the LangGraph runtime opens all registered graphs. Failures log warnings.
 
 Failures in any step except setup and migrations (steps 1–3) log warnings but do not prevent the server from running; the dashboard and API remain available, though affected features may degrade.
 
@@ -435,6 +430,7 @@ Multiple replicas share Postgres for state and Redis for workers. Cross-replica 
 
 - **Transcript listener** (Store writes): Updates thread transcripts across replicas
 - **Sandbox-bridge listener** (file I/O): Coordinates sandbox bridge requests
+- **Plugin rooms listener** (collaborative editing): Synchronizes plugin room state across replicas
 - **Analytics worker** (Store-to-Postgres): Persists analytics events
 - **UI invalidation hub** (dashboard updates): Broadcasts dashboard cache invalidations
 - **Database notification listener** (PostgreSQL NOTIFY): Delivers database events

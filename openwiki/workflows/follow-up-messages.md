@@ -3,9 +3,6 @@ type: workflow
 title: Follow-up Messages and Threaded Continuity
 description: Thread message routing, follow-up invocation from GitHub PR comments and Slack replies, run continuation and interruption coordination, and completion webhooks that coordinate concurrent work without losing user input.
 tags: [follow-up, message-queue, middleware, completion-webhook, baby-sit, background-tasks, stop, multitask-strategy, interrupt, enqueue, threaded-continuity]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-987be1dce6e9ba720855c2ed
     resource: repo://openswe/baby_sit.py
@@ -31,15 +28,18 @@ sources:
     resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-022ee08422abaad398dba679
     resource: repo://openswe/threads/inbox.py
+  - id: openwiki-source-4b5283763f4ffcc761aa1c9f
+    resource: repo://openswe/threads/proxy.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
   - id: openwiki-source-ad980e633ed1ddfea4a66419
     resource: repo://openswe/threads/wake_budget.py
-  - id: openwiki-source-f49481fb34a251dc31b8f17a
-    resource: repo://openswe/tools/schedule_thread_wakeup.py
   - id: openwiki-source-996097a4d0a674613168d766
     resource: repo://openswe/utils/thread_ops.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Follow-up Messages and Threaded Continuity
@@ -73,7 +73,7 @@ The sandbox lifecycle relies on interrupt dispatch: a subsequent agent step reso
 
 ### Queueing messages for a live run
 
-When a dashboard user sends a follow-up, the system routes it based on thread activity: if the thread is busy (a run is pending or running), the message is queued for injection into that run at its next model boundary; if idle, a new run is created. The system authorizes the caller against thread metadata and returns 409 if a machine principal attempts to interact with a busy thread (machines cannot be attributed to messages), and 502 on operational failures.
+When a dashboard user sends a follow-up to a running thread, the system decides between two paths: if the thread is busy (a run is pending or running), the message is queued for injection into that run at its next model boundary; if idle, a new run is created instead. The system authorizes the caller against thread metadata and returns 409 if a machine principal attempts to interact with a busy thread (machines cannot be attributed to messages), and 502 on operational failures.
 
 ```mermaid
 sequenceDiagram
@@ -121,7 +121,7 @@ For payloads with image URLs, the middleware resolves the thread's configured mo
 
 ### Completion webhook and terminal-condition handling
 
-Every durable dispatch attaches a completion webhook only when both `RUN_COMPLETE_WEBHOOK_SECRET` is set and `COMPLETION_WEBHOOK_URL` is absolute and non-loopback. The webhook route rejects requests whose token fails verification and is fail-closed when no secret is configured.
+A completion webhook is attached to dispatched runs only when both `RUN_COMPLETE_WEBHOOK_SECRET` is set and `COMPLETION_WEBHOOK_URL` is absolute and non-loopback; the receiving route rejects requests whose token fails verification.
 
 The completion webhook handler (`handle_run_completion`) processes terminal runs:
 

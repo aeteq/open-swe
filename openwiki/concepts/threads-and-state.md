@@ -5,7 +5,7 @@ description: How Open SWE identifies durable LangGraph conversations, constructs
 tags: [threads, state, langgraph, durability, checkpoints, sandbox, slack, integrations]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -39,7 +39,7 @@ sources:
     resource: repo://openswe/utils/thread_participants.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
 # Threads, Durable Runs, and State
@@ -64,6 +64,7 @@ Threads are created through `openswe.threads.creation.create_thread`, which is t
 | Review scout for a PR | `review_scout_thread_id` | `{owner}/{repo}/pr/{pr_number}/review-scout` | UUIDv5 |
 | Review shadow for a PR | `review_shadow_thread_id` | `{owner}/{repo}/pr/{pr_number}/reviewer-shadow` | UUIDv5 |
 | Review chat for a PR | `review_chat_thread_id` | `{owner}/{repo}/pr/{pr_number}/chat/{login}` | UUIDv5 |
+| Plugin chat | `plugin_chat_thread_id` | `plugin/{installation}/chat/{user_id}/{repository or ''}/{name}` | UUIDv5 |
 | Notion page | `notion_page_thread_id` | `notion-page:{page_id}` | SHA-256 UUID |
 | Notion discussion | `notion_discussion_thread_id` | `notion-discussion:{discussion_id}` | SHA-256 UUID |
 | GitHub issue | `github_issue_thread_id` | `github-issue:{issue_id}` | SHA-256 UUID |
@@ -90,7 +91,7 @@ Thread identity lets independently triggered work converge on the correct durabl
 
 ### Slack mappings support moves and retirement
 
-Slack thread identity resolution and binding happen in `openswe/slack/records.py`. `resolve_slack_thread_id` first checks an explicit stored database mapping, then searches thread metadata for matching `source_context`, rejects multiple matches, and falls back to deriving a deterministic fallback ID or using an existing nonce. Binding validates the Slack location, refuses a conflicting existing mapping by raising, then verifies the write persisted; thus one Slack location cannot be assigned to two Open SWE threads.
+Slack thread identity resolution and binding happen in `openswe/slack/records.py`. `resolve_slack_thread_id` first checks an explicit stored database mapping, then searches thread metadata for matching `source_context`, rejects multiple matches, and falls back to deriving a deterministic fallback ID using the stored nonce or None. Binding validates the Slack location, refuses a conflicting existing mapping by raising, then verifies the write persisted; thus one Slack location cannot be assigned to two Open SWE threads.
 
 Deleting associations does not simply erase the map: `delete_slack_thread_associations` writes a fresh nonce at that location. With no mapped ID, a future resolution derives a different fallback ID, avoiding collision with the retired conversation. This is used by moves such as creating a code channel.
 

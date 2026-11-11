@@ -1,11 +1,11 @@
 ---
 type: architecture-component
-title: Middleware Stack and Request Processing
-description: Middleware and execution control in Managed Deep Agents. Catalogs middleware responsibilities, ordering, state management, and integration patterns for coding agents and reviewers.
-tags: [middleware, agent, reviewer, model-call, tool-call, state-management, transcript, PrepareRunState]
+title: Middleware Stack and Failure Boundaries
+description: Ordering-sensitive middleware, retry/timeout policies, permission guards, queues, fallbacks, and failure reporting in the agent graph. Covers run setup, tool visibility, flow control, observability, and state checkpointing in the coding agent and reviewer.
+tags: [middleware, agent, reviewer, model-call, tool-call, state-management, transcript, PrepareRunState, failure-handling]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-0190f218684562b378eff2f1
     resource: repo://openswe/agent_api/agent.py
@@ -31,10 +31,10 @@ sources:
     resource: repo://openswe/middleware/workflow_push_guard.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
-# Middleware Stack and Request Processing
+# Middleware Stack and Failure Boundaries
 
 Managed Deep Agents (MDA) uses middleware to compose behavior around model calls, tool execution, and run lifecycle. Middleware is deployed through `RunKind` subclasses (`AgentKind` and `ReviewerKind`), which provide run-specific preparation middleware and access to shared infrastructure middleware. This separation allows middleware to be composed with deepagents' own middleware (filesystem, skills, tool dispatch) without modifying deepagents internals.
 
@@ -48,24 +48,20 @@ The middleware architecture layers as follows:
 
 3. **DeepAgents framework** (deepagents) assembles the middleware stack into a runnable graph, providing filesystem tools, skills management, tool execution, and message ordering.
 
-The RunKind.preparation() method returns a list of `AgentMiddleware` that gets merged into the graph at runtime. Each middleware instance can hook into before-agent, model-call wrapping, tool-call wrapping, and after-agent phases. Some middleware also implements `ShapesModelCalls` to contribute system prompt sections or hide tools from the model's view.
+The `RunKind.preparation()` method returns a list of `AgentMiddleware` that gets merged into the graph at runtime. Each middleware instance can hook into before-agent, model-call wrapping, tool-call wrapping, and after-agent phases.
 
 See [Coding Agent Assembly](agent-graph.md) and [Sandbox Lifecycle](sandbox-lifecycle.md) for the graph structure and sandbox contexts.
 
-## Middleware categories and responsibilities
+## Run-setup middleware: Preparation and state initialization
 
-### Run-setup middleware: Preparation and state initialization
+### BasePrepareRunMiddleware and the checkpoint-latch pattern
 
-These middleware execute at the start of a run to set up context, authorization, and system prompts:
-
-**`BasePrepareRunMiddleware` (abstract base for preparation middleware)**
-
-Defines the framework for checkpointed, idempotent per-run setup. Subclasses implement `_prepare()` to refresh tokens, resolve diffs, compute prompts, or other per-run initialization. The middleware fingerprints the latest message, its own class name, and subclass-provided configuration:
+`BasePrepareRunMiddleware` defines a framework for checkpointed, idempotent per-run setup. Subclasses implement `_prepare()` to refresh tokens, resolve diffs, compute prompts, or other per-run initialization. The middleware fingerprints the latest message, its own class name, and subclass-provided configuration:
 
 - On first invocation, it executes `_prepare()`, stores the fingerprint in `run_prepared_for`, and checkpoints the state.
 - On resume of the same invocation (same fingerprint), the `run_prepared_for` latch skips setup.
 - On a new message on the same thread (fingerprint changes), setup re-runs, allowing fresh token refresh and re-derived context.
-- Preparation must be idempotent: failures before the checkpoint can cause re-execution, so all operations must tolerate that.
+- **Preparation must be idempotent**: failures before the checkpoint can cause re-execution, so all operations must tolerate that.
 
 `PrepareRunState` extends `AgentState` with checkpoint fields:
 - `run_prepared`: Boolean latch set to `True` after setup completes
@@ -76,27 +72,25 @@ Defines the framework for checkpointed, idempotent per-run setup. Subclasses imp
 
 Subclasses include `PrepareAgentRunMiddleware` (coding agent) and `PrepareReviewerRunMiddleware` (reviewer).
 
-**`TranscriptMiddleware`**
+### TranscriptMiddleware: State management and background writing
 
-Captures model calls, tool execution, and reasoning for debugging and auditing. Per-run state is managed by a module-level registry keyed by `thread_id:run_id` (stored in `_runs` dict) because LangGraph runs each node in its own copied context where `ContextVar` values set in one node are invisible to later nodes.
+`TranscriptMiddleware` captures model calls, tool execution, and reasoning for debugging and auditing. Per-run state is managed by a module-level registry keyed by `thread_id:run_id` (stored in `_runs` dict) because **LangGraph runs each node in its own copied context** where `ContextVar` values set in one node are invisible to later nodes.
 
-Events are queued and written by a background writer per run so the model stream never waits on database I/O. Transcript failures are logged and swallowed so a transcript problem can never fail a run.
+The `_namespace` `ContextVar` is the exception: it travels downward into nested graph invocations (subagents) from within tool coroutines, allowing nested tool execution to be recorded under the enclosing task namespace.
 
-The `_namespace` `ContextVar` is an exception: it travels downward into nested graph invocations (subagents) from within tool coroutines, allowing nested tool execution to be recorded under the enclosing task namespace.
+**Background writing ensures the model stream never waits on database I/O**: Events are queued and written by a background writer per run (asyncio task per `RunState`). Transcript failures are logged and swallowed so a transcript problem can never fail a run.
 
-### Tool-related middleware: Tool visibility and execution safety
+## Tool-related middleware: Tool visibility and execution safety
 
-**`ExcludeToolsMiddleware`**
+### ExcludeToolsMiddleware
 
-Filters disallowed tool names from model requests using the `CallShape.hiding()` protocol. Hides tools the model should never see (e.g., admin tools, test tools).
+Filters disallowed tool names from model requests. Hides tools the model should never see (e.g., admin tools, test tools).
 
-**`DynamicToolMiddleware`** (conditional, installed if integration groups present)
+### DynamicToolMiddleware
 
 Exposes configured integration groups (MCPs, Notion) lazily: tool names are visible to the model up front, but actual tools are built only after the model requests them. Positioned after model-call wrapping to avoid loading integrations during fallback retries.
 
-**`ClientToolsMiddleware`** (conditional, only if client tools configured)
-
-Exposes tools that the client frontend provides, allowing client-side tool execution without backend involvement.
+### Shell execution guards
 
 **`PullRequestCreationGuardMiddleware`** (in tool execution layer, not main middleware list)
 
@@ -106,8 +100,8 @@ Blocks `execute` and `background_execute` command forms that create pull request
 
 Blocks push changes to `.github/workflows` files without recorded human approval. When `execute` or `background_execute` tool calls contain a `git push` command targeting `.github/workflows` files:
 
-1. **Detection**: Middleware parses shell commands and detects `git push` operations.
-2. **Diff inspection**: Queries the sandbox for the diff between base and head commits to extract affected workflow files.
+1. **Detection**: Parses shell commands and detects `git push` operations targeting `.github/workflows/`.
+2. **Diff inspection**: Queries the sandbox for the diff between base and head commits.
 3. **Fingerprinting**: Computes a SHA256 fingerprint from the diff content, ensuring only exact push changes are approved.
 4. **Approval check**: Checks the database for a prior approval record matching the fingerprint.
    - If approved, executes the original `git push` command.
@@ -116,7 +110,7 @@ Blocks push changes to `.github/workflows` files without recorded human approval
 5. **User approval**: The approval URL directs the user to a dashboard link that records consent, tied to the fingerprint and thread.
 6. **Resume behavior**: On the next model call, the approval check re-runs and sees the stored approval, then executes the push.
 
-### Flow-control and policy middleware
+## Flow-control and policy middleware
 
 **`RequireUserReplyMiddleware`**
 
@@ -134,25 +128,25 @@ Coordinates task delegation to async worker processes, managing task lifecycle a
 
 Adapts run policy (e.g., model call limits) and tools when an incident is being actively tracked, enabling focused incident response workflows.
 
-### Observer and bookkeeping middleware: Logging, usage tracking, and notifications
+## Observer and bookkeeping middleware: Logging, usage tracking, and notifications
 
-**`record_run_usage` (after-agent hook)**
+### record_run_usage (after-agent hook)
 
 Persists summarized token usage for a run with a preparation-run ID and schedules deferred cost enrichment. Bookkeeping failures are caught and do not alter the agent result. Implemented as `RecordRunUsageMiddleware`.
 
-**`notify_step_limit_reached` (after-agent hook)**
+### notify_step_limit (after-agent hook)
 
 Recognizes the `ModelCallLimitMiddleware` marker (from langchain) and posts an explanatory Slack message when the agent hits its step limit.
 
-**`settle_review_check_on_exit` (after-agent hook, reviewers only)**
+### settle_review_check (after-agent hook, reviewers only)
 
 Closes an unpublished tracked reviewer check as neutral so an incomplete review is not presented as a PR code failure. If `publish_review` completed but its conclusion PATCH failed transiently, the hook retries the stored pending real conclusion.
 
-**`RepairOrphanedToolCallsMiddleware`** (reviewers only)
+### RepairOrphanedToolCallsMiddleware (reviewers only)
 
 Inserts synthetic error `ToolMessage` results for tool-call IDs that have no corresponding result before model calls. Prevents permanently wedged reviewer threads when runs are interrupted mid-tool-call.
 
-### Other middleware
+## Other middleware
 
 **`AnthropicPromptCachingMiddleware`** (from langchain_anthropic)
 
@@ -160,7 +154,7 @@ Optimizes Anthropic model calls by caching the system prompt and file context to
 
 **`ModelCallLimitMiddleware`** (from langchain.agents.middleware)
 
-Enforces a per-run limit on model calls. When exhausted, it terminates the agent and injects a marker message. `notify_step_limit_reached` recognizes this marker and posts a Slack notification.
+Enforces a per-run limit on model calls. When exhausted, it terminates the agent and injects a marker message. `notify_step_limit` recognizes this marker and posts a Slack notification.
 
 **`ModelErrorMiddleware`**
 
@@ -174,7 +168,7 @@ The coding agent's preparation middleware is returned by `AgentKind.preparation(
 
 2. **`ReviewGuideMiddleware`** (conditional, if review guide present): Adapts instructions and reply options when a code review walkthrough is active.
 
-The middleware list is type-invariant in state schema: all middleware must be compatible with the same state type, which is the most general type they collectively require. `PrepareAgentRunMiddleware` extends `PrepareRunState`, and `ReviewGuideMiddleware` works with that extended state.
+The middleware list is type-invariant in state schema: all middleware must be compatible with the same state type, which is the most general type they collectively require.
 
 ## Reviewer preparation middleware
 
@@ -184,7 +178,49 @@ The reviewer's preparation middleware is returned by `ReviewerKind.preparation()
 
 After preparation, the reviewer graph installs a leaner middleware set assembled by the deepagents runtime, including `TranscriptMiddleware`, `record_run_usage`, caching, and error handling. Reviewers omit conversation offloading, incident adaptation, client tools, task coordination, model selection, dynamic tools, and shell guards.
 
-## PrepareRunState and mutation flow
+## Middleware ordering and composition
+
+### Coding agent middleware stack
+
+From `AgentKind.reporters` and `AgentKind.preparation()`:
+
+1. **Preparation phase** (`preparation()` hook):
+   - `PrepareAgentRunMiddleware`
+   - `ReviewGuideMiddleware` (optional, if active)
+
+2. **Reporters** (installed after graph factory):
+   - `TranscriptMiddleware` (singleton instance)
+   - `record_run_usage` (singleton instance)
+
+3. **Shell guards** (tool-execution middleware):
+   - `PullRequestCreationGuardMiddleware`
+   - `WorkflowPushGuardMiddleware`
+
+### Reviewer middleware stack
+
+From `ReviewerKind.reporters` and `ReviewerKind.preparation()`:
+
+1. **Preparation phase** (`preparation()` hook):
+   - `PrepareReviewerRunMiddleware`
+
+2. **Reporters** (installed after graph factory):
+   - `TranscriptMiddleware` (separate singleton from coding agent)
+   - `record_run_usage` (separate singleton from coding agent)
+
+3. **No shell guards** for reviewer
+
+### DeepAgents composition layer
+
+The middleware list is merged with deepagents' own middleware, which provides:
+
+- **FilesystemMiddleware**: Exposes file read/write/delete and directory navigation tools, backend-specific for local vs. sandboxed runs.
+- **SkillsMiddleware**: Loads and exposes skills from configured sources.
+- **Core tool execution**: Handles tool call dispatch, error handling, and result collection.
+- **Message ordering**: Ensures stable, deterministic tool result ordering.
+
+The openswe middleware wraps around these layers, allowing openswe to observe and shape model calls, manage state, enforce policies, and integrate external systems without modifying deepagents internals.
+
+## State checkpointing and resumption
 
 The preparation flow follows a checkpoint-and-latch pattern:
 
@@ -196,33 +232,9 @@ The preparation flow follows a checkpoint-and-latch pattern:
    - Otherwise, execute `_prepare()`, collect updates dict
    - Return `{"run_prepared": True, "run_prepared_for": fingerprint, **updates}`
 4. LangGraph checkpoints this state after the before-agent node.
-5. `ashape_model_call` hook merges `rendered_system_prompt` into the system message before each model call.
+5. Subsequent middleware use the checkpoint fields (`rendered_system_prompt`, etc.) in their model-call wrappers.
 
-Preparation must be idempotent: a failure before the checkpoint can cause re-execution. Setup typically refreshes authorization tokens, loads diffs for reviewers, or resolves model-specific parameters. After an in-checkpoint failure and resume, the latch prevents preparation from running again as long as the fingerprint matches.
-
-## Model call shaping (ashape_model_call protocol)
-
-Middleware implementing the `ShapesModelCalls` protocol can contribute to the system prompt and hide tools from model calls. The `ashape_model_call` hook is called on each model invocation with the current `CallShape` (system prompt sections and hidden tools), the state, and the runtime. Middleware can:
-
-- **Prepend or append** system prompt sections with `call.prepending(section)` or `call.appending(section)`
-- **Hide tools** with `call.hiding(tool_names)`
-
-The final system prompt is the result of all middleware contributions in order, and hidden tools are removed from the model's tool list.
-
-Key middleware using `ashape_model_call`:
-- `PrepareAgentRunMiddleware` (and variants): Injects the rendered system prompt from run preparation
-- `ExcludeToolsMiddleware`: Hides disallowed tools
-- `DynamicToolMiddleware`: Hides tools not yet loaded from the model's view
-
-## Transcript offloading and background writing
-
-`TranscriptMiddleware` manages per-run transcript event collection and persistence without blocking the model stream:
-
-- One middleware instance serves all runs; per-run state lives in a module-level registry keyed by `thread_id:run_id`.
-- Events are queued (enqueue) and processed by a background writer asyncio task per run, so `append` calls never wait on database I/O.
-- The `_namespace` `ContextVar` holds the subagent namespace, which travels downward into nested graph invocations from within tool coroutines.
-- Transcript writes are observability: every failure is logged and swallowed so a transcript problem can never fail a run.
-- Events include model messages, tool calls/results, reasoning blocks, usage metrics, errors, and turn state.
+**Idempotency requirement**: A failure before the checkpoint can cause re-execution. Setup typically refreshes authorization tokens, loads diffs for reviewers, or resolves model-specific parameters. After an in-checkpoint failure and resume, the latch prevents preparation from running again as long as the fingerprint matches.
 
 ## Message processing pipeline
 
@@ -288,27 +300,36 @@ flowchart TD
 
 Workflow push guard approval and execution flow.
 
-## Safety invariants
+## Failure boundaries and safety invariants
 
-**Sandbox resilience:**
+### Transcript and observability failures never crash runs
 
-Reviewer sandbox setup opts into replacement because its checkout is re-derived for each run and a persistent PR thread should not be bricked by a dead sandbox. The coding agent's sandbox setup deliberately does not auto-replace to avoid concealing loss of uncommitted work.
+`TranscriptMiddleware` treats all transcript operations as observability: database writes are queued to a background task per run, write failures are logged and swallowed, and transcript unavailability never alters agent results. This ensures that infrastructure problems (database outages, storage limits) do not interrupt active work.
 
-**Approval permanence:**
+### Approval permanence and finality
 
-`WorkflowPushGuardMiddleware` fingerprints the push diff to ensure approval is specific to the exact changes. Only exact matching of the fingerprinted diff allows the push to proceed; any workflow change causes a new approval prompt. Changes inherited from a merged base branch are noted separately in the diff preview.
+`WorkflowPushGuardMiddleware` fingerprints the push diff to ensure approval is specific to the exact changes. Only exact matching of the fingerprinted diff allows the push to proceed; any workflow change causes a new approval prompt. Changes inherited from a merged base branch are noted separately in the diff preview, so reviewers can approve merged parent workflows without re-approving feature-branch modifications.
+
+### Sandbox resilience strategy
+
+**Reviewer sandbox setup** opts into replacement (`abandon_unreachable=True`) because its checkout is re-derived for each run and a persistent PR thread should not be bricked by a dead sandbox. The checkout is deterministic (single clone-or-fetch + checkout), so a new sandbox does not lose work.
+
+**Coding agent sandbox setup** deliberately does not auto-replace (`abandon_unreachable=False`) to avoid concealing loss of uncommitted work. If a sandbox becomes unreachable, the agent can surface the error to the user so they can decide whether to save work or abandon it.
+
+### Per-run idempotency
+
+`BasePrepareRunMiddleware` and its subclasses achieve per-run idempotency by fingerprinting the message and configuration. This allows:
+
+- Checkpointed setup to survive transient failures before the checkpoint
+- Resumed runs with the same fingerprint to skip setup entirely
+- Fresh re-preparation when the message or configuration changes
+
+All preparation operations must tolerate re-execution because a failure before checkpoint persistence can cause a retry.
 
 ## Integration with DeepAgents
 
-The middleware list passed to the graph is merged with deepagents' own middleware, which provides:
-
-- **FilesystemMiddleware**: Exposes file read/write/delete and directory navigation tools, backend-specific for local vs. sandboxed runs.
-- **SkillsMiddleware**: Loads and exposes skills from configured sources.
-- **Core tool execution**: Handles tool call dispatch, error handling, and result collection.
-- **Message ordering**: Ensures stable, deterministic tool result ordering.
-
-The openswe middleware wraps around these layers, allowing openswe to observe and shape model calls, manage state, enforce policies, and integrate external systems without modifying deepagents internals.
+The middleware list passed to the graph is merged with deepagents' own middleware. OpenSWE middleware wraps around deepagents' layers, allowing openswe to observe and shape model calls, manage state, enforce policies, and integrate external systems without modifying deepagents internals.
 
 ## Message preparation and sanitization
 
-Before each provider call, message sanitizers (from langchain and openswe) prepare provider-specific message formats and clean unsupported content blocks. `StableToolResultOrderMiddleware` (built into deepagents) ensures tool results are ordered stably and deterministically across message lists, allowing the model to rely on consistent result positions.
+Before each provider call, message sanitizers (from langchain and openswe) prepare provider-specific message formats and clean unsupported content blocks. Stable tool result ordering (from deepagents) ensures tool results are ordered stably and deterministically across message lists, allowing the model to rely on consistent result positions.
