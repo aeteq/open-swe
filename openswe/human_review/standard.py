@@ -457,40 +457,49 @@ async def request_review(
     return result
 
 
-async def request_after_ai_review(pr_ref: GitHubPrRef, *, summary: str) -> AutoAssignResult | None:
-    """After an Open SWE review, post a card and pick a human reviewer, if the repository opted in.
+async def request_after_ai_review(pull_request: PullRequest) -> AutoAssignResult | None:
+    """After a Robin review, post a card and pick a human reviewer, if the repository opted in.
 
     Only the default branch's settings count, so a pull request cannot opt itself in or
     out. Each review retries until the pull request has had a request, so one blocked
-    at its first review (a draft, failing checks) still gets a reviewer later. ``None``
-    when nothing was requested.
+    at its first review (a draft, failing checks) still gets a reviewer later. The card
+    summarizes the pull request's description. ``None`` when nothing was requested;
+    failures are logged, since the published review stands regardless.
     """
-    settings = await RepoSettings.cached(pr_ref.owner, pr_ref.repo)
-    if settings.assign_human_reviewer != "after_ai_review":
-        return None
-    if await HumanReviewRequest.ever_for(pr_ref.owner, pr_ref.repo, pr_ref.number):
-        return None
+    pr_ref = GitHubPrRef(
+        owner=pull_request.owner,
+        repo=pull_request.repo,
+        number=pull_request.number,
+        url=pull_request.url,
+    )
     try:
+        settings = await RepoSettings.cached(pr_ref.owner, pr_ref.repo)
+        if settings.assign_human_reviewer != "after_ai_review":
+            return None
+        if await HumanReviewRequest.ever_for(pr_ref.owner, pr_ref.repo, pr_ref.number):
+            return None
         async with PullRequestClient.as_app(pr_ref.owner, pr_ref.repo, pr_ref.number) as pull:
-            result = await _request_review(
-                pr_ref, pull, Origin(), channel="", inline_summary=summary
+            result = await _request_review(pr_ref, pull, Origin(), channel="", inline_summary=None)
+        if not result.success or result.reused:
+            logger.info(
+                "No human review requested after the AI review",
+                extra={"pr_url": pr_ref.url, "error": result.error, "reused": result.reused},
             )
+            return None
+        request = await HumanReviewRequest.get(UUID(result.request_id))
+        if request is None:
+            return None
+        return await start_auto_assign(request, asked=True)
     except GitHubAppUnavailable:
         logger.warning(
             "No GitHub App token to request a human review after the AI review",
             extra={"pr_url": pr_ref.url},
         )
-        return None
-    if not result.success or result.reused:
-        logger.info(
-            "No human review requested after the AI review",
-            extra={"pr_url": pr_ref.url, "error": result.error, "reused": result.reused},
+    except Exception:
+        logger.exception(
+            "Could not request a human review after the AI review", extra={"pr_url": pr_ref.url}
         )
-        return None
-    request = await HumanReviewRequest.get(UUID(result.request_id))
-    if request is None:
-        return None
-    return await start_auto_assign(request, asked=True)
+    return None
 
 
 async def _request_review(

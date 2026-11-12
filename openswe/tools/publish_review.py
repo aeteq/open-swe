@@ -20,6 +20,7 @@ from openswe.github.thread_token import (
     invalidate_cached_github_token,
     resolve_thread_github_token,
 )
+from openswe.human_review.standard import request_after_ai_review
 from openswe.review.approvals import approval_mode_for
 from openswe.review.assessment_feedback import PublishedAssessment
 from openswe.review.diff import compute_diff_line_set, fetch_pr_diff, is_range_in_diff
@@ -452,7 +453,7 @@ async def _publish_review_async(
             token=token,
             findings=findings,
         )
-        await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
+        pull_request = await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
             reviewer_thread_id=thread_id, head_sha=head_sha, finding_count=0
         )
         await set_reviewer_thread_metadata(
@@ -483,6 +484,7 @@ async def _publish_review_async(
             title=check_title,
             summary=check_summary,
         )
+        await request_after_ai_review(pull_request)
         return {
             "success": True,
             "review_id": None,
@@ -718,7 +720,7 @@ async def _publish_review_async(
     )
 
     try:
-        await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
+        pull_request = await PullRequest(owner=owner, repo=repo, number=pr_number).link_review(
             reviewer_thread_id=thread_id,
             github_review_id=review_id if isinstance(review_id, int) else None,
             head_sha=head_sha,
@@ -771,6 +773,7 @@ async def _publish_review_async(
         title=check_title,
         summary=check_summary,
     )
+    await request_after_ai_review(pull_request)
 
     result: dict[str, Any] = {
         "success": True,
