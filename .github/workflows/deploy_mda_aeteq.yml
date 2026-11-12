@@ -19,8 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # Moves the mda-deployed/aeteq tag to what the deployment runs.
-  contents: write
+  contents: read
 
 jobs:
   deploy:
@@ -117,11 +116,24 @@ jobs:
             --workspace-id 7657d5d9-dea8-46fd-a8ab-d26db7f80e5f \
             --context-strategy overwrite \
             --yes
+      # github.token can't point a ref at a commit whose workflow files differ from main's,
+      # as when a workflow change merges while the deploy runs; the App can write workflows.
+      - name: Token to move the deployed tag
+        if: steps.changed.outputs.deploy == 'true'
+        id: tag-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: aeteq
+          repositories: open-swe
+          permission-contents: write
+          permission-workflows: write
       - name: Record what the deployment runs
         if: steps.changed.outputs.deploy == 'true'
         env:
           DEPLOYED_TAG: mda-deployed/aeteq
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.tag-token.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
