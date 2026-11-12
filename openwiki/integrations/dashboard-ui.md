@@ -3,6 +3,9 @@ type: integration
 title: Dashboard and UI Integration
 description: React UI architecture, thread listing and chat interfaces, real-time updates, state invalidation, and OAuth integration.
 tags: [dashboard, fastapi, oauth, threads, authorization, tanstack-start, langgraph, real-time]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-4b1279a0a1e5ec2d55a4558a
     resource: repo://openswe/api/app.py
@@ -10,8 +13,6 @@ sources:
     resource: repo://openswe/dashboard/__init__.py
   - id: openwiki-source-6128627021aa8b6393710ab1
     resource: repo://openswe/dashboard/auth_routes.py
-  - id: openwiki-source-c6809bf047de06f004194bd4
-    resource: repo://openswe/dashboard/deps.py
   - id: openwiki-source-50d64b46ab06b6436266b4d0
     resource: repo://openswe/dashboard/oauth.py
   - id: openwiki-source-7fc33e4789861923a6f12e78
@@ -42,12 +43,7 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-3b0d59e2570cb537382d8c12
     resource: repo://ui/src/lib/dashboard-fetch.ts
-  - id: openwiki-source-a741d432f952c0dbfb4fb35d
-    resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
 # Dashboard and UI Integration
@@ -56,7 +52,7 @@ The dashboard is the human-facing surface for agent operations: a FastAPI router
 
 ## Composition and routing
 
-`openswe.api.app.create_app()` mounts the dashboard router at line 174 via `app.include_router(dashboard_router)`, then calls `mount_dashboard_ui(app)` at line 198. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
+`openswe.api.app.create_app()` mounts the dashboard router at line 186 via `app.include_router(dashboard_router)`, then calls `mount_dashboard_ui(app)` at line 209. The router has the `/dashboard/api` prefix and a router-wide mutation-origin dependency that guards all cookie-authenticated state changes. `openswe.dashboard` exports that router lazily with `__getattr__` so that importing a dashboard submodule (e.g., for middleware configuration) does not pull in FastAPI, routes, and every API/job module; only the application that mounts the router pays that cost.
 
 The dashboard router aggregates over 30 feature routers including threads, reviews, schedules, skills, workspaces, profiles, and integrations (Slack, MCP). Additional routers mounted with the dashboard prefix include `plan_router` at `/dashboard/api/plan` and `workflow_approval_router` at `/dashboard/api/workflow-approval`, each with their own mutation-origin guard. Each endpoint enforces session authentication, repository access control, and admin-only operations where required.
 
@@ -72,11 +68,11 @@ The router-wide CSRF guard `require_same_origin_for_mutations` permits safe meth
 
 Thread discovery and thread readability are intentionally different. Normal listings search participant login/email metadata, including legacy creator metadata. The `all=true` parameter is restricted to administrators. The paginated endpoint clamps `limit` to 1–100, normalizes negative offsets, validates `repo` as `owner/name`, and rejects `repo` together with `ownerless`. Metadata filtering occurs before summary construction; viewed/status filtering requires summaries. Potentially active latest runs are refreshed with a concurrency limit of eight.
 
-Any authenticated organization member can read a thread whose source is surfaced; unsurfaced threads return `404`. Posting applies that readable check and additionally requires an administrator for automation and `admin_thread` threads. `/threads/{thread_id}` returns a metadata-derived summary with status and latest run information; the client obtains the full transcript from the LangGraph state endpoint via a stream provider. A finished detail read normally writes viewed metadata but supports `mark_viewed=false`, never marks a running thread viewed, and treats metadata-write failure as non-fatal. An interrupted latest run is reported as interrupted even while the thread itself briefly remains busy.
+Any authenticated organization member can read a thread whose source is surfaced (one of `dashboard`, `web`, `github`, `slack`, `linear`, `notion`, `schedule`, `api`, or `claude_code`); unsurfaced threads return `404`. Posting applies that readable check and additionally requires an administrator for automation and `admin_thread` threads. `/threads/{thread_id}` returns a metadata-derived summary with status and latest run information; the client obtains the full transcript from the LangGraph state endpoint via a stream provider. A finished detail read normally writes viewed metadata but supports `mark_viewed=false`, never marks a running thread viewed, and treats metadata-write failure as non-fatal. An interrupted latest run is reported as interrupted even while the thread itself briefly remains busy.
 
 Projects are metadata-only groups of matching configured repositories, keyed case-insensitively and sorted by latest update; they omit ownerless work and default to excluding resolved and automation threads. Pins are stored per login, not in thread metadata. Pinning verifies readability; loading pins retrieves every saved ID independently and omits missing, failed, or no-longer-readable threads. Thus a pin never bypasses present access checks.
 
-The cloud terminal uses a two-step contract. `POST /threads/{id}/terminal/connect` checks readable thread and ready sandbox, returns a no-store WebSocket URL, the `open-swe-terminal` protocol, and a signed ticket. The WebSocket expects protocol plus ticket, validates its thread-bound ticket and origin, then repeats readable/sandbox validation. It only operates for a LangSmith sandbox, permits 20 concurrent sessions, and closes with `1013` when full. It bridges bounded input and resize messages to a PTY shell and kills the handle when the connection ends.
+The cloud terminal uses a two-step contract. `POST /threads/{id}/terminal/connect` checks readable thread and ready sandbox, returns a no-store WebSocket URL, the `open-swe-terminal` protocol, and a signed ticket. The WebSocket expects protocol plus ticket, validates its thread-bound ticket and origin, then repeats readable/sandbox validation. It only operates for a LangSmith sandbox, permits 20 concurrent sessions via a semaphore, and closes with `1013` when full. It bridges bounded input and resize messages to a PTY shell and kills the handle when the connection ends.
 
 ## Dashboard-managed configuration and automation
 

@@ -2,12 +2,17 @@
 type: configuration concept
 title: Models, Profiles, and Instructions
 description: Model and reasoning selection, fallback, gateway construction, and the team, profile, and thread layers that govern agent runs. Explains how repository, environment, and sender instructions are persisted and placed into prompts.
-tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable]
+tags: [models, reasoning-effort, profiles, team-defaults, instructions, model-selection, gateway, fable, model-routing]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-b944dafe6742f31d7ab88e70
     resource: repo://openswe/dashboard/agent_instructions.py
   - id: openwiki-source-d7869f38ea59b91aa236ee00
     resource: repo://openswe/dashboard/agent_overrides.py
+  - id: openwiki-source-90a9dcd39172ef828ef4aa4b
+    resource: repo://openswe/dashboard/options_routes.py
   - id: openwiki-source-8edaced2842e8bdf5ec72158
     resource: repo://openswe/dashboard/options.py
   - id: openwiki-source-4cb48d234248941982c6537f
@@ -20,24 +25,17 @@ sources:
     resource: repo://openswe/graphs/read_only.py
   - id: openwiki-source-836966ba5e0c4d710801c9a9
     resource: repo://openswe/input_messages.py
+  - id: openwiki-source-33f10f19ca9005799d09d65e
+    resource: repo://openswe/model_routing.py
   - id: openwiki-source-c950a10d3272291deaffd090
     resource: repo://openswe/prompt.py
   - id: openwiki-source-919e16feae379651f2cbc1c9
     resource: repo://openswe/server.py
   - id: openwiki-source-5c84530a3d0edb1fb15187f1
     resource: repo://openswe/threads/runs.py
-  - id: openwiki-source-b0386020bdef12612e5b005e
-    resource: repo://openswe/utils/authorship.py
-  - id: openwiki-source-cbab46b11893a9efc599e687
-    resource: repo://openswe/utils/gateway.py
-  - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
-    resource: repo://openswe/utils/model.py
   - id: openwiki-source-1962e84a7cbf37fcca83381c
     resource: repo://openswe/utils/thread_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
 # Models, Profiles, and Instructions
@@ -48,7 +46,7 @@ A hosted agent run resolves a valid `(model_id, effort)` pair and a thread-stabl
 
 `SUPPORTED_MODELS` is the curated selectable-model registry. Each `ModelOption` contains the provider-prefixed id, label, allowed `efforts`, `default_effort`, image capability, and, where applicable, whether it may be saved as a default. `SUPPORTED_MODEL_IDS` is the membership set used during resolution. Effort is not a global enum: for example, Kimi K3 accepts only `low`, `high`, and `max`; Gemini 3.8 Flash uses `minimal` through `high`. Always validate a pair with `model_supports_effort`, and validate multimodal input with `model_supports_images`.
 
-The dashboard's `/options` response does not mutate this registry. It returns copied records enriched with context-window information, preferring explicit Codex overrides, then a LangChain provider profile, then a small fallback table. It removes Fable choices when the workspace switch is off and gates returned defaults as well.
+The dashboard's `/options` response does not mutate this registry. It returns copied records from `available_requested_models`, which filters by Fable enablement. Those records are enriched with context-window information, preferring explicit Codex overrides, then a LangChain provider profile, then a small fallback table. The response also gates returned defaults by Fable settings: when Fable is disabled, any Fable default is replaced with its non-Fable fallback before advertising.
 
 ### Defaults and recovery
 
@@ -56,10 +54,10 @@ The dashboard's `/options` response does not mutate this registry. It returns co
 
 A selection that has fallen out of the registry is handled differently from one explicitly listed in `DEPRECATED_MODEL_IDS`:
 
-* For a non-deprecated id, `provider_fallback_pair` chooses the first supported model on the same provider, preferring the same Claude family. It preserves effort where supported (including mapping Gemini `none` to `minimal`) and otherwise uses the fallback model's default effort. An unknown provider yields no pair.
+* For a non-deprecated id, `provider_fallback_pair` chooses the first supported model on the same provider, preferring the same Claude family. It preserves effort where supported (including mapping Gemini `none` to `minimal`) and otherwise uses the fallback model's default effort. An unknown provider yields no pair. A retired id in `RETIRED_MODEL_REPLACEMENTS` moves to its named successor.
 * Deprecated ids are excluded from that recovery path and defer to a team or deployment default. `DEPRECATED_MODEL_REPLACEMENTS` currently contains empty values and returns `None` for deprecated ids; there is no automatic canonical migration.
 
-All team default resolvers use a valid saved pair first, then same-provider recovery, then `default_model_pair()`. This is the invariant that stale persisted settings still produce a constructible pair.
+All team default resolvers via `_resolve_default_pair` use a valid saved pair first, then same-provider recovery, then `default_model_pair()`. This is the invariant that stale persisted settings still produce a constructible pair.
 
 ## Precedence, roles, and thread lifecycle
 
@@ -111,19 +109,27 @@ For selection-only callers, `resolve_agent_model_id` applies supported per-threa
 
 Fable is a workspace-wide ZDR gate. A Fable option cannot be saved as a normal default, and disabling Fable rewrites submitted Fable team defaults to a non-Fable Anthropic fallback. `gate_fable_model` is also applied after snapshot resolution to main, subagent, and title models, and by dashboard resolution and option listing. Thus a stale snapshot cannot cause a disabled Fable model to be advertised or constructed.
 
+### Adaptive model routing
+
+When `model_routing_enabled` is true at the workspace level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. A thread's routing arm is determined by a stable hash of its id against a 50% threshold, allowing the experiment to split threads between routed and non-routed control arms. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests and incident modes. The `RoutingArm` class stabilizes thread assignment, and routing decisions are re-evaluated on each turn; a non-routed thread runs the person's explicit or inherited selection unchanged.
+
 ## Provider construction, reasoning, gateway, and runtime fallback
 
-`provider_model_kwargs` translates the resolved effort at the provider boundary: OpenAI receives `reasoning` and uses `summary: "auto"` except for `none`; Anthropic receives adaptive, summarized `thinking` and an `effort`; Gemini 3 family models receive `thinking_level`; Fireworks receives `model_kwargs.reasoning_effort`; and Baseten receives `reasoning_effort` only for `low`, `high`, or `max`.
+Provider-level model construction is handled by `make_model` in `runtime_api.models`, which:
 
-`make_model` constructs through `init_chat_model` with six retries and a 600-second timeout for shipped provider prefixes. OpenAI defaults to the Responses API with `store=False`, `output_version="responses/v1"`, and included encrypted reasoning; if gateway routing is not applied and no `OPENAI_API_KEY` exists, desktop OAuth can provide the model instead. Baseten is configured as OpenAI-compatible and, without gateway routing, requires `BASETEN_API_KEY` and its service URL. Models are cached by model id, requested gateway value, max tokens, frozen kwargs, and event-loop id.
+- Constructs through LangChain's `init_chat_model` with a default max_retries of 6 and a 600-second per-request timeout for shipped provider prefixes.
+- Configures OpenAI models for the Responses API with `store=False`, `output_version="responses/v1"`, and included encrypted reasoning; if gateway routing is not applied and no `OPENAI_API_KEY` exists, desktop OAuth can provide the model instead.
+- Routes Baseten as an OpenAI-compatible provider and, when the gateway is disabled, requires `BASETEN_API_KEY` and points at the Baseten base URL, raising if the key is missing.
+- Applies provider-specific effort parameter handling: OpenAI receives `reasoning` and uses `summary: "auto"` except for `none`; Anthropic receives adaptive, summarized `thinking` and an `effort`; Gemini 3 family models receive `thinking_level`; Fireworks receives `model_kwargs.reasoning_effort`; and Baseten receives `reasoning_effort` only for `low`, `high`, or `max`.
+- Caches models by model id, requested gateway value, max tokens, frozen kwargs, and event-loop id.
 
-Gateway enablement is tri-state: a `True` or `False` team value wins, while `None` inherits `LANGSMITH_GATEWAY_ENABLED` (or the presence of a dedicated gateway key if that variable is unset). When routing is possible, gateway overrides replace direct base URL and API key, and select whether OpenAI uses Responses. A non-routable provider or absent LangSmith key is logged and remains direct rather than failing the run.
+Gateway enablement is tri-state: a `True` or `False` team value wins, while `None` inherits `LANGSMITH_GATEWAY_ENABLED` (or the presence of a dedicated gateway key if that variable is unset). When routing is possible, `gateway_overrides` supplies base_url/api_key/use_responses_api that override direct-provider defaults. A non-routable provider or absent LangSmith key is logged and remains direct rather than failing the run.
 
-Provider request routing is distinct from runtime model fallback. `ModelFallbackMiddleware` uses `LLM_FALLBACK_MODEL_ID` when set; otherwise Anthropic primaries fall back to OpenAI and OpenAI primaries to Anthropic. Google, local, and self-hosted providers have no automatic cross-provider fallback.
+Provider request routing is distinct from runtime model fallback. `ModelFallbackMiddleware` uses `LLM_FALLBACK_MODEL_ID` when set; otherwise Anthropic primaries fall back to OpenAI and OpenAI primaries to Anthropic. `fallback_model_id_for` returns a cross-provider fallback and `None` for Google/local/self-hosted providers that must not be silently re-routed.
 
 ## Instruction sources and authority
 
-Repository custom instructions are workspace-admin-authored records in the LangGraph Store `["agent_instructions"]` namespace, keyed by `owner/name`. On a new hosted thread the factory resolves instructions for the effective default repository and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
+Repository custom instructions are workspace-admin-authored records in a database table, normalized by owner/name (case-insensitive). On a new hosted thread the factory resolves instructions for the effective default repository via `get_repo_agent_instructions` and saves the text in the thread snapshot. `construct_system_prompt` renders it as **Repository-specific Custom Instructions**, so it is shared by the thread; if lookup fails, that section is absent rather than aborting the run.
 
 Personal instructions are separate LangGraph Store records in the `["user_instructions"]` namespace, keyed by GitHub login, and capped at 20,000 characters. They can be changed from the dashboard or by the agent's `save_user_instructions` tool, so keeping them out of the profile avoids competing writers. During prepare-run, the factory loads the triggering user's current text and makes it available to the message-construction system as `standing_instructions` in the sender's `PersonIdentity` block. It explicitly applies to that turn only and is rendered into the message context rather than the shared system prompt.
 
@@ -135,20 +141,16 @@ Prompt authority is explicit:
 
 In particular, user instructions are not shared thread instructions and must not override repository policy.
 
-## Model pair concept and adaptive routing
-
-Each role (agent, reviewer, chat) has a main model and optional subagent model. The subagent model is used for research, code search, and context-gathering subtasks, while the main model handles the user-facing response. A profile can override both pairs independently; when a profile provides only a main model, it becomes the subagent model unless an explicit subagent override exists.
-
-When `model_routing_enabled` is true at the workspace or user level, the factory seeds fast, balanced, and performance routing variants alongside the main model. Each variant pair is resolved through the same precedence rules (team defaults, profile overrides, thread snapshot) and may differ from the main model. The router uses input characteristics to select between fast and balanced paths; performance routing is reserved for explicit high-effort requests.
-
 ## Prompt loading, instruction caching, and rendering
 
 Prompts are Jinja2 templates and static Markdown files loaded from `agent/resources/prompts/` via the `prompt()` function in `openswe/prompts.py`. Templates end with `.md.jinja` and accept keyword arguments that become Jinja variables. The main system prompt is constructed in `construct_system_prompt`, which assembles sections for working environment, dashboard context, source guidance, repository scope, collaboration, external comments, repository instructions, workspace settings, and recent thread context. Each section is conditionally rendered and only included if its content is non-empty.
 
 Repository custom instructions are rendered into a dedicated section via `_render_repo_instructions_section`. Workspace instructions are rendered via `_render_workspace_section` and include org-level guidelines and workspace-specific repos. User (sender-level) instructions do not appear in the system prompt; instead, they are placed in the message context as `standing_instructions` on the sender's `PersonIdentity` block in `openswe/input_messages.py`. This ensures they apply only to the sender's current turn, not thread-wide, and allows per-message re-evaluation of personal preferences.
 
+`SystemPrompt` is split into three frozen layers—`shared`, `workspace`, and `thread`—to enable efficient prompt caching. The shared layer changes only across deployments; the workspace layer changes for each workspace; the thread layer changes for each thread. Only the thread layer contains thread-specific identity and artifact links, minimizing cache misses.
+
 Instruction caching leverages Anthropic's prompt caching middleware (`AnthropicPromptCachingMiddleware`), configured with a 1-hour TTL on read-only graph models to enable efficient multi-turn conversations by caching the stable portions of the system prompt and instructions, reducing token consumption and latency for subsequent turns in the same thread.
 
 ## Change and test guide
 
-When changing the registry, fallback, or profile normalization, exercise `tests/models/test_model_fallback_resolution.py`: it covers provider-preserving recovery, deprecated-id deferral, environment defaults, profile/team behavior, context enrichment, and Fable handling. Dashboard thread tests cover team/profile/request precedence and image validation/fallback. `agent/test_thread_settings.py` covers typed snapshot normalization, caching, and fail-soft persistence, while `models/test_agent_subagent_models.py` covers factory-level inheritance and explicit subagent selection. Update these focused cases when adding a provider, changing an effort set, or altering precedence.
+When changing the registry, fallback, or profile normalization, exercise `tests/models/test_model_fallback_resolution.py`: it covers provider-preserving recovery, deprecated-id deferral, environment defaults, profile/team behavior, context enrichment, and Fable handling. Dashboard thread tests cover team/profile/request precedence and image validation/fallback. `agent/test_thread_settings.py` covers typed snapshot normalization, caching, and fail-soft persistence. Update these focused cases when adding a provider, changing an effort set, or altering precedence.

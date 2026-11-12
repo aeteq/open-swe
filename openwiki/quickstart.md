@@ -3,9 +3,6 @@ type: "Reference"
 title: "Quick Start: Navigate the Open SWE Codebase"
 description: "Route readers through the wiki hierarchy based on their task: starting a dev loop, understanding entrypoints and execution boundaries, tracing request flows, and choosing detailed guides by concern."
 tags: [quickstart, wiki, navigation, entrypoints, developer-setup, architecture]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -17,12 +14,8 @@ sources:
     resource: repo://openswe/api/app.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
-  - id: openwiki-source-813c25f6bac2408de322a1f5
-    resource: repo://openswe/graphs/agent.py
   - id: openwiki-source-2e8359c5702d5a31e2d5ea43
     resource: repo://openswe/graphs/read_only.py
-  - id: openwiki-source-90b15fd6117126ebfe5b6b22
-    resource: repo://openswe/graphs/reviewer.py
   - id: openwiki-source-96bcad07b4fe7078402bc2b8
     resource: repo://openswe/reviewer.py
   - id: openwiki-source-3bd49e1c2bb74350a7519268
@@ -30,6 +23,9 @@ sources:
   - id: openwiki-source-5b54a58d1b51cd490b0e7162
     resource: repo://package.json
 generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Quick Start: Navigate the Open SWE Codebase

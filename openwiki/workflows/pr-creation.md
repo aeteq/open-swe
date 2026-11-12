@@ -3,9 +3,6 @@ type: workflow
 title: Pull Request Creation and Updates
 description: How the agent opens and updates pull requests with attributed authorship, commit squashing, workflow-file change approval, and metadata recording.
 tags: [pull-request, github, commit, delivery, pr-creation, attribution, workflow-approval]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
 sources:
   - id: openwiki-source-0190f218684562b378eff2f1
     resource: repo://openswe/agent_api/agent.py
@@ -25,7 +22,10 @@ sources:
     resource: repo://openswe/tools/open_pull_request.py
   - id: openwiki-source-3087256f0cd599176fba3c38
     resource: repo://openswe/webhooks/common.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
 # Pull Request Creation and Updates
@@ -208,7 +208,7 @@ This footer is inserted before any `## References` section, preserving transpare
 
 The middleware tokenizes the command and recursively expands nested `-c` arguments in `bash`, `dash`, `sh`, and `zsh` calls (bounded at 3 levels of nesting). It rejects the command with a non-recoverable `PullRequestCreationFallbackBlocked` error, preserving the real `open_pull_request` failure instead of hiding it.
 
-The guard is installed in the main agent's shell guards unconditionally (via `shell_guards` class attribute in `CodeAgent`). It is also installed in the general-purpose subagent's own middleware, ensuring that any subagent invocation inherits the same enforcement.
+The guard is installed in the main agent's shell guards unconditionally (via `shell_guards` class attribute in `AgentKind`). It is also installed in the general-purpose subagent's own middleware, ensuring that any subagent invocation inherits the same enforcement.
 
 ## Mutation protection and approval API
 

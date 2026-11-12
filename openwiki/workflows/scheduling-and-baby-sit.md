@@ -12,10 +12,8 @@ sources:
     resource: repo://openswe/background_tasks.py
   - id: openwiki-source-272cbcb523fcd8d6a71223ad
     resource: repo://openswe/bundled_skills/baby-sit/SKILL.md
-  - id: openwiki-source-913527bc7b548b4bf81f6a35
-    resource: repo://openswe/completion.py
-  - id: openwiki-source-d0edf7555209b3e6418b5c5f
-    resource: repo://openswe/github/routes.py
+  - id: openwiki-source-9ad7888a549990068f28dbdc
+    resource: repo://openswe/github/webhook.py
   - id: openwiki-source-1501ebbb20af772307a3e518
     resource: repo://openswe/jobs/kinds.py
   - id: openwiki-source-cd47fe08eddb4619c6ba9c8b
@@ -48,10 +46,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Scheduled and Background Work Dispatch
@@ -188,7 +186,7 @@ sequenceDiagram
 
 Diagram: immediate signed CI events and the polling fallback converge on one serialized watch evaluation.
 
-The GitHub route verifies `X-Hub-Signature-256` HMAC before accepting a request. CI events (`check_run`, `check_suite`, `workflow_run`, and `status`) are processed in the background. `handle_ci_webhook` ignores non-failing payloads, selects active watches in the repository whose stored SHA or branch matches, updates a supplied installation ID, and records a delivery ID before evaluating; repeated deliveries (deduplicated by delivery_id) do not cause a second evaluation.
+The GitHub webhook handler in `openswe/github/webhook.py` forwards CI events to `handle_ci_webhook`, which ignores non-failing payloads, selects active watches in the repository whose stored SHA or branch matches, updates a supplied installation ID, and records a delivery ID before evaluating; repeated deliveries (deduplicated by delivery_id) do not cause a second evaluation.
 
 The ten-minute cron is the deterministic fallback for lost or delayed webhooks. `evaluate_watch` obtains a five-minute per-watch lock implemented as a short-lived LangGraph thread via `event_claims`. A concurrent trigger returns `busy`; otherwise it fetches the PR and current check/status sets. Pending and duplicate states return without dispatching an agent run, so unchanged polling consumes no model tokens.
 

@@ -14,30 +14,26 @@ sources:
     resource: repo://openswe/config.py
   - id: openwiki-source-50d64b46ab06b6436266b4d0
     resource: repo://openswe/dashboard/oauth.py
+  - id: openwiki-source-8edaced2842e8bdf5ec72158
+    resource: repo://openswe/dashboard/options.py
   - id: openwiki-source-775d5704fff1c9b4f3e91941
     resource: repo://openswe/dashboard/workspace_settings.py
   - id: openwiki-source-1685d34aae8025be9332f45a
     resource: repo://openswe/dispatch.py
   - id: openwiki-source-b11ec0af4e40439361058935
     resource: repo://openswe/encryption.py
-  - id: openwiki-source-1b32e9f41fa7e64702b380f6
-    resource: repo://openswe/sandboxes/lifecycle.py
   - id: openwiki-source-d16a45e9fc6aa80a3708c88c
     resource: repo://openswe/sandboxes/providers/langsmith.py
   - id: openwiki-source-a4c632cb1c0a9a7a637ab9fe
     resource: repo://openswe/sandboxes/providers/registry.py
-  - id: openwiki-source-919e16feae379651f2cbc1c9
-    resource: repo://openswe/server.py
-  - id: openwiki-source-cbab46b11893a9efc599e687
-    resource: repo://openswe/utils/gateway.py
-  - id: openwiki-source-4cc74089c0207ec1e5a6ca3b
-    resource: repo://openswe/utils/model.py
   - id: openwiki-source-7b35cf61ea1491240ef4c804
     resource: repo://openswe/workspaces/store.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+  - id: openwiki-source-ca903c55014b4c7b30574ca4
+    resource: repo://packages/runtime-api/src/runtime_api/models.py
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Configuration and Startup Validation
@@ -144,9 +140,9 @@ Store reads for team settings are fail-soft (unavailable Store returns hardcoded
 
 ### Fallback models and request timeouts
 
-`LLM_FALLBACK_MODEL_ID` names an explicit fallback; otherwise Anthropic primaries fall back to `openai:gpt-6.1-sol` and OpenAI to `anthropic:claude-opus-5-5`. Fallback middleware is installed only when the fallback exists and differs from the primary. `make_model` constructs and caches clients per event loop and model options.
+`LLM_FALLBACK_MODEL_ID` names an explicit fallback; otherwise Anthropic primaries fall back to `openai:gpt-6.1-sol` and OpenAI to `anthropic:claude-opus-5-5`. Fallback middleware is installed only when the fallback exists and differs from the primary. The runtime builds and caches clients per event loop and model options through `make_model` from `runtime_api.models`.
 
-Each provider request receives up to 6 retries. OpenAI, Anthropic, Baseten, Google GenAI, and Fireworks also receive a 600-second default per-request timeout. These bounds complement the agent's separate model-call deadline and run recursion limits.
+Each provider request receives up to 6 retries (`DEFAULT_MAX_RETRIES`). OpenAI, Anthropic, Baseten, Google GenAI, and Fireworks also receive a 600-second (`DEFAULT_REQUEST_TIMEOUT_SECONDS`) per-request timeout. These bounds complement the agent's separate model-call deadline and run recursion limits.
 
 ### Gateway routing
 

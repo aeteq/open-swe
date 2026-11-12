@@ -5,7 +5,7 @@ description: How the primary Deep Agents coding graph is assembled per executabl
 tags: [agent-graph, deep-agents, langgraph, middleware, subagents, sandbox, tools, factory, managed-deep-agents]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json

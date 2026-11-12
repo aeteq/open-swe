@@ -24,10 +24,10 @@ sources:
     resource: repo://openswe/tools/automations.py
   - id: openwiki-source-1a477779016142ec6f3dc601
     resource: repo://openswe/tools/read_user_settings.py
+generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+    at: 2026-11-11T15:58:52.285Z
 ---
 
 # Tools and Tool Access

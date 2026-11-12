@@ -1,8 +1,8 @@
 ---
 type: workflow
-title: Context Engineering and Agent Preparation
-description: Workflow for assembling run input, managing dynamic context deduplication, and constructing layered system prompts through preparation middleware.
-tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions]
+title: Context Engineering and Prompt Assembly
+description: Dynamic system prompt construction, context window strategy, skill routing, and instruction precedence in coded agent execution.
+tags: [context-assembly, prompt-engineering, system-prompt, dynamic-context, agents-md, skills, review-conventions, input-normalization]
 sources:
   - id: openwiki-source-f909450359e22e7d9c1ba0b3
     resource: repo://mda/rt/subdir_agents.py
@@ -30,13 +30,13 @@ sources:
     resource: repo://openswe/threads/recent_context.py
   - id: openwiki-source-6cab3229da0697cc82ed6224
     resource: repo://openswe/utils/agents_md.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 ---
 
-# Context Engineering and Agent Preparation
+# Context Engineering and Prompt Assembly
 
 Context is assembled in layers rather than by passing an event body verbatim to a model. Surface adapters construct a normalized `RunInput` transcript and run configuration; `dispatch_agent_run` enforces the durable-run boundary and rejects ambiguous calls that combine a prebuilt input with raw content or identities. At execution time, prepare middleware resolves fresh, run-specific prompt material, checkpoints it by fingerprint, and supplies a wrapped system message to the agent.
 
@@ -92,11 +92,11 @@ The graph factory creates a deep agent with an initially empty system prompt. Pr
 
 Preparation must be idempotent: if it fails before the checkpoint is written, it may execute again, so every operation must be safe to repeat. The middleware deliberately does not mutate cached history with sender metadata; instead, `PrepareAgentRunMiddleware` produces sender context as separate structured messages that preserve history immutability and allow the model to distinguish infrastructure context from user input.
 
-For every model call, `ashape_model_call` in the base middleware combines the rendered prompt with any existing system message by prepending the rendered prompt using `call.prepending(rendered)`.
+The rendered system prompt is combined with model calls via MDA's `invoke_model` machinery, which automatically prepends any `rendered_system_prompt` state to the invocation.
 
 ## System prompt construction and instruction ordering
 
-`construct_system_prompt` builds the main-agent system prompt by assembling multiple template sections in a fixed precedence order. It takes working-environment, dashboard, source, and role configuration and renders corresponding sections from Jinja2 templates in `openswe/resources/prompts/`. The sections are layered from lowest to highest precedence as follows:
+`construct_system_prompt` builds the main-agent system prompt by assembling multiple template sections in a fixed precedence order. It renders corresponding sections from Jinja2 templates in `openswe/resources/prompts/` and combines them into a structured `SystemPrompt` object with separate shared, workspace, and thread sections. The sections are layered from lowest to highest precedence as follows:
 
 1. **Default system guidance** — working environment (sandbox-specific or local-checkout variant), tools, task execution, dependencies, commit/PR, and self-awareness sections.
 2. **Dashboard context** — environment identifier, base URL, and artifact references.
@@ -131,9 +131,7 @@ The reviewer's approval behavior—whether it only comments (`dry_run`), never a
 
 ## Skills: lazily readable prompt extensions
 
-Skills are instructions exposed as virtual `SKILL.md` files rather than copied wholesale into the prompt. A `CompositeBackend` keeps the run backend as default and routes skill prefixes to specialized backends; it strips the route prefix before delegation. Passing those prefixes in `create_deep_agent(skills=[...])` lets deepagents advertise skills while the agent reads full instructions through ordinary `read_file`.
-
-The main graph always mounts repository-bundled `baby-sit` and `html-artifacts` skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a credential login exists, per-user skills read-only at `/skills/`; the user route is first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
+Skills are instructions exposed as virtual `SKILL.md` files rather than copied wholesale into the prompt. A `CompositeBackend` keeps the run backend as default and routes skill prefixes to specialized backends; it strips the route prefix before delegation. The main graph always mounts repository-bundled skills read-only at `/bundled-skills/`. Hosted runs additionally mount organization skills read-only at `/organization-skills/` and, when a credential login exists, per-user skills read-only at `/skills/`; the user route is first in the sources list, so it has priority in lookups. Skills are persisted as `/<name>/SKILL.md` under the appropriate store namespace with YAML name/description front matter and a replacement instruction body. Names, sizes, and organization count are bounded; user tools resolve the current GitHub login, while organization-skill tools require an admin. Desktop runs instead source user skills from run state, omit organization skills, and route artifacts away from the project checkout.
 
 ### Reviewer: trusted skills from base revision
 
@@ -170,9 +168,15 @@ The system prompt is composed from multiple sources using a modular template sys
 
 Each section can be conditionally included or rendered with different parameters based on run configuration, source, and user role.
 
+The `TurnContext` class encapsulates per-turn runtime state that influences guidance selection: source (slack, linear, github, etc.), source-specific flags (slack_context, slack_ask, slack_breakout, slack_by_the_way), workspace metadata, and artifact URLs. Its `_source_guidance()` method dynamically selects appropriate guidance sections wrapped in source-context tags.
+
 ## External and untrusted comment handling
 
 The system recognizes that comments from external contributors or PR authors may contain adversarial or misleading content. External comments are marked with dedicated safety sections that explicitly tell the model to treat them as untrustworthy input, verify claims independently, and prioritize security. This guidance is always included in reviewer prompts and in applicable agent scenarios.
+
+## System prompt lifecycle and caching
+
+A thread's system prompt is rendered on its first run and remains fixed for the thread's lifetime (once `system_prompt_fixed` is set). The `SystemPrompt` object carries three sections: `shared` (applies to all threads), `workspace` (shared within a workspace, cached), and `thread` (unique to this thread). The state caches `rendered_system_prompt` (the complete joined prompt), `rendered_workspace_prompt`, and `rendered_thread_prompt` separately, allowing MDA runtime to reuse the workspace portion across threads in the same workspace without re-rendering.
 
 ## Safe change and focused verification
 

@@ -1,7 +1,7 @@
 ---
 type: integration and observability architecture
-title: Observability, Tracing, and MCP
-description: LangSmith tracing and cost collection, analytics event capture, invocation and session cost tracking, MCP connections, and full-transcript recording for debugging and replay.
+title: Observability, Browser, and MCP Integrations
+description: LangSmith tracing and cost collection, analytics event capture, invocation and session cost tracking, MCP connections and tool discovery, full-transcript recording for debugging and replay, image model fallback, and browser automation support.
 tags: [observability, tracing, mcp, analytics, langsmith, credentials, costs, transcript, error-tracking, browser, image-fallback]
 sources:
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
@@ -46,15 +46,15 @@ sources:
     resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-06T15:47:54.369Z
+    at: 2026-11-11T15:58:52.285Z
 ---
 
-# Observability, Tracing, and MCP
+# Observability, Browser, and MCP Integrations
 
-The agent combines three observability and integration systems:
+The agent combines multiple observability and integration systems:
 
 1. **LangSmith tracing and cost collection**: Every run is traced to LangSmith for debugging, inspection, and model-call cost attribution. Trace resource names are set by APM middleware, and trace URLs are generated for dashboard embedding and user review context.
 
@@ -62,7 +62,7 @@ The agent combines three observability and integration systems:
 
 3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, and user. Missing credentials or connection failures remove optional tools rather than blocking a run.
 
-Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call error classification in completion handlers for observability and recovery, provides image model fallback so agents can handle image inputs even when the selected model does not support them, and enables browser automation through LangSmith's browser MDA.
+Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call error classification in completion handlers for observability and recovery, provides image model fallback so agents can handle image inputs even when the selected model does not support them, and enables browser automation through LangSmith's browser API.
 
 See [Authentication and security](../concepts/auth-and-security.md) for the broader trust model, [Tools](../concepts/tools.md) for dynamic tool availability, [Models, profiles, and instructions](../concepts/models-profiles-instructions.md) for model selection, and [Configuration](../operations/configuration.md) for environment settings.
 
@@ -86,7 +86,7 @@ After a run completes, cost is enriched and tracked by two independent systems:
 
 `openswe/agent_cost.py:finalize_agent_invocation_usage` records terminal invocation usage and schedules deferred cost collection:
 
-1. **Immediate recording** of completion status and model-call token counts (input, output, total) via `record_agent_invocation_completion`.
+1. **Immediate recording** of completion status and model-call token counts (input, output, total, cache read, cache creation) via `record_agent_invocation_completion`.
 2. **Cost refresh scheduling** with bounded retries at delays (15, 30, 60, 120, 240 seconds) if cost is not immediately available from LangSmith.
 
 The refresh function `run_agent_cost_refresh` queries LangSmith thread stats to retrieve total invocation cost, correlating by `invocation_id` or `prepare_run_id` metadata, then stores the cost via `record_agent_invocation_cost`. Terminal 4xx errors (except 408/429 which are retryable) halt further attempts; timeouts and 5xx errors schedule the next attempt.
@@ -140,11 +140,11 @@ This ensures the agent can handle image attachments from Slack, email, or file u
 
 ## Browser automation support
 
-Agent runs can interact with web browsers via the LangSmith browser MDA (Multi-Deployment Agent). Browser state is keyed by thread, so each thread's agent has its own signed-in session and profile. Browsers are provisioned on demand and can be cleared from thread metadata before sharing; the system tracks browser windows and provides observability for browser-driven actions via the transcript.
+Agent runs can interact with web browsers via the LangSmith browser API. Browser state is keyed by thread, so each thread's agent has its own signed-in session and profile. Browsers are provisioned on demand and can be cleared from thread metadata before sharing; the system tracks browser windows and provides observability for browser-driven actions via the transcript.
 
 Browser integration is implemented through `openswe/sandboxes/browsers.py` and `openswe/threads/browser.py`:
 
-- **LangSmith browser client**: `LangSmithBrowser` manages one browser in LangSmith's browser beta by sandbox name, including operations to fetch browser state, open windows, mint view/act links for embedding, and delete the browser and its session profile.
+- **LangSmith browser client**: `LangSmithBrowser` manages one browser in LangSmith's browser API by sandbox name, including operations to fetch browser state, open windows, mint view/act links for embedding, and delete the browser and its session profile.
 - **Thread browser tracking**: `ThreadBrowser` records the browser name and open state in thread metadata under keys `browser_name` and `browser_opened`, with support for legacy single-key metadata format.
 - **Browser lifecycle**: The MDA browser middleware names each thread's browser and drives one window called `mda`. A person can open the window first; MDA adopts an existing browser. The dashboard frames the window from an act link minted for the dashboard's origin by `openswe/threads/browser.py:api_thread_browser`.
 - **Cleanup on sharing**: Before making a thread public, `ThreadBrowser.forget()` deletes the browser and updates metadata to mark it unavailable, ensuring private signed-in sessions do not transfer to workspace viewers. The delete operation is fail-soft: deletions are logged but do not block thread sharing.
@@ -184,7 +184,7 @@ graph TD
   Load --> Instance["Instance tier"]
   Load --> Workspace["Workspace tier"]
   Load --> User["User tier if known login"]
-  Instance --> Discover["MCP discovery + tool cache"]
+  Instance --> Discover["MCP discovery and cache"]
   Workspace --> Discover
   User --> Discover
   Discover --> Dynamic["DynamicToolMiddleware exposes names only"]
