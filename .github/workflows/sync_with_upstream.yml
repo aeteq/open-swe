@@ -48,16 +48,9 @@ jobs:
           git remote add upstream https://github.com/langchain-ai/open-swe.git
           git fetch upstream
 
-      - name: Find upstream changes to fork-protected files
-        id: protected
-        run: |
-          BASE=$(git merge-base main upstream/main)
-          mapfile -t FILES < <(grep -vE '^\s*(#|$)' .github/fork-protected-files)
-          TOUCHED=$(git diff --name-only "$BASE" upstream/main -- "${FILES[@]}")
-          EOF_DELIM=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-          echo "files<<$EOF_DELIM" >> "$GITHUB_OUTPUT"
-          echo "$TOUCHED" >> "$GITHUB_OUTPUT"
-          echo "$EOF_DELIM" >> "$GITHUB_OUTPUT"
+      - name: Find the merge base
+        id: base
+        run: echo "sha=$(git merge-base main upstream/main)" >> "$GITHUB_OUTPUT"
 
       - name: Create merge branch
         run: git checkout -B sync-upstream main
@@ -86,47 +79,53 @@ jobs:
             fi
           fi
 
+      - name: Write the PR body
+        id: report
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BASE: ${{ steps.base.outputs.sha }}
+          CLEAN: ${{ steps.merge.outputs.clean }}
+          CONFLICTS: ${{ steps.merge.outputs.conflicts }}
+        run: |
+          # The report and fork-protected-files are the fork's; a conflicted sync branch is upstream's tree.
+          git checkout -q main
+          PR=$(gh pr list --repo aeteq/open-swe --head sync-upstream --base main --json number --jq '.[0].number')
+          REPORTED=""
+          if [ -n "$PR" ]; then
+            REPORTED=$(gh pr view "$PR" --repo aeteq/open-swe --json body --jq .body)
+          fi
+          BODY="$RUNNER_TEMP/sync-body.md"
+          python3 scripts/sync_upstream_report.py --base "$BASE" --head upstream/main \
+            --conflicts "$CONFLICTS" --reported "$REPORTED" > "$BODY"
+          TITLE="chore: sync with upstream"
+          if [ "$CLEAN" = "false" ]; then
+            TITLE="$TITLE (manual conflict resolution needed)"
+          fi
+          {
+            echo "pr=$PR"
+            echo "body=$BODY"
+            echo "title=$TITLE"
+          } >> "$GITHUB_OUTPUT"
+
+      # Before the push, so the checklist check the push starts reads the new body, not stale ticks.
+      - name: Update the open PR
+        if: steps.report.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.report.outputs.pr }}
+          BODY: ${{ steps.report.outputs.body }}
+          TITLE: ${{ steps.report.outputs.title }}
+        run: gh pr edit "$PR" --repo aeteq/open-swe --title "$TITLE" --body-file "$BODY"
+
       - name: Push sync branch
         run: |
           git remote set-url origin https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/aeteq/open-swe.git
           git push -u origin sync-upstream --force
 
-      - name: Create or update PR
+      - name: Open the PR
+        if: steps.report.outputs.pr == ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          EXISTING_PR=$(gh pr list --repo aeteq/open-swe --head sync-upstream --base main --json number --jq '.[0].number')
-          if [ -n "$EXISTING_PR" ]; then
-            echo "PR #$EXISTING_PR already exists, force-pushed update."
-            exit 0
-          fi
-          PROTECTED_FILES="${{ steps.protected.outputs.files }}"
-          PROTECTED_NOTE=""
-          if [ -n "$PROTECTED_FILES" ]; then
-            PROTECTED_LIST=$(echo "$PROTECTED_FILES" | sed 's/^/- `/' | sed 's/$/`/')
-            PROTECTED_NOTE="
-
-            **🛡️ Upstream changed fork-protected files** (\`.github/fork-protected-files\`). Even if they merged cleanly, check the fork's behavior survived:
-            ${PROTECTED_LIST}"
-          fi
-          if [ "${{ steps.merge.outputs.clean }}" = "false" ]; then
-            CONFLICT_FILES="${{ steps.merge.outputs.conflicts }}"
-            FILE_LIST=$(echo "$CONFLICT_FILES" | sed 's/^/- `/' | sed 's/$/`/')
-            BODY="Upstream merge has UNRESOLVED conflicts requiring manual review — rerere had no recorded resolution for these.
-
-            **⚠️ Do NOT squash and merge this PR** — use a regular merge commit so upstream history is preserved. Squashing breaks future syncs.
-
-            **Conflicted files:**
-            ${FILE_LIST}
-
-            Resolve locally: \`git fetch origin && git checkout sync-upstream && git merge upstream/main\`, fix conflicts, commit, push. rerere will remember your resolution for next time.${PROTECTED_NOTE}"
-            gh pr create --repo aeteq/open-swe --head sync-upstream --base main \
-              --title "chore: sync with upstream (manual conflict resolution needed)" \
-              --body "$BODY"
-          else
-            gh pr create --repo aeteq/open-swe --head sync-upstream --base main \
-              --title "chore: sync with upstream" \
-              --body "Upstream merged cleanly (or auto-resolved via rerere).
-
-            **⚠️ Do NOT squash and merge this PR** — use a regular merge commit so upstream history is preserved. Squashing breaks future syncs.${PROTECTED_NOTE}"
-          fi
+          BODY: ${{ steps.report.outputs.body }}
+          TITLE: ${{ steps.report.outputs.title }}
+        run: gh pr create --repo aeteq/open-swe --head sync-upstream --base main --title "$TITLE" --body-file "$BODY"
