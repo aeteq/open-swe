@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, get_args
 
+from croniter import croniter
 from fastapi import HTTPException
 from langgraph_sdk.errors import NotFoundError
 from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, field_validator
@@ -122,21 +123,36 @@ class ScheduleTrigger(BaseModel):
             for channel in trigger.slack_channels
         )
 
-    @staticmethod
-    def run_prompt(record: dict[str, Any]) -> str:
-        """What a scheduled run is asked: the automation's prompt, plus the channels it reads."""
+    def digest_since(self, now: datetime) -> datetime:
+        """Where a run this schedule starts at ``now`` picks up: the firing before its own.
+
+        Taken from the cron rather than the automation's last launch, which test runs
+        and its other triggers' runs move too.
+        """
+        fires = croniter(self.cron, now)
+        fires.get_prev(datetime)
+        return fires.get_prev(datetime)
+
+    def run_prompt(self, record: dict[str, Any]) -> str:
+        """What a run this schedule starts is asked: the automation's prompt, plus the
+        channels it reads and since when."""
         channels = ScheduleTrigger.slack_channels_of(record)
         if not channels:
             return str(record["prompt"])
-        last_run = record.get("last_triggered_at")
-        since = datetime.fromisoformat(last_run) if isinstance(last_run, str) else None
+        since = self.digest_since(datetime.now(UTC))
         return prompt(
             "runs/automation-slack-channels",
             prompt=record["prompt"],
             channels=", ".join(sorted(channels)),
-            since=since.isoformat(timespec="minutes") if since else None,
-            oldest=f"{since.timestamp():.6f}" if since else None,
+            since=since.isoformat(timespec="minutes"),
+            oldest=f"{since.timestamp():.6f}",
         )
+
+    @staticmethod
+    def test_prompt(record: dict[str, Any]) -> str:
+        """What a test run is asked: as its first schedule would ask now, if it has one."""
+        first = next((t for t in _parsed_triggers(record) if isinstance(t, ScheduleTrigger)), None)
+        return first.run_prompt(record) if first else str(record["prompt"])
 
 
 class GitHubTrigger(BaseModel):
@@ -1735,7 +1751,9 @@ async def launch_scheduled_agent_run(
         await _delete_orphan_crons(schedule_id, keep=cron_ids)
         return {"status": "trigger_mismatch", "schedule_id": schedule_id}
     return await _launch_agent_schedule_record(
-        record, repo=None, prompt=ScheduleTrigger.run_prompt(record)
+        record,
+        repo=None,
+        prompt=ScheduleTrigger.model_validate(fired["config"]).run_prompt(record),
     )
 
 
@@ -1748,7 +1766,7 @@ async def trigger_agent_schedule(schedule_id: str) -> dict[str, Any]:
         record,
         repo=_test_run_repo(record),
         test_run=True,
-        prompt=ScheduleTrigger.run_prompt(record),
+        prompt=ScheduleTrigger.test_prompt(record),
     )
     status = result.get("status")
     if status == "started":

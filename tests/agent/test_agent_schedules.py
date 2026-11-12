@@ -1462,3 +1462,10 @@ async def test_a_scheduler_cron_from_before_trigger_ids_moves_for_the_trigger_ho
             {"id": uuid.UUID(SCHED_1)},
         )
     assert held == str(job.id)
+
+
+def test_a_digest_picks_up_where_its_own_schedule_last_fired() -> None:
+    # Not the automation's last launch: a test run or another trigger's run moves that.
+    schedule = ScheduleTrigger(cron="0 6,15 * * *", slack_channels=["C0DIGEST01"])
+    fired_at = datetime(2026, 11, 12, 15, 0, 20, tzinfo=UTC)
+    assert schedule.digest_since(fired_at) == datetime(2026, 11, 12, 6, tzinfo=UTC)
