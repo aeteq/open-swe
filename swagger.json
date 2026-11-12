@@ -9138,6 +9138,7 @@
         "type": "object"
       },
       "ScheduleTrigger": {
+        "description": "Fires on a cron; its runs may read the public Slack channels it names.",
         "properties": {
           "cron": {
             "maxLength": 120,
@@ -9150,6 +9151,17 @@
             "default": "schedule",
             "title": "Kind",
             "type": "string"
+          },
+          "slack_channels": {
+            "items": {
+              "maxLength": 40,
+              "minLength": 9,
+              "pattern": "^[CG][A-Z0-9]{8,}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Slack Channels",
+            "type": "array"
           }
         },
         "required": [
@@ -9739,6 +9751,7 @@
           "channel": {
             "maxLength": 40,
             "minLength": 9,
+            "pattern": "^[CG][A-Z0-9]{8,}$",
             "title": "Channel",
             "type": "string"
           },

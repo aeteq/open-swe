@@ -808,7 +808,7 @@ def _slack_post(ts: str, text: str, **event: object) -> SlackEventEnvelope:
 async def test_slack_triggers_fire_on_matching_posts_once_and_within_their_limit(
     fake_client: _FakeClient, auth: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(schedules, "_require_watchable_slack_channel", AsyncMock())
+    monkeypatch.setattr(schedules, "_require_slack_channel", AsyncMock())
     created = await schedules.create_agent_schedule(
         "alice",
         ScheduleCreateBody(
@@ -854,12 +854,18 @@ async def test_slack_triggers_fire_on_matching_posts_once_and_within_their_limit
     assert "#alerts" in prompt and "[FIRING] api latency" in prompt
 
 
-async def test_a_slack_trigger_needs_a_channel_open_swe_reads(
+async def test_slack_triggers_and_digests_need_a_channel_open_swe_reads(
     fake_client: _FakeClient, auth: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     channels = {
         "C0SHARED01": {"id": "C0SHARED01", "is_member": True, "is_ext_shared": True},
         "C0NOTIN001": {"id": "C0NOTIN001", "is_member": False, "is_ext_shared": False},
+        "C0PRIVATE1": {
+            "id": "C0PRIVATE1",
+            "is_member": True,
+            "is_ext_shared": False,
+            "is_private": True,
+        },
     }
 
     async def load(channel_id: str, *, use_cache: bool = True) -> object:
@@ -881,6 +887,18 @@ async def test_a_slack_trigger_needs_a_channel_open_swe_reads(
                     workspace="default",
                     prompt="Watch",
                     triggers=[SlackTrigger(channel=channel, events=["message.posted"])],
+                ),
+            )
+        assert refused.value.status_code == 422
+    # A schedule reads history, which only public channels allow.
+    for channel in ("C0SHARED01", "C0NOTIN001", "C0MISSING1", "C0PRIVATE1"):
+        with pytest.raises(HTTPException) as refused:
+            await schedules.create_agent_schedule(
+                "alice",
+                ScheduleCreateBody(
+                    workspace="default",
+                    prompt="Digest",
+                    triggers=[ScheduleTrigger(cron="0 6 * * *", slack_channels=[channel])],
                 ),
             )
         assert refused.value.status_code == 422

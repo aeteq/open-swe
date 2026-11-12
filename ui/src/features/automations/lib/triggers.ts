@@ -20,6 +20,7 @@ export type TriggerDraft =
       cron: string
       /** Edit the cron as text rather than through a preset. */
       custom: boolean
+      slackChannels: Array<string>
     }
   | {
       key: string
@@ -49,12 +50,13 @@ export type TriggerDraft =
 let nextKey = 0
 const draftKey = () => `trigger-${++nextKey}`
 
-export function scheduleDraft(cron: string) {
+export function scheduleDraft(cron: string, slackChannels: Array<string> = []) {
   return {
     key: draftKey(),
     kind: "schedule" as const,
     cron,
     custom: !isDescribableCron(cron),
+    slackChannels,
   }
 }
 
@@ -101,7 +103,7 @@ export function draftsFor(
   return schedule.triggers.map((trigger): TriggerDraft => {
     switch (trigger.kind) {
       case "schedule":
-        return scheduleDraft(trigger.cron)
+        return scheduleDraft(trigger.cron, trigger.slack_channels)
       case "github":
         return githubDraft(trigger.repo, trigger.events)
       case "slack":
@@ -152,7 +154,15 @@ export function toTriggers(
     if (draftProblem(draft)) return []
     switch (draft.kind) {
       case "schedule":
-        return [{ kind: "schedule", cron: draft.cron.trim() }]
+        return [
+          {
+            kind: "schedule",
+            cron: draft.cron.trim(),
+            ...(draft.slackChannels.length > 0 && {
+              slack_channels: draft.slackChannels,
+            }),
+          },
+        ]
       case "github":
         return draft.repo
           ? [{ kind: "github", repo: draft.repo, events: draft.events }]
@@ -191,7 +201,12 @@ export function toTriggers(
 /** One part per trigger, e.g. "GitHub acme/oss: PR closed, PR merged". */
 export function describeTriggers(schedule: AgentSchedule): string {
   const parts = schedule.triggers.map((trigger) => {
-    if (trigger.kind === "schedule") return describeCron(trigger.cron)
+    if (trigger.kind === "schedule") {
+      const reads = trigger.slack_channels?.length ?? 0
+      return reads > 0
+        ? `${describeCron(trigger.cron)}, reading ${reads} Slack channel${reads === 1 ? "" : "s"}`
+        : describeCron(trigger.cron)
+    }
     const provider = AUTOMATION_EVENT_PROVIDERS[trigger.kind]
     const events: Record<string, string> = provider.events
     const named = trigger.events.map((event) => events[event]).join(", ")
