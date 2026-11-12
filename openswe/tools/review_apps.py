@@ -38,7 +38,8 @@ class ReviewAppTools:
         browses."""
         session_tools: list[BaseTool] = []
         if self.apps.browses:
-            session_tools, surface.mcp_servers = await ReviewBrowser.sign_in(self.workspace)
+            session_tools, sign_in_servers = await ReviewBrowser.sign_in(self.workspace)
+            surface.mcp_servers = [*surface.mcp_servers, *sign_in_servers]
             surface.browser = await ReviewBrowser.spec()
         surface.base_tools = [*surface.base_tools, *self.tools, *session_tools]
 
