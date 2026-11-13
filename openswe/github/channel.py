@@ -239,6 +239,7 @@ def _tasks(
         "withdraw_superseded_approvals": lambda: service.withdraw_superseded_approvals(payload),
         "review_fork_push": lambda: service.process_github_pr_synchronize(payload),
         "settle_review_on_close": lambda: service.settle_human_review_on_close(payload),
+        "move_notion_tasks_on_merge": lambda: service.record_merge_on_notion_tasks(payload),
         # Reviews can save documents and files to apps for a pull request, such as Design QA's
         # screenshots; they're kept only while it's open.
         "stop_preview_runs_on_close": lambda: service.PreviewReady.stop_on_close(payload),

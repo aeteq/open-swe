@@ -40,11 +40,14 @@ class ThreadIdentity:
     async def authorize(self) -> None:
         from fastapi import HTTPException
 
+        from openswe.dashboard.github_link import GitHubLink
         from openswe.dashboard.langsmith_login import LangSmithLogin
 
         user = await self.user()
         if user is None:
             raise HTTPException(401, "Sign in with LangSmith to use Robin")
+        if GitHubLink.is_sign_in():
+            return
         await LangSmithLogin().authorize_user(user)
 
     async def user(self) -> User | None:

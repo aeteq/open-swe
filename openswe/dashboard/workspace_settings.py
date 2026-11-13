@@ -88,7 +88,6 @@ class WorkspaceSettingsUpdate(BaseModel):
     concise_walkthrough_enabled: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
-    pr_summaries: bool | None = Field(default=None, json_schema_extra={"agent_feature_flag": True})
     review_trace_links: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
@@ -376,7 +375,6 @@ def _default_settings() -> dict[str, Any]:
         "review_draft_prs": False,
         "implementation_walkthrough_enabled": False,
         "concise_walkthrough_enabled": False,
-        "pr_summaries": True,
         "review_trace_links": True,
         "review_apps": [],
         "review_app_preview_checks": [],

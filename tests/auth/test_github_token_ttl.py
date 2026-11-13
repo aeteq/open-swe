@@ -198,7 +198,11 @@ def test_process_github_pr_comment_invalidates_and_reauths_on_401(
     ) -> list[dict[str, Any]]:
         fetch_calls.append(token)
         return [
-            {"body": "@openswe please look", "author": "octo", "created_at": "2026-01-01T00:00:00Z"}
+            {
+                "body": "@jarvis-aeteq please look",
+                "author": "octo",
+                "created_at": "2026-01-01T00:00:00Z",
+            }
         ]
 
     async def fake_extract_pr_context(
@@ -241,7 +245,7 @@ def test_process_github_pr_comment_invalidates_and_reauths_on_401(
                 "comment": {
                     "id": 42,
                     "user": {"login": "octo"},
-                    "body": "@openswe please look",
+                    "body": "@jarvis-aeteq please look",
                     "created_at": "2026-01-01T00:00:00Z",
                 },
             },

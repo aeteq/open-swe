@@ -535,7 +535,7 @@ def test_public_repo_appends_plan_and_slack_reference(
     assert "- [Plan](https://dashboard.example/agents/thread-1/plan)" in sent_body
     assert "- [Slack thread](https://slack.example/p1)" in sent_body
     assert sent_body.count("Made by [") == 1
-    assert sent_body.splitlines()[-1].startswith("Made by [Robin]")
+    assert sent_body.splitlines()[-1].startswith("Made by [Jarvis]")
     assert "https://example.com/old" not in sent_body
 
 
@@ -781,7 +781,7 @@ def test_ask_pr_requires_user_repo_access_before_using_app(monkeypatch, allowed,
     else:
         assert not client.post_calls
     if not check_required:
-        assert "Robin Approves" in result["error"]
+        assert "Jarvis Approves" in result["error"]
 
 
 @pytest.mark.asyncio

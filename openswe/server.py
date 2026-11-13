@@ -124,6 +124,7 @@ from openswe.model_request import (
     model_selection_trace,
 )
 from openswe.model_routing import RoutingArm
+from openswe.notion.settings import notion_settings
 from openswe.prompt import SystemPrompt, TurnContext, construct_system_prompt
 from openswe.prompts import apply_tool_descriptions, prompt, warm_tool_schemas
 from openswe.run_config import RunConfig
@@ -173,10 +174,12 @@ from openswe.tools import (
     background_execute,
     background_task,
     classify,
+    comment_on_notion_task,
     configure_repository,
     configure_workspace,
     connect_managed_tools,
     create_automation,
+    create_notion_design,
     create_project,
     create_sandbox_file_download_url,
     delete_automation,
@@ -190,6 +193,7 @@ from openswe.tools import (
     expose_port,
     fetch_url,
     get_human_review_status,
+    get_notion_design_template,
     get_thread,
     http_request,
     link_pull_request,
@@ -609,6 +613,9 @@ def _is_subagent_excluded_tool(name: str) -> bool:
         "background_task",
         "monitor",
         # Only the parent's own turn can say where the work stands.
+        "comment_on_notion_task",
+        "create_notion_design",
+        "get_notion_design_template",
         "submit_thread_feedback",
         "submit_review_assessment_feedback",
         # The review page reads both from the parent's transcript.
@@ -722,6 +729,9 @@ AGENT_TOOLS: Final = (
     request_rollout_check,
     listen_events,
     list_event_types,
+    comment_on_notion_task,
+    create_notion_design,
+    get_notion_design_template,
     slack_add_reaction,
     slack_attach_html,
     slack_list_channel_members,
@@ -1094,6 +1104,22 @@ def _sandbox_file_downloads_enabled(*, bridged: bool) -> bool:
     They are served by the LangSmith sandbox itself, which a bridged thread does not have.
     """
     return not bridged
+
+
+def _notion_task_run(cfg: RunConfig) -> bool:
+    return cfg.source == "notion" and cfg.notion_page is not None and bool(cfg.notion_page.id)
+
+
+def _notion_design_tools(cfg: RunConfig) -> tuple[Any, ...]:
+    """Design publishing for an assigned task, never for a question asked in a comment."""
+    if not _notion_task_run(cfg) or cfg.notion_page is None or cfg.notion_page.is_mention:
+        return ()
+    settings = notion_settings()
+    if not settings.documents_data_source_id:
+        return ()
+    if settings.design_template_id:
+        return (create_notion_design, get_notion_design_template)
+    return (create_notion_design,)
 
 
 def _initial_reply_surface(cfg: RunConfig) -> ReplySurface:
@@ -2029,6 +2055,12 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         *(() if bridge_client == "desktop" else (worktree_handoff,)),
         *(() if _writes_database_rows() else (execute_database_sql, write_database_rows)),
         *(() if sender_preferences.experimental_classify and Jev.configured() else (classify,)),
+        *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
+        *(
+            tool
+            for tool in (create_notion_design, get_notion_design_template)
+            if tool not in _notion_design_tools(cfg)
+        ),
     ]
     static_tools = [tool for tool in AGENT_TOOLS if not any(tool is w for w in withheld)]
     static_tools = permitted(static_tools, tool_access)

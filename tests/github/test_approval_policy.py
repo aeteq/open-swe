@@ -135,7 +135,7 @@ async def test_the_check_is_posted_where_the_base_does_not_require_it(
     await PullRequestApproval.evaluate("acme", "app", 7)
     (check,), _ = pull.repo.create_check_run.call_args
     assert (check["name"], check["head_sha"], check["conclusion"]) == (
-        "Robin Approves",
+        "Jarvis Approves",
         _HEAD,
         conclusion,
     )

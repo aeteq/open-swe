@@ -625,16 +625,19 @@ class SlackAuthorization:
         user = await User.for_identity("slack", slack_user_id) if slack_user_id else None
         if user is None:
             return cls(slack_user_id, None, None, "unlinked")
-        try:
-            await LangSmithLogin().authorize_user(user)
-        except HTTPException as exc:
-            if exc.status_code not in {401, 403}:
-                raise
-            common.logger.info(
-                "Slack sender requires LangSmith sign-in",
-                extra={"person_id": str(user.id), "status_code": exc.status_code},
-            )
-            return cls(slack_user_id, user, None, "revoked")
+        from openswe.dashboard.github_link import GitHubLink
+
+        if not GitHubLink.is_sign_in():
+            try:
+                await LangSmithLogin().authorize_user(user)
+            except HTTPException as exc:
+                if exc.status_code not in {401, 403}:
+                    raise
+                common.logger.info(
+                    "Slack sender requires LangSmith sign-in",
+                    extra={"person_id": str(user.id), "status_code": exc.status_code},
+                )
+                return cls(slack_user_id, user, None, "revoked")
         login = user.github_login
         github_available = await common.account_link_reason(login) is None
         return cls(

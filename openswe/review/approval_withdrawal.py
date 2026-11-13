@@ -34,8 +34,8 @@ class ApprovalWithdrawal(BaseModel):
     @property
     def reason(self) -> str:
         if self.keep_head:
-            return "New commits were pushed after Robin approved this pull request."
-        return "Robin's latest review of this pull request does not approve it."
+            return "New commits were pushed after Jarvis approved this pull request."
+        return "Jarvis' latest review of this pull request does not approve it."
 
     async def run(self, pull: PullRequestClient) -> str:
         """Dismiss the approvals and return the live head; raises unless GitHub dismissed them all."""

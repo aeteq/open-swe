@@ -73,7 +73,7 @@ export function AutomationsList({
           Automations
         </Text>
         <p className="mt-space-1 text-xs text-secondary">
-          Run Robin on a schedule or on GitHub, Slack, and Linear events. Each
+          Run Jarvis on a schedule or on GitHub, Slack, and Linear events. Each
           run starts a fresh agent thread.{" "}
           {!canManage && "Robin admins manage automation setup."}
         </p>
