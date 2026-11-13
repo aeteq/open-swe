@@ -24,13 +24,14 @@ from openswe import event_claims
 from openswe.config import ENV
 from openswe.slack.http import (
     SLACK_REQUEST_ERRORS,
+    SlackBotToken,
     SlackClient,
     SlackRequestError,
-    required_slack_value,
     slack_error,
     slack_error_details,
     slack_retry_after,
 )
+from openswe.slack.payloads import SLACK_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS, SlackPost
 from openswe.slack.review_links import pr_review_links
 from openswe.source_context import SourceContext
 from openswe.utils import ttl_cache
@@ -56,7 +57,6 @@ _SLACK_MESSAGE_TS_RE = re.compile(r"^[0-9]{1,20}(?:\.[0-9]{1,12})?$")
 SLACK_FORWARDED_ATTACHMENT_MAX_COUNT = 10
 SLACK_FORWARDED_ATTACHMENT_MAX_DEPTH = 4
 SLACK_FORWARDED_ATTACHMENT_MAX_NODES = 50
-SLACK_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS = 8000
 _SLACK_THREAD_MUTATION_LOCK_SCOPE = "slack-thread-lock"
 _SLACK_THREAD_MUTATION_LOCK_TTL = timedelta(minutes=1)
 _SLACK_THREAD_MUTATION_LOCK_RETRY_SECONDS = 0.1
@@ -325,49 +325,6 @@ def select_slack_context_messages(
     return up_to_current, "thread_start"
 
 
-def _is_forwarded_attachment(attachment: Mapping[str, object]) -> bool:
-    return any(
-        attachment.get(flag) is True for flag in ("is_share", "is_msg_unfurl", "is_reply_unfurl")
-    )
-
-
-def _non_empty_strings(values: Iterable[object]) -> list[str]:
-    return [value.strip() for value in values if isinstance(value, str) and value.strip()]
-
-
-def _list_of_dicts(value: object) -> list[dict[str, object]]:
-    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
-
-
-def _slack_block_texts(blocks: object) -> list[str]:
-    """Text of Block Kit blocks, skipping action buttons."""
-    texts: list[str] = []
-    for block in _list_of_dicts(blocks):
-        if block.get("type") == "actions":
-            continue
-        items = [block.get("text"), *_list_of_dicts(block.get("fields"))]
-        items += _list_of_dicts(block.get("elements"))
-        texts += _non_empty_strings(item.get("text") for item in items if isinstance(item, dict))
-    return texts
-
-
-def _slack_attachment_texts(attachment: dict[str, object]) -> list[str]:
-    values = [attachment.get(key) for key in ("pretext", "title", "title_link", "text")]
-    for field in _list_of_dicts(attachment.get("fields")):
-        values += [field.get("title"), field.get("value")]
-    texts = _non_empty_strings(values) + _slack_block_texts(attachment.get("blocks"))
-    return texts or _non_empty_strings([attachment.get("fallback")])
-
-
-def _slack_card_text(message: Mapping[str, object]) -> str:
-    """Readable text of an app message built from blocks or attachments instead of ``text``."""
-    texts = _slack_block_texts(message.get("blocks"))
-    for attachment in _list_of_dicts(message.get("attachments")):
-        if not _is_forwarded_attachment(attachment):
-            texts += _slack_attachment_texts(attachment)
-    return "\n".join(texts)[:SLACK_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS]
-
-
 def format_forwarded_slack_attachments(attachments: Any) -> str:
     forwarded: list[str] = []
     rendered_count = 0
@@ -388,7 +345,7 @@ def format_forwarded_slack_attachments(attachments: Any) -> str:
             if not isinstance(attachment, dict):
                 continue
 
-            if _is_forwarded_attachment(attachment):
+            if SlackPost.is_forwarded(attachment):
                 author = attachment.get("author_name")
                 author = author.strip() if isinstance(author, str) else ""
                 content = attachment.get("text")
@@ -467,7 +424,7 @@ def format_slack_messages_for_prompt(
                 bot_username=bot_username,
             ),
             user_names_by_id or {},
-        ).strip() or _slack_card_text(message)
+        ).strip() or SlackPost.card_text_of(message)
         text = text or ("[forwarded message]" if forwarded else "[non-text message]")
         user_id = message.get("user")
         if is_own_slack_message(message, bot_user_id):
@@ -562,10 +519,9 @@ async def _post_slack_message_with_ts(
     blocks: list[dict[str, Any]] | None = None,
     reply_broadcast: bool = False,
 ) -> str:
-    from openswe.slack.code_channels import is_code_channel_session
 
-    # A code channel is one flowing session: replies belong in the channel.
-    reply_ts = None if is_code_channel_session(thread_ts) else thread_ts
+    # A whole-channel conversation is one flowing session: replies belong in the channel.
+    reply_ts = None if thread_ts == "0" else thread_ts
     text, blocks = await pr_review_links(text, blocks)
 
     try:
@@ -859,9 +815,8 @@ async def post_slack_thread_reply_with_ts(
     reply_broadcast: bool = False,
 ) -> str:
     """Post a reply in a Slack thread and return its timestamp."""
-    from openswe.slack.code_channels import is_code_channel_session
 
-    if is_code_channel_session(thread_ts):
+    if thread_ts == "0":
         agent_thread_id = None
     dashboard_url = _slack_thread_dashboard_url(channel_id, thread_ts, agent_thread_id)
     blocks = _with_slack_web_link_context_block(text, blocks, dashboard_url, usage)
@@ -918,10 +873,22 @@ async def post_slack_ephemeral_reply(
 
 
 async def post_slack_thread_message_with_ts(
-    channel_id: str, thread_ts: str, text: str, *, blocks: list[dict[str, Any]] | None = None
+    channel_id: str,
+    thread_ts: str,
+    text: str,
+    *,
+    blocks: list[dict[str, Any]] | None = None,
+    unfurl: bool = True,
 ) -> str:
     """Post a plain bot message in a Slack thread, without a reply's dashboard footer."""
-    return await _post_slack_message_with_ts(channel_id, text, thread_ts=thread_ts, blocks=blocks)
+    return await _post_slack_message_with_ts(
+        channel_id,
+        text,
+        thread_ts=thread_ts,
+        blocks=blocks,
+        unfurl_links=unfurl,
+        unfurl_media=unfurl,
+    )
 
 
 async def post_slack_top_level_message_with_ts(
@@ -976,14 +943,13 @@ async def start_slack_stream(
     recipient_team_id: str = "",
 ) -> str:
     """Start a Slack Thinking Steps stream and return its message timestamp."""
-    from openswe.slack.code_channels import is_code_channel_session
 
     payload: dict[str, Any] = {
         "channel": channel_id,
         "chunks": chunks,
         "task_display_mode": "plan",
     }
-    if not is_code_channel_session(thread_ts):
+    if thread_ts != "0":
         payload["thread_ts"] = thread_ts
     if recipient_user_id:
         payload["recipient_user_id"] = recipient_user_id
@@ -1214,7 +1180,7 @@ async def download_slack_file(url: str) -> bytes:
     The token is only ever sent to Slack-owned hosts; redirects keep the SSRF
     host validation. Raises :class:`SlackFileDownloadError` on failure.
     """
-    token = required_slack_value(ENV.SLACK_BOT_TOKEN)
+    token = await SlackBotToken.read()
 
     def auth_headers(original_url: str, current_url: str) -> dict[str, str] | None:
         def slack_host(target: str) -> bool:
@@ -1610,10 +1576,9 @@ async def fetch_slack_thread_messages(
 
     With ``complete``, a failed page raises instead of returning the pages fetched so far.
     """
-    from openswe.slack.code_channels import is_code_channel_session
 
-    # A code channel session spans the whole channel rather than one thread.
-    session_channel = is_code_channel_session(thread_ts)
+    # An incident session spans the whole channel rather than one thread.
+    session_channel = thread_ts == "0"
 
     messages: list[dict[str, Any]] = []
     cursor: str | None = None
@@ -1730,9 +1695,8 @@ async def fetch_slack_thread_message_by_ts(
     channel_id: str, thread_ts: str, message_ts: str
 ) -> dict[str, Any] | None:
     """Fetch an exact reply from a Slack thread."""
-    from openswe.slack.code_channels import is_code_channel_session
 
-    session_channel = is_code_channel_session(thread_ts)
+    session_channel = thread_ts == "0"
     try:
         async with SlackClient.bot() as client:
             payload = (
@@ -1771,9 +1735,8 @@ async def fetch_latest_slack_thread_message(
     channel_id: str, thread_ts: str
 ) -> dict[str, Any] | None:
     """Fetch a Slack thread's newest message, or its parent while it has no replies."""
-    from openswe.slack.code_channels import is_code_channel_session
 
-    if is_code_channel_session(thread_ts):
+    if thread_ts == "0":
         try:
             async with SlackClient.bot() as client:
                 payload = await client.conversations_history(channel=channel_id, limit=1)
@@ -1853,12 +1816,11 @@ async def fetch_slack_message_by_ts(channel_id: str, message_ts: str) -> dict[st
 
 async def get_slack_permalink(channel_id: str, message_ts: str) -> str | None:
     """Return the public permalink for a Slack message, or None if unavailable."""
-    from openswe.slack.code_channels import is_code_channel_session
 
-    # A code channel session has no anchor message to permalink to.
+    # A whole-channel conversation has no anchor message to permalink to.
     if not channel_id or not message_ts:
         return None
-    if is_code_channel_session(message_ts):
+    if message_ts == "0":
         return None
 
     try:

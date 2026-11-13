@@ -11,7 +11,7 @@ from managed_deepagents._agent_auth import AgentAuthContext, ResolvePrincipalIde
 from pydantic import JsonValue
 from starlette.types import Message, Receive, Scope, Send
 
-from openswe.agent_api.connections import ACTING_USER_KEY
+from openswe.agent_api.connections import ACTING_USER_KEY, SENDER_USER_KEY
 from openswe.agent_api.runs import run_config
 from openswe.agent_api.tokens import RemoteRun, sign_runtime_token, verify_runtime_token
 from openswe.threads import index, proxy, router, runtimes, store
@@ -73,6 +73,14 @@ class _Threads:
 
     async def get(self, thread_id: str) -> dict[str, JsonValue] | None:
         return self.threads.get(thread_id)
+
+    async def state(self, thread_id: str) -> dict[str, JsonValue]:
+        thread = self.threads.get(thread_id)
+        if thread is None:
+            request = httpx.Request("GET", f"http://runtime.test/threads/{thread_id}/state")
+            response = httpx.Response(404, request=request)
+            raise httpx.HTTPStatusError("Not Found", request=request, response=response)
+        return {"values": thread["values"], "next": []}
 
     async def indexed(self, thread_id: str) -> index.IndexedThread | None:
         if not self.reachable:
@@ -261,6 +269,40 @@ async def test_threads_are_served_from_the_index_and_copied_to_their_runtime(
     assert harness.runtimes.local.threads == {}
     assert harness.runtimes.mda.threads[THREAD]["metadata"] == read["metadata"]
     assert harness.reached_here == []
+
+
+@pytest.mark.parametrize("creation", ["router", "store", "channel"])
+@pytest.mark.parametrize("subject", ["ada", f"user:{USER_ID}"])
+async def test_new_threads_keep_the_original_owner_after_a_handle_changes_hands(
+    monkeypatch: pytest.MonkeyPatch, creation: str, subject: str
+) -> None:
+    harness = _Harness(monkeypatch)
+    from uuid import UUID
+
+    owner = User(id=UUID(USER_ID))
+    lookup = AsyncMock(return_value=owner)
+    monkeypatch.setattr(User, "for_login", lookup)
+    monkeypatch.setattr(User, "get", AsyncMock(return_value=owner))
+    metadata: dict[str, JsonValue] = {"owner_type": "user", "owner_login": subject}
+    if creation == "router":
+        await harness.request("POST", "/threads", {"thread_id": THREAD, "metadata": metadata})
+    elif creation == "store":
+        await store.THREADS.create(THREAD, title="Original", metadata=metadata)
+    else:
+        await router.adopt_channel_run(THREAD, "slack", metadata=metadata)
+    indexed = await index.get(THREAD)
+    assert indexed is not None and indexed.metadata["owner_user_id"] == USER_ID
+
+    lookup.return_value = User()
+    await harness.request(
+        "POST",
+        "/threads",
+        {"thread_id": THREAD, "metadata": metadata, "if_exists": "do_nothing"},
+    )
+    await router.adopt_channel_run(THREAD, "slack", metadata=metadata)
+    await store.THREADS.create(THREAD, title="Replacement", metadata=metadata)
+    indexed = await index.get(THREAD)
+    assert indexed is not None and indexed.metadata["owner_user_id"] == USER_ID
 
 
 async def test_a_thread_only_the_agent_server_knows_is_indexed_on_first_read(
@@ -464,6 +506,7 @@ async def test_runs_include_the_current_slack_thread_link(
         "kind": "follow_up",
         "created_by": None,
         "billing_bucket": "system",
+        "owner_ls_user_id": None,
         **expected,
     }
     assert sent["config"] == {
@@ -471,6 +514,7 @@ async def test_runs_include_the_current_slack_thread_link(
             "invocation_id": "turn-1",
             "created_by": None,
             "billing_bucket": "system",
+            "owner_ls_user_id": None,
             **expected,
         }
     }
@@ -555,6 +599,38 @@ async def test_a_channel_thread_takes_runs_stops_and_answers_as_its_conversation
     assert harness.acted_as == [AS_THE_CONVERSATION]
     assert harness.read == [("GET", f"/threads/{THREAD}")]
     assert THREAD not in harness.runtimes.mda_runtime._mda_threads
+
+
+async def test_a_thread_mda_lost_is_made_there_again_when_its_state_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _Harness(monkeypatch)
+    await harness.request(
+        "POST", "/threads", {"thread_id": THREAD, "metadata": {"owner_login": "ada"}}
+    )
+    harness.runtimes.mda.threads.clear()
+
+    state = await store.THREADS.state(THREAD)
+
+    assert state is not None and state["values"] == {}
+    metadata = harness.runtimes.mda.threads[THREAD]["metadata"]
+    assert isinstance(metadata, dict) and metadata["owner_login"] == "ada"
+
+
+@pytest.mark.parametrize("owner", ["channel", "local"])
+async def test_a_thread_the_backend_does_not_keep_on_mda_is_not_made_there_when_read(
+    monkeypatch: pytest.MonkeyPatch, owner: str
+) -> None:
+    harness = _Harness(monkeypatch)
+    if owner == "channel":
+        await _channel_thread(harness)
+    else:
+        await index.create(THREAD, runtime="local")
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await store.THREADS.state(THREAD)
+
+    assert THREAD not in harness.runtimes.mda.threads
 
 
 # The threads MDA's Slack channel's handlers choose: their owner there.
@@ -646,14 +722,19 @@ def agent_auth(monkeypatch: pytest.MonkeyPatch) -> Resolved:
     return resolved
 
 
-def _acts_as(harness: _Harness) -> str | None:
-    """The person the run token of the one run started says it acts as."""
+def _token_person(harness: _Harness, key: str) -> str | None:
+    """The person the run token of the one run started names under ``key``."""
     [(_, sent)] = harness.forwarded
     context = sent["context"]
     assert isinstance(context, dict) and isinstance(token := context["__run_token"], str)
-    acting = verify_runtime_token(token).metadata.get(ACTING_USER_KEY)
-    assert acting is None or isinstance(acting, str)
-    return acting
+    person = verify_runtime_token(token).metadata.get(key)
+    assert person is None or isinstance(person, str)
+    return person
+
+
+def _acts_as(harness: _Harness) -> str | None:
+    """The person the run token of the one run started says it acts as."""
+    return _token_person(harness, ACTING_USER_KEY)
 
 
 async def test_a_persons_run_on_a_channel_thread_acts_as_them(
@@ -749,7 +830,12 @@ async def test_without_their_principal_a_persons_run_is_the_channels_own(
     params: dict[str, JsonValue] = {
         "assistant_id": "agent",
         "input": {},
-        "metadata": {"user_id": USER_ID, ACTING_USER_KEY: USER_ID},
+        "metadata": {
+            "user_id": USER_ID,
+            "billed_robin_user_id": USER_ID,
+            ACTING_USER_KEY: USER_ID,
+            SENDER_USER_KEY: USER_ID,
+        },
     }
 
     if command:
@@ -764,6 +850,8 @@ async def test_without_their_principal_a_persons_run_is_the_channels_own(
     assert status == 200
     assert harness.acted_as == [AS_THE_CONVERSATION]
     assert _acts_as(harness) is None
+    # Their own message started it, so its model calls still bill them.
+    assert _token_person(harness, SENDER_USER_KEY) == USER_ID
 
 
 async def test_a_dashboard_command_on_a_channel_thread_is_its_senders(

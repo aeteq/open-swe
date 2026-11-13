@@ -85,12 +85,19 @@ class WorkspaceSettingsUpdate(BaseModel):
     implementation_walkthrough_enabled: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
+    concise_walkthrough_enabled: bool | None = Field(
+        default=None, json_schema_extra={"agent_feature_flag": True}
+    )
     review_trace_links: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
     review_apps: list[AppRelease] | None = Field(default=None, max_length=20)
     """The apps whose review step reviews follow, each at the release an admin approved;
     managed with ``manage_review_apps``."""
+    review_app_preview_checks: list[str] | None = Field(default=None, max_length=10)
+    """Checks, by name, such as a deploy workflow's last job, whose success for a pull
+    request's head means its preview serves that commit: a review that works for apps then
+    does that work on it; managed with ``manage_review_apps``."""
     # Where the browser of a review that works for apps may sign in, each domain with its
     # subdomains, and the instance or workspace MCP tool that signs it in, as
     # <connection>/<tool>. Only the instance record's values are read: they decide where
@@ -109,14 +116,16 @@ class WorkspaceSettingsUpdate(BaseModel):
     model_routing_enabled: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
+    # Routing v2: with routing on, threads split 50/50 between the Balanced and
+    # Performance models by thread instead of going through the classifier.
+    model_routing_split: bool | None = Field(
+        default=None, json_schema_extra={"agent_feature_flag": True}
+    )
     gateway_enabled: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
     fable_enabled: bool | None = Field(default=None, json_schema_extra={"agent_feature_flag": True})
     expedited_review_enabled: bool | None = Field(
-        default=None, json_schema_extra={"agent_feature_flag": True}
-    )
-    sandbox_openai_enabled: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
     slack_follow_up_suggestions: bool | None = Field(
@@ -192,6 +201,16 @@ class WorkspaceSettingsUpdate(BaseModel):
                 f"an app is an app id, the id of its release, and owner/repo names: {exc}"
             ) from None
         return list(chosen.values())
+
+    @field_validator("review_app_preview_checks")
+    @classmethod
+    def _preview_checks(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        names = list(dict.fromkeys(name.strip() for name in v if name.strip()))
+        if any(len(name) > 200 for name in names):
+            raise ValueError("a preview check is a name of at most 200 characters")
+        return names
 
     @field_validator("review_browser_domains")
     @classmethod
@@ -355,19 +374,21 @@ def _default_settings() -> dict[str, Any]:
     return {
         "review_draft_prs": False,
         "implementation_walkthrough_enabled": False,
+        "concise_walkthrough_enabled": False,
         "review_trace_links": True,
         "review_apps": [],
+        "review_app_preview_checks": [],
         "review_browser_domains": [],
         "review_browser_session_tool": None,
         "featured_apps": [],
         # On by default; the settings show it on until an admin turns it off.
         "model_routing_enabled": True,
+        "model_routing_split": False,
         "gateway_enabled": None,
         "fable_enabled": False,
         "expedited_review_enabled": False,
         "human_review_auto_merge_enabled": True,
         "human_review_auto_assign_minutes": 120,
-        "sandbox_openai_enabled": False,
         "slack_follow_up_suggestions": False,
         "managed_tools_gateway_id": None,
         "org_guidelines": None,
@@ -773,6 +794,16 @@ class WorkspaceSettings(Mapping[str, Any]):
         return bool(self.get("review_trace_links", True))
 
     @property
+    def review_app_preview_checks(self) -> frozenset[str]:
+        """The checks, by name, whose success means a pull request's preview serves its head."""
+        value = self.get("review_app_preview_checks")
+        return (
+            frozenset(v for v in value if isinstance(v, str))
+            if isinstance(value, list)
+            else frozenset()
+        )
+
+    @property
     def review_app_releases(self) -> dict[UUID, UUID]:
         """Each app whose review step reviews follow, by id, to the release an admin approved,
         in the order they were added."""
@@ -813,6 +844,10 @@ class WorkspaceSettings(Mapping[str, Any]):
         return value if isinstance(value, bool) else True
 
     @property
+    def model_routing_split(self) -> bool:
+        return self.get("model_routing_split") is True
+
+    @property
     def gateway_enabled(self) -> bool | None:
         """The stored LLM Gateway toggle (``None`` means inherit the env default)."""
         value = self.get("gateway_enabled")
@@ -844,11 +879,6 @@ class WorkspaceSettings(Mapping[str, Any]):
     def human_review_auto_assign_minutes(self) -> int:
         value = self.get("human_review_auto_assign_minutes")
         return value if type(value) is int and value > 0 else 120
-
-    @property
-    def sandbox_openai_enabled(self) -> bool:
-        """Whether sandbox clients may use the experimental Responses API."""
-        return self.get("sandbox_openai_enabled") is True
 
     @property
     def managed_tools_gateway_id(self) -> str | None:

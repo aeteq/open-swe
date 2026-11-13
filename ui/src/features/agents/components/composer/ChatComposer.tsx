@@ -83,7 +83,7 @@ export const MAX_IMAGE_COUNT = 5
 export const MAX_FILE_COUNT = 10
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_MENTION_SUGGESTIONS = 8
-/** Non-image files the agent receives in its sandbox rather than as model input. */
+/** File types sent as they are; any other non-image file is sent as opaque bytes. */
 export const SUPPORTED_FILE_TYPES: ReadonlySet<string> = new Set([
   "application/pdf",
   "text/plain",
@@ -226,6 +226,8 @@ export interface ChatComposerProps {
   /** Repos the user can target. When provided with onRepoChange, a repo picker is shown. */
   repos?: Array<{ full_name: string }>
   selectedRepo?: string | null
+  /** While anything the target pickers show is still loading; they hold their place, hidden, rather than appearing or swapping labels in view. */
+  targetPending?: boolean
   onRepoChange?: (repo: string | null) => void
   /** The signed-in person while they must link GitHub; the repo picker then asks them to. */
   gitHubLinkUser?: SessionUser
@@ -264,21 +266,21 @@ export interface ChatComposerProps {
   routed?: { route?: string; modelId?: string | null } | null
 }
 
-function isAttachable(file: File): boolean {
-  return (
-    SUPPORTED_IMAGE_TYPES.has(file.type) || SUPPORTED_FILE_TYPES.has(file.type)
-  )
+function attachmentMimeType(file: File): string {
+  return SUPPORTED_IMAGE_TYPES.has(file.type) ||
+    SUPPORTED_FILE_TYPES.has(file.type)
+    ? file.type
+    : "application/octet-stream"
 }
 
 /** An attachment that goes to the sandbox rather than to the model as an image. */
 function isFileChunk(chunk: ImageChunk): boolean {
-  return SUPPORTED_FILE_TYPES.has(chunk.mimeType)
+  return !SUPPORTED_IMAGE_TYPES.has(chunk.mimeType)
 }
 
 function fileToImageChunk(file: File): Promise<ImageChunk | null> {
-  if (!isAttachable(file) || file.size > MAX_IMAGE_BYTES) {
-    return Promise.resolve(null)
-  }
+  if (file.size > MAX_IMAGE_BYTES) return Promise.resolve(null)
+  const mimeType = attachmentMimeType(file)
 
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -286,9 +288,7 @@ function fileToImageChunk(file: File): Promise<ImageChunk | null> {
       const dataUrl = typeof reader.result === "string" ? reader.result : ""
       const base64 = dataUrl.split(",")[1]
       resolve(
-        base64
-          ? { kind: "image", base64, mimeType: file.type, fileName: file.name }
-          : null
+        base64 ? { kind: "image", base64, mimeType, fileName: file.name } : null
       )
     }
     reader.onerror = () => resolve(null)
@@ -438,6 +438,7 @@ export const ChatComposer = memo(function ChatComposer({
   onSelectLocalRepoBranch,
   projects = [],
   selectedProjectId = null,
+  targetPending = false,
   onProjectChange,
   onCreateProject,
   workspaceOptions = [],
@@ -523,8 +524,12 @@ export const ChatComposer = memo(function ChatComposer({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragDepthRef = useRef(0)
 
+  const didAutoFocus = useRef(false)
   useEffect(() => {
-    if (autoFocus) editorRef.current?.focus()
+    if (autoFocus && !didAutoFocus.current) {
+      editorRef.current?.focus()
+      didAutoFocus.current = true
+    }
   }, [autoFocus])
 
   useEffect(() => {
@@ -848,7 +853,7 @@ export const ChatComposer = memo(function ChatComposer({
     const rejected = nextImages.length - validImages.length
     setComposerError(
       rejected
-        ? `${rejected} attachment${rejected > 1 ? "s were" : " was"} skipped: only images, PDF, Word, Excel, PowerPoint and text files up to 10MB are supported.`
+        ? `${rejected} attachment${rejected > 1 ? "s were" : " was"} skipped: attachments must be 10MB or smaller.`
         : null
     )
     if (validImages.length === 0) return
@@ -956,7 +961,7 @@ export const ChatComposer = memo(function ChatComposer({
       for (const item of Array.from(event.clipboardData.items)) {
         if (item.kind !== "file") continue
         const file = item.getAsFile()
-        if (file && isAttachable(file)) files.push(file)
+        if (file) files.push(file)
       }
       if (files.length === 0) return
       event.preventDefault()
@@ -1120,7 +1125,6 @@ export const ChatComposer = memo(function ChatComposer({
         )}
 
         <input
-          accept={[...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_FILE_TYPES].join(",")}
           className="hidden"
           multiple
           onChange={handleFileChange}
@@ -1264,7 +1268,9 @@ export const ChatComposer = memo(function ChatComposer({
 
       {targetControls && (
         <div className="mx-space-3 -mt-space-4 flex min-w-0 items-center gap-space-4 rounded-b-xl border border-t-0 border-subtle bg-surface-level-2 px-space-4 pt-space-5 pb-space-2 text-xs dark:border-transparent">
-          {targetControls}
+          <div className={cn("contents", targetPending && "invisible")}>
+            {targetControls}
+          </div>
           <div className="ml-auto shrink-0">{executionTarget}</div>
         </div>
       )}

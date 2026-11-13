@@ -1,9 +1,9 @@
-"""One-off questions: the `/oswe` slash command and `@Open SWE /btw`.
+"""One-off questions: the "Explain This" message shortcut and `@Robin /btw`.
 
 Each invocation gets an agent thread of its own, private to the asker and stamped
-``unlisted`` so one-off questions never fill anyone's thread list. `/oswe` answers
-ephemerally with the usual `Open in Web` link, and continuing it on the web clears
-that stamp. `/btw` answers in the Slack thread for everyone, without a link, and
+``unlisted`` so one-off questions never fill anyone's thread list. "Explain This"
+answers ephemerally with the usual `Open in Web` link, and continuing it on the web
+clears that stamp. `/btw` answers in the Slack thread for everyone, without a link, and
 never touches the agent thread that Slack thread already maps to.
 """
 
@@ -251,7 +251,6 @@ async def _process_slack_ask(
             request.user_id,
             user_email or None,
             reason=needed.reason,
-            ephemeral=True,
             langsmith=True,
         )
         if request.response_url:

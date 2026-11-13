@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
+from openswe.client_tools import ClientToolSpec
 from openswe.github.http import GitHubClient, RepoClient
 from openswe.github.repo_names import RepoFullName, normalize_repo_full_name
 from openswe.github.repos import accessible_repo_full_names
-from openswe.openai_responses.client_tools import ClientToolSpec
 from openswe.plugins.manifest import PluginPermission
 from openswe.plugins.records import (
     DocumentScope,
@@ -220,6 +220,7 @@ class InstalledPlugin:
                 tool_results=[ClientToolSpec.result_message(i, outputs[i]) for i in answered],
                 overrides={},
                 plugin_tools=True,
+                as_sender=True,
             )
         except Exception:
             # Nothing resumed, so the calls wait to be answered again.

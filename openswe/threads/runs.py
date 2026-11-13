@@ -16,6 +16,7 @@ from langchain_core.messages.content import ImageContentBlock, create_image_bloc
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from runtime_api.provenance import Provenance
 
+from openswe.agent_api.connections import SENDER_USER_KEY
 from openswe.bridge.store import Bridge, BridgeStore, SandboxBridgeBinding
 from openswe.config import ENV
 from openswe.dashboard.options import (
@@ -133,8 +134,10 @@ DASHBOARD_STREAM_MODES: tuple[str, ...] = (
     "events",
 )
 _SUPPORTED_IMAGE_MIME_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_OPAQUE_FILE_MIME_TYPE = "application/octet-stream"
 _SUPPORTED_FILE_MIME_TYPES = frozenset(
     {
+        _OPAQUE_FILE_MIME_TYPE,
         "application/pdf",
         "text/plain",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -186,7 +189,7 @@ class DashboardImageBody(BaseModel):
                 cls(
                     kind="file",
                     base64=data,
-                    mimeType=mime,
+                    mimeType=mime if mime in _SUPPORTED_FILE_MIME_TYPES else _OPAQUE_FILE_MIME_TYPE,
                     fileName=name if isinstance(name, str) else None,
                 )
             )
@@ -195,12 +198,14 @@ class DashboardImageBody(BaseModel):
         return files
 
     @classmethod
-    async def stage_files(cls, thread_id: str, params: dict[str, Any]) -> list[DashboardImageBody]:
-        """Queue a command's files for the thread's sandbox and leave a note in their place."""
+    async def stage_files(
+        cls, thread_id: str, params: dict[str, Any]
+    ) -> tuple[list[DashboardImageBody], list[str]]:
+        """Queue a command's files for the thread's sandbox; return them and their sandbox paths."""
         content = _command_message_content(params)
         files = cls.files_in(content)
         if not files or not isinstance(content, list):
-            return []
+            return [], []
         message_id = _command_message_id(params)
         for position, file in enumerate(files):
             _decode_dashboard_image(file)
@@ -214,12 +219,10 @@ class DashboardImageBody(BaseModel):
             [SlackFileEntry(name=f.file_name or "", attachment_id=f.attachment_id) for f in files],
             directory=DASHBOARD_FILE_DIR,
         )
-        note = prompt("threads/dashboard-files", paths=[file.sandbox_path for file in staged])
         params["input"]["messages"][-1]["content"] = [
-            *(b for b in content if not (isinstance(b, dict) and b.get("type") == "file")),
-            {"type": "text", "text": note},
+            b for b in content if not (isinstance(b, dict) and b.get("type") == "file")
         ]
-        return files
+        return files, [file.sandbox_path for file in staged]
 
 
 class ThreadRenameBody(BaseModel):
@@ -650,8 +653,12 @@ async def start_run_with_tool_results(
     tool_results: Sequence[Mapping[str, str]],
     overrides: dict[str, Any],
     plugin_tools: bool = False,
+    as_sender: bool = False,
 ) -> str:
-    """Start a run with the results of tools its client ran: a sandbox program, or a plugin's frame."""
+    """Start a run with the results of tools its client ran: a sandbox program, or a plugin's frame.
+
+    ``as_sender`` when ``login`` ran them themselves, as in a plugin's frame.
+    """
     await _ensure_dashboard_github_token(login)
     client = langgraph_client()
     metadata = thread_metadata(await client.threads.get(thread_id))
@@ -673,6 +680,7 @@ async def start_run_with_tool_results(
             thread_title=None,
             client=client,
             multitask_strategy="enqueue",
+            as_sender=as_sender,
         )
     else:
         run = await dispatch_agent_run(
@@ -683,6 +691,7 @@ async def start_run_with_tool_results(
             thread_title=None,
             client=client,
             multitask_strategy="enqueue",
+            as_sender=as_sender,
         )
     return str(run["run_id"])
 
@@ -938,6 +947,7 @@ async def _attributed_run_messages(
     review_chat_pr_url: str | None = None,
     relayed_from: str | None = None,
     replies: Sequence[PassageReply] = (),
+    attached_paths: Sequence[str] = (),
 ) -> tuple[list[RunMessage], set[str]]:
     """The human message a dashboard command carries, attributed to its sender.
 
@@ -985,7 +995,7 @@ async def _attributed_run_messages(
         )
     structured = build_input_messages(
         content,
-        dashboard_input_context(sender_id, relayed_from, replies),
+        dashboard_input_context(sender_id, relayed_from, replies, attached_paths),
         systems=[system for system, _ in notices] or None,
         injected_dynamic_context_hashes=injected,
     )
@@ -1221,7 +1231,7 @@ async def _enrich_run_start_command(
 
         prior = await history if history is not None else _ThreadHistory()
         profile = await profile_read or {}
-        command_files = await DashboardImageBody.stage_files(thread_id, params)
+        command_files, attached_paths = await DashboardImageBody.stage_files(thread_id, params)
         content = _command_message_content(params)
     finally:
         reads = (profile_read,) if history is None else (history, profile_read)
@@ -1238,6 +1248,7 @@ async def _enrich_run_start_command(
         review_chat_pr_url=client_configurable.get("review_chat_pr_url"),
         relayed_from=relayed_from,
         replies=replies,
+        attached_paths=attached_paths,
     )
     # The transcript keys a human message by the id the graph will carry, so the
     # id is minted here when the client did not send a usable one.
@@ -1396,6 +1407,11 @@ async def _enrich_run_start_command(
     run_metadata.update(
         await _run_user_metadata({"configurable": merged_configurable}, source=DASHBOARD_SOURCE)
     )
+    # The person sent this message, so its model calls bill them (as
+    # ``dispatch.prepare_durable_run`` stamps a run they start); a relayed one is no one's.
+    sender = run_metadata.get("user_id")
+    if relayed_from is None and isinstance(sender, str):
+        run_metadata[SENDER_USER_KEY] = sender
     config_metadata = client_config.get("metadata")
     if not isinstance(config_metadata, dict):
         config_metadata = {}
@@ -1722,11 +1738,15 @@ async def dispatch_pending_follow_ups(
 
     A message steered into a run after its last model call is still waiting in
     the store; the new run's first model call picks it up. Returns the run id,
-    or ``None`` when nothing was waiting.
+    or ``None`` when nothing was waiting. The run answers, and acts as, the person
+    who sent the newest of them from the web; otherwise it is ``login``'s and acts
+    as no one.
     """
-    if not await QueuedMessage.for_thread(thread_id):
+    queued = await QueuedMessage.for_thread(thread_id)
+    if not queued:
         return None
-    configurable = await _build_dashboard_configurable(thread_id, login, metadata)
+    sender = queued[-1].web_sender
+    configurable = await _build_dashboard_configurable(thread_id, sender or login, metadata)
     run = await dispatch_agent_run(
         thread_id,
         None,
@@ -1737,6 +1757,7 @@ async def dispatch_pending_follow_ups(
         metadata={"kind": FOLLOW_UP_PICKUP_KIND},
         client=client,
         multitask_strategy=multitask_strategy,
+        as_sender=sender is not None,
     )
     run_id = run.get("run_id") if isinstance(run, dict) else None
     return run_id if isinstance(run_id, str) else None

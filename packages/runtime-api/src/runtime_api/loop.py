@@ -3,8 +3,7 @@
 The runtime's middleware runs the loop: it nudges, routes, assembles each call
 and ends the run as the catalog's ``LoopRules`` say. It asks the backend only for
 what needs the backend's data or credentials, one named call each: a model's
-settings, the incident a run investigates, a fresh
-GitHub proxy token, a reply posted on the model's behalf, and what the end of the run
+settings, a fresh GitHub proxy token, a reply posted on the model's behalf, and what the end of the run
 records. The runtime classifies each turn's route itself, and the catalog says which
 task the thread belongs to.
 The transcript and usage hear of the run's start, each reply and tool call, and the
@@ -71,6 +70,27 @@ class GitHubProxyRefreshed(BaseModel):
 
     # When that token expires; None when the thread's sandbox has no GitHub proxy to refresh.
     expires_at: datetime | None = None
+
+
+class GatewayCredential(BaseModel):
+    """What the run's model calls authenticate to the LLM gateway with.
+
+    A run a person started calls models as them, on their LangSmith login; any other
+    run uses the deployment's own LangSmith key, which never leaves its environment.
+    """
+
+    # The person's LangSmith OAuth access token; None for a run the deployment's key serves.
+    # A plain string kept out of reprs: a SecretStr would serialize masked over the wire.
+    token: str | None = Field(default=None, repr=False)
+    # Why the run cannot call models as the person it acts for, which they are told.
+    unavailable: str | None = None
+
+    @property
+    def kind(self) -> Literal["person", "deployment", "unavailable"]:
+        """Which credential this is, for logs: never the token itself."""
+        if self.unavailable is not None:
+            return "unavailable"
+        return "person" if self.token is not None else "deployment"
 
 
 class RunNotice(BaseModel):
@@ -199,7 +219,7 @@ class ModelFailed(Report):
 
 
 class Routed(RunRequest):
-    """A run's request with its human messages, for ``INCIDENT_CONTEXT`` (and the deprecated ``ROUTE_MODEL``)."""
+    """A run's request with its human messages, for the deprecated ``ROUTE_MODEL``."""
 
     # The run's human messages, the latest of which the route is for.
     humans: list[dict[str, JsonValue]] = []
@@ -275,13 +295,6 @@ class ChosenModel(RunRequest):
     effort: str | None = None
 
 
-class IncidentContext(BaseModel):
-    """The incident a run investigates, as each model call tells the model."""
-
-    # Added to the call's system prompt.
-    instructions: str
-
-
 class ReplyOnBehalf(RunCall):
     """The model's final answer, posted for it after it ignored the reply tool."""
 
@@ -318,16 +331,19 @@ TASK_CONTEXT = Endpoint(
 MODEL_CHOICE = Endpoint(
     "model_choice", ChosenModel, ModelSpec, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
 )
-# Checks the incident still wants the run and records the evidence its messages carry,
-# each once: safe to send again.
-INCIDENT_CONTEXT = Endpoint(
-    "incident_context", Routed, IncidentContext, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
-)
 # Mints a token and sets it on the sandbox, so sending it again only mints another.
 REFRESH_GITHUB_PROXY = Endpoint(
     "refresh_github_proxy",
     RefreshGitHubProxy,
     GitHubProxyRefreshed,
+    seconds=LOOP_CALL_SECONDS,
+    delivery="idempotent",
+)
+# Reads the person's current token, refreshing it when it is near expiry: safe to send again.
+GATEWAY_CREDENTIAL = Endpoint(
+    "gateway_credential",
+    RunRequest,
+    GatewayCredential,
     seconds=LOOP_CALL_SECONDS,
     delivery="idempotent",
 )

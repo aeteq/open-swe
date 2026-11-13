@@ -61,6 +61,8 @@ from managed_deepagents import (
     define_deep_agent,
     shared_factory,
 )
+from managed_deepagents._memory.layers import MemoryLayers
+from managed_deepagents._memory_instructions import create_memory_instructions_middleware
 from managed_deepagents._run_input import ManagedTurnTracer
 from managed_deepagents.runtime import compile_managed_agent_async
 from pydantic import BaseModel, JsonValue
@@ -97,8 +99,11 @@ from runtime_api.catalog import (
 from runtime_api.connections import ConnectionRef
 from runtime_api.endpoint import Delivery, Endpoint, call
 from runtime_api.loop import (
+    GATEWAY_CREDENTIAL,
+    MODEL_RESULT,
     PREPARE,
     Done,
+    GatewayCredential,
     GitHubProxyRefreshed,
     Inbox,
     InboxItems,
@@ -106,6 +111,7 @@ from runtime_api.loop import (
     InboxReceipt,
     ModelCall,
     ModelFailed,
+    ModelResult,
     PhaseResult,
     Prepare,
     Prepared,
@@ -294,9 +300,9 @@ def _answering(monkeypatch: pytest.MonkeyPatch, backend: OpenSweBackend, answer:
     monkeypatch.setattr(backend, "post", post)
 
 
-def _models(model: ModelSpec) -> Catalog:
+def _models(model: ModelSpec, *, gateway: bool = False) -> Catalog:
     """A catalog that runs on ``model``."""
-    return Catalog(models=RunModels(model=model, subagent_model=model, use_gateway=False))
+    return Catalog(models=RunModels(model=model, subagent_model=model, use_gateway=gateway))
 
 
 def _preparing(**update: JsonValue) -> Answer:
@@ -966,10 +972,16 @@ async def test_the_anthropic_model_the_backend_names_caches_for_an_hour(
             *model_call_guards(),
         ],
     )
+    # As MDA mounts user memory: in deepagents' memory slot, inside the prompt cache.
+    user_memory: MemoryLayers = [{"type": "user"}]
     graph = create_deep_agent(
         model=FakeListChatModel(responses=["unused"]),
         system_prompt="The graph's own instructions.",
-        middleware=middleware,
+        memory=["/memories/user/AGENTS.md"],
+        middleware=[
+            *middleware,
+            create_memory_instructions_middleware(user_memory, lambda: "Prefers tabs."),
+        ],
     )
 
     await graph.ainvoke({"messages": [HumanMessage("hi")]})
@@ -979,8 +991,9 @@ async def test_the_anthropic_model_the_backend_names_caches_for_an_hour(
     system = cast(list[dict[str, object]], payload["system"])
     tools = cast(list[dict[str, object]], payload["tools"])
     # The graph's prompt, the run's, the thread's and the conversation's end: Anthropic
-    # rejects a request with more than four breakpoints.
-    assert [block.get("cache_control") for block in system] == [hour, hour, hour]
+    # rejects a request with more than four breakpoints, so the memory after them has none.
+    assert "Prefers tabs." in cast(str, system[-1]["text"])
+    assert [block.get("cache_control") for block in system] == [hour, hour, hour, None]
     assert payload["cache_control"] == hour
     assert all("cache_control" not in tool for tool in tools)
     assert json.dumps(payload).count('"cache_control"') == 4
@@ -1030,6 +1043,49 @@ async def test_a_stalled_model_call_goes_to_the_fallback_model(
 
     assert result["messages"][-1].content == "done"
     assert fallback.sent
+
+
+async def test_a_run_whose_login_lapsed_answers_why_even_without_a_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The check runs on every planned call, not only on one a fallback guards: else the
+    request's own auth fails as a connection error and the run ends as an outage. The
+    answer reaches the backend's transcript, where a dashboard thread shows it."""
+    monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
+    monkeypatch.setattr("rt.middleware.run_id", lambda: "run-1")
+    model = _RecordingAnthropic(model_name="claude-opus-5-5", api_key="test-key", sent=[])
+    monkeypatch.setattr("rt.middleware.build_model", lambda spec, use_gateway: model)
+    backend = _run_backend(
+        invocation_id="invocation-1",
+        catalog=_models(ModelSpec(model_id="anthropic:claude-opus-5-5", kwargs={}), gateway=True),
+    )
+    preparing = _preparing(rendered_system_prompt="You are Open SWE.")
+    replies: list[dict[str, JsonValue]] = []
+
+    async def answer(name: str, body: dict[str, JsonValue]) -> BaseModel:
+        if name == GATEWAY_CREDENTIAL.name:
+            return GatewayCredential(unavailable="Sign in to Robin again.")
+        if name == MODEL_RESULT.name:
+            replies.append(body)
+        return await preparing(name, body)
+
+    _answering(monkeypatch, backend, answer)
+    monkeypatch.setattr("rt.gateway.current_run", lambda: backend.run)
+    middleware = cast(
+        list[AgentMiddleware],
+        [BackendRunMiddleware(backend), *model_call_guards(timeout_seconds=1.0)],
+    )
+    graph = create_agent(model=FakeListChatModel(responses=["unused"]), middleware=middleware)
+
+    result = await graph.ainvoke({"messages": [HumanMessage("hi")]})
+
+    assert result["messages"][-1].content == "Sign in to Robin again."
+    assert model.sent == []
+    reported = [ModelResult.model_validate(body).response for body in replies]
+    # The transcript records a reply under its id.
+    assert [(m.content, bool(m.id)) for r in reported for m in messages_from_dict(r)] == [
+        ("Sign in to Robin again.", True)
+    ]
 
 
 @pytest.mark.parametrize("selection", ["primary", "route", "vision", "fallback"])
@@ -1501,19 +1557,17 @@ async def test_optional_trace_failures_do_not_change_successful_turn_output(
     assert export_failed == (failure == "export")
 
 
-async def test_an_operation_code_mode_calls_is_reported_and_cited_under_its_eval_call(
+async def test_an_operation_code_mode_calls_is_reported_under_its_eval_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Code mode calls tools past the tool-call chain, so the tool reports itself."""
     from rt.backend import reporting, subagent_of
-    from runtime_api.operations import EvidenceReply
 
     monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
     monkeypatch.setattr("rt.tools.run_id", lambda: "run-1")
     backend = _run_backend()
     answers = {
         "/agent-api/operation": OperationResult(content="found it"),
-        "/agent-api/record_evidence": EvidenceReply(content="found it\n\nIncident evidence: ev-1"),
     }
 
     async def post(path: str, body: dict[str, object], **kwargs: object) -> object:
@@ -1525,9 +1579,8 @@ async def test_an_operation_code_mode_calls_is_reported_and_cited_under_its_eval
     monkeypatch.setattr(backend.outbox, "started", started)
     monkeypatch.setattr(backend.outbox, "finished", finished)
     search = operation_tool(
-        ToolSpec(name="search_incidents", description="Search", parameters={"type": "object"}),
+        ToolSpec(name="search_threads", description="Search", parameters={"type": "object"}),
         backend,
-        cites_evidence=True,
     )
     runtime = ToolRuntime(
         state={"messages": []},
@@ -1545,9 +1598,9 @@ async def test_an_operation_code_mode_calls_is_reported_and_cited_under_its_eval
     await backend.outbox.drain()
 
     assert isinstance(result, ToolMessage)
-    assert result.content == "found it\n\nIncident evidence: ev-1"
+    assert result.content == "found it"
     [[report]] = [call.args for call in started.call_args_list]
-    assert report.name == "search_incidents"
+    assert report.name == "search_threads"
     assert report.namespace == ["eval-1"]
     [[_body, recorded]] = [call.args for call in finished.call_args_list]
     assert recorded.content == result.content
@@ -1896,6 +1949,66 @@ async def test_the_skills_open_swe_ships_are_served_from_this_deployment(
 
 
 @pytest.mark.parametrize("code_mode", [False, True])
+async def test_memory_files_stay_in_mda_without_a_sandbox(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, code_mode: bool
+) -> None:
+    from deepagents.backends import FilesystemBackend
+    from deepagents.middleware.filesystem import FilesystemMiddleware
+    from langchain.agents.middleware.types import ModelRequest
+    from managed_deepagents import ManagedToolRuntime
+
+    monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
+    for module in ("rt.middleware", "rt.tools", "rt.file_tools"):
+        monkeypatch.setattr(f"{module}.run_id", lambda: "run-1")
+    backend = _run_backend(
+        catalog=Catalog(files=FilesSpec(backend_paths=["/memories/"], checks=["agents_md"]))
+    )
+    monkeypatch.setattr(backend.outbox, "started", MagicMock())
+    monkeypatch.setattr(backend.outbox, "finished", MagicMock())
+    filesystem = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True)
+    tools = {tool.name: tool for tool in FilesystemMiddleware(backend=filesystem).tools}
+    files = FileToolsMiddleware(backend, 300, remote_files=MagicMock())
+    model_request = MagicMock(spec=ModelRequest)
+    model_request.tools = list(tools.values())
+    await files.awrap_model_call(model_request, AsyncMock())
+    runtime = ManagedToolRuntime(
+        state={"messages": []},
+        context=None,
+        config={},
+        stream_writer=lambda event: None,
+        tool_call_id="call-1",
+        store=None,
+        backend=filesystem,
+    )
+    for name, args in (
+        (
+            "write_file",
+            {"file_path": "/memories/user/projects/AGENTS.md", "content": "Remember 731"},
+        ),
+        (
+            "write_file",
+            {"file_path": "/memories/user/projects/notes.md", "content": "Project notes"},
+        ),
+        ("read_file", {"file_path": "/memories/user/projects/notes.md"}),
+    ):
+        if code_mode:
+            [code_tool] = files.code_tools([name])
+            result = await code_tool.ainvoke({**args, "runtime": runtime})
+        else:
+            request = ToolCallRequest(
+                tool_call={"name": name, "args": args, "id": "call-1", "type": "tool_call"},
+                tool=tools[name],
+                state={"messages": []},
+                runtime=runtime,
+            )
+            result = await files.awrap_tool_call(request, files._run_own)
+        assert isinstance(result, ToolMessage) and result.status != "error"
+    assert "Project notes" in result.text
+    assert "Instructions from: /memories/user/projects/AGENTS.md\nRemember 731" in result.text
+    assert (tmp_path / "memories/user/projects/AGENTS.md").read_text() == "Remember 731"
+
+
+@pytest.mark.parametrize("code_mode", [False, True])
 async def test_each_run_lists_only_the_skills_it_may_see_and_reads_them_here(
     monkeypatch: pytest.MonkeyPatch, code_mode: bool
 ) -> None:
@@ -2162,7 +2275,11 @@ async def _launch_worker(
             "metadata": {"assistant_id": "open-swe"},
         },
         # The launch middleware reads this context, though it declares no context type.
-        context={"graph": "agent", "__run_token": "coordinator-token"},  # ty: ignore[invalid-argument-type]
+        context={  # ty: ignore[invalid-argument-type]
+            "graph": "agent",
+            "__run_token": "coordinator-token",
+            "owner_ls_user_id": "original-owner",
+        },
     )
     # Open SWE's task messages report the worker; deepagents does not poll it too.
     assert not values.get("async_tasks")
@@ -2198,6 +2315,7 @@ async def test_a_launched_worker_carries_a_grant_never_its_coordinators_run_toke
         "graph": "agent",
         "__worker_grant": "worker-grant",
         "__catalog": KINDS["agent"].applied(COORDINATOR_CATALOG).model_dump(mode="json"),
+        "owner_ls_user_id": "original-owner",
     }
     assert launch["input"] == {
         "messages": [{"role": "user", "content": "Your assignment: Fix login"}]
@@ -2500,7 +2618,7 @@ async def test_a_model_call_paused_for_a_connection_reports_no_failure(
 async def test_a_lasting_provider_outage_ends_the_run_with_a_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from langchain.agents.middleware.types import ModelRequest, ModelResponse
+    from langchain.agents.middleware.types import ExtendedModelResponse, ModelRequest
 
     monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
     monkeypatch.setattr("rt.model_calls.BACKOFF_SCHEDULE", (0.0, 0.0))
@@ -2514,8 +2632,9 @@ async def test_a_lasting_provider_outage_ends_the_run_with_a_message(
         ModelRequest(model=model, messages=[], state=_planned_with_fallback()), handler
     )
 
-    assert isinstance(response, ModelResponse)
-    assert response.result[0].content == MODEL_OUTAGE_MESSAGE
+    # Its transcript report rides with it into the checkpoint, as a model's reply does.
+    assert isinstance(response, ExtendedModelResponse)
+    assert response.model_response.result[0].content == MODEL_OUTAGE_MESSAGE
     assert handler.await_count == 3
     assert reported == []
 

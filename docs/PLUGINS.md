@@ -102,7 +102,7 @@ The manifest is a JSON script inside the bundle, read when a version is publishe
 | `version` | Free text, at most 32 characters. It is shown to people, not compared. |
 | `description` | Optional, at most 280 characters. |
 | `sidebar.label` | At most 24 characters. |
-| `sidebar.icon` | One of `puzzle-piece`, `notebook`, `file-text`, `book-open`, `kanban`, `chart-bar`, `chat-circle`, `calendar`, `lightbulb`. |
+| `sidebar.icon` | One of `puzzle-piece`, `notebook`, `file-text`, `book-open`, `kanban`, `chart-bar`, `chat-circle`, `calendar`, `lightbulb`, `images`. |
 | `permissions` | What the plugin may ask for; see below. |
 | `collections` | Optional rules for storage collections, by name: `{ "captures": { "write": "app" } }`; see [Who writes a collection](#who-writes-a-collection). |
 | `review` | Optional work pull request reviews do for the app: `{ "instructions": "…", "writes": ["captures"], "browser": true }`; see [Review steps](#review-steps). |
@@ -357,6 +357,15 @@ An app can have pull request reviews do work for it, such as screenshotting a fr
 
 A workspace admin adds apps to reviews in **Settings → Review → Apps in reviews**, or with `manage_review_apps`.
 Reviews follow the release that was newest when the admin added the app, so a later release changes no review until an admin updates it, and only on private repositories, whose previews run only code the organization's members pushed.
+
+A review usually finishes before its pull request's preview is up.
+Under **Preview checks** there, or with `manage_review_apps`, the admin names the checks whose success means a pull request's preview serves its head commit, such as a deploy workflow's last job.
+Name a check that is skipped when no preview is built, so pull requests without one start nothing.
+When one of them passes for an open pull request whose head is still that commit, in a private repository Robin reviews automatically, and the review works for an app whose step browses, Robin runs its review again to do only the apps' review steps against the preview.
+A preview can deploy before Robin has reviewed the pull request, or while it's a draft, so Robin looks again every five minutes for an hour.
+Each named check starts one such run per commit, so a pull request with several previews gets a run once each is up; when another reviewer run on the pull request cancels one, Robin starts it again, up to three times, and closing the pull request cancels it.
+That run reviews no code and can't change the review's findings or reply on the pull request.
+A problem its apps' work turns up that it can point at in the diff, such as a visual bug, it records and publishes as a comment of those findings alone; the code review's verdict, Robin's approval and the Robin Review check stay as the review left them.
 
 ### GitHub
 

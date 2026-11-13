@@ -16,6 +16,7 @@ import httpx2
 import pytest
 from fastapi import HTTPException
 from langgraph_sdk.errors import NotFoundError
+from pydantic import JsonValue, TypeAdapter
 
 from openswe.dashboard.github_link import GitHubLink
 from openswe.dashboard.langsmith_login import LangSmithLogin
@@ -96,6 +97,10 @@ class ThreadStoreOverClient(ThreadStore):
 
     async def state(self, thread_id: str) -> dict[str, Any] | None:
         return await proxy.langgraph_client().threads.get_state(thread_id)
+
+    async def state_of(self, thread: IndexedThread) -> dict[str, JsonValue]:
+        state = await proxy.langgraph_client().threads.get_state(thread.thread_id)
+        return TypeAdapter(dict[str, JsonValue]).validate_python(dict(state))
 
     async def command(
         self, thread_id: str, body: bytes, *, user_id: str | None = None
@@ -543,3 +548,11 @@ def memory_event_claims(monkeypatch: pytest.MonkeyPatch) -> MemoryEventClaims:
     monkeypatch.setattr(event_claims, "release", claims.release)
     monkeypatch.setattr(event_claims, "held", claims.is_held)
     return claims
+
+
+@pytest.fixture(autouse=True)
+def _no_dropped_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests see every event; the ones about ``DROPPED_EVENTS`` set it themselves."""
+    from openswe.webhooks import event_log
+
+    monkeypatch.setattr(event_log, "DROPPED_EVENTS", frozenset())

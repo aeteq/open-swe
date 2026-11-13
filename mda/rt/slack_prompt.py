@@ -63,6 +63,8 @@ _FORWARDED_ATTACHMENT_MAX_COUNT: Final = 10
 _FORWARDED_ATTACHMENT_MAX_DEPTH: Final = 4
 _FORWARDED_ATTACHMENT_MAX_NODES: Final = 50
 _FORWARDED_ATTACHMENT_TEXT_MAX_CHARS: Final = 8000
+# Slack adds a pasted message link's preview a moment after the message is posted.
+_UNFURL_WAITS: Final = (1.0, 2.0)
 _MESSAGE_TS_RE: Final = re.compile(r"^[0-9]{1,20}(?:\.[0-9]{1,12})?$")
 _USER_MENTION_RE: Final = re.compile(r"<@([UW][A-Z0-9]+)>")
 _CHANNEL_MENTION_RE: Final = re.compile(r"<#([CG][A-Z0-9]+)\|?>")
@@ -337,11 +339,19 @@ def _attachment_texts(attachment: dict[str, object]) -> list[str]:
     return texts or _non_empty_strings([attachment.get("fallback")])
 
 
-def _card_text(message: Mapping[str, object]) -> str:
-    """Readable text of an app message built from blocks or attachments instead of ``text``."""
+def card_text(message: Mapping[str, object]) -> str:
+    """Readable text of an app message built from blocks or attachments instead of ``text``.
+
+    Another message forwarded into it and a preview of a link, which carries the URL it
+    came from, are someone else's words, so they are left out.
+    """
     texts = _block_texts(message.get("blocks"))
     for attachment in _list_of_dicts(message.get("attachments")):
-        if not _is_forwarded_attachment(attachment):
+        if not (
+            _is_forwarded_attachment(attachment)
+            or attachment.get("is_app_unfurl") is True
+            or attachment.get("from_url")
+        ):
             texts += _attachment_texts(attachment)
     return "\n".join(texts)[:_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS]
 
@@ -436,7 +446,7 @@ def format_messages_for_prompt(
                 bot_username=bot_username,
             ),
             user_names_by_id or {},
-        ).strip() or _card_text(message)
+        ).strip() or card_text(message)
         text = text or ("[forwarded message]" if forwarded else "[non-text message]")
         user_id = message.get("user")
         if is_own_message(message, bot_user_id):
@@ -537,9 +547,7 @@ def channel_identity(
     return identity
 
 
-def thread_constant_context(
-    *, review_guide: bool, concierge: bool, kitchen: bool, ask: bool = False
-) -> str:
+def thread_constant_context(*, concierge: bool, kitchen: bool, ask: bool = False) -> str:
     """Guidance that holds for the whole thread, which the model is told once."""
     return "\n\n".join(
         section
@@ -704,7 +712,6 @@ def build_input(
     request_text: str,
     request_blocks: list[dict[str, Any]],
     prior_message_text: str = "",
-    is_breakout: bool = False,
     turn_context: str = "",
     constant_context: str = "",
     dispatched_timestamps: set[str] | None = None,
@@ -861,21 +868,11 @@ def build_input(
     current_message = next(
         (message for message in messages if str(message.get("ts", "")) == str(event_ts)), {}
     )
-    if is_breakout or not str(current_message.get("text") or "").strip():
-        rendered_request = message_text(
-            {**current_message, "text": ""},
-            bot_user_id,
-            user_names_by_id,
-            channel_names,
-            bot_username,
-        )
-        _, _, forwarded_context = rendered_request.partition("\n")
-    else:
-        forwarded_context = label_mentions(
-            format_forwarded_attachments(current_message.get("attachments")),
-            user_names_by_id,
-            channel_names,
-        )
+    forwarded_context = label_mentions(
+        format_forwarded_attachments(current_message.get("attachments")),
+        user_names_by_id,
+        channel_names,
+    )
     if forwarded_context:
         request_text = f"{request_text}\n{forwarded_context}"
     request_blocks[0] = {**request_blocks[0], "text": request_text}
@@ -1073,6 +1070,71 @@ async def _linked_message(url: str, current_channel_id: str) -> SlackMessage | N
     return resolved
 
 
+def _forwarded_sources(messages: Iterable[Mapping[str, Any]]) -> set[tuple[str, str]]:
+    """The Slack messages the forwarded or unfurled attachments of ``messages`` already show."""
+    return {
+        parsed
+        for message in messages
+        for attachment in _list_of_dicts(message.get("attachments"))
+        if _is_forwarded_attachment(attachment)
+        and isinstance(source := attachment.get("from_url"), str)
+        and (parsed := _message_url(source))
+    }
+
+
+async def await_link_unfurls(channel_id: str, thread_ts: str, message: SlackMessage) -> None:
+    """Wait briefly for Slack to unfurl the message links ``message`` holds, and take the
+    previews it adds: the posted copy has none yet, and a link into a DM or private
+    channel is never followed, so the preview is all the agent can see of it."""
+    links = {
+        parsed
+        for match in _MESSAGE_URL_RE.finditer(str(message.get("text") or ""))
+        if (parsed := _message_url(match.group(0)))
+    }
+    message_ts = str(message.get("ts") or "")
+    if not message_ts:
+        return
+    # A link ``resolved_links`` can follow needs no preview, and may never get one.
+    hidden: set[tuple[str, str]] = set()
+    for link in links - _forwarded_sources([message]):
+        if link[0] == channel_id:
+            continue
+        channel = await channel_details(link[0])
+        if channel is None or not _is_public(channel):
+            hidden.add(link)
+    if not hidden:
+        return
+    for delay in _UNFURL_WAITS:
+        await asyncio.sleep(delay)
+        payload = await _api(
+            "conversations.replies",
+            {
+                "channel": channel_id,
+                "ts": thread_ts or message_ts,
+                "latest": message_ts,
+                "oldest": message_ts,
+                "inclusive": "true",
+                "limit": 2,
+            },
+        )
+        found = payload.get("messages") if payload is not None else None
+        current = next(
+            (
+                item
+                for item in (found if isinstance(found, list) else [])
+                if isinstance(item, dict) and str(item.get("ts")) == message_ts
+            ),
+            None,
+        )
+        if current is None:
+            continue
+        previews = _forwarded_sources([current])
+        if previews - _forwarded_sources([message]):
+            message["attachments"] = current.get("attachments")
+        if hidden <= previews:
+            return
+
+
 async def resolved_links(
     messages: Sequence[Mapping[str, Any]],
     user_names_by_id: Mapping[str, str],
@@ -1086,12 +1148,16 @@ async def resolved_links(
     if not links:
         return "", []
 
+    shown = _forwarded_sources(messages)
     parts: list[str] = []
     linked_images: list[str] = []
     for link in dict.fromkeys(links):
         try:
             resolved = await _linked_message(link, channel_id)
-            if resolved:
+            if resolved and _message_url(link) in shown:
+                # Its preview already quotes it; only its images are missing.
+                linked_images.extend(slack_image_file_urls(resolved))
+            elif resolved:
                 author_id = resolved.get("user", "")
                 author = user_names_by_id.get(author_id, author_id)
                 if author_id and author == author_id:
@@ -1099,7 +1165,7 @@ async def resolved_links(
                 text = resolved.get("text", "(empty message)")
                 parts.append(f"**{link}**\n  Author: {author}\n  Message: {text}")
                 linked_images.extend(slack_image_file_urls(resolved))
-            else:
+            elif _message_url(link) not in shown:
                 parts.append(f"**{link}**\n  (Could not fetch — bot may not have access)")
         except Exception:
             logger.exception("Failed to resolve a Slack link")

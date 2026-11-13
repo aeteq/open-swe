@@ -106,7 +106,7 @@ from openswe.slack.client import (
     get_slack_user_info,
     get_slack_user_names,  # noqa: F401
     parse_slack_ts,  # noqa: F401
-    post_slack_ephemeral_message,
+    post_slack_ephemeral_message,  # noqa: F401
     post_slack_thread_reply,
     post_slack_trace_reply,  # noqa: F401
     remove_slack_reaction,
@@ -115,16 +115,6 @@ from openswe.slack.client import (
     strip_bot_mention,  # noqa: F401
     update_slack_message,
     verify_slack_signature,
-)
-from openswe.slack.code_channels import (  # noqa: F401
-    CODE_CHANNEL_SESSION_TS,
-    DEFAULT_CODE_CHANNEL_COMMANDS,
-    get_block_suggestions,
-    is_code_channel,
-    repo_context_bar_items,
-    set_commands,
-    set_context_bar,
-    set_session_status,
 )
 from openswe.slack.events import (
     claim_slack_event,
@@ -182,7 +172,6 @@ from openswe.workspaces.store import DEFAULT_WORKSPACE_SLUG
 __all__ = [
     "Any",
     "BackgroundTasks",
-    "CODE_CHANNEL_SESSION_TS",
     "DEFAULT_HTTP_TIMEOUT",
     "DEFAULT_REPO_OWNER",
     "FEEDBACK_REACTIONS",
@@ -264,7 +253,6 @@ __all__ = [
     "get_workspace_settings",
     "get_valid_access_token",
     "has_access_token_record",
-    "is_code_channel",
     "json",
     "list_reviewer_findings",
     "logger",
@@ -280,15 +268,12 @@ __all__ = [
     "queue_message_for_thread",
     "react_to_github_comment",
     "reconcile_findings_with_review_threads",
-    "repo_context_bar_items",
     "resolve_agent_model_id",
     "resolve_slack_links_in_context",
     "resolve_slack_thread_id",
     "sanitize_github_comment_body",
     "select_slack_context_messages",
-    "set_context_bar",
     "set_reviewer_thread_metadata",
-    "set_session_status",
     "slack_event_already_seen",
     "store_slack_run_mapping",
     "strip_bot_mention",
@@ -592,9 +577,12 @@ async def upsert_agent_thread_metadata(
         existing_dict["metadata"] if isinstance(existing_dict.get("metadata"), dict) else {}
     )
     existing_context = SourceContext.from_metadata(existing_meta)
+    if existing_meta.get("source") == "incidents_agent":
+        for key in ("source", "origin", "thread_category", "trigger_kind"):
+            metadata.pop(key, None)
     # A thread a bot started stays one, whoever speaks in its Slack thread later.
     if thread_is_bot_triggered(existing_meta):
-        metadata.pop("trigger_kind")
+        metadata.pop("trigger_kind", None)
     if (
         owner_type == "system"
         and existing_meta
@@ -674,6 +662,11 @@ async def upsert_agent_thread_metadata(
         initiating_login = owner_login.strip() or sender_login.strip()
         if initiating_login and owner_type == "user":
             metadata["owner_login"] = initiating_login
+            from openswe.tasks.schemas import ThreadMetadata
+
+            ownership = await ThreadMetadata.for_new_thread({**existing_meta, **metadata})
+            if ownership.get("owner_user_id"):
+                metadata["owner_user_id"] = ownership["owner_user_id"]
 
     try:
         if existing is None:
@@ -1006,8 +999,6 @@ async def post_account_link_prompt(
     user_id: str,
     user_email: str | None,
     reason: AccountLinkReason = "unlinked",
-    agent_thread_id: str | None = None,
-    ephemeral: bool = False,
     langsmith: bool = False,
 ) -> None:
     """Prompt a Slack user with a token-free, verified account-onboarding link."""
@@ -1018,13 +1009,15 @@ async def post_account_link_prompt(
         )
         return
     if langsmith:
-        text = (
-            "🔐 Your LangSmith sign-in needs to be renewed. "
-            if reason == "revoked"
-            else "👋 Sign in with LangSmith to chat with Robin. "
-        ) + (
+        sign_in = (
             f"<{settings_url}|Sign in with LangSmith> and follow the prompts to link Slack, "
-            "then tag me again. GitHub is optional and only needed for coding features."
+            "then tag me again."
+        )
+        text = (
+            f"🔐 Your LangSmith sign-in needs to be renewed. {sign_in}"
+            if reason == "revoked"
+            else f"👋 Sign in with LangSmith to chat with Robin. {sign_in} "
+            "GitHub is optional and only needed for coding features."
         )
     elif reason == "revoked":
         text = (
@@ -1038,12 +1031,12 @@ async def post_account_link_prompt(
             "again."
         )
     try:
-        if ephemeral:
-            await post_slack_ephemeral_message(channel_id, user_id, text)
-        else:
-            await post_slack_thread_reply(
-                channel_id, thread_ts, text, agent_thread_id=agent_thread_id
-            )
+        await post_slack_ephemeral_message(
+            channel_id,
+            user_id,
+            text,
+            thread_ts="" if thread_ts == "0" else thread_ts,
+        )
     except Exception:  # noqa: BLE001
         logger.debug("Failed to post account-link prompt to Slack", exc_info=True)
 

@@ -156,48 +156,6 @@ async def test_title_persistence_failure_is_bounded_and_logged(
     assert isinstance(record.exc_info[1], TimeoutError if failure == "timeout" else OSError)
 
 
-class _PromotingThreads(_Threads):
-    """Threads whose update promotes the thread into a code channel mid-flight."""
-
-    async def update(self, *, thread_id: str, metadata: dict[str, Any]) -> None:
-        await super().update(thread_id=thread_id, metadata=metadata)
-        self.metadata["source"] = "slack"
-        self.metadata["source_context"] = {
-            "slack_thread": {"channel_id": "C-code", "thread_ts": "0"}
-        }
-
-
-@pytest.mark.asyncio
-async def test_title_generation_renames_channel_promoted_during_update(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A promotion racing the title update must still rename the channel.
-
-    The pre-update metadata snapshot does not carry a Slack location, so the
-    rename decision has to come from a re-read after the update.
-    """
-    threads = _PromotingThreads(
-        {
-            "source": "dashboard",
-            "title": "please review title generation",
-            "title_seed": "please review title generation",
-        }
-    )
-    client = type("Client", (), {"threads": threads})()
-    rename = AsyncMock(return_value=None)
-    monkeypatch.setattr("openswe.thread_title.rename_session", rename)
-    monkeypatch.setattr("openswe.thread_title.is_code_channel", AsyncMock(return_value=True))
-
-    await generate_and_store_thread_title(
-        thread_id="thread-123",
-        conversation="please review title generation",
-        model=cast(BaseChatModel, _Model()),
-        client=client,
-    )
-
-    rename.assert_awaited_once_with("C-code", "Review thread title generation")
-
-
 @pytest.mark.parametrize("suffix", [None, "", " · <https://slack/source|(source)> · <@U1>"])
 async def test_generated_title_updates_only_manual_breakout_roots(
     monkeypatch: pytest.MonkeyPatch, suffix: str | None
@@ -349,7 +307,7 @@ async def test_haiku_empty_tool_arguments_recover_to_a_stored_title(
         content = (
             [ToolUseBlock(type="tool_use", id="tool-1", name="_ThreadTitle", input={})]
             if "tools" in payload
-            else [TextBlock(type="text", text=' "Repair   thread titles." ')]
+            else [TextBlock(type="text", text=' "Repair   thread title generation failures." ')]
         )
         response = Message(
             id="message-1",
@@ -371,6 +329,6 @@ async def test_haiku_empty_tool_arguments_recover_to_a_stored_title(
         model=model,
         client=SimpleNamespace(threads=threads),
     )
-    assert threads.metadata["title"] == "Repair thread titles"
+    assert threads.metadata["title"] == "Repair thread title generation"
     assert threads.metadata["title_seed"] is None
-    mirror.assert_awaited_once_with("thread-123", {"title": "Repair thread titles"})
+    mirror.assert_awaited_once_with("thread-123", {"title": "Repair thread title generation"})

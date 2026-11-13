@@ -2,6 +2,7 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   LaptopRegularIcon,
+  XIcon,
 } from "@langchain/macaw-components/icons"
 import {
   ContextMenu,
@@ -22,6 +23,8 @@ import {
 import type { IconComponent } from "@langchain/macaw-components/Icon"
 import { IconButton } from "@langchain/macaw-components/IconButton"
 import { Spinner } from "@langchain/macaw-components/Spinner"
+import { useZIndex } from "@langchain/macaw-components/utils/useZIndex"
+import zIndices from "@langchain/macaw-components/utils/zIndices"
 import { CheckCircleIcon } from "@phosphor-icons/react/dist/ssr/CheckCircle"
 import { CloudIcon } from "@phosphor-icons/react/dist/ssr/Cloud"
 import { DotsThreeIcon } from "@phosphor-icons/react/dist/ssr/DotsThree"
@@ -32,7 +35,15 @@ import { LockIcon } from "@phosphor-icons/react/dist/ssr/Lock"
 import { RobotIcon } from "@phosphor-icons/react/dist/ssr/Robot"
 import { WarningCircleIcon } from "@phosphor-icons/react/dist/ssr/WarningCircle"
 import { Link, useSearch } from "@tanstack/react-router"
-import { useRef, useState } from "react"
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 import type { PullRequestSnapshot } from "@/features/agents/lib/api"
 import type {
@@ -42,14 +53,14 @@ import type {
 import type { SidebarThreadItem } from "@/features/agents/lib/sidebarThreads"
 import { DeleteThreadDialog } from "@/features/agents/components/DeleteThreadDialog"
 import { parsePullRequestReference } from "@/features/reviews/search"
-import { RenameThreadDialog } from "@/features/agents/components/RenameThreadDialog"
 import { ThreadMenuItems } from "@/features/agents/components/ThreadMenuItems"
+import { useSidebarThreadSelection } from "@/features/agents/components/SidebarThreadSelection"
 import { DropdownMenuItem } from "@/components/MenuItem"
 import { runsOnAMac, useLocalThread } from "@/features/agents/lib/desktopLocal"
-import { useSidebarPrefs } from "@/features/agents/lib/sidebarPrefs"
 import {
   markReviewViewed,
   useDeleteAgentThread,
+  useRenameAgentThread,
   useSetAgentThreadViewed,
 } from "@/features/agents/lib/queries"
 import {
@@ -60,6 +71,9 @@ import { useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 
 const ICON_SIZE = 14
+
+const HOVER_TRIANGLE_EDGE_OFFSET = 1
+const HOVER_TRIANGLE_BASE_PADDING = 15
 
 type PrState = NonNullable<AgentThread["pr"]>["state"]
 
@@ -117,67 +131,56 @@ function openContextMenuFromKeyboard(
   )
 }
 
-/** Pixels per second every title travels at, whatever its length. */
-const MARQUEE_SPEED = 45
-/** Keeps a barely-overflowing title from flicking past in a few frames. */
-const MARQUEE_MIN_DURATION = 0.5
-
-/**
- * Slides an overflowing title far enough to read its tail while hovered. The
- * shift is measured on enter rather than tracked continuously because it only
- * matters for the row the pointer is actually over, and the duration is derived
- * from it so long and short titles read at the same speed.
- */
-function useTitleMarquee() {
-  const viewport = useRef<HTMLSpanElement>(null)
-  const text = useRef<HTMLSpanElement>(null)
-  const [shift, setShift] = useState(0)
-
-  const measure = () => {
-    const overflow =
-      (text.current?.scrollWidth ?? 0) - (viewport.current?.clientWidth ?? 0)
-    setShift(overflow > 4 ? -overflow : 0)
-  }
-
-  const duration = Math.max(
-    MARQUEE_MIN_DURATION,
-    Math.abs(shift) / MARQUEE_SPEED
-  )
-
-  return { viewport, text, shift, duration, measure, reset: () => setShift(0) }
+function SidebarRowTitle({ title }: { title: string }) {
+  return <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
 }
 
-function SidebarRowTitle({
-  marquee: { viewport, text, shift, duration },
-  title,
+function SidebarRowTitleInput({
+  value,
+  onChange,
+  onSave,
+  onCancel,
 }: {
-  marquee: ReturnType<typeof useTitleMarquee>
-  title: string
+  value: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onCancel: () => void
 }) {
   return (
-    <span
-      ref={viewport}
-      className={cn(
-        "sidebar-title-viewport relative min-w-0 flex-1 overflow-hidden",
-        shift !== 0 && "sidebar-title-marquee-mask"
-      )}
-    >
-      <span
-        ref={text}
-        className={cn(
-          "block w-max text-sm whitespace-nowrap will-change-transform",
-          shift !== 0 && "sidebar-title-marquee"
-        )}
-        style={
-          {
-            "--marquee-shift": `${shift}px`,
-            "--marquee-duration": `${duration}s`,
-          } as React.CSSProperties
+    // A native field lets inline editing retain the navigation row's styling.
+    <input
+      data-thread-rename="input"
+      aria-label="Thread title"
+      placeholder="Thread title"
+      className="min-w-0 flex-1 appearance-none border-0 bg-transparent p-0 text-sm text-inherit shadow-none ring-0 outline-none placeholder:text-placeholder focus:ring-0 focus:outline-none"
+      value={value}
+      maxLength={80}
+      autoFocus
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => onChange(event.currentTarget.value)}
+      onBlur={(event) => {
+        // Prevent saving if the blur was caused by focusing to cancel button.
+        if (
+          event.relatedTarget instanceof HTMLElement &&
+          event.relatedTarget.dataset.threadRename === "cancel"
+        ) {
+          return
         }
-      >
-        {title}
-      </span>
-    </span>
+
+        onSave()
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.nativeEvent.isComposing) return
+        if (event.key === "Enter") {
+          event.preventDefault()
+          onSave()
+        } else if (event.key === "Escape") {
+          event.preventDefault()
+          onCancel()
+        }
+      }}
+    />
   )
 }
 
@@ -203,8 +206,8 @@ function sidebarRowProps({
       archived && "opacity-55",
       "text-primary",
       active
-        ? "bg-selected group-hover/row:bg-selected-hover"
-        : "group-hover/row:bg-surface-level-2-hover"
+        ? "bg-selected group-hover/row:bg-selected-hover group-has-data-[hover-preview=open]/row:bg-selected-hover"
+        : "group-hover/row:bg-surface-level-2-hover group-has-data-[hover-preview=open]/row:bg-surface-level-2-hover"
     ),
     style: { paddingLeft: (indent ? 16 : 8) + depth * TREE_STEP },
   }
@@ -271,10 +274,12 @@ function PullRequestMenuItem({
 
 function DisclosureCaret({
   expanded,
+  visible,
   label,
   onToggle,
 }: {
   expanded: boolean
+  visible: boolean
   label: string
   onToggle: () => void
 }) {
@@ -282,12 +287,15 @@ function DisclosureCaret({
   const toggle = (event: React.SyntheticEvent) => {
     event.preventDefault()
     event.stopPropagation()
+    if (!visible) return
     onToggle()
   }
   return (
     <span
       role="button"
-      tabIndex={0}
+      data-thread-rename="caret"
+      tabIndex={visible ? 0 : -1}
+      aria-hidden={!visible}
       aria-expanded={expanded}
       aria-label={label}
       title={label}
@@ -295,9 +303,21 @@ function DisclosureCaret({
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") toggle(event)
       }}
-      className="-mx-space-1 flex size-4 shrink-0 items-center justify-center text-tertiary transition-colors hover:text-primary"
+      className={cn(
+        "-mx-space-2 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden",
+        "text-tertiary hover:text-primary",
+        "transition-all duration-normal motion-reduce:transition-none",
+        !visible
+          ? "pointer-events-none mr-0 w-0 opacity-0"
+          : !expanded &&
+              cn(
+                "mr-0 w-0 opacity-0",
+                "group-hover/row:-mr-space-2 group-hover/row:w-7 group-hover/row:opacity-100",
+                "[@media(hover:none)]:-mr-space-2 [@media(hover:none)]:w-7 [@media(hover:none)]:opacity-100"
+              )
+      )}
     >
-      <Caret size={10} weight="fill" />
+      <Caret size={16} className="shrink-0 translate-x-px" />
     </span>
   )
 }
@@ -368,17 +388,30 @@ export function SidebarThreadRow({
   onTogglePin: () => void
   onToggleArchived: () => void
 }) {
+  const selection = useSidebarThreadSelection()
+  const actionsZIndex = useZIndex(zIndices.popover) + 1
+  const selected = selection?.selected.has(item.id) ?? false
   const queryClient = useQueryClient()
   const deleteThread = useDeleteAgentThread()
   const setViewed = useSetAgentThreadViewed()
   const worktreeThread = useLocalThread(item.id)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [renameOpen, setRenameOpen] = useState(false)
+  const [titleDraft, setTitleDraft] = useState<string | null>(null)
+  const renameThread = useRenameAgentThread()
+  const editingTitle = useRef(false)
+
+  useEffect(() => {
+    if (
+      !editingTitle.current &&
+      titleDraft !== null &&
+      (item.title === titleDraft.trim() || renameThread.isError)
+    ) {
+      setTitleDraft(null)
+    }
+  }, [item.title, titleDraft, renameThread.isError])
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const menuNavigated = useRef(false)
-  const marquee = useTitleMarquee()
-  const { prefs, toggleSubagentsCollapsed } = useSidebarPrefs()
   const activeSubagentId =
     useSearch({
       from: "/agents/$threadId",
@@ -394,14 +427,16 @@ export function SidebarThreadRow({
   const activeWorkerId = workers.find(
     (worker) => worker.id === activeThreadId
   )?.id
-  const [workersExpanded, setWorkersExpanded] = useState(
-    Boolean(activeWorkerId)
-  )
-  const [previousWorkerId, setPreviousWorkerId] = useState(activeWorkerId)
-  if (previousWorkerId !== activeWorkerId) {
-    setPreviousWorkerId(activeWorkerId)
-    if (activeWorkerId) setWorkersExpanded(true)
+  const openedThreadId = isActive ? item.id : activeWorkerId
+  const [children, setChildren] = useState({
+    openedThreadId,
+    collapsed: false,
+  })
+  if (children.openedThreadId !== openedThreadId) {
+    setChildren({ openedThreadId, collapsed: false })
   }
+  const subagentsCollapsed = !openedThreadId || children.collapsed
+
   const hasSubagents = subagents.length > 0
   const activeSubagent =
     isActive &&
@@ -409,10 +444,9 @@ export function SidebarThreadRow({
     subagents.some((subagent) => subagent.toolCallId === activeSubagentId)
       ? activeSubagentId
       : null
-  const subagentsCollapsed = !prefs.expandedSubagentKeys.includes(item.key)
   const rowIsActive =
     (isActive && (!activeSubagent || subagentsCollapsed)) ||
-    (Boolean(activeWorkerId) && !workersExpanded)
+    (Boolean(activeWorkerId) && subagentsCollapsed)
   const unread = !item.viewed
   const isDeleting =
     deleteThread.isPending && deleteThread.variables === item.id
@@ -431,32 +465,64 @@ export function SidebarThreadRow({
       event.preventDefault()
       return
     }
+    if (selection?.click(event, item)) return
     markViewed()
     onNavigate?.()
   }
 
+  const saveTitle = () => {
+    if (!editingTitle.current || titleDraft === null) return
+    editingTitle.current = false
+    const title = titleDraft.trim()
+    if (title && title !== item.title) {
+      renameThread.mutate({ threadId: item.id, title })
+    } else {
+      setTitleDraft(null)
+    }
+  }
+
+  const cancelTitle = () => {
+    editingTitle.current = false
+    setTitleDraft(null)
+  }
+
   const rowContent = (
     <>
-      {hasSubagents && (
+      {selected && (
+        <span className="text-brand text-xs" aria-label="Selected thread">
+          ✓
+        </span>
+      )}
+      {(hasSubagents || workers.length > 0) && (
         <DisclosureCaret
+          visible={Boolean(openedThreadId)}
           expanded={!subagentsCollapsed}
-          label={subagentsCollapsed ? "Show subagents" : "Hide subagents"}
-          onToggle={() => toggleSubagentsCollapsed(item.key)}
+          label={
+            subagentsCollapsed ? "Show child threads" : "Hide child threads"
+          }
+          onToggle={() =>
+            setChildren((previous) => ({
+              ...previous,
+              collapsed: !previous.collapsed,
+            }))
+          }
         />
       )}
-      {workers.length > 0 && (
-        <DisclosureCaret
-          expanded={workersExpanded}
-          label={workersExpanded ? "Hide task workers" : "Show task workers"}
-          onToggle={() => setWorkersExpanded((expanded) => !expanded)}
+      {titleDraft !== null ? (
+        <SidebarRowTitleInput
+          value={titleDraft}
+          onChange={setTitleDraft}
+          onSave={saveTitle}
+          onCancel={cancelTitle}
         />
+      ) : (
+        <SidebarRowTitle title={item.title} />
       )}
-      <SidebarRowTitle marquee={marquee} title={item.title} />
 
       <span
         className={cn(
-          "flex shrink-0 items-center justify-end gap-space-2 group-hover/row:invisible group-hover/row:min-w-6",
-          moreMenuOpen && "invisible min-w-6"
+          "flex shrink-0 items-center justify-end gap-space-2 group-hover/row:invisible group-hover/row:min-w-6 group-has-data-[hover-preview=open]/row:invisible group-has-data-[hover-preview=open]/row:min-w-6 [@media(hover:none)]:pr-space-5",
+          (moreMenuOpen || titleDraft !== null) && "invisible min-w-6"
         )}
       >
         {item.status === "running" || item.waitingForDelegatedWork ? (
@@ -474,36 +540,45 @@ export function SidebarThreadRow({
   )
 
   const rowProps = sidebarRowProps({
-    active: rowIsActive,
+    active: selected || rowIsActive,
     archived,
     indent,
     depth: 0,
   })
 
   const review = item.reviewPage
-  const link = review ? (
-    <Link
-      {...reviewPageRoute(review)}
-      onClick={(event) => {
-        noteReviewOpenedFromSidebar(review)
-        handleNavigate(event)
-      }}
-      onKeyDown={openContextMenuFromKeyboard}
-      {...rowProps}
-    >
-      {rowContent}
-    </Link>
-  ) : (
-    <Link
-      to="/agents/$threadId"
-      params={{ threadId: item.id }}
-      onClick={handleNavigate}
-      onKeyDown={openContextMenuFromKeyboard}
-      {...rowProps}
-    >
-      {rowContent}
-    </Link>
-  )
+  const link =
+    titleDraft !== null ? (
+      <div {...rowProps}>{rowContent}</div>
+    ) : review ? (
+      <Link
+        {...reviewPageRoute(review)}
+        onClick={(event) => {
+          handleNavigate(event)
+          if (!event.defaultPrevented) noteReviewOpenedFromSidebar(review)
+        }}
+        onKeyDown={openContextMenuFromKeyboard}
+        {...rowProps}
+        data-selectable-thread={item.id}
+        data-thread-title={item.title}
+        aria-label={selected ? `${item.title}, selected` : item.title}
+      >
+        {rowContent}
+      </Link>
+    ) : (
+      <Link
+        to="/agents/$threadId"
+        params={{ threadId: item.id }}
+        onClick={handleNavigate}
+        onKeyDown={openContextMenuFromKeyboard}
+        {...rowProps}
+        data-selectable-thread={item.id}
+        data-thread-title={item.title}
+        aria-label={selected ? `${item.title}, selected` : item.title}
+      >
+        {rowContent}
+      </Link>
+    )
 
   const menuItems = (menu: "context" | "dropdown") => (
     <ThreadMenuItems
@@ -512,7 +587,10 @@ export function SidebarThreadRow({
       pinned={pinned}
       archived={archived}
       isDeleting={isDeleting}
-      onRename={() => setRenameOpen(true)}
+      onRename={() => {
+        editingTitle.current = true
+        requestAnimationFrame(() => setTitleDraft(item.title))
+      }}
       onTogglePin={onTogglePin}
       onToggleViewed={() =>
         setViewed.mutate({ threadId: item.id, viewed: !item.viewed })
@@ -528,59 +606,107 @@ export function SidebarThreadRow({
         <ContextMenuTrigger asChild>
           <div
             className={cn(
-              "group/row relative mb-0.5",
+              "group/row relative mb-0.5 select-none [-webkit-touch-callout:none]",
               isDeleting && "opacity-50"
             )}
-            onMouseEnter={marquee.measure}
-            onMouseLeave={marquee.reset}
+            onDoubleClick={(event) => {
+              if (
+                !(event.target instanceof Element) ||
+                event.target.closest("[data-thread-rename]") ||
+                renameThread.isPending
+              ) {
+                return
+              }
+
+              event.preventDefault()
+              editingTitle.current = true
+              setTitleDraft(item.title)
+            }}
           >
             <RowHoverCard
               trigger={link}
               card={<ThreadHoverCard item={item} live={live} />}
-            />
-            <DropdownMenu onOpenChange={setMoreMenuOpen}>
-              <DropdownMenuTrigger asChild>
+            >
+              {titleDraft !== null ? (
                 <IconButton
-                  icon={DotsThreeIcon}
-                  label="Thread actions"
+                  data-thread-rename="cancel"
+                  icon={XIcon}
+                  label="Cancel rename"
                   size="xs"
                   color="secondary"
                   variant="plain"
-                  className={cn(
-                    "absolute top-1/2 right-1 -translate-y-1/2 text-tertiary opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-primary focus-visible:opacity-100",
-                    moreMenuOpen && "opacity-100"
-                  )}
+                  className="absolute top-1/2 right-1 -translate-y-1/2 text-tertiary hover:text-primary"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={cancelTitle}
+                  onBlur={cancelTitle}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault()
+                      cancelTitle()
+                    }
+                  }}
                 />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="min-w-[10rem] border-default bg-elevated"
-                onClickCapture={(event) => {
-                  menuNavigated.current = Boolean(
-                    (event.target as HTMLElement).closest("a[href]")
-                  )
-                }}
-                onCloseAutoFocus={(event) => {
-                  if (menuNavigated.current) event.preventDefault()
-                  menuNavigated.current = false
-                }}
-              >
-                {item.pr && (
-                  <>
-                    <PullRequestMenuItem pr={item.pr} live={live} />
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                {menuItems("dropdown")}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              ) : (
+                <DropdownMenu onOpenChange={setMoreMenuOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton
+                      data-thread-rename="actions"
+                      icon={DotsThreeIcon}
+                      label="Thread actions"
+                      style={
+                        {
+                          "--thread-actions-z-index": actionsZIndex,
+                        } as React.CSSProperties
+                      }
+                      size="xs"
+                      color="secondary"
+                      variant="plain"
+                      className={cn(
+                        "absolute top-1/2 right-1 -translate-y-1/2 text-tertiary opacity-0 transition-opacity group-hover/row:opacity-100 group-has-data-[hover-preview=open]/row:z-(--thread-actions-z-index) group-has-data-[hover-preview=open]/row:opacity-100 hover:text-primary focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+                        moreMenuOpen && "opacity-100"
+                      )}
+                    />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="min-w-40 border-default bg-elevated"
+                    onClickCapture={(event) => {
+                      menuNavigated.current = Boolean(
+                        (event.target as HTMLElement).closest("a[href]")
+                      )
+                    }}
+                    onCloseAutoFocus={(event) => {
+                      if (menuNavigated.current || editingTitle.current) {
+                        event.preventDefault()
+                      }
+                      menuNavigated.current = false
+                    }}
+                  >
+                    {item.pr && (
+                      <>
+                        <PullRequestMenuItem pr={item.pr} live={live} />
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
+                    {menuItems("dropdown")}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </RowHoverCard>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="min-w-[10rem] border-default bg-elevated">
+        <ContextMenuContent
+          className="min-w-40 border-default bg-elevated"
+          onCloseAutoFocus={(event) => {
+            if (editingTitle.current) {
+              event.preventDefault()
+            }
+          }}
+        >
           {menuItems("context")}
         </ContextMenuContent>
       </ContextMenu>
-      {hasSubagents && !subagentsCollapsed && (
+      {openedThreadId && hasSubagents && !subagentsCollapsed && (
         <SidebarTree
           label={`Subagents of ${item.title}`}
           indent={indent}
@@ -599,7 +725,7 @@ export function SidebarThreadRow({
           ))}
         </SidebarTree>
       )}
-      {workers.length > 0 && workersExpanded && (
+      {openedThreadId && workers.length > 0 && !subagentsCollapsed && (
         <SidebarTree
           label={`Task workers of ${item.title}`}
           indent={indent}
@@ -617,26 +743,17 @@ export function SidebarThreadRow({
           ))}
         </SidebarTree>
       )}
-      {renameOpen && (
-        <RenameThreadDialog
-          thread={thread}
-          onClose={() => setRenameOpen(false)}
-        />
-      )}
       <DeleteThreadDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        threadTitle={item.title}
         isDeleting={isDeleting}
         onConfirm={onConfirmDelete}
         detail={
-          !worktreeThread
-            ? undefined
-            : worktreeThread.managedTaskFolder
-              ? `This deletes the conversation. Its task files are kept at ${worktreeThread.cwd}.`
-              : worktreeThread.ownedWorktrees.length
-                ? "This deletes the worktree Robin created for it, including any uncommitted changes in it. Its branch and commits are kept."
-                : "This removes its history but does not revert changes made to your repository."
+          worktreeThread &&
+          !worktreeThread.managedTaskFolder &&
+          worktreeThread.ownedWorktrees.length
+            ? "This also deletes its worktree and uncommitted changes. Branch and commits are kept."
+            : undefined
         }
       />
     </>
@@ -663,8 +780,6 @@ function SidebarSubagentRow({
   depth: number
   onNavigate?: () => void
 }) {
-  const marquee = useTitleMarquee()
-
   const link = (
     <Link
       to="/agents/$threadId"
@@ -678,7 +793,7 @@ function SidebarSubagentRow({
         depth,
       })}
     >
-      <SidebarRowTitle marquee={marquee} title={subagent.title} />
+      <SidebarRowTitle title={subagent.title} />
       <span className="flex shrink-0 items-center gap-space-2">
         {subagent.status === "error" && (
           <ErrorIndicator label="Subagent failed" />
@@ -691,11 +806,7 @@ function SidebarSubagentRow({
   )
 
   return (
-    <li
-      className="group/row relative mb-0.5"
-      onMouseEnter={marquee.measure}
-      onMouseLeave={marquee.reset}
-    >
+    <li className="group/row relative mb-0.5">
       <RowHoverCard
         trigger={link}
         card={<SubagentHoverCard subagent={subagent} />}
@@ -705,24 +816,129 @@ function SidebarSubagentRow({
   )
 }
 
-/** Rich preview beside a row; it is a hover card so its links stay clickable. */
+const RowHoverCardContext = createContext<{
+  activeCardId: string | null
+  onOpenChange: (id: string, open: boolean) => void
+}>({
+  activeCardId: null,
+  onOpenChange: (_id: string, _open: boolean) => {},
+})
+
+export function SidebarThreadHoverProvider(props: {
+  children: React.ReactNode
+}) {
+  const [value, onChange] = useState<string | null>(null)
+  const hoverContext = useMemo(
+    () => ({
+      activeCardId: value,
+      onOpenChange: (id: string, open: boolean) =>
+        onChange((current) => (open ? id : current === id ? null : current)),
+    }),
+    [value]
+  )
+
+  return (
+    <RowHoverCardContext value={hoverContext}>
+      {props.children}
+    </RowHoverCardContext>
+  )
+}
+
+/** Rich preview beside a row; only one sidebar preview is open at a time. */
 function RowHoverCard({
   trigger,
   card,
+  children,
 }: {
   trigger: React.ReactElement
   card: React.ReactNode
+  children?: React.ReactNode
 }) {
+  const id = useId()
+  const { activeCardId, onOpenChange } = useContext(RowHoverCardContext)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const safeAreaRef = useRef<SVGSVGElement>(null)
+  const triangleRef = useRef<SVGPolygonElement>(null)
+
+  useEffect(() => () => onOpenChange(id, false), [id, onOpenChange])
+
+  useEffect(() => {
+    if (activeCardId !== id) return
+    const abort = new AbortController()
+    const dismiss = () => onOpenChange(id, false)
+    document.addEventListener("scroll", dismiss, {
+      capture: true,
+      signal: abort.signal,
+    })
+    window.addEventListener("resize", dismiss, { signal: abort.signal })
+    window.addEventListener("blur", dismiss, { signal: abort.signal })
+    return () => abort.abort()
+  }, [activeCardId, id, onOpenChange])
+
+  const onPointerLeave = (event: React.PointerEvent) => {
+    if (activeCardId !== id || event.pointerType === "touch") return
+
+    const cardNode = cardRef.current?.getBoundingClientRect()
+    const svgNode = safeAreaRef.current?.getBoundingClientRect()
+    if (!cardNode || !svgNode) return
+
+    const row = event.currentTarget.getBoundingClientRect()
+
+    let points: string
+    if (cardNode.left >= row.right || cardNode.right <= row.left) {
+      const offset =
+        cardNode.left >= row.right
+          ? HOVER_TRIANGLE_EDGE_OFFSET
+          : -HOVER_TRIANGLE_EDGE_OFFSET
+      const edge = (offset > 0 ? cardNode.left : cardNode.right) + offset
+      points = `${event.clientX - offset - svgNode.left},${event.clientY - svgNode.top} ${edge - svgNode.left},${cardNode.top - HOVER_TRIANGLE_BASE_PADDING - svgNode.top} ${edge - svgNode.left},${cardNode.bottom + HOVER_TRIANGLE_BASE_PADDING - svgNode.top}`
+    } else {
+      const offset =
+        cardNode.top >= row.bottom
+          ? HOVER_TRIANGLE_EDGE_OFFSET
+          : -HOVER_TRIANGLE_EDGE_OFFSET
+      const edge = (offset > 0 ? cardNode.top : cardNode.bottom) + offset
+      points = `${event.clientX - svgNode.left},${event.clientY - offset - svgNode.top} ${cardNode.left - HOVER_TRIANGLE_BASE_PADDING - svgNode.left},${edge - svgNode.top} ${cardNode.right + HOVER_TRIANGLE_BASE_PADDING - svgNode.left},${edge - svgNode.top}`
+    }
+    triangleRef.current?.setAttribute("points", points)
+  }
+
   return (
-    <HoverCard openDelay={500} closeDelay={100}>
-      <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
+    <HoverCard
+      open={activeCardId === id}
+      openDelay={activeCardId === null ? 500 : 0}
+      closeDelay={100}
+      onOpenChange={(open) => onOpenChange(id, open)}
+    >
+      <HoverCardTrigger
+        asChild
+        data-hover-preview={activeCardId === id ? "open" : "closed"}
+        onPointerLeave={onPointerLeave}
+      >
+        <div>
+          {trigger}
+          {children}
+        </div>
+      </HoverCardTrigger>
       <HoverCardContent
+        ref={cardRef}
         side="right"
         align="start"
         sideOffset={8}
         className="w-auto max-w-80 rounded-lg p-space-3"
       >
         {card}
+        <svg
+          ref={safeAreaRef}
+          aria-hidden="true"
+          data-hover-safe-area
+          className="text-brand pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+        >
+          <polygon
+            ref={triangleRef}
+            className="pointer-events-auto fill-transparent"
+          />
+        </svg>
       </HoverCardContent>
     </HoverCard>
   )
@@ -855,17 +1071,18 @@ function SidebarTaskWorkerRow({
   indent: boolean
   onNavigate?: () => void
 }) {
-  const marquee = useTitleMarquee()
-  const { prefs, toggleSubagentsCollapsed } = useSidebarPrefs()
+  const [children, setChildren] = useState({ isActive, collapsed: false })
+  if (children.isActive !== isActive) {
+    setChildren({ isActive, collapsed: false })
+  }
+
+  const subagentsCollapsed = !isActive || children.collapsed
   const subagents = (worker.subagents ?? []).filter(
     (subagent) => subagent.status !== "completed"
   )
   const activeSubagent =
     isActive &&
     subagents.some((subagent) => subagent.toolCallId === activeSubagentId)
-  const subagentsCollapsed = !prefs.expandedSubagentKeys.includes(
-    `cloud:${worker.id}`
-  )
   const rowIsActive = isActive && (!activeSubagent || subagentsCollapsed)
   const status = worker.pendingWorkflowApproval
     ? "Awaiting approval"
@@ -879,18 +1096,14 @@ function SidebarTaskWorkerRow({
             ? "Running"
             : "Idle"
   return (
-    <li
-      className="group/row relative mb-0.5"
-      onMouseEnter={marquee.measure}
-      onMouseLeave={marquee.reset}
-    >
+    <li className="group/row relative mb-0.5">
       <Link
         to="/agents/$threadId"
         params={{ threadId: worker.id }}
         search={{}}
         aria-current={rowIsActive ? "page" : undefined}
         title={`${worker.title} — ${status}`}
-        onClick={() => onNavigate?.()}
+        onClick={onNavigate}
         {...sidebarRowProps({
           active: rowIsActive,
           archived: worker.resolved === true,
@@ -900,16 +1113,22 @@ function SidebarTaskWorkerRow({
       >
         {subagents.length > 0 && (
           <DisclosureCaret
+            visible={isActive}
             expanded={!subagentsCollapsed}
             label={
               subagentsCollapsed
                 ? "Show worker subagents"
                 : "Hide worker subagents"
             }
-            onToggle={() => toggleSubagentsCollapsed(`cloud:${worker.id}`)}
+            onToggle={() =>
+              setChildren((previous) => ({
+                ...previous,
+                collapsed: !previous.collapsed,
+              }))
+            }
           />
         )}
-        <SidebarRowTitle marquee={marquee} title={worker.title} />
+        <SidebarRowTitle title={worker.title} />
         <span className="flex shrink-0 items-center gap-space-1 text-xxs text-secondary">
           {worker.status === "running" && (
             <RunningIndicator label="Worker running" />
@@ -920,7 +1139,7 @@ function SidebarTaskWorkerRow({
           {status}
         </span>
       </Link>
-      {subagents.length > 0 && !subagentsCollapsed && (
+      {isActive && subagents.length > 0 && !subagentsCollapsed && (
         <SidebarTree
           label={`Subagents of ${worker.title}`}
           indent={indent}

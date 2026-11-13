@@ -2,6 +2,7 @@
 
 import json
 import logging
+import posixpath
 from time import perf_counter
 from typing import Annotated, Any, Literal
 
@@ -27,6 +28,14 @@ from openswe.threads.diffs import (
     get_dashboard_thread_branch_diff,
     get_dashboard_thread_recovery_patch,
     get_dashboard_thread_working_tree_diff,
+)
+from openswe.threads.file_preview import (
+    ERROR_HEADERS,
+    PREVIEW_MAX_BYTES,
+    ByteRange,
+    FilePreviewGrant,
+    PreviewFileType,
+    PreviewLink,
 )
 from openswe.threads.files import (
     WorkspaceFileIndex,
@@ -85,7 +94,12 @@ from openswe.threads.runs import (
 from openswe.threads.runtimes import RUNTIMES
 from openswe.threads.session_upload import UPLOAD_REQUEST_BODY, UploadStream, upload_session
 from openswe.threads.store import THREADS
-from openswe.threads.summary import _now_ms, _thread_run_id, assert_thread_readable
+from openswe.threads.summary import (
+    ThreadReadPosition,
+    _now_ms,
+    _thread_run_id,
+    assert_thread_readable,
+)
 from openswe.utils.timing import server_timing_header
 
 logger = logging.getLogger(__name__)
@@ -363,9 +377,14 @@ async def api_get_thread_pull_request_context(
 
 class ThreadReadState(BaseModel):
     viewed: bool
+    response_id: str | None = Field(default=None, alias="responseId")
 
 
-@router.put("/threads/{thread_id}/read-state", response_model=ThreadReadState)
+@router.put(
+    "/threads/{thread_id}/read-state",
+    response_model=ThreadReadState,
+    response_model_exclude_unset=True,
+)
 async def api_set_thread_read_state(
     thread_id: str,
     body: ThreadReadState,
@@ -383,14 +402,31 @@ async def api_set_thread_read_state(
         await THREADS.update(
             thread_id, {"latest_run_id": latest.run_id, "latest_run_status": latest.status}
         )
-    await THREAD_READ_STATES.set(
+    run_id = _thread_run_id(thread.metadata, latest.run_id if latest else None)
+    position = ThreadReadPosition(thread.metadata, None, session["sub"], run_id)
+    guarded = "response_id" in body.model_fields_set
+    if (
+        not body.viewed
+        or not guarded
+        or not position.review
+        or body.response_id == position.response_id
+    ):
+        await THREAD_READ_STATES.set(
+            session["sub"],
+            thread_id,
+            viewed=body.viewed,
+            run_id=run_id,
+            viewed_at_ms=_now_ms(),
+            response_id=body.response_id,
+            acknowledge_current=not guarded or position.review,
+        )
+    position = ThreadReadPosition(
+        thread.metadata,
+        await THREAD_READ_STATES.saved(session["sub"], thread_id),
         session["sub"],
-        thread_id,
-        viewed=body.viewed,
-        run_id=_thread_run_id(thread.metadata, latest.run_id if latest else None),
-        viewed_at_ms=_now_ms(),
+        run_id,
     )
-    return body
+    return ThreadReadState(viewed=position.viewed)
 
 
 @router.get("/threads/{thread_id}")
@@ -463,6 +499,49 @@ async def api_get_thread_path(
 ) -> WorkspacePath:
     return await get_dashboard_thread_path(
         thread_id, session["sub"], path, email=session.get("email")
+    )
+
+
+class FilePreviewBody(BaseModel):
+    path: str
+
+
+@router.post("/threads/{thread_id}/files/preview-url")
+async def api_create_thread_file_preview(
+    thread_id: str,
+    body: FilePreviewBody,
+    session: dict[str, object] = SESSION_DEP,
+) -> PreviewLink:
+    """A short-lived link to one file's bytes, or an HTML page's folder, for the Files panel."""
+    return await FilePreviewGrant.mint(thread_id, session, body.path)
+
+
+# No session: the link's token is the credential, and a sandboxed preview frame sends no cookies.
+# Each request, a deck's every asset included, re-checks access and stats the file in the sandbox.
+@router.get("/threads/{thread_id}/files/raw/{token}/{rest:path}")
+async def api_get_thread_file_preview(
+    thread_id: str, token: str, rest: str, request: Request
+) -> Response:
+    try:
+        grant = FilePreviewGrant.decode(token, thread_id)
+        workspace = await grant.open(request.url.path, request.method)
+        file = await grant.stat(workspace, rest)
+        file_type = PreviewFileType.of(file.path)
+        span = ByteRange.of(request.headers.get("range"), file.size)
+        headers = file_type.headers(posixpath.basename(file.path)) | span.headers()
+        content = (
+            await workspace.read(file, span.start, span.end, limit=PREVIEW_MAX_BYTES)
+            if span.length
+            else b""
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            exc.status_code, exc.detail, headers={**ERROR_HEADERS, **(exc.headers or {})}
+        ) from exc
+    return Response(
+        content=content,
+        status_code=206 if span.partial else 200,
+        headers={**headers, "Content-Length": str(len(content))},
     )
 
 

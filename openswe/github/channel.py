@@ -1,8 +1,8 @@
 """What MDA's GitHub channel calls on the backend (``runtime_api.github``).
 
 Open SWE's GitHub App delivers its webhooks to the MDA deployment's GitHub
-channel, which verifies each delivery and hands every one to the backend
-(``record_github_delivery``). The backend logs it, runs its own work for it
+channel, which verifies each delivery and forwards every one to the backend
+(``/mda/github/deliveries``). The backend logs it, runs its own work for it
 (reviews, walkthroughs, human review, the merge queue, CI and the pull request
 state the dashboard shows, ``openswe.github.work``), and answers what Open SWE
 knows about its repository. The channel decides only what starts an agent run,
@@ -50,6 +50,7 @@ from openswe import event_claims
 from openswe.dispatch import CHANNEL_METADATA_KEY, COMPLETION_WEBHOOK_URL, prepare_durable_run
 from openswe.github import webhook as service
 from openswe.github.app import INSTALLATIONS
+from openswe.github.approval_policy import PullRequestApproval
 from openswe.github.comments import OPEN_SWE_TAGS
 from openswe.github.repo_cache import forget_cached_repos
 from openswe.github.work import delivery_work
@@ -57,7 +58,6 @@ from openswe.human_review.completed_reviews import CompletedReview
 from openswe.mda_channels.api import ChannelCall
 from openswe.merge_queue.controller import wake_native_queue
 from openswe.review_apps.cleanup import ReviewAppData
-from openswe.review_guide.launch import notify_pr_updated
 from openswe.schedules import store as schedules
 from openswe.threads.router import (
     adopt_channel_run,
@@ -103,6 +103,11 @@ _OUTSIDE_THE_ALLOWLIST: Final = GitHubDeliveryFacts(
 
 def _allowed(delivery: GitHubDelivery, refs: EventRefs) -> bool:
     """Whether the repository allowlist takes the delivery, with a log line when not."""
+    action = delivery.payload.get("action")
+    if EventLog.dropped(
+        "github", delivery.event, delivery.delivery_id, action if isinstance(action, str) else ""
+    ):
+        return False
     # The owner alone, as installation events name it, passes when any of its repositories do.
     named_repo = {"owner": refs.github_owner, "name": refs.github_repository.partition("/")[2]}
     if refs.github_owner and not common.is_repo_allowed(named_repo):
@@ -142,40 +147,6 @@ async def github_delivery_facts(
     """
     refs = EventRefs.github(json.dumps(delivery.payload).encode())
     return await _repository_facts(delivery) if _allowed(delivery, refs) else _OUTSIDE_THE_ALLOWLIST
-
-
-async def record_github_delivery(
-    call: ChannelCall, delivery: GitHubDelivery
-) -> GitHubDeliveryFacts:
-    """Log the delivery once, run the backend's own work for it after answering, and
-    say what Open SWE knows about its repository, for the channel's agent runs.
-
-    Every delivery the channel forwards (``/mda/github/deliveries``) comes here; a
-    channel deployed before it forwarded calls it too. A delivery is logged and its
-    work run once, however many times it arrives.
-
-    A repository outside the allowlist is neither logged nor looked up: its delivery
-    starts nothing. A workspace lookup that fails raises, so the delivery fails rather
-    than drop work a workspace may own.
-    """
-    body = json.dumps(delivery.payload).encode()
-    refs = EventRefs.github(body)
-    if not _allowed(delivery, refs):
-        return _OUTSIDE_THE_ALLOWLIST
-    await EventLog.record_once(
-        call.request,
-        body,
-        "github",
-        event_type=delivery.event,
-        delivery_id=delivery.delivery_id,
-        refs=refs,
-    )
-    if refs.pull_request is not None:
-        await Topic.for_pull_request_event(delivery.event).invalidate(key=refs.pull_request)
-    facts = await _repository_facts(delivery)
-    if work := delivery_work(delivery.event, delivery.payload, facts):
-        await _accept_work(call, delivery, work)
-    return facts
 
 
 async def _gated(payload: _Payload, event: str) -> bool:
@@ -266,11 +237,12 @@ def _tasks(
             payload, delivery_id=delivery_id
         ),
         "withdraw_superseded_approvals": lambda: service.withdraw_superseded_approvals(payload),
-        "notify_pr_updated": lambda: notify_pr_updated(payload),
         "review_fork_push": lambda: service.process_github_pr_synchronize(payload),
         "settle_review_on_close": lambda: service.settle_human_review_on_close(payload),
+        "move_notion_tasks_on_merge": lambda: service.record_merge_on_notion_tasks(payload),
         # Reviews can save documents and files to apps for a pull request, such as Design QA's
         # screenshots; they're kept only while it's open.
+        "stop_preview_runs_on_close": lambda: service.PreviewReady.stop_on_close(payload),
         "delete_app_documents_on_close": lambda: ReviewAppData.delete_on_close(payload),
         "settle_human_reviews": lambda: service.settle_human_reviews(payload),
         "update_reviewer_watch": lambda: service.process_github_pr_close(payload),
@@ -280,7 +252,9 @@ def _tasks(
         "sync_review_thread": lambda: service.process_github_review_thread(payload),
         "review_push": lambda: service.process_github_push_event(payload),
         "ci_event": lambda: service.process_github_ci_event(payload, event, delivery_id),
+        "review_apps_on_preview": lambda: service.PreviewReady.run(payload),
         "record_completed_review": lambda: CompletedReview.record(payload),
+        "evaluate_approval_policy": lambda: PullRequestApproval.evaluate_payload(payload),
     }
 
 
@@ -421,7 +395,7 @@ async def _signed(
     await channel_run_starting(thread_id)
     return {
         "context": cast(dict[str, JsonValue], rewritten["context"]),
-        "metadata": channel_run_metadata(run_config["metadata"]),
+        "metadata": channel_run_metadata(cast(dict[str, JsonValue], rewritten["metadata"])),
         "webhook": COMPLETION_WEBHOOK_URL or None,
     }
 

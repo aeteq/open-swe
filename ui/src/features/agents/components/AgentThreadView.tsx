@@ -23,9 +23,7 @@ import { Banner } from "@langchain/macaw-components/Banner"
 import { Button } from "@langchain/macaw-components/Button"
 import { Text } from "@langchain/macaw-components/Text"
 import { Icon } from "@langchain/macaw-components/Icon"
-import { ArrowUpRightIcon } from "@phosphor-icons/react/dist/ssr/ArrowUpRight"
 import { GitMergeIcon } from "@phosphor-icons/react/dist/ssr/GitMerge"
-import { SlackLogoIcon } from "@phosphor-icons/react/dist/ssr/SlackLogo"
 import { LoadError, useLoadTimedOut } from "@/components/LoadError"
 
 import type {
@@ -146,22 +144,6 @@ function editedPaths(messages: Array<Message>): Array<string> {
     }
   }
   return [...paths]
-}
-
-function CodeChannelLink({ url }: { url?: string | null }) {
-  if (!url) return null
-  return (
-    <Button
-      as={<a href={url} target="_blank" rel="noreferrer" />}
-      color="secondary"
-      variant="plain"
-      leftDecorator={SlackLogoIcon}
-      rightDecorator={ArrowUpRightIcon}
-      className="mb-space-2 w-fit"
-    >
-      Open in Slack
-    </Button>
-  )
 }
 
 export function AgentThreadView({
@@ -354,7 +336,8 @@ export function AgentThreadView({
   const submitMessage = useCallback(
     async (
       { text: content, images, replies }: ComposerSubmission,
-      options?: SubmitOptions
+      options?: SubmitOptions,
+      onStartError?: () => void
     ) => {
       // While a run is live the message either waits for it as a queued run of
       // its own, or goes straight in and steers it. The preference sets the
@@ -398,9 +381,10 @@ export function AgentThreadView({
           effort: activeSelection?.effort ?? null,
           model_selection_changed: carriesAutoSelection,
           enqueue,
-          ...(carriesAutoSelection
-            ? { onStartError: restoreAutoSelection }
-            : {}),
+          onStartError: () => {
+            restoreAutoSelection()
+            onStartError?.()
+          },
         })
       } catch (error) {
         analyticsAction.failed(error)
@@ -491,6 +475,14 @@ export function AgentThreadView({
   } | null>(null)
   const addReply = (reply: PassageReply) =>
     setAddedReply((previous) => ({ key: (previous?.key ?? 0) + 1, reply }))
+  const sendReply = (reply: PassageReply) => {
+    const restore = () => addReply(reply)
+    submitMessage(
+      { text: "", images: [], replies: [reply] },
+      undefined,
+      restore
+    ).catch(restore)
+  }
   const pageReply = reviewChat?.reply
   const takePageReply = reviewChat?.takeReply
   useEffect(() => {
@@ -869,7 +861,6 @@ export function AgentThreadView({
         {!embedded && (
           <AgentThreadHeader
             key={thread.id}
-            title={thread.title}
             onRename={(title) =>
               renameThread.mutateAsync({ threadId: thread.id, title })
             }
@@ -1043,7 +1034,7 @@ export function AgentThreadView({
                     onRemoveQueuedMessage={
                       canPost ? removeQueuedMessage : undefined
                     }
-                    onReply={canPost ? addReply : undefined}
+                    onReply={canPost ? sendReply : undefined}
                     isStreaming={isStreaming}
                     streamIsLoading={source.isRunning}
                     scrollControlRef={scrollControlRef}
@@ -1063,7 +1054,6 @@ export function AgentThreadView({
           )}
           {!isHydrating && (
             <AgentComposerDock>
-              <CodeChannelLink url={thread.codeChannelUrl} />
               {!embedded && (
                 <ThreadPullRequests
                   pullRequests={
@@ -1099,11 +1089,14 @@ export function AgentThreadView({
                         : mirroredSession
                           ? "Mirrored from Claude Code. Continue this session there"
                           : canPost
-                            ? hasConversation
-                              ? "Work with Robin"
-                              : "Send the first message"
-                            : "Only workspace admins can send messages in this thread"
+                            ? reviewChat
+                              ? "Review with Robin"
+                              : hasConversation
+                                ? "Work with Robin"
+                                : "Send the first message"
+                            : "Only Robin admins can send messages in this thread"
                 }
+                autoFocus={canPost && !embedded}
                 canOffload={!isStreaming}
                 compact
                 disabled={!canPost}

@@ -71,10 +71,6 @@ class AgentTurnSettings(BaseModel):
     bridge_client: BridgeClient | None = None
     # Why managed tool discovery failed while planning, which the prompt says.
     tool_discovery_failures: list[str] = []
-    # Whether the thread runs a review walkthrough, which pins its checkout in the sandbox.
-    review_guide: bool = False
-    # Whether the thread had one that has closed: its guide stays, to retire its rules.
-    review_guide_closed: bool = False
     # A task worker's coordinator, whose sandbox the worker may use only once the backend has
     # checked it may, and whose GitHub token its runs keep fresh.
     coordinator_thread_id: str | None = None
@@ -82,7 +78,7 @@ class AgentTurnSettings(BaseModel):
     @property
     def reaches_sandbox(self) -> bool:
         """Whether preparing a turn connects to the thread's sandbox even where MDA keeps it."""
-        return self.review_guide or self.coordinator_thread_id is not None
+        return self.coordinator_thread_id is not None
 
 
 class RunSettings(BaseModel):
@@ -102,7 +98,7 @@ class RunSettings(BaseModel):
     # The digest of every tool the run started with, kept in ``run_tool_sets``;
     # its catalog lists only those the model is offered.
     tools: str | None = None
-    # Where an incident run answers: its incident's Slack thread, not the run's own.
+    # Where an incident channel's kickoff run answers.
     slack_thread: dict[str, JsonValue] | None = None
     # Tools the run's catalog offers the model but never grants (``Catalog.disabled``).
     disabled_tools: list[str] = []

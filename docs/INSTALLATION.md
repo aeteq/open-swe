@@ -338,23 +338,7 @@ The app posts events to your deployment's URL, so it needs the same public URL a
         "bot_user": {
             "display_name": "Robin",
             "always_online": true
-        },
-        "slash_commands": [
-            {
-                "command": "/robin",
-                "url": "https://<your-url>/webhooks/slack/commands",
-                "description": "Ask Robin",
-                "usage_hint": "[your request or question]",
-                "should_escape": false
-            },
-            {
-                "command": "/oswe",
-                "url": "https://<your-url>/webhooks/slack/commands",
-                "description": "Ask Robin (legacy alias)",
-                "usage_hint": "[your request or question]",
-                "should_escape": false
-            }
-        ]
+        }
     },
     "oauth_config": {
         "redirect_urls": [
@@ -378,7 +362,9 @@ The app posts events to your deployment's URL, so it needs the same public URL a
                 "im:write",
                 "mpim:history",
                 "mpim:read",
+                "search:read.files",
                 "search:read.public",
+                "search:read.users",
                 "team:read",
                 "users:read",
                 "users:read.email"
@@ -433,10 +419,6 @@ Set `SLACK_ALERTS_CHANNEL_ID` to the channel ID for operational alerts and invit
 If unset, alerts stay in server logs and are not sent to Slack.
 Slack delivery is limited to one operational alert per minute per channel across replicas.
 
-`/robin <request or question>` (legacy alias `/oswe`) answers or carries out a request without starting a Slack thread: replies are ephemeral, visible only to whoever asked, and the immediate acknowledgement links to the thread in the web dashboard.
-Each person's commands in a channel share one private scratch thread, kept out of everyone's thread list; continuing it on the web makes it an ordinary thread.
-Substantial work belongs in a thread of its own, which Robin starts in the channel.
-
 Both Slack URLs must point at the Robin deployment, and Block Kit buttons only work with Interactivity enabled and pointed at `/webhooks/slack/interactivity`.
 Slack messages are routed to the thread's repository, a `repo:owner/name` token in the message, or the team default repository.
 Robin refuses Slack Connect channels (`is_ext_shared`) and fails closed when it cannot verify a channel.
@@ -474,6 +456,7 @@ CONFIGURED_ADMINS=""                  # GitHub logins or emails, comma-separated
 MDA_RUNTIME_URL=""                    # the Managed Deep Agents deployment of mda/; required
 MDA_RUNTIME_API_KEY=""                # LangSmith key to call it with; defaults to LANGSMITH_API_KEY
 MDA_WORKSPACE_ID=""                   # its LangSmith workspace; defaults to this backend's
+MDA_DEPLOYMENT_ID=""                  # its deployment id, once `mda deploy` registered the Slack app: the bot token is then read from Agent Auth, not SLACK_BOT_TOKEN
 MDA_LANGSMITH_PROJECT=""              # its LangSmith project (the deployment name); defaults to LANGSMITH_PROJECT
 REMOTE_RUNTIME_TOKEN_SECRET=""        # openssl rand -hex 32     (signs the run tokens it calls back with); required
 ```
@@ -498,7 +481,7 @@ Every run gets a sandbox booted from LangSmith's root snapshot; when your reposi
 Invite the bot to a channel and mention it: `@Robin what's in the repo?`.
 It replies in a thread.
 Public runs use the workspace GitHub App for agent operations, and user-owned PRs are opened as the thread's initiating GitHub user.
-Link the Slack user to a GitHub login before starting the thread, either by signing in to the dashboard once or through [Sign in with Slack](#slack-sign-in-and-code-channels).
+Link the Slack user to a GitHub login before starting the thread, either by signing in to the dashboard once or through [Sign in with Slack](#slack-sign-in).
 
 **GitHub.**
 GitHub-triggered conversations are public.
@@ -520,8 +503,8 @@ Workspace records and their repository and Slack-channel bindings, instance and 
 
 Open a section when you want that feature; everything above keeps working without it.
 
-<details id="slack-sign-in-and-code-channels">
-<summary><strong>Slack: "Sign in with Slack" linking and code channels</strong></summary>
+<details id="slack-sign-in">
+<summary><strong>Slack: "Sign in with Slack" linking</strong></summary>
 
 **"Sign in with Slack" account linking.**
 Lets a user link their Slack identity to their GitHub login from **Settings → Connections**, so Slack-triggered runs resolve to the right GitHub user through Slack's verified claims.
@@ -550,54 +533,20 @@ Stop uses the linked clicker's dashboard cancellation permissions, interrupts cu
 Other participants' queued runs and pending follow-ups are preserved and may continue; a later message can also continue the thread.
 Anyone who can read a bot-triggered thread can stop it; it otherwise stays read-only.
 
-**Code channels (early access).**
-To enable Slack [code channels](https://api.slack.com/partners/code-channels), open **Admin → Slack integration**, turn on **Slack Code Channels**, copy the generated manifest, update the Slack app, and reinstall it.
-In a code channel the whole channel is one Robin session: it answers without an `@`-mention, replies at the channel level by default, reports session status, and keeps the context bar current; the `manage_code_channel` tool covers channel lifecycle, status, views, and canvases.
-This requires the `code_channels:manage` bot scope, the `agent_session_stopped` and `code_channel_action` bot events, and `features.code_channels.enabled`; `slash_command_url` delivers runtime-registered commands to the signed Robin endpoint.
-If your workspace is not enrolled, leave the toggle off.
-
 </details>
 
 <details id="incidents">
-<summary><strong>Incidents</strong></summary>
+<summary><strong>Incident channels</strong></summary>
 
-The **Incidents** dashboard at `/incidents` investigates public internal Slack channels.
-Each incident is one persistent, system-owned conversation on the main `agent` graph, driven by the same Slack webhook path as code channels, with the normal sandbox, coding/PR tools, subagents, organization skills, and configured workspace integrations.
-Responders can copy the agent's postmortem summary and consult retained incident history.
+Robin can join new incident channels on its own and start investigating.
 
 1. Install or reinstall the Slack manifest above and set `SLACK_APP_ID` from **Basic Information → App ID**.
-   Incidents needs the `channel_created`, `channel_rename`, `channel_archive`, `message.channels`, and `app_mention` events.
-   The manifest includes the public-channel scopes and `users:read` / `users:read.email` needed for authorized Slack controls.
-1. Access follows the rest of Robin: any signed-in dashboard user can read incidents, postmortems, and history, and only `CONFIGURED_ADMINS` can change incident settings.
-   In Slack, anyone in an incident channel can pause, resume, or complete it; asking the agent a question or starting an incident manually requires a connected Robin account (Sign in with Slack in the dashboard), the same as mentioning Robin anywhere else.
-   Reads recheck current channel access.
-1. Optionally give the agent an incident tracker: add its MCP server, for example incident.io at `https://mcp.incident.io/mcp`, under **Workspaces → the workspace → MCP connections** following [Workspace MCP servers](CUSTOMIZATION.md#workspace-mcp-servers).
-   The agent uses those tools like any other workspace integration, only for an explicit responder request.
-1. In **Admin → Incidents**, set a channel prefix such as `inc-` and optionally a model and a model-call limit per turn.
-   Enable Incidents, then create a matching public channel or rename one into the prefix.
-   Anyone with a connected Robin account can also mention the bot in any public channel and ask it to monitor that channel as an incident; the agent's `manage_incident` tool enrolls it.
-   To turn it off, anyone in the channel mentions the bot with `pause` (stops automatic analysis) or `complete` (ends the incident), asks it in plain words, or uses the buttons on the incident's dashboard page.
+   Joining needs the `channel_created` and `channel_rename` events and the `channels:join` scope.
+1. In **Admin → Incidents**, set a channel prefix such as `inc-`, optionally exclude channels or pick a model, and enable it.
 
-Slack findings and control notices use compact messages directly in the incident channel.
-Questions posted in the channel receive channel replies; questions inside an existing thread receive replies in that thread.
-Detailed hypotheses, questions, coverage gaps, and citations remain in the incident report and postmortem.
-Changes only to those detailed hypotheses or questions do not generate another Slack update.
-
-Ordinary channel messages, including bot alerts, are queued as context and analyzed together in one turn about 15 seconds after the first arrives; enrollment queues the most recent channel history the same way.
-Direct questions and pause/stop controls bypass the delay.
-As in the main Slack handler, a direct mention interrupts an active turn, while ordinary messages wait for the next one.
-Nothing runs while the channel is quiet, so there is no idle timeout or watch limit; complete, pause, or archiving the channel stops the bot.
-
-The agent stores its latest postmortem summary as Markdown in PostgreSQL.
-The **Postmortem** tab renders it and **Copy incident** copies the text and source links for use elsewhere.
-**History** searches retained incident metadata and summaries, including incidents whose raw context has expired.
-There is no document editor or revision-history UI.
-
-Public status-page publishing is not implemented.
-For status-page requests, the agent drafts a message for responders to publish using incident.io's Slack command or web dashboard; its unavailable status-page update MCP tool is excluded from incident runs.
-Authorized responders can ask the agent to edit code, open a PR as the GitHub App, or use configured integrations for a specified action.
-Automatic turns investigate and propose mitigation; alerts and ordinary channel messages do not authorize external changes.
-Personal integrations remain unavailable in these system-owned threads.
+When a public internal channel is created with the prefix, or renamed into it, Robin joins, posts one message, and about a minute later starts a system-owned thread under that message with a prompt to investigate the issue.
+From then on the thread is an ordinary Robin Slack thread: mention Robin there to follow up.
+Optionally give the agent an incident tracker by adding its MCP server, for example incident.io at `https://mcp.incident.io/mcp`, under **Workspaces → the workspace → MCP connections** following [Workspace MCP servers](CUSTOMIZATION.md#workspace-mcp-servers).
 
 </details>
 
@@ -773,6 +722,9 @@ An app's [review step](PLUGINS.md#review-steps) has pull request reviews do work
 1. Add the app in a workspace's **Settings → Review → Apps in reviews**.
    Only reviews of private repositories follow it.
    Reviews follow the release that was newest when it was added; when its owner releases again, **Update** there moves reviews to the new one.
+1. Under **Preview checks** there, name the checks that pass only once a pull request's preview serves its head commit, one per line, as the pull request's checks list shows them, such as a deploy workflow's `wait-for-dns` job.
+   A review usually finishes before the preview is up; when one of these passes for a pull request, Robin does the apps' review steps against the preview.
+   Pick a check that is skipped when no preview is built, and the GitHub App must receive `check_run` events.
 1. Say where the previews' base site is in the workspace's review guidelines, so the review knows where to take "before" screenshots.
 
 </details>

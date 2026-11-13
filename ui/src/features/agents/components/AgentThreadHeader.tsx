@@ -94,23 +94,30 @@ const TARGET_ICONS = {
 }
 
 export function AgentThreadHeader({
-  title,
   target,
   panelCollapsed,
   thread,
+  startingThread,
   onRename,
   visibility,
   onVisibilityChange,
 }: {
-  title?: string | null
   target: keyof typeof TARGET_ICONS
   panelCollapsed: boolean
   onRename?: (title: string) => Promise<unknown>
   thread?: AgentThread
+  /**
+   * A thread whose first run is still being accepted. It is laid out as the
+   * thread it is about to become, so nothing moves on arrival, but offers none
+   * of a thread's actions yet.
+   */
+  startingThread?: AgentThread
   // Visibility of a thread that does not exist yet.
   visibility?: ThreadVisibility
   onVisibilityChange?: (next: ThreadVisibility) => void
 }) {
+  const shownThread = thread ?? startingThread
+  const title = shownThread?.title
   const worktreeThread = useLocalThread(thread?.id ?? "")
   const sidebarCollapsed = useSidebarCollapsed()
   const TargetIcon = TARGET_ICONS[target]
@@ -242,7 +249,7 @@ export function AgentThreadHeader({
       >
         {title && (
           <div className="flex min-w-0 items-center gap-space-1 text-sm font-medium">
-            {thread && <ThreadRepoIndicator thread={thread} />}
+            {shownThread && <ThreadRepoIndicator thread={shownThread} />}
             {draft !== null ? (
               <div className="min-w-0" style={{ width: editorWidth }}>
                 <Input
@@ -288,7 +295,13 @@ export function AgentThreadHeader({
                 <span className="truncate">{savingTitle ?? title}</span>
               </Button>
             ) : (
-              <span className="min-w-0 truncate" title={title}>
+              // Boxed and set like the rename button (Macaw's `Button` tightens
+              // tracking and leading), so the title reads the same once the
+              // thread can be renamed.
+              <span
+                className="min-w-0 truncate border border-transparent px-space-2 py-space-1 leading-[1.15] tracking-tighter"
+                title={title}
+              >
                 {title}
               </span>
             )}
@@ -380,16 +393,13 @@ export function AgentThreadHeader({
       <DeleteThreadDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        threadTitle={title ?? ""}
         isDeleting={isDeleting}
         onConfirm={confirmDelete}
         detail={
-          worktreeThread
-            ? worktreeThread.managedTaskFolder
-              ? `This deletes the conversation. Its task files are kept at ${worktreeThread.cwd}.`
-              : worktreeThread.ownedWorktrees.length
-                ? "This deletes the worktree Robin created for it, including any uncommitted changes in it. Its branch and commits are kept."
-                : "This removes its history but does not revert changes made to your repository."
+          worktreeThread &&
+          !worktreeThread.managedTaskFolder &&
+          worktreeThread.ownedWorktrees.length
+            ? "This also deletes its worktree and uncommitted changes. Branch and commits are kept."
             : undefined
         }
       />

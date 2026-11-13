@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Literal, cast
 from unittest.mock import AsyncMock
@@ -12,6 +13,7 @@ import pytest
 from fastapi import HTTPException
 from langgraph_sdk.errors import APIStatusError
 
+from openswe.agent_api.connections import SENDER_USER_KEY
 from openswe.bridge.store import BridgeStore
 from openswe.dashboard import deps, profiles
 from openswe.dashboard.workspace_settings import (
@@ -29,6 +31,7 @@ from openswe.threads import listing as thread_listing
 from openswe.threads import proxy as thread_proxy
 from openswe.threads import routes as thread_routes
 from openswe.threads import runs as thread_runs
+from openswe.threads.runtimes import RUNTIMES, MdaRun
 from openswe.threads.summary import TRANSCRIPT_VERSION
 from openswe.transcript.engine import AppendResult
 from openswe.transcript.turns import OpenTurn
@@ -634,6 +637,7 @@ async def test_dashboard_run_stamps_sender_not_original_slack_user(
                 "user_id": str(first),
                 "user_email": "first@example.com",
                 "ls_attribution_identifier": "first-gh",
+                SENDER_USER_KEY: str(first),
             },
             "config": {
                 "metadata": {
@@ -657,6 +661,8 @@ async def test_dashboard_run_stamps_sender_not_original_slack_user(
     )
     assert enriched["params"]["metadata"]["user_id"] == str(second)
     assert enriched["params"]["config"]["metadata"]["user_id"] == str(second)
+    # Whoever sent it is whom its model calls bill, never whom the caller names.
+    assert enriched["params"]["metadata"][SENDER_USER_KEY] == str(second)
     if langsmith_only:
         assert "ls_attribution_identifier" not in enriched["params"]["metadata"]
         assert "ls_attribution_identifier" not in enriched["params"]["config"]["metadata"]
@@ -1334,15 +1340,16 @@ async def test_thread_state_uses_current_run_status_when_checkpoint_is_stale(mon
         async def get_state(self, thread_id: str) -> dict[str, object]:
             return {"values": {"messages": []}, "next": []}
 
-    class FakeRuns:
-        async def list(self, thread_id: str, *, limit: int) -> list[dict[str, str]]:
-            return [{"run_id": "run-1", "status": "running"}]
-
     class FakeClient:
         threads = FakeThreads()
-        runs = FakeRuns()
 
     patch_thread_module(monkeypatch, "langgraph_client", lambda: FakeClient())
+    running = MdaRun(run_id="run-1", status="running", created_at=datetime.now(UTC))
+    monkeypatch.setattr(
+        RUNTIMES,
+        "runs_on",
+        lambda _runtime: SimpleNamespace(latest_run=AsyncMock(return_value=running)),
+    )
 
     state = await handlers.get_dashboard_thread_state("tid", "owner")
 
@@ -2057,3 +2064,26 @@ async def test_steer_running_thread_records_and_delivers_the_follow_up(
     assert command.event.sender.login == "teammate"
     assert "also check the tests" in command.event.text
     assert updates[-1]["participant_logins"] == {"teammate": True}
+
+    # Had the run ended before reading it, the run that picks it up answers the
+    # teammate as them, whoever's run completion starts it.
+    started: list[tuple[object, dict[str, object]]] = []
+
+    async def fake_configurable(thread_id: str, login: str, *args: object) -> dict[str, object]:
+        return {"login": login}
+
+    async def fake_dispatch(*args: object, **kwargs: object) -> dict[str, str]:
+        started.append((args[2], kwargs))
+        return {"run_id": "pickup"}
+
+    patch_thread_module(monkeypatch, "_build_dashboard_configurable", fake_configurable)
+    patch_thread_module(monkeypatch, "dispatch_agent_run", fake_dispatch)
+    await thread_runs.dispatch_pending_follow_ups("tid", "owner", {}, client=FakeClient())
+    # A Slack edit queued after it is no one's own web message: the pickup acts as no one.
+    await QueuedMessage.put("tid", [{"type": "text", "text": "edited in Slack"}])
+    await thread_runs.dispatch_pending_follow_ups("tid", "owner", {}, client=FakeClient())
+
+    assert [(configurable, kwargs["as_sender"]) for configurable, kwargs in started] == [
+        ({"login": "teammate"}, True),
+        ({"login": "owner"}, False),
+    ]

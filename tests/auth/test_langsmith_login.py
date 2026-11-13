@@ -11,7 +11,10 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from langchain_core.runnables import RunnableConfig
+from runtime_api.loop import GatewayCredential
 
+from openswe.agent_api.connections import SENDER_USER_KEY
 from openswe.dashboard import auth_routes, langsmith_login, langsmith_oauth, oauth
 from openswe.dashboard.langsmith_login import LangSmithAccount
 from openswe.dashboard.oauth_credentials import load_credential, save_credential
@@ -34,6 +37,7 @@ class LangSmithServer:
     subject: str = "5bb3fb19-f328-4815-8fe8-0483b41312c2"
     organization: str = ALLOWED_ORG
     deployment_org: str = ALLOWED_ORG
+    deployment_workspace: str = "deployment-workspace"
     discoveries: int = 0
     discovery_unavailable: bool = False
     clock: float = 0.0
@@ -60,7 +64,13 @@ class LangSmithServer:
                 return httpx2.Response(503, json={"detail": "unavailable"})
             assert request.headers["x-api-key"] == "deployment-key"
             assert "authorization" not in request.headers
-            return httpx2.Response(200, json={"organization_id": self.deployment_org})
+            return httpx2.Response(
+                200,
+                json={
+                    "organization_id": self.deployment_org,
+                    "tenant_id": self.deployment_workspace,
+                },
+            )
         if request.url.path == "/.well-known/openid-configuration":
             return httpx2.Response(
                 200,
@@ -125,6 +135,8 @@ class LangSmithServer:
         query = parse_qs(urlparse(start.headers["location"]).query)
         assert query["scope"] == ["openid profile email offline_access"]
         assert query["resource"] == [ISSUER]
+        assert query["organization_id"] == [self.deployment_org]
+        assert query["workspace_id"] == [self.deployment_workspace]
         assert query["redirect_uri"] == [CALLBACK]
         callback = await client.get(
             "/dashboard/api/langsmith/callback",
@@ -309,6 +321,53 @@ async def test_linking_github_returns_a_langsmith_person_to_their_github_account
         await other.join_github("1", login="alice", email="Same@Example.com")
 
 
+@pytest.mark.parametrize("account", ["correct", "wrong", "occupied"])
+async def test_slack_recovery_requires_the_github_owner_before_moving_identities(
+    langsmith_client, account: str
+) -> None:
+    server, client = langsmith_client
+    legacy = await User.sign_in("github", "1", login="alice", email="same@example.com")
+    await legacy.link("slack", "U-legacy", email="same@example.com")
+    await USER_PREFERENCES.put("alice", {"follow_up_behavior": "queue"})
+    if account == "occupied":
+        previous = await User.sign_in(
+            "langsmith",
+            "previous-login",
+            authorization=LangSmithAccount(sub="previous-login", ls_org_id=server.organization),
+        )
+        await previous.join_github("1", login="alice", email="same@example.com")
+    callback = await server.desktop_login(client)
+    exchanged = await server.exchange(client, callback)
+    client.cookies.set(oauth.COOKIE_NAME, exchanged.json()["session"])
+    current = await User.for_identity("langsmith", server.subject)
+    assert current is not None
+    if account == "correct":
+        joined = await current.join_github(
+            "1", login="alice", email="same@example.com", recovery_slack_id="U-legacy"
+        )
+        assert joined.id == legacy.id
+        assert await User.for_identity("slack", "U-legacy") == joined
+        assert await User.for_identity("langsmith", server.subject) == joined
+        credential = await load_credential("langsmith_login", "alice")
+        assert credential is not None
+        assert decrypt_token(credential.encrypted_access_token) == "access"
+        me = await client.get("/dashboard/api/me")
+        assert me.status_code == 200 and me.json()["follow_up_behavior"] == "queue"
+    else:
+        with pytest.raises(AccountConflict):
+            await current.join_github(
+                "wrong" if account == "wrong" else "1",
+                login="wrong" if account == "wrong" else "alice",
+                email="same@example.com",
+                recovery_slack_id="U-legacy",
+            )
+        assert await User.for_identity("slack", "U-legacy") == await User.get(legacy.id)
+        assert await User.for_identity("github", "1") == await User.get(legacy.id)
+        assert await User.for_identity("github", "wrong") is None
+        assert await User.for_identity("langsmith", server.subject) == current
+        assert await load_credential("langsmith_login", f"user:{current.id}") is not None
+
+
 async def test_login_without_desktop_proof_and_cross_purpose_codes_are_rejected(
     langsmith_client,
 ) -> None:
@@ -439,6 +498,9 @@ async def test_login_requires_an_org_source_and_org_changes_invalidate_cached_ac
         (200, {}),
         (200, {"organization_id": " "}),
         (200, {"organization_id": 123}),
+        (200, {"organization_id": ALLOWED_ORG}),
+        (200, {"organization_id": ALLOWED_ORG, "tenant_id": " "}),
+        (200, {"organization_id": ALLOWED_ORG, "tenant_id": 123}),
         (200, []),
     ],
 )
@@ -625,3 +687,41 @@ async def test_concurrent_org_discovery_reuses_one_lookup(
     else:
         assert results == [ALLOWED_ORG] * 10
     assert server.discoveries == 1
+
+
+@pytest.mark.parametrize("revoked", [False, True])
+async def test_a_run_calls_models_as_the_person_who_started_it(
+    langsmith_client, revoked: bool
+) -> None:
+    """A run a person started goes through the gateway on their login, refreshed as it
+    nears expiry, and never falls back to the deployment's key once that login is gone.
+    One only attributed to them (a wakeup, an event match) bills the deployment."""
+    server, client = langsmith_client
+    exchanged = await server.exchange(client, await server.desktop_login(client))
+    subject = oauth.decode_session(exchanged.json()["session"])["sub"]
+    await save_credential(
+        "langsmith_login",
+        subject,
+        encrypted_access_token=encrypt_token("expired"),
+        encrypted_refresh_token=encrypt_token("refresh"),
+        access_token_expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        client_id="test-client",
+        token_endpoint=ISSUER + "/oauth/token",
+        account_email="same@example.com",
+    )
+    server.revoked = revoked
+    user_id = subject.removeprefix("user:")
+    person: RunnableConfig = {"metadata": {"user_id": user_id, SENDER_USER_KEY: user_id}}
+    attributed: RunnableConfig = {"metadata": {"user_id": user_id}}
+
+    credential = await langsmith_oauth.LangSmithModelAccess.for_run(person).credential()
+
+    if revoked:
+        assert credential == GatewayCredential(
+            unavailable=langsmith_oauth.LangSmithModelAccess.SIGN_IN_AGAIN
+        )
+    else:
+        assert credential == GatewayCredential(token="access")
+    assert await langsmith_oauth.LangSmithModelAccess.for_run(attributed).credential() == (
+        GatewayCredential()
+    )

@@ -16,7 +16,6 @@ from managed_deepagents import SlackEndpointRequest
 from openswe.config import ENV
 from openswe.incidents import channels as incidents
 from openswe.mda_channels.auth import require_mda_channel
-from openswe.review_guide.launch import close_guide_for_channel
 from openswe.slack.channels import DIRECTORY_EVENTS, SlackChannel
 from openswe.slack.feedback import (
     FEEDBACK_REACTIONS,
@@ -51,11 +50,8 @@ async def slack_channel_event(
             "team_id": event.get("teamId", ""),
             "api_app_id": ENV.SLACK_APP_ID.optional() or "",
             "event_id": event["deliveryId"],
-        },
-        background_tasks,
+        }
     )
-    if kind == "channel_archive":
-        background_tasks.add_task(close_guide_for_channel, channel_id)
     return None
 
 

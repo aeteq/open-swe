@@ -124,10 +124,18 @@ class QueuedMessage(Base):
             and provenance.sender == "system:slack-note"
         )
 
+    @property
+    def web_sender(self) -> str | None:
+        """The dashboard login of the person who sent this from the web themselves."""
+        if self.run_message is not None or not isinstance(self.content, dict):
+            return None
+        payload = _QueuedPayload.model_validate(self.content)
+        if payload.surface != "web" or payload.sender is None:
+            return None
+        return payload.sender.dashboard_login
+
     async def preview(self) -> QueuedPreview:
         """What a person sees of this message while it waits for the agent."""
-        from openswe.incidents.report import context_message
-
         message = self.run_message
         content = message["content"] if message is not None else self.content
         if isinstance(content, str):
@@ -139,7 +147,7 @@ class QueuedMessage(Base):
         sender = payload.sender
         return QueuedPreview(
             id=self.queue_id or f"queued-{self.seq}",
-            text=context_message(payload.preview_text()),
+            text=payload.preview_text(),
             sender=await sender.login() if sender else None,
             platform=sender.platform if sender else None,
             queued_at=self.queued_at,
@@ -152,6 +160,14 @@ class _QueuedSender(BaseModel):
     id: str | None = None
     github_login: str | None = None
     platform: str | None = None
+
+    @property
+    def dashboard_login(self) -> str | None:
+        """The login a dashboard session has (``ThreadIdentity``), from the sender id it wrote."""
+        platform, _, subject = (self.id or "").partition(":")
+        if platform == "user":
+            return self.id
+        return subject if platform == "github" and subject else None
 
     async def login(self) -> str | None:
         """The sender's GitHub login; a Slack member nobody linked stays anonymous."""
@@ -179,6 +195,7 @@ class _QueuedPayload(BaseModel):
     content: list[_QueuedBlock] | str | None = None
     blocks: list[_QueuedBlock] = Field(default_factory=list)
     sender: _QueuedSender | None = None
+    surface: str | None = None
 
     def preview_text(self) -> str:
         if self.text:

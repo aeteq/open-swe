@@ -19,8 +19,6 @@ export interface SidebarPrefs {
   expandedRepoKeys: Array<string>
   /** Which of "pinned" | "repos" | "recents" are collapsed. */
   collapsedSectionKeys: Array<string>
-  /** Thread rows whose subagent threads are expanded. */
-  expandedSubagentKeys: Array<string>
   /** Nav links moved into the "More" menu. */
   hiddenNavItems: Array<string>
   organize: OrganizeMode
@@ -32,15 +30,13 @@ export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = {
   collapsedRepoKeys: [],
   expandedRepoKeys: [],
   collapsedSectionKeys: [],
-  expandedSubagentKeys: [],
   hiddenNavItems: [
     "/agents/skills",
     "/agents/automations",
     "/agents/bots",
     "/agents/reviews",
-    "/incidents",
   ],
-  organize: "none",
+  organize: "date",
 }
 
 function asStringArray(value: unknown): Array<string> {
@@ -129,12 +125,6 @@ function sanitizePrefs(value: unknown): SidebarPrefs {
     expandedRepoKeys: repoKeys(raw, "expandedRepoKeys", "expandedProjectKeys"),
     collapsedSectionKeys: asStringArray(raw.collapsedSectionKeys).map((key) =>
       key === "projects" ? "repos" : key
-    ),
-    expandedSubagentKeys: asStringArray(
-      raw.expandedSubagentKeys ??
-        (raw.collapseSubagentsByDefault === true
-          ? raw.collapsedSubagentKeys
-          : [])
     ),
     hiddenNavItems: Array.isArray(raw.hiddenNavItems)
       ? asStringArray(raw.hiddenNavItems)
@@ -249,15 +239,6 @@ export function useSidebarPrefs() {
     []
   )
 
-  const toggleSubagentsCollapsed = useCallback(
-    (key: string) =>
-      setPrefs((prev) => ({
-        ...prev,
-        expandedSubagentKeys: toggleMembership(prev.expandedSubagentKeys, key),
-      })),
-    []
-  )
-
   const toggleSectionCollapsed = useCallback(
     (key: string) =>
       setPrefs((prev) => ({
@@ -285,7 +266,6 @@ export function useSidebarPrefs() {
     setFilters,
     toggleRepoPin,
     toggleRepoCollapsed,
-    toggleSubagentsCollapsed,
     toggleSectionCollapsed,
     expandRepo,
     toggleNavItemHidden,

@@ -36,6 +36,7 @@ from runtime_api.catalog import (
 )
 from runtime_api.connections import ConnectionRef
 from runtime_api.endpoint import QUICK_CALL_SECONDS
+from runtime_api.gateway_auth import GatewayBearer
 from runtime_api.loop import RunSender, RunStarted
 
 warnings.filterwarnings("ignore", module="langchain_core._api.deprecation")
@@ -66,12 +67,14 @@ from openswe.bridge.constants import LOCAL_ARTIFACTS_DIR, BridgeClient
 from openswe.bridge.store import Bridge
 from openswe.bridge.worktree_branch import schedule_worktree_branch_rename
 from openswe.bridge.worktree_handoff import worktree_handoff
+from openswe.client_tools import CLIENT_OWNED_SERVER_TOOLS
 from openswe.credential_scope import private_credential_login
 from openswe.dashboard.agent_overrides import (
     load_profile,
     profile_draft_prs,
     resolve_github_login,
 )
+from openswe.dashboard.langsmith_oauth import LangSmithModelAccess
 from openswe.dashboard.options import (
     SUPPORTED_MODEL_IDS,
     available_requested_models,
@@ -122,10 +125,8 @@ from openswe.model_request import (
 )
 from openswe.model_routing import RoutingArm
 from openswe.notion.settings import notion_settings
-from openswe.openai_responses.client_tools import CLIENT_OWNED_SERVER_TOOLS
 from openswe.prompt import SystemPrompt, TurnContext, construct_system_prompt
 from openswe.prompts import apply_tool_descriptions, prompt, warm_tool_schemas
-from openswe.review_guide.sessions import ReviewGuideSession
 from openswe.run_config import RunConfig
 from openswe.runtime.constants import (
     DEFAULT_LLM_MODEL_ID as DEFAULT_LLM_MODEL_ID,
@@ -173,7 +174,6 @@ from openswe.tools import (
     background_execute,
     background_task,
     classify,
-    code_channel_set_view,
     comment_on_notion_task,
     configure_repository,
     configure_workspace,
@@ -204,8 +204,6 @@ from openswe.tools import (
     list_workspaces,
     listen_events,
     manage_baby_sit,
-    manage_code_channel,
-    manage_incident,
     manage_thread,
     merge_expedited_pr,
     monitor,
@@ -246,7 +244,6 @@ from openswe.tools import (
     slack_read_thread_messages,
     slack_reply,
     slack_search,
-    slack_start_review_channel,
     snapshotctl,
     start_thread,
     submit_thread_feedback,
@@ -274,7 +271,6 @@ from openswe.tools.note_on_diff import note_on_diff
 from openswe.tools.page_commands import PageTools
 from openswe.tools.propose_pr_review import propose_pr_review
 from openswe.tools.propose_review_comment import propose_review_comment
-from openswe.tools.review_walkthrough import walkthrough_tools
 from openswe.tools.slack_bots import allow_slack_bot, list_slack_bots, remove_slack_bot
 from openswe.tools.submit_review_assessment_feedback import submit_review_assessment_feedback
 from openswe.tools.task_threads import (
@@ -294,7 +290,7 @@ from openswe.utils.authorship import (
 )
 from openswe.utils.dashboard_links import dashboard_base_url, dashboard_plan_url
 from openswe.utils.deferred_model import make_deferred_error_model
-from openswe.utils.jev import SystemOneGateway
+from openswe.utils.jev import Jev
 from openswe.utils.json_types import as_json_object, thread_metadata
 from openswe.utils.startup_trace import aphase
 from openswe.utils.thread_participants import PARTICIPANT_LOGINS_KEY, participant_logins
@@ -324,26 +320,13 @@ DEEP_AGENT_TOOL_NAMES = {
     "write_file",
 }
 DEEP_AGENT_EXCLUDED_TOOLS = SHELL_SEARCH_EXCLUDED_TOOLS
-# Each posts to the reader and ends the walkthrough's turn as surely as a final reply.
-GUIDE_REPLY_TOOLS = frozenset(
-    {
-        "walkthrough_show_chunk",
-        "walkthrough_show_lines",
-        "walkthrough_show_other",
-        "walkthrough_end",
-    }
-)
 # A `/oswe` request has a channel but no Slack thread, so only the tools that act
 # on one are out of reach. Everything else, writes included, stays available.
 SLACK_ASK_EXCLUDED_TOOLS = DEEP_AGENT_EXCLUDED_TOOLS | frozenset(
     {
-        "code_channel_set_view",
-        "manage_code_channel",
-        "manage_incident",
         "slack_add_reaction",
         "slack_attach_html",
         "slack_move_thread",
-        "slack_start_review_channel",
     }
 )
 SLACK_BY_THE_WAY_EXCLUDED_TOOLS = SLACK_ASK_EXCLUDED_TOOLS | frozenset({"slack_breakout_thread"})
@@ -567,53 +550,51 @@ async def _resolve_user_custom_instructions(login: str | None) -> str | None:
         return None
 
 
-INCIDENT_AUTOMATIC_EXCLUDED_TOOLS: frozenset[str] = frozenset(
+# An incident channel's kickoff run acts for no one and reads untrusted channel
+# messages, so it only researches and replies in its own thread.
+INCIDENT_KICKOFF_EXCLUDED_TOOLS: frozenset[str] = frozenset(
     {
-        "code_channel_set_view",
-        "manage_code_channel",
-        "manage_incident",
-        "slack_add_reaction",
-        "slack_attach_html",
-        "slack_reply",
         "task",
+        "start_thread",
         "background_execute",
         "background_task",
         "monitor",
-        "expose_port",
         "http_request",
-        "expedite_pr_approval",
-        "merge_expedited_pr",
+        "expose_port",
+        "listen_events",
+        "open_pull_request",
+        "link_pull_request",
+        "request_pr_review",
         "request_human_review",
         "assign_human_reviewer",
         "auto_assign_human_reviewer",
         "dismiss_human_review_request",
         "get_human_review_status",
-        "manage_baby_sit",
-        "listen_events",
+        "expedite_pr_approval",
+        "merge_expedited_pr",
         "request_rollout_check",
+        "manage_baby_sit",
         "manage_thread",
         "reorder_thread_pins",
         "reorder_sidebar_threads",
-        "start_thread",
-        "link_pull_request",
-        "open_pull_request",
-        "recreate_sandbox",
-        "request_pr_review",
-        "save_user_skill",
-        "delete_user_skill",
-        "slack_move_thread",
+        "slack_add_reaction",
+        "slack_attach_html",
         "slack_post_message",
+        "slack_move_thread",
         "slack_breakout_thread",
         "slack_start_review_channel",
-        "publish_workspace",
-        "snapshotctl",
-        "configure_repository",
-        "configure_workspace",
-        "delete_workspace",
         "create_automation",
         "update_automation",
         "trigger_automation",
         "delete_automation",
+        "configure_repository",
+        "configure_workspace",
+        "delete_workspace",
+        "publish_workspace",
+        "snapshotctl",
+        "save_user_skill",
+        "delete_user_skill",
+        "recreate_sandbox",
     }
 )
 
@@ -641,16 +622,12 @@ def _is_subagent_excluded_tool(name: str) -> bool:
         "note_on_diff",
         "add_review_comment",
         "get_thread",
-        "code_channel_set_view",
-        "manage_code_channel",
-        "manage_incident",
         "list_threads",
         "listen_events",
         "request_rollout_check",
         "manage_thread",
         "reorder_thread_pins",
         "reorder_sidebar_threads",
-        "read_incident",
         "read_only_sql",
         "execute_database_sql",
         "read_user_settings",
@@ -664,8 +641,6 @@ def _is_subagent_excluded_tool(name: str) -> bool:
         "unshare_project",
         "move_thread_to_project",
         "save_user_instructions",
-        "record_incident_report",
-        "search_incidents",
         "start_thread",
         "task",
     }
@@ -757,9 +732,6 @@ AGENT_TOOLS: Final = (
     comment_on_notion_task,
     create_notion_design,
     get_notion_design_template,
-    manage_code_channel,
-    code_channel_set_view,
-    manage_incident,
     slack_add_reaction,
     slack_attach_html,
     slack_list_channel_members,
@@ -772,7 +744,6 @@ AGENT_TOOLS: Final = (
     slack_reply,
     slack_search,
     slack_breakout_thread,
-    slack_start_review_channel,
     submit_thread_feedback,
     suggest_task,
     submit_review_assessment_feedback,
@@ -838,8 +809,6 @@ def agent_tools_by_name() -> Mapping[str, BaseTool]:
             for tool in AGENT_TOOLS
             if _writes_database_rows() or tool not in (execute_database_sql, write_database_rows)
         ),
-        *walkthrough_tools("reviewer"),
-        *walkthrough_tools("author"),
         *apply_tool_descriptions(
             [
                 plan_walkthrough.walkthrough_plan_chunk,
@@ -1012,22 +981,18 @@ async def _run_mcp_tools(
 SANDBOX_TOOL_NAMES = frozenset({*FILESYSTEM_TOOL_NAMES, "delete", "background_execute"})
 # Never called from code: subagents, the replies a run waits on, and tools whose
 # results update graph state, which a call from code drops.
-_NOT_FROM_CODE = (
-    frozenset({"task"})
-    | GUIDE_REPLY_TOOLS
-    | frozenset(
-        {
-            "slack_reply",
-            "slack_no_reply_needed",
-            "cli_result",
-            "connect_managed_tools",
-            "switch_to_performance_model",
-            "record_human_input",
-            "load_integration_tools",
-            "control_worker",
-            "message_task_thread",
-        }
-    )
+_NOT_FROM_CODE = frozenset({"task"}) | frozenset(
+    {
+        "slack_reply",
+        "slack_no_reply_needed",
+        "cli_result",
+        "connect_managed_tools",
+        "switch_to_performance_model",
+        "record_human_input",
+        "load_integration_tools",
+        "control_worker",
+        "message_task_thread",
+    }
 )
 # Everyday tools code mode still offers the model directly. Every other tool it calls
 # from code, where the run's tools can differ from person to person and run to run without
@@ -1173,19 +1138,15 @@ def _slack_concierge_run(cfg: RunConfig) -> bool:
     )
 
 
-def _model_routing_mode(thread_id: str) -> RoutingMode | None:
-    """The thread's arm: ``auto`` routes through the classifier, None runs the model its person picked."""
-    return "auto" if RoutingArm.hashes_routed(thread_id) else None
-
-
 def _make_model_or_defer(
     model_id: str,
     *,
     use_gateway: bool,
+    gateway: GatewayBearer | None = None,
     **kwargs: Any,
 ) -> BaseChatModel:
     try:
-        return make_model(model_id, use_gateway=use_gateway, **kwargs)
+        return make_model(model_id, use_gateway=use_gateway, gateway=gateway, **kwargs)
     except Exception as e:  # noqa: BLE001
         logger.warning("Deferring model setup failure for %s", model_id, exc_info=True)
         return make_deferred_error_model(e, model_id=model_id)
@@ -1253,7 +1214,12 @@ class PrepareAgentRunMiddleware(BasePrepareRunMiddleware):
         )
         if anthropic:
             kwargs.pop("thinking", None)
-        return _make_model_or_defer(turn.title_model_id, use_gateway=turn.use_gateway, **kwargs)
+        return _make_model_or_defer(
+            turn.title_model_id,
+            use_gateway=turn.use_gateway,
+            gateway=LangSmithModelAccess.for_run(self._config).bearer(),
+            **kwargs,
+        )
 
     def _recent_context_audience(self, cfg: RunConfig) -> RecentContextAudience | None:
         if (
@@ -1809,13 +1775,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     if thread_id is None:
         raise ValueError("An agent run needs a thread")
 
-    from openswe.incidents.runtime import IncidentSession, load_incident_session
-
-    incident_session: IncidentSession | None = None
-    if cfg.source == "incidents_agent":
-        incident_session = await load_incident_session(config, run_id=None)
-        cfg.slack_thread = incident_session.slack_thread
-        configurable["slack_thread"] = cfg.slack_thread.dump()
     credential_scope = asyncio.ensure_future(_credential_scope(config))
     # MCP loading needs only who the run acts for and where, and it is the slowest
     # lookup here, so it overlaps every lookup below.
@@ -1825,21 +1784,18 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         )
     )
     (
-        walkthrough,
         profile_login,
         (credential_login, _),
         task_coordination,
         bridge_client,
         (thread_settings, settings_changed),
     ) = await asyncio.gather(
-        ReviewGuideSession.get(thread_id),
         resolve_github_login(as_json_object(config)),
         credential_scope,
         TaskCoordinationMiddleware.for_thread(thread_id),
         _timed(thread_id, "factory.bridged_thread", _bridge_client(thread_id)),
         _timed(thread_id, "factory.thread_settings", _thread_settings(thread_id)),
     )
-    guide = walkthrough if walkthrough is not None and not walkthrough.closed else None
 
     # `profile_login` is whoever sent the message that started this run; it drives
     # authorization. Personal integrations require verified private ownership.
@@ -1888,26 +1844,20 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     logger.info("Using workspace default agent model: model=%s effort=%s", model_id, profile_effort)
 
     adaptive_model_routing = settings.model_routing_enabled if settings else False
-    # The routed arm ignores every model a person picked (the composer's choice, their
-    # preferred default, a pin saved on the thread, or one asked for in a message);
-    # the pick is still recorded on the run. The other arm runs the pick.
-    # Every kind of message is in the experiment: channel threads, DMs and `/oswe`
-    # questions alike.
-    routed_arm = (
-        adaptive_model_routing
-        and cfg.source != "incidents_agent"
-        and _model_routing_mode(thread_id) == "auto"
-    )
+    # A thread a person runs on Auto is routed: by the classifier, or with routing v2 on
+    # half of them run on the Balanced model and half on Performance, by thread. A model a
+    # person picks (in the composer, by a command, or by asking for it in a message) is
+    # always run, and automations, API clients and Slack bots keep the model they would
+    # run without routing.
+    automated = RoutingArm.automated(cfg)
+    workspace_routes = adaptive_model_routing and cfg.source != "incidents_agent" and not automated
     user_model_choice = (
         (cfg.agent_model_id, cfg.agent_effort)
         if cfg.model_selection == "explicit" and cfg.agent_model_id
         else None
     )
-    if routed_arm and thread_settings.get("requested_model") is not None:
-        thread_settings["requested_model"] = None
-        settings_changed = True
     stored_model = thread_settings.get("model_id")
-    if not routed_arm and isinstance(stored_model, str) and not reset_model_selection:
+    if isinstance(stored_model, str) and not reset_model_selection:
         model_id = stored_model
         profile_effort = thread_settings.get("effort")
         subagent_model_id = thread_settings.get("subagent_model_id") or stored_model
@@ -1915,9 +1865,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         adaptive_model_routing = thread_settings.get("model_routing_enabled", False)
         logger.info("Using stored thread settings: model=%s effort=%s", model_id, profile_effort)
 
-    if routed_arm:
-        pass  # Nothing a person picked applies; the route decides.
-    elif cfg.model_selection == "explicit":
+    if cfg.model_selection == "explicit":
         adaptive_model_routing = False
         thread_settings["requested_model"] = None
         thread_settings["model_handoff_complete"] = True
@@ -1932,6 +1880,8 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             thread_settings["model_handoff_complete"] = True
             settings_changed = True
         adaptive_model_routing = not bool(thread_settings.get("requested_model"))
+    if automated:
+        adaptive_model_routing = False
 
     if cfg.source == "incidents_agent":
         adaptive_model_routing = False
@@ -1939,11 +1889,18 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             model_id, profile_effort = routing_defaults["performance"]
             subagent_model_id, subagent_effort = routing_defaults["performance"]
 
-    # Auto never falls back outside its tiers: an uncertain route uses Balanced.
-    if routed_arm or (adaptive_model_routing and _model_routing_mode(thread_id) == "auto"):
+    routed = workspace_routes and adaptive_model_routing
+    model_tier = (
+        RoutingArm.tier(thread_id) if routed and settings and settings.model_routing_split else None
+    )
+    routing_mode: RoutingMode | None = "auto" if routed and model_tier is None else None
+    # The classifier routes from Balanced: an uncertain route never falls back outside the
+    # tiers.
+    start_tier = model_tier or ("balanced" if routing_mode else None)
+    if start_tier is not None:
         if (subagent_model_id, subagent_effort) == (model_id, profile_effort):
-            subagent_model_id, subagent_effort = routing_defaults["balanced"]
-        model_id, profile_effort = routing_defaults["balanced"]
+            subagent_model_id, subagent_effort = routing_defaults[start_tier]
+        model_id, profile_effort = routing_defaults[start_tier]
 
     # Capability fallbacks can temporarily replace a pinned text-only model.
     image_model_override: tuple[str, str] | None = None
@@ -1955,7 +1912,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     if (
         (
             image_fallback
-            if routed_arm
+            if start_tier is not None
             else (
                 not thread_settings.get("requested_model")
                 or cfg.model_selection == "explicit"
@@ -2029,12 +1986,11 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         model_id, profile_effort = image_model_override
         subagent_model_id, subagent_effort = image_model_override
 
-    model_routing_mode = _model_routing_mode(thread_id) if adaptive_model_routing else None
     config["metadata"] = {
         **(config.get("metadata") or {}),
-        "model_routing_applied": adaptive_model_routing,
-        **({"model_routing_mode": model_routing_mode} if model_routing_mode else {}),
-        # What the person picked, recorded even where routing ignored it.
+        "model_routing_applied": routing_mode is not None,
+        **({"model_routing_mode": routing_mode} if routing_mode else {}),
+        # What the person picked, which the run's model then is.
         **(
             {"user_model_choice": user_model_choice[0], "user_effort_choice": user_model_choice[1]}
             if user_model_choice
@@ -2070,18 +2026,11 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     cli_result_required = bridge_client == "cli"
     sandbox_file_downloads = _sandbox_file_downloads_enabled(bridged=bridge_client is not None)
     managed_gateway, mcp_tools = await mcp_tools_task
-    if incident_session is not None:
-        # incident.io refuses publishing from this MCP client (surface_cannot_publish).
-        mcp_tools = [
-            tool
-            for tool in mcp_tools
-            if (tool.metadata or {}).get("mcp_tool_name") != "status_page_update"
-        ]
+    if cfg.source == "incidents_agent":
+        # Status-page updates publish to customers; a kickoff run only researches.
+        mcp_tools = mcp_tools.without("status_page_update")
 
     slack_tools = [
-        manage_code_channel,
-        code_channel_set_view,
-        manage_incident,
         slack_add_reaction,
         slack_attach_html,
         slack_list_channel_members,
@@ -2092,7 +2041,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         slack_reply,
         slack_search,
         slack_breakout_thread,
-        slack_start_review_channel,
     ]
     withheld = [
         *(() if task_coordination else (task_status, message_task_thread, control_worker)),
@@ -2106,11 +2054,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         *(() if cli_result_required else (cli_result,)),
         *(() if bridge_client == "desktop" else (worktree_handoff,)),
         *(() if _writes_database_rows() else (execute_database_sql, write_database_rows)),
-        *(
-            ()
-            if sender_preferences.experimental_classify and SystemOneGateway.configured()
-            else (classify,)
-        ),
+        *(() if sender_preferences.experimental_classify and Jev.configured() else (classify,)),
         *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
         *(
             tool
@@ -2133,31 +2077,27 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         static_tools = [
             tool for tool in static_tools if tool not in (expedite_pr_approval, merge_expedited_pr)
         ]
-    incident_automatic = incident_session is not None and incident_session.explicit_request is None
-    if incident_session is not None:
-        static_tools.extend(incident_session.tools)
-    if incident_automatic:
+    incident_kickoff = cfg.source == "incidents_agent"
+    if incident_kickoff:
         static_tools = [
             tool
             for tool in static_tools
-            if _registered_tool_name(tool) not in INCIDENT_AUTOMATIC_EXCLUDED_TOOLS
+            if _registered_tool_name(tool) not in INCIDENT_KICKOFF_EXCLUDED_TOOLS
         ]
-    if guide is None and settings.get("implementation_walkthrough_enabled") is True:
+    if settings.get("implementation_walkthrough_enabled") is True:
         static_tools = [
             *static_tools,
             plan_walkthrough.walkthrough_plan_chunk,
             plan_walkthrough.walkthrough_split_hunks,
             plan_walkthrough.walkthrough_move_to_other,
         ]
-    if guide is not None:
-        static_tools = [*static_tools, *walkthrough_tools(guide.mode)]
     static_tools = apply_tool_descriptions(static_tools, _tool_description_values())
     reserved_tool_names = {_registered_tool_name(tool) for tool in static_tools}
     excluded_tools = (
         _slack_ask_excluded_tools(cfg)
         if slack_ask_mode
-        else DEEP_AGENT_EXCLUDED_TOOLS | INCIDENT_AUTOMATIC_EXCLUDED_TOOLS
-        if incident_automatic
+        else DEEP_AGENT_EXCLUDED_TOOLS | INCIDENT_KICKOFF_EXCLUDED_TOOLS
+        if incident_kickoff
         else DEEP_AGENT_EXCLUDED_TOOLS
     )
     # A client's tool replaces any server tool of the same name, so the endpoint's
@@ -2170,8 +2110,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     main_tools = [
         tool for tool in static_tools if _registered_tool_name(tool) not in client_tool_names
     ]
-    # Nothing is owed on a run the model cannot answer through: an automatic
-    # incident sweep, for one, has the reply tool taken away on purpose.
+    # Nothing is owed on a run the model cannot answer through.
     reply_tool_offered = _registered_tool_name(slack_reply) in reserved_tool_names - excluded_tools
     dynamic_tool_middleware = _integration_middleware(
         mcp_tools,
@@ -2184,10 +2123,8 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     requested_models = (
         available_requested_models(fable_enabled=fable_enabled)
         if (adaptive_model_routing or source == "slack")
-        and not routed_arm
         and not thread_settings.get("model_handoff_complete", bool(stored_model))
         and source in {"dashboard", "slack"}
-        and incident_session is None
         and not cfg.background_task_completion
         and not cfg.continued_from_thread_id
         else None
@@ -2237,8 +2174,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         fable_enabled=fable_enabled,
         saved_requested_model=thread_settings.get("requested_model"),
         bridge_client=bridge_client,
-        review_guide=guide is not None,
-        review_guide_closed=walkthrough is not None and walkthrough.closed,
         coordinator_thread_id=task_coordination.coordinator_thread_id
         if task_coordination
         else None,
@@ -2257,11 +2192,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
         *(client_tools.tools if client_tools else []),
         *(page_tools.tools if page_tools else []),
     ]
-    surface.model_call_limit = (
-        incident_session.policy.max_model_calls
-        if incident_session is not None
-        else MODEL_CALL_RECURSION_LIMIT
-    )
+    surface.model_call_limit = MODEL_CALL_RECURSION_LIMIT
     surface.delegates = task_coordination is not None and task_coordination.can_delegate
     reply_tool = _registered_tool_name(slack_reply)
     no_reply_tool = _registered_tool_name(slack_no_reply_needed)
@@ -2269,10 +2200,11 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     surface.loop = LoopRules(
         hidden_tools=sorted(excluded_tools),
         routing=RoutingRules(
-            mode=model_routing_mode,
+            mode=routing_mode,
             route_model_ids=route_model_ids,
             route_efforts={route: effort for route, (_, effort) in routing_defaults.items()},
         ),
+        model_experiment=model_tier,
         reply=ReplyRules(
             tool=reply_tool,
             no_reply_tool=no_reply_tool,
@@ -2280,7 +2212,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             replies=sorted(
                 {
                     *CARD_TOOLS,
-                    *(GUIDE_REPLY_TOOLS if guide is not None else ()),
                 }
             ),
             nudges=reply_nudge(reply_tool, no_reply_tool),
@@ -2301,7 +2232,6 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             if part
         ),
         refresh_github_proxy=True,
-        incident=incident_session is not None,
         offload_conversation=cfg.offload_conversation,
     )
     surface.inbox = InboxSpec(
@@ -2367,7 +2297,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
     surface.excluded = (
         _slack_ask_excluded_tools(cfg)
         if slack_ask_mode
-        else DEEP_AGENT_EXCLUDED_TOOLS | INCIDENT_AUTOMATIC_EXCLUDED_TOOLS
-        if incident_automatic
+        else DEEP_AGENT_EXCLUDED_TOOLS | INCIDENT_KICKOFF_EXCLUDED_TOOLS
+        if incident_kickoff
         else DEEP_AGENT_EXCLUDED_TOOLS
     )

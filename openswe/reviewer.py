@@ -52,7 +52,9 @@ from openswe.dashboard.options import gate_fable_model
 from openswe.dashboard.repo_access import repo_is_private
 from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
 from openswe.github.app import get_github_app_installation_token_with_expiry
+from openswe.github.http import GitHubClient
 from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS
+from openswe.github.pull_requests import PullRequest
 from openswe.github.sandbox_access import READ_ONLY_REVIEW_PERMISSIONS
 from openswe.github.thread_token import cache_github_token_for_thread
 from openswe.mcp.models import MCPToolProvenance
@@ -154,6 +156,7 @@ def _reviewer_system_prompt(
     api_standards_skill: str | None = None,
     skills_prompt: str | None = None,
     review_apps: ReviewApps | None = None,
+    concise_findings: bool = False,
     notion_tools: Sequence[str] = (),
 ) -> SystemPrompt:
     """The reviewer's system prompt: what every review shares, then what its repository's
@@ -176,6 +179,7 @@ def _reviewer_system_prompt(
             repo_style_prompt=repo_style_prompt or "",
             agents_md_content=agents_md_content or "",
             api_standards_skill=api_standards_skill or "",
+            concise_findings=concise_findings,
         ),
         thread="\n\n".join(
             part
@@ -470,6 +474,10 @@ class PrepareReviewerRunState(PrepareRunState):
     review_approval_policy: NotRequired[str | None]
     review_approval_errors: NotRequired[list[str]]
     review_config_errors: NotRequired[list[str]]
+    review_changes_approval: NotRequired[bool]
+    # A run for a deployed preview: the findings there were when it started, which its
+    # publish leaves to the review that recorded them.
+    review_earlier_finding_ids: NotRequired[list[str] | None]
 
 
 async def _cached_org_guidelines(workspace: str | None) -> str | None:
@@ -831,6 +839,12 @@ async def prepare_reviewer_run(
             repo_owner, repo_name, pr_number, head_sha, token=github_token
         )
 
+    async def _fetch_changes_approval() -> bool:
+        if reviewer_eval or not isinstance(pr_number, int):
+            return False
+        async with GitHubClient.connect(token=github_token) as github:
+            return await ApprovalPolicy.changed_by(github.repo(repo_owner, repo_name), pr_number)
+
     # Only the diff waits on the checkout.
     checkout_task = asyncio.create_task(_check_out())
     diff_context_task = asyncio.create_task(_fetch_diff_context())
@@ -841,6 +855,7 @@ async def prepare_reviewer_run(
     org_guidelines_task = asyncio.create_task(_fetch_org_guidelines())
     approval_policy_task = asyncio.create_task(_fetch_approval_policy())
     config_errors_task = asyncio.create_task(_fetch_config_errors())
+    changes_approval_task = asyncio.create_task(_fetch_changes_approval())
     api_standards_task = asyncio.create_task(_fetch_api_standards_skill())
     scoped_agents_md_task = asyncio.create_task(_fetch_scoped_agents_md())
     tasks = (
@@ -853,6 +868,7 @@ async def prepare_reviewer_run(
         org_guidelines_task,
         approval_policy_task,
         config_errors_task,
+        changes_approval_task,
         api_standards_task,
         scoped_agents_md_task,
     )
@@ -867,6 +883,7 @@ async def prepare_reviewer_run(
         org_guidelines = await org_guidelines_task
         policy = await approval_policy_task
         config_errors = await config_errors_task
+        changes_approval = await changes_approval_task
         api_standards_skill = await api_standards_task
     finally:
         for task in tasks:
@@ -877,6 +894,7 @@ async def prepare_reviewer_run(
     approval_policy = policy.render() if policy is not None else None
 
     review_context = ""
+    earlier_finding_ids: list[str] | None = None
     if pr_number is not None:
         if reviewer_event == "finding_reply":
             existing_findings = await list_findings_async(thread_id)
@@ -892,6 +910,19 @@ async def prepare_reviewer_run(
                 pr_title=pr_title,
                 pr_body=pr_body,
                 existing_threads_block=existing_threads_block,
+            )
+        elif reviewer_event == "preview_ready":
+            earlier_finding_ids = [
+                finding["id"] for finding in await list_findings_async(thread_id)
+            ]
+            review_context = prompt(
+                "reviewer/preview-ready-context",
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                pr_number=pr_number,
+                pr_url=pr_url,
+                head_sha=head_sha,
+                overview=_format_pr_overview(pr_title, pr_body),
             )
         elif is_re_review and last_reviewed_sha:
             existing_findings = await list_findings_async(thread_id)
@@ -931,6 +962,8 @@ async def prepare_reviewer_run(
         api_standards_skill=api_standards_skill,
         skills_prompt=checkout.skills_prompt,
         review_apps=await ReviewApps.of(cfg),
+        concise_findings=bool(repo_owner and repo_name)
+        and await PullRequest.concise_for_repo(repo_owner, repo_name),
         notion_tools=notion_tools,
     )
     run_context = prompt(
@@ -965,6 +998,8 @@ async def prepare_reviewer_run(
         "review_approval_policy": approval_policy,
         "review_approval_errors": policy.errors if policy is not None else [],
         "review_config_errors": config_errors,
+        "review_changes_approval": changes_approval,
+        "review_earlier_finding_ids": earlier_finding_ids,
         "diff_text": pr_diff_text,
         "diff_line_set": pr_diff_line_set,
     }
@@ -1039,6 +1074,19 @@ async def resolve_reviewer_models(cfg: RunConfig) -> ReviewerModels:
         ),
         use_gateway=settings.effective_gateway_enabled,
     )
+
+
+# A run for a newly deployed preview does only the apps' work (``reviewer_event``
+# ``"preview_ready"``): it can add and publish findings that work turns up, but gets nothing
+# that changes the review's existing findings, replies on the pull request or suggests tasks.
+PREVIEW_READY_EXCLUDED_TOOLS: Final = frozenset(
+    {
+        "update_finding",
+        "resolve_finding_thread",
+        "reply_to_finding_thread",
+        "suggest_task",
+    }
+)
 
 
 # Read-only tools by connection name, then by the names Notion's hosted server uses now
@@ -1141,7 +1189,9 @@ async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None
     if (app_tools := await ReviewAppTools.of_run(cfg)) is not None:
         await app_tools.offer(surface)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)
-    surface.excluded = SHELL_SEARCH_EXCLUDED_TOOLS
+    surface.excluded = SHELL_SEARCH_EXCLUDED_TOOLS | (
+        PREVIEW_READY_EXCLUDED_TOOLS if cfg.reviewer_event == "preview_ready" else frozenset()
+    )
     surface.models = SurfaceModels(
         main=ModelChoice(models.main.model_id, dict(models.main.kwargs)),
         subagent=ModelChoice(models.subagent.model_id, dict(models.subagent.kwargs)),

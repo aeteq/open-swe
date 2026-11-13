@@ -14,8 +14,7 @@ the thread's work in progress; any other follow-up waits its turn behind it. A
 concierge DM's runs go on the DM's one thread, and a ``/btw`` question's or a new
 breakout's on one of their own, which the backend names. When the backend starts
 nothing and says why, such as a person who must sign in to Open SWE first, the
-handler replies with it in the Slack thread. A code channel's messages stay with
-the backend, which holds its one session.
+handler replies with it in the Slack thread.
 """
 
 import logging
@@ -101,8 +100,7 @@ def decline_text(declined: SlackTurnDeclined) -> str:
     if declined.reason == "sign_in_again":
         return (
             "🔐 Your LangSmith sign-in needs to be renewed. "
-            f"{settings} and follow the prompts to link Slack, then tag me again. "
-            "GitHub is optional and only needed for coding features."
+            f"{settings} and follow the prompts to link Slack, then tag me again."
         )
     return (
         "👋 Sign in with LangSmith to chat with Robin. "
@@ -138,6 +136,19 @@ async def start_turn(
     grant_holder = nested if isinstance(nested, dict) else {}
     app_id = thread.source_thread_key.split(":")[2:3]
     bot_user_id, bot_username = await _bot_identity()
+    bot_id = _text(raw.get("bot_id"))
+    mention = f"<@{bot_user_id}>"
+    # As the backend's ``SlackPost.text_for``: an alert bot posts a summary line as text and
+    # its message, mention and all, as an attachment, so its own card follows the text.
+    card = (
+        slack_prompt.card_text(raw) if bot_id and bot_user_id and mention not in event.text else ""
+    )
+    card_mention = mention in card
+    text = (
+        "\n".join(part for part in (event.text.strip(), card) if part)
+        if card_mention
+        else event.text
+    )
     message = SlackMessage(
         thread_id=thread.id,
         app_id=app_id[0] if app_id else "",
@@ -149,16 +160,16 @@ async def start_turn(
         reply_thread_ts=_text(raw.get("thread_ts")),
         subtype=_text(raw.get("subtype")),
         user_id=event.user_id or "",
-        bot_id=_text(raw.get("bot_id")),
+        bot_id=bot_id,
         bot_app_id=_text(raw.get("app_id")),
-        text=event.text,
+        text=text,
         attachments=_attachments(raw.get("attachments")),
-        explicit_mention=event.key == "mention",
+        explicit_mention=event.key == "mention" or card_mention,
         action_token=_text(raw.get("action_token")) or _text(grant_holder.get("action_token")),
     )
     if not message.team_id or not message.app_id:
         return None
-    parsed = ParsedSlackMessage.parse(event.text, bot_user_id, bot_username)
+    parsed = ParsedSlackMessage.parse(text, bot_user_id, bot_username)
     facts = await ask_backend(
         SLACK_MESSAGE_FACTS,
         SlackMessageFactsRequest(**message.model_dump(), workspace_tag=parsed.workspace or ""),
@@ -218,9 +229,7 @@ def _decide(
         # A person's mention in a channel with external participants hears why.
         refused = facts.channel == "external" and explicit and not message.subtype
         return EXTERNAL_CHANNEL if refused and message.user_id else None
-    if facts.code_channel:
-        # A code channel's one session stays with the backend.
-        return BACKEND
+
     bot = bool(message.bot_id)
     if bot and not (
         facts.allowed_bot
@@ -344,6 +353,11 @@ async def _start_turn(
         )
     elif message.attachments and not current.get("attachments"):
         current["attachments"] = message.attachments
+    await slack_prompt.await_link_unfurls(
+        message.channel_id,
+        context_ts,
+        current if current is not None else history[-1],
+    )
     # What the conversation's thread holds. A concierge DM's runs go on another thread,
     # whose state the handler can't read.
     state = None if facts.concierge else await thread.get_state()
@@ -445,7 +459,6 @@ async def _start_turn(
             request="\n\n".join(prompt.turn_sections), resolved_links=links_section
         ),
         constant_context=slack_prompt.thread_constant_context(
-            review_guide=prompt.review_guide,
             concierge=facts.concierge,
             kitchen=turn.kitchen_channel,
             ask=prompt.ask_channel,

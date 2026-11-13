@@ -217,6 +217,13 @@ ENV.var(
     "in; defaults to this backend's own workspace.",
 )
 ENV.var(
+    "MDA_DEPLOYMENT_ID",
+    "LangSmith deployment id of the deployment at MDA_RUNTIME_URL (its "
+    "LANGSMITH_HOST_PROJECT_ID, `host.project_id` of its /info). Set: the backend reads the "
+    "Slack bot token MDA's Slack channel keeps in Agent Auth (mda/slack-bot-token) in "
+    "MDA_WORKSPACE_ID, with MDA_RUNTIME_API_KEY. Unset: it reads SLACK_BOT_TOKEN.",
+)
+ENV.var(
     "MDA_LANGSMITH_PROJECT",
     "LangSmith project the deployment at MDA_RUNTIME_URL traces its runs into (its "
     "LANGSMITH_PROJECT, which LangGraph Platform sets to the deployment name); trace links, "
@@ -321,12 +328,22 @@ ENV.var("SLACK_REPO_OWNER", "Slack-specific default repository owner.")
 ENV.var("SLACK_REPO_NAME", "Slack-specific default repository name.")
 
 # --- Slack and Linear ----------------------------------------------------------------------
-ENV.var("SLACK_BOT_TOKEN", "Slack bot user OAuth token (xoxb-...).", secret=True)
+ENV.var(
+    "SLACK_BOT_TOKEN",
+    "Slack bot user OAuth token (xoxb-...); required unless MDA_DEPLOYMENT_ID is set, which "
+    "reads it from Agent Auth.",
+    secret=True,
+)
 ENV.var(
     "SLACK_ALERTS_CHANNEL_ID",
     "Slack channel for rate-limited operational alerts; unset disables Slack delivery, not local logging.",
 )
-ENV.var("SLACK_SIGNING_SECRET", "HMAC secret for Slack webhook deliveries.", secret=True)
+ENV.var(
+    "SLACK_SIGNING_SECRET",
+    "HMAC secret for Slack webhook deliveries; needed only where the Slack app's URLs point "
+    "at this backend's /webhooks/slack, which rejects every request without it.",
+    secret=True,
+)
 ENV.var("SLACK_BOT_USER_ID", "Slack user id of the bot, for mention detection.")
 ENV.var("SLACK_BOT_USERNAME", "Slack handle of the bot, for readable conversation context.")
 ENV.var("SLACK_CLIENT_ID", "Slack app client id for Sign in with Slack.")
@@ -552,7 +569,6 @@ ENV.var(
     "API_STANDARDS_SKILL_HANDLE", "Hub handle of the API standards skill.", default="api-standards"
 )
 ENV.var("DEFAULT_PROMPT_PATH", "Path to a default prompt file.")
-ENV.var("OPEN_SWE_MODEL_CALL_TIMEOUT_SECONDS", "Cap on a single model call.")
 
 # --- Sandboxes ---------------------------------------------------------------------------------
 ENV.var("DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES", "Root filesystem size for new sandboxes.")

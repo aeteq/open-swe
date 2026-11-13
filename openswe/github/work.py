@@ -1,6 +1,6 @@
 """Which of the backend's own jobs a GitHub delivery starts.
 
-MDA's GitHub channel hands every delivery to the backend (``record_github_delivery``),
+MDA's GitHub channel hands every delivery to the backend (``/mda/github/deliveries``),
 and the backend picks its work here, from the delivery's event, its action and what
 Open SWE knows about its repository: reviews, walkthroughs, human review, the merge
 queue, CI and the pull request state the dashboard shows. The channel decides only
@@ -24,6 +24,10 @@ from openswe.webhooks.common import (
 INSTALLATION_EVENTS: Final = frozenset({"installation", "installation_repositories"})
 # Pull request actions after which the walkthrough plans the pull request, drafts included.
 PR_WALKTHROUGH_ACTIONS: Final = frozenset({"opened", "reopened", "ready_for_review", "synchronize"})
+# Pull request actions that can change who may approve it, or the base whose rules apply.
+APPROVAL_POLICY_ACTIONS: Final = frozenset(
+    {"opened", "reopened", "synchronize", "ready_for_review", "edited"}
+)
 REVIEW_THREAD_ACTIONS: Final = frozenset({"resolved", "unresolved"})
 
 
@@ -52,6 +56,9 @@ def delivery_work(
             work.append("review_push")
     elif event in GITHUB_CI_EVENTS:
         work.append("ci_event")
+        if event == "check_run" and action == "completed":
+            # It may say a pull request's preview is deployed (``PreviewReady``).
+            work.append("review_apps_on_preview")
     elif event == "pull_request_review_thread":
         if action in REVIEW_THREAD_ACTIONS:
             work.append("sync_review_thread")
@@ -60,6 +67,7 @@ def delivery_work(
         work.append("settle_human_reviews")
         if action == "submitted":
             work.append("record_completed_review")
+        work.append("evaluate_approval_policy")
     return tuple(work)
 
 
@@ -74,11 +82,18 @@ def _pull_request(action: str, facts: GitHubDeliveryFacts) -> list[GitHubWorkNam
         work.append("track_pull_request_state")
     if action == "synchronize":
         # Not gated on automatic review: an approval outlives turning review off.
-        work += ["withdraw_superseded_approvals", "notify_pr_updated", "review_fork_push"]
+        work += ["withdraw_superseded_approvals", "review_fork_push"]
     if action == "opened" or action in GH_PR_AGENT_STATE_ACTIONS:
         work.append("track_pull_request_usage")
+    if action in APPROVAL_POLICY_ACTIONS:
+        work.append("evaluate_approval_policy")
     if action == "closed":
-        work += ["settle_review_on_close", "delete_app_documents_on_close"]
+        work += [
+            "settle_review_on_close",
+            "move_notion_tasks_on_merge",
+            "stop_preview_runs_on_close",
+            "delete_app_documents_on_close",
+        ]
     elif action in GH_PR_AGENT_STATE_ACTIONS:
         work.append("settle_human_reviews")
     if action in GH_PR_WATCH_TOGGLE_ACTIONS:

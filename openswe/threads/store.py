@@ -170,8 +170,11 @@ class ThreadStore:
     ) -> IndexedThread:
         """A titled thread of the backend's own on MDA, unless ``thread_id`` is one already,
         which keeps its metadata."""
+        from openswe.tasks.schemas import ThreadMetadata
+
         if (known := await self.get(thread_id)) is not None:
             return known
+        metadata = await ThreadMetadata.for_new_thread(metadata)
         thread = await index.create(
             thread_id,
             runtime="mda",
@@ -224,10 +227,61 @@ class ThreadStore:
         thread = await self.get(thread_id)
         if thread is None:
             return None
-        if thread.runtime == "mda" and channel_of(thread.metadata) is None:
-            # The channel created its threads there; the backend's own may need it.
-            await RUNTIMES.mda_runtime.ensure_remote_thread(thread_id)
-        return await RUNTIMES.runs_on(thread.runtime).state(thread_id)
+        return await self.state_of(thread)
+
+    async def state_of(self, thread: IndexedThread) -> dict[str, JsonValue]:
+        """The state of a thread already read from the index, as its runtime keeps it."""
+        runtime = RUNTIMES.runs_on(thread.runtime)
+        try:
+            return await runtime.state(thread.thread_id)
+        except httpx.HTTPStatusError as error:
+            # Indexed with no copy on MDA: creating it there failed, or MDA swept it. A
+            # channel makes its own threads there, so the backend makes only its own again.
+            if (
+                error.response.status_code != httpx.codes.NOT_FOUND
+                or thread.runtime != "mda"
+                or channel_of(thread.metadata) is not None
+            ):
+                raise
+            logger.warning(
+                "Making an indexed thread MDA has no copy of", extra={"thread_id": thread.thread_id}
+            )
+        await runtime.create(thread.thread_id, for_mda(thread.metadata))
+        return await runtime.state(thread.thread_id)
+
+    async def with_latest_run(self, thread: IndexedThread) -> IndexedThread:
+        """The thread with its latest run's id and status in its metadata, as its runtime reports them.
+
+        A changed run is recorded in the index too. When the runtime can't be read, the
+        thread comes back as the index has it.
+        """
+        try:
+            run = await RUNTIMES.runs_on(thread.runtime).latest_run(thread.thread_id)
+        except Exception:
+            logger.warning(
+                "Could not read a thread's latest run",
+                extra={"thread_id": thread.thread_id},
+                exc_info=True,
+            )
+            return thread
+        if run is None:
+            return thread
+        latest: dict[str, JsonValue] = {
+            "latest_run_id": run.run_id,
+            "latest_run_status": run.status,
+        }
+        if all(thread.metadata.get(key) == value for key, value in latest.items()):
+            return thread
+        try:
+            await self.update(thread.thread_id, latest)
+        except Exception:
+            # The run read still decides how the thread reads.
+            logger.warning(
+                "Could not record a thread's latest run",
+                extra={"thread_id": thread.thread_id},
+                exc_info=True,
+            )
+        return thread.model_copy(update={"metadata": {**thread.metadata, **latest}})
 
     async def command(
         self, thread_id: str, body: bytes, *, user_id: str | None = None

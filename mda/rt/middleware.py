@@ -85,13 +85,14 @@ from runtime_api.loop import (
     Prepared,
     RunStarted,
 )
-from runtime_api.model_errors import classify_exception
+from runtime_api.model_errors import classify_exception, is_model_failure_reply
 from runtime_api.workers import LAUNCH_WORKER, WORKER_LAUNCHED, Launch, Launched
 
 from rt.backend import (
     BackendCallError,
     OpenSweBackend,
     Run,
+    RunContext,
     RunLocal,
     harness_message,
     human_messages,
@@ -110,7 +111,7 @@ from rt.offload import OFFLOADING_KEY, RequestedOffload
 from rt.outbox import OUTBOX_KEY, carry
 from rt.remote_files import RemoteFiles, RunArtifacts
 from rt.sandbox_setup import sandbox_setup
-from rt.tools import STATE_KEY, cited, run_id, tool_report
+from rt.tools import STATE_KEY, run_id, tool_report
 from rt.tracing import MIDDLEWARE_TRACE_POLICY, TurnTrace
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,9 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
     ) -> None:
         self._backend = backend
         self._run_loop = RunLoop(backend)
+        # Reports the answers this layer writes for calls it could not make, which never
+        # pass through the inner ``ReportRepliesMiddleware``.
+        self._replies = ReportRepliesMiddleware(backend)
         # Each run's own model, built from its catalog.
         self._models = RunLocal(self._build_model)
         # Asks for the thread's sandbox before preparing, so the backend binds the thread to it,
@@ -421,6 +425,9 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
             # The route the classifier chose, next to the model a person picked on the trace.
             if (route := self._backend.run.route) not in (None, "default"):
                 trace.update({"model_route": route})
+            # What Jev said the request is, on both arms of the routing experiment.
+            if classified := self._backend.run.classified:
+                trace.update(classified)
         finally:
             opening.cancel()
             if classifying is not None:
@@ -583,7 +590,7 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         try:
-            return await self._call_planned(request, handler)
+            response = await self._call_planned(request, handler)
         except GraphBubbleUp:
             # Paused before the call for an MCP server's connection the person has not
             # granted; another model would be paused alike.
@@ -591,6 +598,9 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         except Exception as exc:
             await self._report_failure(exc)
             raise
+        if any(is_model_failure_reply(message) for message in response.result):
+            self._replies.report(request, response)
+        return response
 
     async def _call_planned(
         self,
@@ -616,8 +626,6 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
             request = request.override(model=build_model(model, use_gateway=planned.use_gateway))
             trace.record_model(model.model_id)
         fallback = planned.fallback
-        if fallback is None:
-            return await handler(request)
 
         def attempting(on_fallback: bool) -> None:
             attempted = fallback if on_fallback else model
@@ -625,12 +633,16 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
                 trace.record_model(attempted.model_id)
 
         # As the in-process graph did: another provider, and this one again, before
-        # failing the run.
+        # failing the run. Without a fallback the call is made once, but still through
+        # here, which first checks the run may call models as whoever it acts for.
         return await call_with_fallback(
             request,
             handler,
-            lambda: build_model(fallback, use_gateway=planned.use_gateway),
+            None
+            if fallback is None
+            else lambda: build_model(fallback, use_gateway=planned.use_gateway),
             attempting=attempting,
+            use_gateway=planned.use_gateway,
         )
 
     async def _report_failure(self, exc: Exception) -> None:
@@ -701,6 +713,11 @@ class ReportRepliesMiddleware(AgentMiddleware):
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         response = await handler(request)
+        self.report(request, response)
+        return response
+
+    def report(self, request: ModelRequest, response: ModelResponse) -> None:
+        """Stamp ``response``'s replies and queue them for the backend."""
         held = request.state.get(STATE_KEY)
         held = held if isinstance(held, Mapping) else {}
         route = held.get("model_route")
@@ -736,7 +753,6 @@ class ReportRepliesMiddleware(AgentMiddleware):
                 else None,
             )
         )
-        return response
 
 
 async def reported(
@@ -797,44 +813,6 @@ class RuntimeToolsMiddleware(AgentMiddleware):
         if request.tool_call["name"] in self._served:
             return await handler(request)
         return await reported(self._backend, request, handler)
-
-
-class IncidentEvidenceMiddleware(AgentMiddleware):
-    """Record each tool result of an incident run as evidence, which the result then cites.
-
-    The report the run writes cites what it found by evidence id, so each result
-    carries the id the backend recorded it under.
-    """
-
-    trace_policy = MIDDLEWARE_TRACE_POLICY
-
-    def __init__(self, backend: OpenSweBackend) -> None:
-        self._backend = backend
-
-    async def awrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
-    ) -> ToolMessage | Command:
-        result = await handler(request)
-        if not self._backend.run.catalog.incident_evidence:
-            return result
-        if isinstance(result, ToolMessage):
-            return await self._cited(request, result)
-        if isinstance(result, Command) and isinstance(result.update, dict):
-            messages = result.update.get("messages")
-            if isinstance(messages, list):
-                cited = [
-                    await self._cited(request, m) if isinstance(m, ToolMessage) else m
-                    for m in messages
-                ]
-                return dataclasses.replace(result, update={**result.update, "messages": cited})
-        return result
-
-    async def _cited(self, request: ToolCallRequest, result: ToolMessage) -> ToolMessage:
-        return await cited(
-            self._backend, request.tool_call["name"], request.tool_call["args"], result
-        )
 
 
 class _Launched(BaseModel):
@@ -1009,7 +987,13 @@ class AsyncWorkerLaunchMiddleware(AgentMiddleware):
 def _launch_runtime(runtime: ToolRuntime, grant: str, catalog: dict[str, JsonValue]) -> ToolRuntime:
     """The tool runtime the launch sees: a worker grant for context, in place of the run's."""
     return dataclasses.replace(
-        runtime, context={"graph": "agent", WORKER_GRANT_KEY: grant, CATALOG_KEY: catalog}
+        runtime,
+        context={
+            "graph": "agent",
+            WORKER_GRANT_KEY: grant,
+            CATALOG_KEY: catalog,
+            "owner_ls_user_id": RunContext.model_validate(runtime.context or {}).owner_ls_user_id,
+        },
     )
 
 

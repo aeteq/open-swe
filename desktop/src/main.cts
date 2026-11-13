@@ -68,6 +68,7 @@ const {
   readWorkspacePath,
 } = require("./workspace-files.cjs");
 const { isDesktopCommandId } = require("./commands.cjs");
+const { PREVIEW_SCHEME, PreviewFiles } = require("./preview-files.cjs");
 const { DesktopLinks } = require("./desktop-links.cjs");
 const { DesktopEnvironments } = require("./desktop-environments.cjs");
 const {
@@ -126,6 +127,17 @@ protocol.registerSchemesAsPrivileged([
       codeCache: true,
     },
   },
+  {
+    // A preview page loads its own module scripts and fonts, which need CORS.
+    scheme: PREVIEW_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
 ]);
 
 let backendUrl = null;
@@ -167,6 +179,7 @@ let loginFlow = null;
 const connectFlows = new Map();
 let quitting = false;
 let localThreadStore = null;
+const previewFiles = new PreviewFiles(localWorkspaceRoot);
 let localBridges = null;
 type DesktopUpdateState = {
   status: "idle" | "downloading" | "ready" | "installing";
@@ -376,6 +389,13 @@ function registeredProject(cwd) {
   } catch {
     return null;
   }
+}
+
+function localWorkspaceRoot(id: unknown): string {
+  const root =
+    threadRoot(localThreadStore.get(id)) ?? projectScopeSession(id)?.cwd;
+  if (!root) throw new Error("Local workspace not found");
+  return root;
 }
 
 function threadRoot(thread) {
@@ -663,6 +683,14 @@ function configureDesktopIpc() {
     target.hash = source.hash;
     clipboard.writeText(target.toString());
   });
+  ipcMain.handle("desktop:open-in-browser", async (event, path) => {
+    requireTrustedDesktopIpc(event);
+    if (!backendUrl) throw new Error("Robin is not connected to a backend");
+    if (typeof path !== "string") throw new Error("Invalid path");
+    await shell.openExternal(
+      await desktopEnvironments.dashboardPageUrl(backendUrl, path),
+    );
+  });
   ipcMain.handle("desktop:version", (event) => {
     requireTrustedDesktopIpc(event);
     return app.getVersion();
@@ -807,9 +835,34 @@ function configureDesktopIpc() {
     return removed;
   });
 
-  ipcMain.handle("desktop:connect-service", async (event, provider) => {
+  ipcMain.handle(
+    "desktop:connect-service",
+    async (event, provider, options: unknown) => {
+      requireTrustedDesktopIpc(event);
+      const recoveryToken =
+        options && typeof options === "object" && "recoveryToken" in options
+          ? options.recoveryToken
+          : undefined;
+      if (
+        recoveryToken !== undefined &&
+        (provider !== "github" ||
+          typeof recoveryToken !== "string" ||
+          !recoveryToken ||
+          recoveryToken.length > 16_384)
+      )
+        return false;
+      return startConnectFlow(
+        provider,
+        typeof recoveryToken === "string" ? recoveryToken : undefined,
+      );
+    },
+  );
+
+  ipcMain.handle("desktop:cancel-connect-service", async (event, provider) => {
     requireTrustedDesktopIpc(event);
-    return startConnectFlow(provider);
+    if (!isConnectProvider(provider)) return;
+    connectFlows.get(provider)?.cancel();
+    connectFlows.delete(provider);
   });
 
   ipcMain.handle("desktop:open-external", async (event, value) => {
@@ -1045,12 +1098,6 @@ function configureDesktopIpc() {
       return { status: "error", files: [], truncated: false };
     }
   });
-  const localWorkspaceRoot = (id: unknown): string => {
-    const root =
-      threadRoot(localThreadStore.get(id)) ?? projectScopeSession(id)?.cwd;
-    if (!root) throw new Error("Local workspace not found");
-    return root;
-  };
   ipcMain.handle("desktop:read-workspace-path", (event, input) => {
     requireTrustedDesktopIpc(event);
     const root = localWorkspaceRoot(input?.localSessionId);
@@ -1059,6 +1106,10 @@ function configureDesktopIpc() {
   ipcMain.handle("desktop:list-workspace-files", (event, localSessionId) => {
     requireTrustedDesktopIpc(event);
     return listWorkspaceFiles(localWorkspaceRoot(localSessionId));
+  });
+  ipcMain.handle("desktop:preview-workspace-file", (event, input) => {
+    requireTrustedDesktopIpc(event);
+    return previewFiles.mint(input?.localSessionId, input?.relativePath);
   });
   ipcMain.handle("desktop:get-local-pr-diff", async (event, threadId) => {
     requireTrustedDesktopIpc(event);
@@ -1270,17 +1321,37 @@ function escapeHtml(value) {
   });
 }
 
-async function proxyBackendRequest(request) {
+// Electron sets `initiatorOrigin` on protocol requests, outside the standard Request type.
+async function proxyBackendRequest(
+  request: Request & { initiatorOrigin?: string },
+) {
   const source = new URL(request.url);
   const headers = new Headers(request.headers);
   const pageUrl = mainWindow?.webContents.getURL() || "";
   if (!isTrustedProxyRequest(pageUrl)) {
     return new Response("Forbidden", { status: 403 });
   }
+  const credentials = PreviewFiles.proxyCredentials(
+    request.method,
+    source.pathname,
+    request.initiatorOrigin,
+  );
+  if (credentials === "forbidden")
+    return new Response("Forbidden", { status: 403 });
+  if (credentials === "method-not-allowed")
+    return new Response("Method not allowed", { status: 405 });
   headers.delete("host");
   headers.set("accept-encoding", "identity");
-  headers.set("origin", APP_ORIGIN);
   const targetUrl = backendRequestUrl(backendUrl, request.url);
+  if (credentials === "anonymous") {
+    headers.delete("cookie");
+    return fetch(targetUrl, {
+      method: request.method,
+      headers,
+      redirect: "manual",
+    });
+  }
+  headers.set("origin", APP_ORIGIN);
   const cookies = await session.defaultSession.cookies.get({ url: targetUrl });
   if (cookies.length) {
     headers.set(
@@ -1584,7 +1655,10 @@ async function startExternalLogin(navigationUrl: string) {
  * browser only to the provider, and redeems the loopback handoff under its own
  * session, which is also what decides whose account the connection lands on.
  */
-async function startConnectFlow(provider) {
+async function startConnectFlow(
+  provider: string,
+  recoveryToken?: string,
+): Promise<boolean | { recoveryToken: string; error?: string }> {
   if (!backendUrl || !isConnectProvider(provider)) return false;
   connectFlows.get(provider)?.cancel();
   connectFlows.delete(provider);
@@ -1593,6 +1667,12 @@ async function startConnectFlow(provider) {
   try {
     flow = await beginLogin({ connect: true });
   } catch (error) {
+    if (recoveryToken) {
+      return {
+        recoveryToken,
+        error: "Could not open a local sign-in listener. Please try again.",
+      };
+    }
     dialog.showErrorBox(
       `${appRuntime.name} could not connect ${provider}`,
       `Could not open a local listener: ${error.message}`,
@@ -1602,18 +1682,44 @@ async function startConnectFlow(provider) {
   connectFlows.set(provider, flow);
   try {
     const started = await backendFetch(
-      connectLoginUrl(backendUrl, provider, flow),
+      connectLoginUrl(backendUrl, provider, flow, recoveryToken),
       { redirect: "manual" },
     );
     const location = started.headers.get("location");
+    if (recoveryToken && started.status === 400) {
+      return {
+        recoveryToken,
+        error:
+          "This recovery link has expired or is no longer valid. Cancel and connect Slack again to restart recovery.",
+      };
+    }
     if (!location) {
       throw new Error(`Backend did not start the flow (${started.status})`);
     }
-    await shell.openExternal(location);
+    const consent = new URL(location);
+    const localConsent =
+      isDevelopment &&
+      consent.protocol === "http:" &&
+      consent.origin === new URL(backendUrl).origin;
+    if (
+      (consent.protocol !== "https:" && !localConsent) ||
+      consent.username ||
+      consent.password
+    ) {
+      throw new Error("Backend returned an invalid consent URL");
+    }
+    await shell.openExternal(consent.href);
 
     const code = await flow.code;
     if (connectFlows.get(provider) !== flow) return false;
-    if (!code) return false;
+    if (!code) {
+      return recoveryToken
+        ? {
+            recoveryToken,
+            error: "GitHub connection was cancelled. Please try again.",
+          }
+        : false;
+    }
 
     const exchange = await backendFetch(
       connectExchangeUrl(backendUrl, provider),
@@ -1624,10 +1730,55 @@ async function startConnectFlow(provider) {
       },
     );
     if (!exchange.ok) {
+      if (exchange.status === 409) {
+        const payload: unknown = await exchange.json();
+        const detail =
+          payload && typeof payload === "object" && "detail" in payload
+            ? payload.detail
+            : null;
+        if (detail && typeof detail === "object" && "code" in detail) {
+          if (
+            provider === "slack" &&
+            detail.code === "slack_account_conflict" &&
+            "recovery_token" in detail &&
+            typeof detail.recovery_token === "string" &&
+            detail.recovery_token &&
+            detail.recovery_token.length <= 16_384
+          ) {
+            return { recoveryToken: detail.recovery_token };
+          }
+          if (
+            recoveryToken &&
+            detail.code === "slack_recovery_failed" &&
+            "message" in detail &&
+            typeof detail.message === "string" &&
+            detail.message.length <= 2_048
+          ) {
+            return { recoveryToken, error: detail.message };
+          }
+        }
+      }
+      if (recoveryToken && exchange.status === 400) {
+        return {
+          recoveryToken,
+          error:
+            "This recovery link has expired or is no longer valid. Cancel and connect Slack again to restart recovery.",
+        };
+      }
       throw new Error(`Backend rejected the connection (${exchange.status})`);
+    }
+    if (provider === "github") {
+      await completeExternalLogin(flow.verifier, code, exchange);
     }
     return true;
   } catch (error) {
+    if (recoveryToken) {
+      return {
+        recoveryToken,
+        error:
+          "Could not connect GitHub. Try again and choose the GitHub account you previously used with Robin.",
+      };
+    }
     dialog.showErrorBox(
       `${appRuntime.name} could not connect ${provider}`,
       error.message,
@@ -1655,12 +1806,14 @@ async function backendFetch(url, init: any = {}) {
   return fetch(url, { ...init, headers });
 }
 
-async function completeExternalLogin(verifier, code) {
-  const response = await fetch(desktopExchangeUrl(backendUrl), {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: APP_ORIGIN },
-    body: JSON.stringify({ code, verifier }),
-  });
+async function completeExternalLogin(verifier, code, exchanged?: Response) {
+  const response =
+    exchanged ??
+    (await fetch(desktopExchangeUrl(backendUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      body: JSON.stringify({ code, verifier }),
+    }));
   if (!response.ok) {
     throw new Error(`Backend rejected the sign-in (${response.status})`);
   }
@@ -1677,6 +1830,7 @@ async function completeExternalLogin(verifier, code) {
     secure: new URL(backendUrl).protocol === "https:",
     expirationDate: Date.now() / 1000 + Number(payload.expires_in),
   });
+  if (exchanged) return;
 
   const window =
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow();
@@ -1802,6 +1956,17 @@ function createWindow(initialUrl = APP_URL) {
   window.webContents.on("will-navigate", (event, url) =>
     handleNavigation(window, event, url),
   );
+  window.webContents.on("will-frame-navigate", (event) => {
+    if (event.isMainFrame) return;
+    const initiatedByApp =
+      event.initiator?.frameTreeNodeId ===
+      window.webContents.mainFrame.frameTreeNodeId;
+    const frames: { url: string; origin: string }[] = [];
+    for (let frame = event.frame; frame; frame = frame.parent)
+      frames.push({ url: frame.url, origin: frame.origin });
+    if (PreviewFiles.blocksNavigation(frames, event.url, initiatedByApp))
+      event.preventDefault();
+  });
   window.webContents.on("will-redirect", (event) => {
     if (event.isMainFrame) handleNavigation(window, event, event.url);
   });
@@ -2061,6 +2226,7 @@ if (!hasSingleInstanceLock) {
           : console.warn(message, error),
     });
     protocol.handle("open-swe", serveDesktopUi);
+    protocol.handle(PREVIEW_SCHEME, (request) => previewFiles.serve(request));
     configurePermissions();
     configureFraming();
     configureDesktopIpc();

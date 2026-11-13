@@ -28,16 +28,22 @@ from openswe.background_tasks import monitor_background_tasks
 from openswe.event_claims import PURGE_JOB as EVENT_CLAIM_PURGE
 from openswe.event_claims import PURGE_SCHEDULE as EVENT_CLAIM_SCHEDULE
 from openswe.github.app import get_github_app_installation_token
+from openswe.github.approval_policy import EVALUATE_JOB as APPROVAL_EVALUATE
+from openswe.github.approval_policy import PullRequestApproval
 from openswe.github.branch_config import REFRESH_JOB as REQUIRED_CHECK_REFRESH
 from openswe.github.branch_config import refresh_required_checks
 from openswe.github.checks import REVIEW_CHECK_TIMEOUT_JOB
 from openswe.github.quota import SAMPLE_JOB as GITHUB_QUOTA_SAMPLE
 from openswe.github.quota import SAMPLE_SCHEDULE as GITHUB_QUOTA_SCHEDULE
 from openswe.github.quota import InstallationQuota
+from openswe.github.webhook import PreviewReady
 from openswe.human_review.deadlines import SCHEDULER_TASK as HUMAN_REVIEW_DEADLINE
 from openswe.human_review.settling import SETTLE_JOB as HUMAN_REVIEW_SETTLE
 from openswe.human_review.settling import SettleTarget
 from openswe.human_review.standard import run_deadline, settle_pull_request, settle_repository
+from openswe.incidents.channels import INVESTIGATE_JOB as INCIDENT_INVESTIGATE
+from openswe.incidents.channels import JOIN_JOB as INCIDENT_JOIN
+from openswe.incidents.channels import IncidentChannel
 from openswe.jobs import queue
 from openswe.jobs.cron_import import import_agent_server_crons
 from openswe.jobs.queue import Job
@@ -54,6 +60,7 @@ from openswe.plugins.records import (
     ATTACHMENT_SWEEP_SCHEDULE,
     AttachmentObjects,
 )
+from openswe.review.approval_withdrawal import ApprovalWithdrawal
 
 __all__ = ["WORKER"]
 from openswe.reconcile import reconcile_stale_runs
@@ -63,8 +70,6 @@ from openswe.review.publish import (
     TrackedReviewCheck,
     settle_review_check_run,
 )
-from openswe.review_guide.sessions import ARCHIVE_JOB as REVIEW_GUIDE_ARCHIVE
-from openswe.review_guide.sessions import ReviewGuideSession
 from openswe.sandboxes.retry import (
     SANDBOX_ATTACH_MAX_ELAPSED,
     is_transient_sandbox_error,
@@ -100,6 +105,9 @@ WORKER.register(MERGE_QUEUE_RECONCILE)(reconcile_queue)
 WORKER.register(REQUIRED_CHECK_REFRESH)(refresh_required_checks)
 WORKER.register(GITHUB_QUOTA_SAMPLE)(InstallationQuota.sample)
 WORKER.register("event_subscription_timeout")(EventSubscription.wake_on_timeout)
+WORKER.register(ApprovalWithdrawal.JOB)(ApprovalWithdrawal.retry)
+WORKER.register(INCIDENT_JOIN)(IncidentChannel.join)
+WORKER.register(INCIDENT_INVESTIGATE)(IncidentChannel.investigate)
 
 
 def _text(job: Job, key: str) -> str | None:
@@ -207,6 +215,16 @@ async def _human_review_deadline(job: Job) -> object:
     return await run_deadline(request_id, step)
 
 
+@WORKER.register(APPROVAL_EVALUATE)
+async def _approval_evaluate(job: Job) -> None:
+    await PullRequestApproval.evaluate_job(job)
+
+
+@WORKER.register(PreviewReady.JOB)
+async def _review_apps_on_preview(job: Job) -> None:
+    await PreviewReady.start_job(job)
+
+
 @WORKER.register(HUMAN_REVIEW_SETTLE)
 async def _human_review_settle(job: Job) -> None:
     target = SettleTarget.from_job(job)
@@ -255,16 +273,6 @@ async def _review_check_timeout(job: Job) -> None:
     )
     if (await get_thread_metadata(thread_id)).get("review_check_run_id") == check_run_id:
         raise RuntimeError("Could not settle the timed-out review check")
-
-
-@WORKER.register(REVIEW_GUIDE_ARCHIVE)
-async def _review_guide_archive(job: Job) -> None:
-    thread_id, head_sha = _text(job, "thread_id"), _text(job, "head_sha")
-    if thread_id is None or head_sha is None:
-        return
-    session = await ReviewGuideSession.get(thread_id)
-    if session is not None:
-        await session.archive_finished(head_sha)
 
 
 @WORKER.register(SLACK_CHANNEL_DIRECTORY)

@@ -64,7 +64,7 @@ class BreakoutCommand:
             workspace=message.workspace,
         )
         parts = message.argument.split(maxsplit=1)
-        if parts and parts[0].lower() == "in" and len(parts) > 1:
+        if parts and parts[0].lower() in {"in", "to"} and len(parts) > 1:
             destination = parts[1].split(maxsplit=1)
             if destination[0].startswith(("#", "<#")):
                 parts = destination
@@ -278,7 +278,6 @@ async def web_opening(
             "context_thread_ts": request.thread_ts,
             "prior_message_text": command.prior_text,
             "web_only": True,
-            "code_channel": False,
             "concierge_mode": False,
             "reply_thread_ts": "",
             "inherited_workspace": (

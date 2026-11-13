@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from threading import Lock
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import (
@@ -82,20 +81,17 @@ def append_memory_instructions(
     request: ModelRequest[None],
     instructions: str = MANAGED_MEMORY_INSTRUCTIONS,
 ) -> ModelRequest[None]:
-    """Return ``request`` with the policy appended as its own content block."""
+    """Return ``request`` with the policy appended as its own content block.
+
+    The block carries no cache breakpoint: the author's prompt cache spends the
+    request's four, and one more here, with its own TTL, fails the call.
+    Remove when langchain-ai/managed-deepagents-sdk#1340 is released.
+    """
     from langchain_core.messages import SystemMessage  # noqa: PLC0415
 
     existing = request.system_message
     blocks: list[ContentBlock] = list(existing.content_blocks if existing is not None else [])
-    block: ContentBlock = {"type": "text", "text": instructions}
-    model = request.model
-    if model is not None:
-        from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
-
-        # Match native MemoryMiddleware, including middleware-level model fallback.
-        if isinstance(model, ChatAnthropic):
-            block = cast("ContentBlock", {**block, "cache_control": {"type": "ephemeral"}})
-    blocks.append(block)
+    blocks.append({"type": "text", "text": instructions})
     return request.override(system_message=SystemMessage(content_blocks=blocks))
 
 
@@ -124,22 +120,11 @@ def create_memory_instructions_middleware(
     *,
     load_agent_memory: Callable[[], str | None] | None = None,
 ) -> AgentMiddleware[AgentState[object], None, object]:
-    """Load hot memory once for this run and inject it per call, outside thread state."""
+    """Load current hot memory per model call, outside thread state."""
     from langchain.agents.middleware.types import AgentMiddleware, AgentState  # noqa: PLC0415
 
     mounted = memory if memory is not None else [{"type": "agent"}]
     instructions = managed_memory_instructions(mounted)
-    cached_instructions: str | None = None
-    load_lock = Lock()
-
-    def current_instructions() -> str:
-        nonlocal cached_instructions
-        with load_lock:
-            if cached_instructions is None:
-                cached_instructions = _load_memory_instructions(
-                    instructions, load_agent_memory, load_user_memory
-                )
-            return cached_instructions
 
     class _MemoryInstructionsMiddleware(AgentMiddleware[AgentState[object], None, object]):
         @property
@@ -153,7 +138,8 @@ def create_memory_instructions_middleware(
         ) -> ModelResponse[object]:
             if not mounted:
                 return handler(request)
-            return handler(append_memory_instructions(request, current_instructions()))
+            policy = _load_memory_instructions(instructions, load_agent_memory, load_user_memory)
+            return handler(append_memory_instructions(request, policy))
 
         async def awrap_model_call(
             self,
@@ -162,9 +148,9 @@ def create_memory_instructions_middleware(
         ) -> ModelResponse[object]:
             if not mounted:
                 return await handler(request)
-            policy = cached_instructions
-            if policy is None:
-                policy = await asyncio.to_thread(current_instructions)
+            policy = await asyncio.to_thread(
+                _load_memory_instructions, instructions, load_agent_memory, load_user_memory
+            )
             return await handler(append_memory_instructions(request, policy))
 
     return _MemoryInstructionsMiddleware()

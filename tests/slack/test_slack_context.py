@@ -1,13 +1,12 @@
 import asyncio
 from types import SimpleNamespace
-from typing import Any, Literal, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import NAMESPACE_URL, uuid5
 from xml.etree import ElementTree
 
 import pytest
 from fastapi import HTTPException
-from runtime_api.slack import SlackTurnDeclined
 
 from openswe.github.token_scope import GITHUB_TOKEN_REPOSITORIES_KEY
 from openswe.run_config import Repo
@@ -165,6 +164,14 @@ def test_upsert_stamps_an_adopted_channel_stub_once(
     threads = _FakeThreadsClient(thread={"metadata": dict(stub)})
     monkeypatch.setattr(webhook_common, "get_client", lambda url: _FakeClient(threads))
     monkeypatch.setattr(webhook_common, "mirror_thread_metadata", AsyncMock())
+    original_owner = User()
+    monkeypatch.setattr(
+        User,
+        "for_login",
+        AsyncMock(
+            side_effect=lambda provider, login: original_owner if login == "alice" else User()
+        ),
+    )
 
     for login, requested in (("alice", "public"), ("bob", "private")):
         assert asyncio.run(
@@ -180,6 +187,9 @@ def test_upsert_stamps_an_adopted_channel_stub_once(
     metadata = cast(dict, threads.thread)["metadata"]
     assert metadata["visibility"] == visibility
     assert metadata.get("owner_login") == ("alice" if visibility == "public" else None)
+    assert metadata.get("owner_user_id") == (
+        str(original_owner.id) if visibility == "public" else None
+    )
 
 
 @pytest.mark.asyncio
@@ -230,6 +240,39 @@ async def test_upsert_counts_linked_and_unregistered_slack_participants(
             title="Thread",
         )
         assert participant_ids(cast(dict, threads.thread)["metadata"]) == expected
+
+
+@pytest.mark.parametrize("trigger_kind", ["system", "slack_bot"])
+def test_github_followups_preserve_incident_lifecycle_metadata(monkeypatch, trigger_kind):
+    threads = _FakeThreadsClient(
+        thread={
+            "metadata": {
+                "source": "incidents_agent",
+                "origin": "incidents_agent",
+                "thread_category": "interactive",
+                "trigger_kind": trigger_kind,
+                "incident_id": "incident",
+                "owner_type": "system",
+                "visibility": "public",
+                "created_at_ms": 1,
+            }
+        }
+    )
+    monkeypatch.setattr(webhook_common, "get_client", lambda url: _FakeClient(threads))
+    assert asyncio.run(
+        webhook_common.upsert_agent_thread_metadata(
+            "thread-id",
+            source="github",
+            title="Pull request",
+            source_context=SourceContext(pr_number=42),
+        )
+    )
+    metadata = threads.thread["metadata"]
+    assert (metadata["source"], metadata["origin"]) == ("incidents_agent", "incidents_agent")
+    assert metadata["thread_category"] == "interactive"
+    assert metadata["trigger_kind"] == trigger_kind
+    assert metadata["incident_id"] == "incident"
+    assert metadata["owner_type"] == "system" and metadata["visibility"] == "public"
 
 
 def test_upsert_records_a_token_scope_only_on_creation(
@@ -845,15 +888,13 @@ def test_process_slack_mention_mapped_user_without_langsmith_prompts_revoked(
     assert captured["prompt"] == {"reason": "revoked"}
 
 
-@pytest.mark.parametrize(
-    ("has_token_record", "reason"), [(False, "sign_in"), (True, "sign_in_again")]
-)
-def test_a_turn_built_for_mdas_slack_channel_says_why_instead_of_prompting(
+@pytest.mark.parametrize(("has_token_record", "reason"), [(False, "unlinked"), (True, "revoked")])
+def test_a_turn_built_for_mdas_slack_channel_prompts_without_a_public_decline(
     monkeypatch: pytest.MonkeyPatch,
     has_token_record: bool,
-    reason: Literal["sign_in", "sign_in_again"],
+    reason: str,
 ) -> None:
-    """MDA's Slack channel replies with the decline; the backend posts no prompt itself."""
+    """Sign-in prompts are delivered privately by the backend."""
     captured: dict[str, object] = {}
     _setup_slack_mention_fakes(monkeypatch, captured)
     prompt = AsyncMock()
@@ -892,15 +933,14 @@ def test_a_turn_built_for_mdas_slack_channel_says_why_instead_of_prompting(
             webhook_common.SlackRepoResolution(
                 Repo(owner="langchain-ai", name="open-swe"), explicit=True
             ),
-            declines=True,
         )
     )
 
-    assert prepared == SlackTurnDeclined(
-        reason=reason, settings_url="https://openswe.test/settings"
-    )
+    assert prepared is None
     assert "run_create" not in captured
-    prompt.assert_not_awaited()
+    prompt.assert_awaited_once()
+    assert prompt.await_args.args[:3] == ("C123", "1700000000.000100", "U123")
+    assert prompt.await_args.kwargs == {"reason": reason, "langsmith": True}
 
 
 @pytest.fixture
@@ -972,6 +1012,32 @@ async def test_allowed_bot_starts_and_continues_a_system_thread(bot_run, user_id
         request.model_copy(update={"event_ts": "1700000000.000300"}), None
     )
     assert not captured["run_create"]["kwargs"]["config"]["configurable"].get("github_login")
+
+
+async def test_an_alert_bots_attachment_is_its_whole_request(monkeypatch, bot_run):
+    """Its text is empty: the request is its card, once, from the first line."""
+    request, _, captured = bot_run
+    alert = {"title": "CPU is high", "text": "<@UBOT> investigate this alert"}
+    monkeypatch.setattr(
+        webhook_common,
+        "fetch_slack_thread_messages",
+        AsyncMock(
+            return_value=[
+                {"ts": request.event_ts, "text": "", "bot_id": "B123", "attachments": [alert]}
+            ]
+        ),
+    )
+    request = request.model_copy(
+        update={"text": "CPU is high\n<@UBOT> investigate this alert", "attachments": [alert]}
+    )
+
+    await slack_webhooks._process_slack_mention_impl(request, None)
+
+    kwargs = captured.pop("run_create")["kwargs"]
+    message = ElementTree.fromstring(kwargs["input"]["messages"][-1]["content"][0]["text"])
+    assert (message.text or "").strip() == (
+        f"CPU is high\n@{webhook_common.SLACK_BOT_USERNAME} investigate this alert"
+    )
 
 
 async def test_bot_started_thread_stays_marked_after_a_person_replies(bot_run):
@@ -1270,7 +1336,6 @@ def test_breakout_preceding_text_is_prior_message_not_part_of_request() -> None:
         request_text="fix it",
         request_blocks=[{"type": "text", "text": "fix it"}],
         prior_message_text="Context for this task.\nMore details",
-        is_breakout=True,
     )
     inputs = [
         message["content"]

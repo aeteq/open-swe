@@ -10,6 +10,7 @@ import {
   DefaultRepoSection,
   LLMGatewaySection,
   ModelDefaultsSection,
+  ModelRoutingSection,
 } from "@/features/settings/components/WorkspaceSettingsSections"
 import { INSTANCE_SCOPE } from "@/features/settings/lib/settingsScope"
 import { useOptions, useRepos } from "@/lib/profile"
@@ -27,9 +28,15 @@ function AdminDefaultsPage() {
     <SettingsPage
       adminOnly
       title="Defaults"
-      description="Settings every workspace inherits. Open a workspace to override one there."
+      description="Settings every environment inherits. Open an environment to override one there."
     >
       <ModelDefaultsSection
+        scope={INSTANCE_SCOPE}
+        models={(modelOptions.data?.models ?? []).filter(
+          (model) => model.can_be_default !== false
+        )}
+      />
+      <ModelRoutingSection
         scope={INSTANCE_SCOPE}
         models={(modelOptions.data?.models ?? []).filter(
           (model) => model.can_be_default !== false

@@ -14,10 +14,11 @@ unique index enforces that. A participant is a ``users.id``, never a GitHub or S
 handle.
 """
 
+import asyncio
 from collections import Counter
 from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal, Self, TypedDict
 from uuid import UUID, uuid7
 
@@ -46,7 +47,10 @@ from openswe.github.pull_requests import PullRequest
 from openswe.github.repositories import Repository
 from openswe.human_review.pick_message import PickMessage
 from openswe.run_config import RunConfig
+from openswe.slack.channels import SlackChannel
+from openswe.slack.client import fetch_slack_thread_messages
 from openswe.slack.dm import DmOrigin
+from openswe.slack.payloads import SlackMessage
 from openswe.slack.records import lookup_slack_thread_id
 from openswe.ui_invalidations import Topic
 from openswe.users import User
@@ -214,6 +218,11 @@ class HumanReviewRequest(Base):
         author = await User.get(pr.author_user_id) if pr.author_user_id else None
         return slack_mention(author, pr.author or "the author")
 
+    async def author_login(self) -> str:
+        pr = self.pull_request
+        author = await User.get(pr.author_user_id) if pr.author_user_id else None
+        return (author.github_login if author else "") or pr.author
+
     def is_author(self, user_id: UUID, login: str) -> bool:
         pr = self.pull_request
         if pr.author_user_id is not None:
@@ -239,6 +248,38 @@ class HumanReviewRequest(Base):
 
     def participant(self, user_id: UUID) -> HumanReviewParticipant | None:
         return next((p for p in self.participants if p.user_id == user_id), None)
+
+    async def recent_channel_posters(self) -> set[UUID]:
+        """Linked people who posted in the review channel's recent 30-day message window."""
+        if not self.slack_channel_id:
+            return set()
+        channel = await SlackChannel.load(self.slack_channel_id)
+        if channel is None:
+            return set()
+        messages = await channel.messages(limit=100)
+        threads = await asyncio.gather(
+            *(
+                fetch_slack_thread_messages(channel.id, message.thread_ts or message.ts)
+                for message in messages
+                if message.reply_count
+            )
+        )
+        messages.extend(
+            parsed
+            for thread in threads
+            for item in thread
+            if (parsed := SlackMessage.parse(item)) is not None
+        )
+        since = (datetime.now(UTC) - timedelta(days=30)).timestamp()
+        users = await User.for_identities(
+            "slack",
+            {
+                message.user
+                for message in messages
+                if message.sort_key >= since and not message.is_from_bot and not message.is_noise
+            },
+        )
+        return {user.id for user in users.values()}
 
     @property
     def dm_origin(self) -> DmOrigin | None:
@@ -553,6 +594,28 @@ class HumanReviewRequest(Base):
             "state": self.state,
             "head_sha": self.head_sha,
             "detail": self.detail,
+            "tldr": self.tldr,
+            "diff_fingerprint": self.diff_fingerprint,
+            "excluded_hunks": [
+                {
+                    "path": hunk["path"],
+                    "digest": hunk["digest"],
+                    "header": hunk["header"],
+                    "additions": hunk["additions"],
+                    "deletions": hunk["deletions"],
+                    "guideline": hunk["guideline"],
+                    "reason": hunk["reason"],
+                    "approval_condition": hunk.get("approval_condition", False),
+                }
+                for hunk in self.excluded_hunks
+            ],
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "slack_thread_ts": self.slack_thread_ts,
+            "slack_diff_file_id": self.slack_diff_file_id,
+            "slack_channel_choices": [
+                {"id": choice["id"], "name": choice["name"]}
+                for choice in self.slack_channel_choices
+            ],
             "auto_merge": self.auto_merge,
             "awaiting_ready": self.awaiting_ready,
             "slack_channel_id": self.slack_channel_id,
@@ -587,6 +650,7 @@ class HumanReviewRequest(Base):
                     "assigned_by_agent": p.assigned_by_agent,
                     "joined_at": p.joined_at.isoformat() if p.joined_at else None,
                     "github_review_id": p.github_review_id,
+                    "github_review_sha": p.github_review_sha,
                     "dm_channel_id": p.dm_channel_id,
                     "dm_ts": p.dm_ts,
                 }

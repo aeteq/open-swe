@@ -6,9 +6,8 @@ records (``runtime_api.slack``): the facts deciding a message needs
 (``slack_message_facts``), then the turn (``start_slack_turn``). The backend gates
 the turn, makes a new conversation MDA's, records the thread, signs the run, and
 says whether the message redirects the thread's work in progress or waits its turn,
-or why it starts nothing, which the channel's handler replies with: a person who
-must sign in first. ``plan_slack_click`` does the same for a click on the agent's
-buttons.
+or why it starts nothing. Sign-in prompts are ephemeral replies visible only to the requester.
+``plan_slack_click`` does the same for a click on the agent's buttons.
 """
 
 import json
@@ -40,7 +39,6 @@ from runtime_api.slack import (
 )
 
 from openswe import event_claims
-from openswe.dashboard.langsmith_login import LangSmithLogin
 from openswe.dispatch import CHANNEL_METADATA_KEY, COMPLETION_WEBHOOK_URL, prepare_durable_run
 from openswe.input_messages import RunInput
 from openswe.mda_channels.api import ChannelCall
@@ -116,7 +114,7 @@ async def slack_message_facts(
     if not channel_context.allows_operations:
         return SlackMessageFacts(channel=_refused(channel_context, message.channel_id))
     dm = message.channel_type == "im" or is_dm_channel(channel_context)
-    code_channel = await common.is_code_channel(message.channel_id)
+
     allowed_bot = (
         await resolve_allowed_slack_bot(
             message.team_id, message.bot_id, user_id=message.user_id, app_id=message.bot_app_id
@@ -124,17 +122,15 @@ async def slack_message_facts(
         if message.bot_id
         else None
     )
-    kitchen = not (code_channel or dm) and await is_kitchen_channel(
-        message.channel_id, slack_user_id=message.user_id
-    )
-    concierge = dm and not code_channel and await User.concierge_mode_for_slack(message.user_id)
+    kitchen = not dm and await is_kitchen_channel(message.channel_id, slack_user_id=message.user_id)
+    concierge = dm and await User.concierge_mode_for_slack(message.user_id)
     parsed = ParsedSlackMessage.parse(
         message.text, common.SLACK_BOT_USER_ID, common.SLACK_BOT_USERNAME
     )
     solo_followup = False
     if (
         parsed.action is not SlackAction.BY_THE_WAY
-        and not (code_channel or dm or message.bot_id)
+        and not (dm or message.bot_id)
         and message.subtype in {"", "file_share", "thread_broadcast"}
         and (message.reply_thread_ts or message.explicit_mention)
     ):
@@ -165,7 +161,6 @@ async def slack_message_facts(
         kitchen = solo_followup = False
     return SlackMessageFacts(
         dm=dm,
-        code_channel=code_channel,
         kitchen_channel=kitchen,
         concierge=concierge,
         allowed_bot=allowed_bot is not None,
@@ -354,7 +349,7 @@ async def start_slack_turn(call: ChannelCall, turn: StartSlackTurn) -> SlackTurn
             )
     run_thread = request.thread_id or conversation
     try:
-        start = await _prepare_run(run_thread, request, repo, declines=True, read=read)
+        start = await _prepare_run(run_thread, request, repo, read=read)
     except Exception as exc:  # noqa: BLE001 - the person hears about it instead
         await service.notify_slack_processing_error(request, repo.repo if repo else None, exc)
         _no_run("building the run failed", **fields)
@@ -389,12 +384,8 @@ async def _account_gate(
         _no_run("declined already", **fields)
         return SlackTurnStarted()
     _no_run("declined: sign in", **fields)
-    return SlackTurnStarted(
-        declined=SlackTurnDeclined(
-            reason="sign_in_again" if needed.reason == "revoked" else "sign_in",
-            settings_url=LangSmithLogin.slack_onboarding_url(),
-        )
-    )
+    await needed.prompt(turn.channel_id, turn.thread_ts)
+    return SlackTurnStarted()
 
 
 async def _first_decline(webhook_id: str, turn: StartSlackTurn) -> bool:
@@ -550,7 +541,7 @@ async def act_on_slack_click(call: ChannelCall, click: ActOnSlackClick) -> Slack
 async def act_on_slack_message(call: ChannelCall, message: ActOnSlackMessage) -> SlackMessageActed:
     """Answer a message MDA's Slack channel handed back, as ``/webhooks/slack`` always has.
 
-    Its conversation is the backend's, or it's in a code channel, which MDA's channel
+    Its conversation is the backend's, which MDA's channel
     doesn't take; Slack's Events URL points at Trigger Server, so this is how the backend
     hears it. Trigger Server verified Slack's signature, and MDA signed this call. The
     backend claims each Slack message once, so Slack's message and app_mention events
@@ -673,20 +664,15 @@ async def _prepare_run(
     request: SlackRequest,
     repo: common.SlackRepoResolution | None,
     *,
-    declines: bool = False,
     read: SlackTurnRead | None = None,
 ) -> SlackTurnStarted:
     prompt = None
     if request.by_the_way is not None:
         prepared = await _prepare_by_the_way(request)
     else:
-        prepared, prompt = await service.prepare_slack_channel_run(
-            request, repo, declines=declines, read=read
-        )
+        prepared, prompt = await service.prepare_slack_channel_run(request, repo, read=read)
     if prepared is None:
         return SlackTurnStarted()
-    if isinstance(prepared, SlackTurnDeclined):
-        return SlackTurnStarted(declined=prepared)
     if request.move_thread:
         _mark_move(prepared.input, request.move_channel_id)
 
@@ -715,7 +701,7 @@ async def _prepare_run(
     run = SlackTurnRun(
         input=cast(dict[str, JsonValue], prepared.input),
         context=cast(dict[str, JsonValue], rewritten["context"]),
-        metadata=channel_run_metadata(run_config["metadata"]),
+        metadata=channel_run_metadata(cast(dict[str, JsonValue], rewritten["metadata"])),
         webhook=COMPLETION_WEBHOOK_URL or None,
     )
     await channel_run_starting(thread_id)

@@ -10,8 +10,7 @@ GitHub App or its signing key:
   public-repo gate turned the sender away, and the handles that mention Open SWE.
   The backend gets every delivery itself, forwarded as GitHub sent it
   (``forward_to``, served at ``/mda/github/deliveries``), and logs it and runs its
-  own work there; ``record_github_delivery`` does the same for a channel deployed
-  before it forwarded, and answers the facts too.
+  own work there.
 - ``github_automation_rules``: the automations with a GitHub trigger on the
   delivery's repository, and whether the issue's or pull request's author is an
   Open SWE user; the channel matches them and writes each match's prompt.
@@ -95,12 +94,14 @@ type GitHubWorkName = Literal[
     # The agent thread that opened a pull request learns its state, and its usage.
     "track_pull_request_state",
     "track_pull_request_usage",
-    # A push to a pull request's branch: superseded approvals withdrawn, its guides
-    # paused, and a fork's head reviewed again.
+    # A push to a pull request's branch: superseded approvals withdrawn and a fork reviewed again.
     "withdraw_superseded_approvals",
-    "notify_pr_updated",
     "review_fork_push",
     "settle_review_on_close",
+    # A pull request merged: the Notion tasks it links or names in its title move to done.
+    "move_notion_tasks_on_merge",
+    # A pull request closed: its apps-only runs for a deployed preview stop (``PreviewReady``).
+    "stop_preview_runs_on_close",
     # A pull request closed: what reviews saved to apps for it is deleted.
     "delete_app_documents_on_close",
     "settle_human_reviews",
@@ -113,7 +114,12 @@ type GitHubWorkName = Literal[
     "review_pull_request",
     "review_push",
     "ci_event",
+    # A check finished: when it's one that means a pull request's preview is deployed,
+    # reviews that work for apps do that work on the preview.
+    "review_apps_on_preview",
     "record_completed_review",
+    # The ``Robin Approves`` check is posted again on a pull request's head.
+    "evaluate_approval_policy",
 ]
 
 
@@ -267,15 +273,6 @@ class GitHubDeliveryActed(BaseModel):
     comment_run: GitHubThreadRun | None = None
 
 
-RECORD_GITHUB_DELIVERY: Final = Endpoint(
-    "record_github_delivery",
-    GitHubDelivery,
-    GitHubDeliveryFacts,
-    seconds=60.0,
-    # Recorded once per delivery ID, so a repeat logs nothing again.
-    delivery="idempotent",
-    prefix=CHANNEL_API_PREFIX,
-)
 GITHUB_DELIVERY_FACTS: Final = Endpoint(
     "github_delivery_facts",
     GitHubDelivery,

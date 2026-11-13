@@ -30,8 +30,8 @@ from langgraph.config import get_config
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
+from openswe.client_tools import ClientToolSpec
 from openswe.invocation import resolve_invocation_id
-from openswe.openai_responses.client_tools import ClientToolSpec
 from openswe.page_commands.offers import PageSession
 from openswe.source_context import GitHubIssueRef, LinearIssueRef, NotionPageRef, SlackThreadRef
 
@@ -178,7 +178,6 @@ class RunConfig(BaseModel):
     diff_line_set: dict[str, Any] | None = None
 
     # The review guide message whose "Next" this run records before the model runs.
-    review_guide_approve_ts: str = ""
 
     # Reviewer run shape
     reviewer_event: str | None = None
@@ -372,6 +371,13 @@ class RunConfig(BaseModel):
     @property
     def is_eval(self) -> bool:
         return self.eval is True or self.reviewer_eval is True
+
+    @property
+    def posts_only_new_findings(self) -> bool:
+        """Whether a review run's ``publish_review`` posts only the findings first seen at its
+        head: a re-review, or a run for a newly deployed preview, which adds what its apps'
+        work turns up to the commit's review."""
+        return bool(self.re_review) or self.reviewer_event == "preview_ready"
 
     @property
     def review_destination(self) -> ReviewDestination:

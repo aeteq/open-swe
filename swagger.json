@@ -2191,19 +2191,6 @@
         "title": "ConversationCommit",
         "type": "object"
       },
-      "ConversationRef": {
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "ConversationRef",
-        "type": "object"
-      },
       "ConversationReview": {
         "properties": {
           "author": {
@@ -2303,100 +2290,6 @@
         "title": "CoordinatorActivity",
         "type": "object"
       },
-      "CreateResponseRequest": {
-        "properties": {
-          "background": {
-            "default": false,
-            "title": "Background",
-            "type": "boolean"
-          },
-          "conversation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "$ref": "#/components/schemas/ConversationRef"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Conversation"
-          },
-          "input": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "items": {
-                  "$ref": "#/components/schemas/InputItem"
-                },
-                "type": "array"
-              }
-            ],
-            "title": "Input"
-          },
-          "metadata": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Metadata"
-          },
-          "model": {
-            "default": "open-swe",
-            "title": "Model",
-            "type": "string"
-          },
-          "previous_response_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Previous Response Id"
-          },
-          "reasoning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ReasoningParam"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "stream": {
-            "default": false,
-            "title": "Stream",
-            "type": "boolean"
-          },
-          "tools": {
-            "items": {
-              "$ref": "#/components/schemas/RequestTool"
-            },
-            "title": "Tools",
-            "type": "array"
-          }
-        },
-        "required": [
-          "input"
-        ],
-        "title": "CreateResponseRequest",
-        "type": "object"
-      },
       "CredentialKind": {
         "enum": [
           "oauth",
@@ -2451,46 +2344,6 @@
         "title": "CursorModel",
         "type": "object"
       },
-      "CustomToolCallItem": {
-        "properties": {
-          "call_id": {
-            "title": "Call Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "input": {
-            "title": "Input",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "status": {
-            "const": "completed",
-            "default": "completed",
-            "title": "Status",
-            "type": "string"
-          },
-          "type": {
-            "const": "custom_tool_call",
-            "default": "custom_tool_call",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "call_id",
-          "name",
-          "input"
-        ],
-        "title": "CustomToolCallItem",
-        "type": "object"
-      },
       "DesktopConnectExchange": {
         "description": "Body of a desktop connect handoff redemption.",
         "properties": {
@@ -2530,6 +2383,17 @@
       },
       "DesktopEnvironments": {
         "properties": {
+          "dashboard_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dashboard Base Url"
+          },
           "dashboard_origins": {
             "items": {
               "type": "string"
@@ -2872,6 +2736,66 @@
         "title": "EventListener",
         "type": "object"
       },
+      "EventLogPage": {
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SearchedEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "title": "EventLogPage",
+        "type": "object"
+      },
+      "EventUser": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "logins": {
+            "title": "Logins",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "logins"
+        ],
+        "title": "EventUser",
+        "type": "object"
+      },
+      "EventVisibility": {
+        "enum": [
+          "public",
+          "private",
+          "admin"
+        ],
+        "type": "string"
+      },
       "ExcludedHunk": {
         "additionalProperties": false,
         "description": "A hunk left off the card; an empty ``header`` stands for a whole file without a text diff.",
@@ -3080,6 +3004,19 @@
         ],
         "type": "string"
       },
+      "FilePreviewBody": {
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "FilePreviewBody",
+        "type": "object"
+      },
       "FileResponse": {
         "properties": {
           "path": {
@@ -3122,45 +3059,29 @@
         "title": "FixIntent",
         "type": "object"
       },
-      "FunctionCallItem": {
-        "description": "A call the client runs itself and answers with a ``function_call_output``.",
+      "FixUpIntent": {
+        "description": "The one button that asks the agent to look a pull request over and fix what is clearly broken.",
         "properties": {
-          "arguments": {
-            "title": "Arguments",
-            "type": "string"
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PullRequestFixContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "call_id": {
-            "title": "Call Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "status": {
-            "const": "completed",
-            "default": "completed",
-            "title": "Status",
-            "type": "string"
-          },
-          "type": {
-            "const": "function_call",
-            "default": "function_call",
-            "title": "Type",
+          "intent": {
+            "const": "fix-up",
+            "title": "Intent",
             "type": "string"
           }
         },
         "required": [
-          "id",
-          "call_id",
-          "name",
-          "arguments"
+          "intent"
         ],
-        "title": "FunctionCallItem",
+        "title": "FixUpIntent",
         "type": "object"
       },
       "Gateway": {
@@ -3465,47 +3386,6 @@
         "title": "HumanReviewRequestBody",
         "type": "object"
       },
-      "IncidentCommandBody": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "enum": [
-              "ask",
-              "investigate_again",
-              "pause",
-              "resume",
-              "complete",
-              "reopen"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "request_id": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Request Id",
-            "type": "string"
-          },
-          "text": {
-            "anyOf": [
-              {
-                "maxLength": 8000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
-          }
-        },
-        "required": [
-          "request_id",
-          "action"
-        ],
-        "title": "IncidentCommandBody",
-        "type": "object"
-      },
       "IncidentSettingsBody": {
         "additionalProperties": false,
         "properties": {
@@ -3525,131 +3405,6 @@
           "policy"
         ],
         "title": "IncidentSettingsBody",
-        "type": "object"
-      },
-      "IncompleteDetails": {
-        "properties": {
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          }
-        },
-        "required": [
-          "reason"
-        ],
-        "title": "IncompleteDetails",
-        "type": "object"
-      },
-      "InputContentPart": {
-        "properties": {
-          "text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Text"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type"
-        ],
-        "title": "InputContentPart",
-        "type": "object"
-      },
-      "InputItem": {
-        "properties": {
-          "call_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Call Id"
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "items": {
-                  "$ref": "#/components/schemas/InputContentPart"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "output": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "items": {
-                  "$ref": "#/components/schemas/InputContentPart"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Output"
-          },
-          "role": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Role"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "type": {
-            "default": "message",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "title": "InputItem",
-        "type": "object"
-      },
-      "InputTokensDetails": {
-        "properties": {
-          "cached_tokens": {
-            "default": 0,
-            "title": "Cached Tokens",
-            "type": "integer"
-          }
-        },
-        "title": "InputTokensDetails",
         "type": "object"
       },
       "InstallBody": {
@@ -3673,14 +3428,6 @@
         ],
         "title": "InstallBody",
         "type": "object"
-      },
-      "ItemStatus": {
-        "enum": [
-          "in_progress",
-          "completed",
-          "incomplete"
-        ],
-        "type": "string"
       },
       "JsonObject-Input": {
         "additionalProperties": true,
@@ -4259,74 +4006,6 @@
         "title": "MarkReadyAction",
         "type": "object"
       },
-      "McpCallItem": {
-        "properties": {
-          "arguments": {
-            "title": "Arguments",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "output": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Output"
-          },
-          "server_label": {
-            "default": "open-swe",
-            "title": "Server Label",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/McpCallStatus",
-            "default": "in_progress"
-          },
-          "type": {
-            "const": "mcp_call",
-            "default": "mcp_call",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "arguments"
-        ],
-        "title": "McpCallItem",
-        "type": "object"
-      },
-      "McpCallStatus": {
-        "enum": [
-          "in_progress",
-          "completed",
-          "failed"
-        ],
-        "type": "string"
-      },
       "MemberSet": {
         "properties": {
           "person": {
@@ -4453,42 +4132,6 @@
           "message"
         ],
         "title": "MessageIntent",
-        "type": "object"
-      },
-      "MessageItem": {
-        "properties": {
-          "content": {
-            "items": {
-              "$ref": "#/components/schemas/OutputText"
-            },
-            "title": "Content",
-            "type": "array"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "role": {
-            "const": "assistant",
-            "default": "assistant",
-            "title": "Role",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/ItemStatus",
-            "default": "in_progress"
-          },
-          "type": {
-            "const": "message",
-            "default": "message",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "MessageItem",
         "type": "object"
       },
       "MessageRole": {
@@ -4777,57 +4420,6 @@
           "kind"
         ],
         "title": "MissingCredential",
-        "type": "object"
-      },
-      "ModelList": {
-        "properties": {
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/ModelObject"
-            },
-            "title": "Data",
-            "type": "array"
-          },
-          "object": {
-            "const": "list",
-            "default": "list",
-            "title": "Object",
-            "type": "string"
-          }
-        },
-        "required": [
-          "data"
-        ],
-        "title": "ModelList",
-        "type": "object"
-      },
-      "ModelObject": {
-        "properties": {
-          "created": {
-            "default": 0,
-            "title": "Created",
-            "type": "integer"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "object": {
-            "const": "model",
-            "default": "model",
-            "title": "Object",
-            "type": "string"
-          },
-          "owned_by": {
-            "default": "open-swe",
-            "title": "Owned By",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "ModelObject",
         "type": "object"
       },
       "MonitorState": {
@@ -5289,70 +4881,6 @@
           "title"
         ],
         "title": "OpenThreadIntent",
-        "type": "object"
-      },
-      "OutputItem": {
-        "discriminator": {
-          "mapping": {
-            "custom_tool_call": "#/components/schemas/CustomToolCallItem",
-            "function_call": "#/components/schemas/FunctionCallItem",
-            "mcp_call": "#/components/schemas/McpCallItem",
-            "message": "#/components/schemas/MessageItem",
-            "web_search_call": "#/components/schemas/WebSearchCallItem"
-          },
-          "propertyName": "type"
-        },
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/MessageItem"
-          },
-          {
-            "$ref": "#/components/schemas/McpCallItem"
-          },
-          {
-            "$ref": "#/components/schemas/WebSearchCallItem"
-          },
-          {
-            "$ref": "#/components/schemas/FunctionCallItem"
-          },
-          {
-            "$ref": "#/components/schemas/CustomToolCallItem"
-          }
-        ]
-      },
-      "OutputText": {
-        "properties": {
-          "annotations": {
-            "items": {
-              "$ref": "#/components/schemas/JsonValue-Output"
-            },
-            "title": "Annotations",
-            "type": "array"
-          },
-          "text": {
-            "default": "",
-            "title": "Text",
-            "type": "string"
-          },
-          "type": {
-            "const": "output_text",
-            "default": "output_text",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "title": "OutputText",
-        "type": "object"
-      },
-      "OutputTokensDetails": {
-        "properties": {
-          "reasoning_tokens": {
-            "default": 0,
-            "title": "Reasoning Tokens",
-            "type": "integer"
-          }
-        },
-        "title": "OutputTokensDetails",
         "type": "object"
       },
       "PageCommand": {
@@ -5943,6 +5471,20 @@
         "title": "PreviewFile",
         "type": "object"
       },
+      "PreviewLink": {
+        "description": "Where the dashboard fetches a file's bytes, relative to its API base.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PreviewLink",
+        "type": "object"
+      },
       "PreviewModel": {
         "properties": {
           "running": {
@@ -6184,17 +5726,6 @@
             ],
             "title": "Experimental Classify"
           },
-          "experimental_conditional_approval": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Experimental Conditional Approval"
-          },
           "personal_kitchen_channel_id": {
             "anyOf": [
               {
@@ -6427,6 +5958,11 @@
             ],
             "title": "Action",
             "type": "string"
+          },
+          "auto_merge": {
+            "default": false,
+            "title": "Auto Merge",
+            "type": "boolean"
           },
           "done": {
             "title": "Done",
@@ -7224,6 +6760,22 @@
         "title": "PullRequestThreadStatus",
         "type": "object"
       },
+      "PullRequestTitleUpdate": {
+        "properties": {
+          "title": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "PullRequestTitleUpdate",
+        "type": "object"
+      },
       "QueueStatus": {
         "properties": {
           "active_batch_id": {
@@ -7351,23 +6903,6 @@
           "queued_at"
         ],
         "title": "QueuedPreview",
-        "type": "object"
-      },
-      "ReasoningParam": {
-        "properties": {
-          "effort": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Effort"
-          }
-        },
-        "title": "ReasoningParam",
         "type": "object"
       },
       "RefResponse": {
@@ -7635,69 +7170,6 @@
         "title": "RequestResult",
         "type": "object"
       },
-      "RequestTool": {
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "format": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/pydantic__types__JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Format"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "parameters": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/pydantic__types__JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parameters"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type"
-        ],
-        "title": "RequestTool",
-        "type": "object"
-      },
       "RequestView": {
         "properties": {
           "blocked_reason": {
@@ -7854,155 +7326,6 @@
         ],
         "title": "ResolveUserEndpointRequest",
         "type": "object"
-      },
-      "Response": {
-        "properties": {
-          "background": {
-            "default": false,
-            "title": "Background",
-            "type": "boolean"
-          },
-          "conversation": {
-            "$ref": "#/components/schemas/ConversationRef"
-          },
-          "created_at": {
-            "title": "Created At",
-            "type": "integer"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResponseError"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "incomplete_details": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/IncompleteDetails"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "metadata": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Metadata",
-            "type": "object"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          },
-          "object": {
-            "const": "response",
-            "default": "response",
-            "title": "Object",
-            "type": "string"
-          },
-          "output": {
-            "items": {
-              "$ref": "#/components/schemas/OutputItem"
-            },
-            "title": "Output",
-            "type": "array"
-          },
-          "parallel_tool_calls": {
-            "default": false,
-            "title": "Parallel Tool Calls",
-            "type": "boolean"
-          },
-          "previous_response_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Previous Response Id"
-          },
-          "status": {
-            "$ref": "#/components/schemas/ResponseStatus"
-          },
-          "store": {
-            "default": true,
-            "title": "Store",
-            "type": "boolean"
-          },
-          "tool_choice": {
-            "const": "auto",
-            "default": "auto",
-            "title": "Tool Choice",
-            "type": "string"
-          },
-          "tools": {
-            "items": {
-              "$ref": "#/components/schemas/JsonValue-Output"
-            },
-            "title": "Tools",
-            "type": "array"
-          },
-          "usage": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Usage"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "created_at",
-          "status",
-          "model",
-          "conversation"
-        ],
-        "title": "Response",
-        "type": "object"
-      },
-      "ResponseError": {
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "message"
-        ],
-        "title": "ResponseError",
-        "type": "object"
-      },
-      "ResponseStatus": {
-        "enum": [
-          "queued",
-          "in_progress",
-          "completed",
-          "failed",
-          "incomplete",
-          "cancelled"
-        ],
-        "type": "string"
       },
       "ReviewChat": {
         "properties": {
@@ -8872,15 +8195,6 @@
         "title": "ReviewerEvalStatus",
         "type": "object"
       },
-      "Role": {
-        "enum": [
-          "user",
-          "assistant",
-          "system",
-          "developer"
-        ],
-        "type": "string"
-      },
       "RolloutAccepted": {
         "properties": {
           "commits": {
@@ -9281,6 +8595,162 @@
         "title": "ScheduleUpdateBody",
         "type": "object"
       },
+      "SearchedEvent": {
+        "description": "A logged row with the names of the rows it links to.",
+        "properties": {
+          "delivery_id": {
+            "title": "Delivery Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/JsonValue-Output"
+          },
+          "pull_request_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pull Request Id"
+          },
+          "pull_request_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pull Request Name"
+          },
+          "pull_request_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pull Request Title"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "repository_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Id"
+          },
+          "repository_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Name"
+          },
+          "source": {
+            "$ref": "#/components/schemas/WebhookSource"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/EventVisibility",
+            "default": "public"
+          },
+          "visible_to_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible To User Id"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          },
+          "workspace_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Name"
+          }
+        },
+        "required": [
+          "source",
+          "event_type",
+          "delivery_id",
+          "received_at",
+          "user_id",
+          "workspace_id",
+          "repository_id",
+          "pull_request_id",
+          "payload"
+        ],
+        "title": "SearchedEvent",
+        "type": "object"
+      },
       "SeasonView": {
         "properties": {
           "rulesVersion": {
@@ -9375,7 +8845,8 @@
               "chart-bar",
               "chat-circle",
               "calendar",
-              "lightbulb"
+              "lightbulb",
+              "images"
             ],
             "title": "Icon",
             "type": "string"
@@ -9844,28 +9315,6 @@
         "title": "SlackUserOption",
         "type": "object"
       },
-      "SlashCommandResponse": {
-        "properties": {
-          "response_type": {
-            "enum": [
-              "ephemeral",
-              "in_channel"
-            ],
-            "title": "Response Type",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "response_type",
-          "text"
-        ],
-        "title": "SlashCommandResponse",
-        "type": "object"
-      },
       "SubmittedReview": {
         "properties": {
           "html_url": {
@@ -10176,6 +9625,17 @@
       },
       "ThreadReadState": {
         "properties": {
+          "responseId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responseid"
+          },
           "viewed": {
             "title": "Viewed",
             "type": "boolean"
@@ -10555,33 +10015,6 @@
         "title": "UpdateBranchAction",
         "type": "object"
       },
-      "Usage": {
-        "properties": {
-          "input_tokens": {
-            "default": 0,
-            "title": "Input Tokens",
-            "type": "integer"
-          },
-          "input_tokens_details": {
-            "$ref": "#/components/schemas/InputTokensDetails"
-          },
-          "output_tokens": {
-            "default": 0,
-            "title": "Output Tokens",
-            "type": "integer"
-          },
-          "output_tokens_details": {
-            "$ref": "#/components/schemas/OutputTokensDetails"
-          },
-          "total_tokens": {
-            "default": 0,
-            "title": "Total Tokens",
-            "type": "integer"
-          }
-        },
-        "title": "Usage",
-        "type": "object"
-      },
       "UserInstructionsUpdate": {
         "properties": {
           "instructions": {
@@ -10701,53 +10134,6 @@
         "title": "WalkthroughDismissed",
         "type": "object"
       },
-      "WebSearchAction": {
-        "properties": {
-          "query": {
-            "title": "Query",
-            "type": "string"
-          },
-          "type": {
-            "const": "search",
-            "default": "search",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "title": "WebSearchAction",
-        "type": "object"
-      },
-      "WebSearchCallItem": {
-        "description": "A tool call shown to clients such as Codex that render no server tool but web search.",
-        "properties": {
-          "action": {
-            "$ref": "#/components/schemas/WebSearchAction"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/McpCallStatus",
-            "default": "in_progress"
-          },
-          "type": {
-            "const": "web_search_call",
-            "default": "web_search_call",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "action"
-        ],
-        "title": "WebSearchCallItem",
-        "type": "object"
-      },
       "WebhookResponse": {
         "properties": {
           "error_id": {
@@ -10777,6 +10163,18 @@
         ],
         "title": "WebhookResponse",
         "type": "object"
+      },
+      "WebhookSource": {
+        "enum": [
+          "github",
+          "slack",
+          "linear",
+          "deployment",
+          "workspace",
+          "human_review",
+          "reviewer"
+        ],
+        "type": "string"
       },
       "WorkerActivity": {
         "properties": {
@@ -11399,6 +10797,18 @@
       "WorkspaceSettingsUpdate": {
         "description": "A settings record at either tier.\n\nEvery field is optional. On the instance record, None means the hardcoded\ndefault; on a workspace's record, None inherits the instance value.",
         "properties": {
+          "concise_walkthrough_enabled": {
+            "agent_feature_flag": true,
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concise Walkthrough Enabled"
+          },
           "default_agent_model": {
             "anyOf": [
               {
@@ -11696,6 +11106,18 @@
             ],
             "title": "Model Routing Enabled"
           },
+          "model_routing_split": {
+            "agent_feature_flag": true,
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Routing Split"
+          },
           "org_guidelines": {
             "anyOf": [
               {
@@ -11706,6 +11128,21 @@
               }
             ],
             "title": "Org Guidelines"
+          },
+          "review_app_preview_checks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review App Preview Checks"
           },
           "review_apps": {
             "anyOf": [
@@ -11806,18 +11243,6 @@
               }
             ],
             "title": "Review Trace Links"
-          },
-          "sandbox_openai_enabled": {
-            "agent_feature_flag": true,
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sandbox Openai Enabled"
           },
           "slack_follow_up_suggestions": {
             "agent_feature_flag": true,
@@ -12405,6 +11830,266 @@
         "tags": [
           "dashboard",
           "review"
+        ]
+      }
+    },
+    "/dashboard/api/admin/event-log": {
+      "get": {
+        "operationId": "api_search_event_log_dashboard_api_admin_event_log_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_time",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_time",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WebhookSource"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Event Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_type_prefix",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Event Type Prefix",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "delivery_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repository_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repository Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pull_request_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pull Request Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "pattern": "^[^|]+\\|\\(\\d+,\\d+\\)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Search Event Log",
+        "tags": [
+          "dashboard",
+          "event-log"
+        ]
+      }
+    },
+    "/dashboard/api/admin/event-log/users": {
+      "get": {
+        "operationId": "api_event_log_users_dashboard_api_admin_event_log_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EventUser"
+                  },
+                  "title": "Response Api Event Log Users Dashboard Api Admin Event Log Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Event Log Users",
+        "tags": [
+          "dashboard",
+          "event-log"
         ]
       }
     },
@@ -14197,6 +13882,22 @@
           },
           {
             "in": "query",
+            "name": "slack_recovery",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Slack Recovery"
+            }
+          },
+          {
+            "in": "query",
             "name": "desktop_handoff",
             "required": false,
             "schema": {
@@ -14259,357 +13960,6 @@
         "tags": [
           "dashboard",
           "auth"
-        ]
-      }
-    },
-    "/dashboard/api/incidents/documents/history": {
-      "get": {
-        "operationId": "search_history_dashboard_api_incidents_documents_history_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Q"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 25,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Search History Dashboard Api Incidents Documents History Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "Search History",
-        "tags": [
-          "dashboard",
-          "incidents"
-        ]
-      }
-    },
-    "/dashboard/api/incidents/documents/{incident_id}": {
-      "get": {
-        "operationId": "get_document_dashboard_api_incidents_documents__incident_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "incident_id",
-            "required": true,
-            "schema": {
-              "title": "Incident Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Document Dashboard Api Incidents Documents  Incident Id  Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "Get Document",
-        "tags": [
-          "dashboard",
-          "incidents"
-        ]
-      }
-    },
-    "/dashboard/api/incidents/records": {
-      "get": {
-        "operationId": "list_incidents_dashboard_api_incidents_records_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "enum": [
-                    "active",
-                    "inactive",
-                    "all"
-                  ],
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "View"
-            }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Q"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 25,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Incidents Dashboard Api Incidents Records Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "List Incidents",
-        "tags": [
-          "dashboard",
-          "incidents"
-        ]
-      }
-    },
-    "/dashboard/api/incidents/records/{incident_id}": {
-      "get": {
-        "operationId": "get_incident_dashboard_api_incidents_records__incident_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "incident_id",
-            "required": true,
-            "schema": {
-              "title": "Incident Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Incident Dashboard Api Incidents Records  Incident Id  Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "Get Incident",
-        "tags": [
-          "dashboard",
-          "incidents"
-        ]
-      }
-    },
-    "/dashboard/api/incidents/records/{incident_id}/commands": {
-      "post": {
-        "operationId": "submit_command_dashboard_api_incidents_records__incident_id__commands_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "incident_id",
-            "required": true,
-            "schema": {
-              "title": "Incident Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/IncidentCommandBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Submit Command Dashboard Api Incidents Records  Incident Id  Commands Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "DashboardSession": []
-          }
-        ],
-        "summary": "Submit Command",
-        "tags": [
-          "dashboard",
-          "incidents"
         ]
       }
     },
@@ -21268,6 +20618,7 @@
                     "address-comments": "#/components/schemas/AddressCommentsIntent",
                     "comments": "#/components/schemas/CommentBatchIntent",
                     "fix": "#/components/schemas/FixIntent",
+                    "fix-up": "#/components/schemas/FixUpIntent",
                     "message": "#/components/schemas/MessageIntent",
                     "open": "#/components/schemas/OpenThreadIntent"
                   },
@@ -21282,6 +20633,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/FixIntent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FixUpIntent"
                   },
                   {
                     "$ref": "#/components/schemas/AddressCommentsIntent"
@@ -24015,6 +23369,75 @@
         ]
       }
     },
+    "/dashboard/api/reviews/{owner}/{repo}/{pr_number}/title": {
+      "patch": {
+        "operationId": "api_update_pull_request_title_dashboard_api_reviews__owner___repo___pr_number__title_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pr_number",
+            "required": true,
+            "schema": {
+              "title": "Pr Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullRequestTitleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Update Pull Request Title",
+        "tags": [
+          "dashboard",
+          "review"
+        ]
+      }
+    },
     "/dashboard/api/reviews/{owner}/{repo}/{pr_number}/viewed": {
       "post": {
         "operationId": "api_mark_review_viewed_dashboard_api_reviews__owner___repo___pr_number__viewed_post",
@@ -24138,172 +23561,6 @@
         "tags": [
           "dashboard",
           "review"
-        ]
-      }
-    },
-    "/dashboard/api/sandbox-openai/v1/models": {
-      "get": {
-        "operationId": "list_models_dashboard_api_sandbox_openai_v1_models_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Models",
-        "tags": [
-          "sandbox-openai"
-        ]
-      }
-    },
-    "/dashboard/api/sandbox-openai/v1/responses": {
-      "post": {
-        "operationId": "create_response_dashboard_api_sandbox_openai_v1_responses_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateResponseRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response"
-                }
-              },
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Response",
-        "tags": [
-          "sandbox-openai"
-        ]
-      }
-    },
-    "/dashboard/api/sandbox-openai/v1/responses/{response_id}": {
-      "get": {
-        "operationId": "get_response_dashboard_api_sandbox_openai_v1_responses__response_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "response_id",
-            "required": true,
-            "schema": {
-              "title": "Response Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "stream",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Stream",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response"
-                }
-              },
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Response",
-        "tags": [
-          "sandbox-openai"
-        ]
-      }
-    },
-    "/dashboard/api/sandbox-openai/v1/responses/{response_id}/cancel": {
-      "post": {
-        "operationId": "cancel_response_dashboard_api_sandbox_openai_v1_responses__response_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "response_id",
-            "required": true,
-            "schema": {
-              "title": "Response Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Response"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Response",
-        "tags": [
-          "sandbox-openai"
         ]
       }
     },
@@ -26979,6 +26236,124 @@
           }
         ],
         "summary": "Api Get Thread Path",
+        "tags": [
+          "dashboard",
+          "threads"
+        ]
+      }
+    },
+    "/dashboard/api/threads/{thread_id}/files/preview-url": {
+      "post": {
+        "description": "A short-lived link to one file's bytes, or an HTML page's folder, for the Files panel.",
+        "operationId": "api_create_thread_file_preview_dashboard_api_threads__thread_id__files_preview_url_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilePreviewBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewLink"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Create Thread File Preview",
+        "tags": [
+          "dashboard",
+          "threads"
+        ]
+      }
+    },
+    "/dashboard/api/threads/{thread_id}/files/raw/{token}/{rest}": {
+      "get": {
+        "operationId": "api_get_thread_file_preview_dashboard_api_threads__thread_id__files_raw__token___rest__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rest",
+            "required": true,
+            "schema": {
+              "title": "Rest",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Get Thread File Preview",
         "tags": [
           "dashboard",
           "threads"
@@ -29935,42 +29310,6 @@
           }
         },
         "summary": "Slack Webhook"
-      }
-    },
-    "/webhooks/slack/code-channel-commands": {
-      "post": {
-        "description": "Handle runtime slash commands registered for a Slack code channel.",
-        "operationId": "slack_code_channel_command_webhooks_slack_code_channel_commands_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SlashCommandResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Slack Code Channel Command"
-      }
-    },
-    "/webhooks/slack/commands": {
-      "post": {
-        "description": "Answer `/robin` and legacy `/oswe` questions without a Slack thread.",
-        "operationId": "slack_command_webhooks_slack_commands_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Slack Command"
       }
     },
     "/webhooks/slack/interactivity": {

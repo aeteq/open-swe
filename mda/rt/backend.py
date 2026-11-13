@@ -269,6 +269,8 @@ class Run:
         self.outbox = Outbox(self.backend)
         # The route the run's model calls take, once the run starts; its subagents follow it.
         self.route: str | None = None
+        # Jev's answers about the run's request, for its trace, once the classifier ran.
+        self.classified: dict[str, str] = {}
         self._locals: dict[object, object] = {}
 
     def local[T](self, key: object, make: Callable[[], T]) -> T:
@@ -378,6 +380,7 @@ class RunContext(BaseModel):
     # A launched task worker's first run: traded for its own run token before anything else.
     worker_grant: str | None = Field(default=None, alias="__worker_grant")
     invocation_id: str | None = None
+    owner_ls_user_id: str | None = None
     # JSON, not Catalog: the gRPC runtime serializes only the context's top level.
     catalog: dict[str, JsonValue] | None = Field(default=None, alias="__catalog")
     _run: Run | None = PrivateAttr(default=None)

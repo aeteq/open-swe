@@ -52,7 +52,7 @@ from openswe.agent_api.client import (
     RUNTIME_METADATA_KEY,
     mda_graph_for,
 )
-from openswe.agent_api.connections import ACTING_USER_KEY, acting_user
+from openswe.agent_api.connections import ACTING_USER_KEY, SENDER_USER_KEY, acting_user
 from openswe.api.agent_server_auth import backend_call
 from openswe.dispatch import CHANNEL_METADATA_KEY, channel_of
 from openswe.threads import index
@@ -126,8 +126,11 @@ async def adopt_channel_run(
     with :func:`channel_run_starting` once the run is ready. ``metadata`` is what a
     new thread starts with until its metadata is written, such as its visibility.
     """
+    from openswe.tasks.schemas import ThreadMetadata
+
     thread = await index.get(thread_id)
     if thread is None:
+        metadata = await ThreadMetadata.for_new_thread(metadata or {})
         await index.create(
             thread_id,
             runtime="mda",
@@ -175,7 +178,7 @@ def channel_run_metadata(metadata: Mapping[str, JsonValue]) -> dict[str, JsonVal
         for key, value in metadata.items()
         if _CHANNEL_METADATA_KEY.fullmatch(key)
         and not _CHANNEL_RESERVED_METADATA_KEY.fullmatch(key)
-        and key != ACTING_USER_KEY
+        and key not in (ACTING_USER_KEY, SENDER_USER_KEY)
     }
 
 
@@ -334,8 +337,11 @@ class ThreadRouter:
         *,
         if_exists: Literal["raise", "do_nothing"],
     ) -> IndexedThread:
+        from openswe.tasks.schemas import ThreadMetadata
+
         if if_exists == "do_nothing" and (known := await THREADS.get(thread_id)) is not None:
             return known
+        metadata = await ThreadMetadata.for_new_thread(metadata)
         thread = await index.create(
             thread_id,
             runtime="mda",

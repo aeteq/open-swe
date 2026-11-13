@@ -271,9 +271,11 @@ async def _run(
         report_telemetry=False,
         async_subagent_graphs=_WORKERS,
     )
+    config = _thread(thread_id)
+    config["configurable"] = {**config.get("configurable", {}), **context}
     await graph.ainvoke(
         {"messages": messages or [("user", "Review it")]},
-        _thread(thread_id),
+        config,
         # The run context as the Agent Server hands it over, which LangGraph reads into the schema.
         context=context,  # ty: ignore[invalid-argument-type]
     )
@@ -324,6 +326,45 @@ async def test_every_run_and_read_shares_one_graph_and_calls_the_backend_as_itse
     assert set(read.channels) == set(first.channels)
     # Code mode's and the run's skills' state, which every graph has.
     assert {"_quickjs_snapshot_payload", "skills_metadata"} <= set(read.channels)
+
+
+async def test_cached_graph_starts_each_native_root_with_ordinary_owner_metadata(
+    monkeypatch: pytest.MonkeyPatch, backend_calls: BackendCalls
+) -> None:
+    from langsmith import Client, tracing_context
+
+    monkeypatch.setattr(
+        agent,
+        "_DEFAULT_MODEL",
+        GenericFakeChatModel(messages=iter([AIMessage(content="done")] * 3)),
+    )
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test")
+    created: list[dict[str, object]] = []
+
+    def capture(self: Client, **payload: object) -> None:
+        extra = payload.get("extra")
+        assert isinstance(extra, dict)
+        created.append({**payload, "extra": {"metadata": dict(extra["metadata"])}})
+
+    monkeypatch.setattr(Client, "create_run", capture)
+    monkeypatch.setattr(Client, "update_run", lambda *args, **kwargs: None)
+    store = InMemoryStore()
+    graphs = []
+    with tracing_context(enabled=True):
+        for index, owner in enumerate(("alice", "bob", None)):
+            context = _context("reviewer", f"owner-{index}", _catalog("lookup", "grant"))
+            context["owner_ls_user_id"] = owner
+            graphs.append(await _run(store, f"owner-{index}", context))
+    assert graphs[0].nodes["model"] is graphs[1].nodes["model"]
+    roots = [run for run in created if not run.get("parent_run_id")]
+    assert len(roots) == 3
+    owners = []
+    for run in roots:
+        extra = run["extra"]
+        assert isinstance(extra, dict)
+        owners.append(extra["metadata"].get("owner_ls_user_id"))
+    assert owners == ["alice", "bob", None]
 
 
 async def test_each_run_on_the_shared_graph_works_in_its_own_threads_sandbox(
@@ -1677,6 +1718,32 @@ async def test_a_review_installs_sign_in_sessions_only_for_its_own_domains(
     await _run(InMemoryStore(), "signed", _context("reviewer", "signing", catalog))
 
     assert any("signs in only to its base and preview" in answer for answer in answers)
+
+
+@pytest.mark.parametrize("empty_window", [False, True])
+async def test_sign_in_uses_the_threads_tab_without_chrome_focus(empty_window: bool) -> None:
+    from rt.browser import ReportedBrowserMiddleware
+
+    page = MagicMock(goto=AsyncMock(), evaluate=AsyncMock())
+    context = MagicMock(
+        active_page=AsyncMock(return_value=None),
+        pages=AsyncMock(return_value=[] if empty_window else [page]),
+        new_page=AsyncMock(return_value=page),
+    )
+    session = MagicMock()
+    session.stagehand.browser.context = context
+    middleware = ReportedBrowserMiddleware(MagicMock(), graph="agent")
+
+    result = await middleware._install(
+        "beta.smith.langchain.com", "sb-test-auth-token", {"access_token": "test-token"}, session
+    )
+
+    assert result == "Session installed."
+    assert page.goto.await_args_list[-1].args == ("https://beta.smith.langchain.com",)
+    script = page.evaluate.await_args.args[0]
+    assert 'location.origin !== "https://beta.smith.langchain.com"' in script
+    assert 'localStorage.setItem("sb-test-auth-token"' in script
+    assert "test-token" in script
 
 
 @pytest.mark.parametrize("cancel", ["none", "task", "masked"])

@@ -224,6 +224,11 @@ export interface SidebarProjectFolder {
 
 export type SidebarFolder = SidebarRepo | SidebarProjectFolder
 
+/** Where a file's bytes are served, relative to the dashboard API. */
+export interface ThreadFilePreviewLink {
+  path: string
+}
+
 const API_BASE = dashboardApiBase()
 
 export const agentsLangGraphApiUrl = `${API_BASE}/dashboard/api`
@@ -496,10 +501,14 @@ export const agentsApi = {
     }),
   getThread: (threadId: string) =>
     agentsRequest<AgentThread>(`/threads/${encodeURIComponent(threadId)}`),
-  setThreadViewed: (threadId: string, viewed: boolean) =>
+  setThreadViewed: (
+    threadId: string,
+    viewed: boolean,
+    responseId?: string | null
+  ) =>
     agentsRequest<{ viewed: boolean }>(
       `/threads/${encodeURIComponent(threadId)}/read-state`,
-      { method: "PUT", body: JSON.stringify({ viewed }) }
+      { method: "PUT", body: JSON.stringify({ viewed, responseId }) }
     ),
   getPullRequestChecks: (
     pullRequests: Array<{ repoFullName: string; number: number }>
@@ -587,6 +596,11 @@ export const agentsApi = {
   getThreadPath: (threadId: string, path: string) =>
     agentsRequest<WorkspacePath>(
       `/threads/${encodeURIComponent(threadId)}/files?path=${encodeURIComponent(path)}`
+    ),
+  createThreadFilePreview: (threadId: string, path: string) =>
+    agentsRequest<ThreadFilePreviewLink>(
+      `/threads/${encodeURIComponent(threadId)}/files/preview-url`,
+      { method: "POST", body: JSON.stringify({ path }) }
     ),
   getThreadFileIndex: (threadId: string) =>
     agentsRequest<WorkspaceFileIndex>(

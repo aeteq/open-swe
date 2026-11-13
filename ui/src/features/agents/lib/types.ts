@@ -60,6 +60,8 @@ export type AcpToolKind =
   | "move"
   | "search"
   | "execute"
+  /** `background_execute` — a shell command started in the background. */
+  | "background"
   | "think"
   | "fetch"
   | "slack"
@@ -636,6 +638,7 @@ export interface AgentThread {
   status: AgentStatus
   viewed: boolean
   latestRunId?: string | null
+  unreadResponseId?: string | null
   viewedAt?: number | null
   resolved?: boolean
   resolvedAt?: number | null
@@ -649,7 +652,6 @@ export interface AgentThread {
   runCosts?: Record<string, number>
   sourceUrl?: string | null
   sourceAppUrl?: string | null
-  codeChannelUrl?: string | null
   sandboxId?: string | null
   /** For a thread bridged to someone's machine: which app serves it. */
   sandboxBridgeClient?: "cli" | "desktop" | null

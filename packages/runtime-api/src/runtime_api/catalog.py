@@ -251,6 +251,9 @@ class RoutingRules(BaseModel):
 
     # None keeps the default route; "fast" never asks the classifier.
     mode: Literal["auto", "fast"] | None = None
+    # The classifier still reads the thread's first request so its trace records the task
+    # type, but nothing is routed by it.
+    shadow: bool = False
     # The model each route stands for, which the dashboard shows, and the effort it runs at.
     route_model_ids: dict[str, str] = {}
     route_efforts: dict[str, str | None] = {}
@@ -303,19 +306,26 @@ class LoopRules(BaseModel):
     # Whether the backend gives the sandbox's GitHub proxy a fresh token before each model
     # call: a task worker's, the token of its coordinator's sandbox.
     refresh_github_proxy: bool = False
-    # Whether the run investigates an incident: before each model call the backend checks the
-    # incident still wants it and gives the call its instructions (``incident_context``).
-    incident: bool = False
     # Whether the run was asked only to offload the conversation: it summarizes it and ends.
     offload_conversation: bool = False
     # What the run's end does besides recording it.
     at_end: list[Literal["settle_review_check", "finish_scout_plan"]] = []
+    # The model experiment's tier the run's model stands for; None outside the experiment.
+    model_experiment: Literal["balanced", "performance"] | None = None
+
+    @property
+    def routing_arm(self) -> Literal["active", "inactive"]:
+        """Whether the classifier routes the run's model calls."""
+        return "active" if self.routing is not None and self.routing.mode == "auto" else "inactive"
 
     @property
     def trace_tags(self) -> list[str]:
-        """The tags the run's trace carries: whether the classifier routes its model calls."""
-        active = self.routing is not None and self.routing.mode == "auto"
-        return [f"model_routing:{'active' if active else 'inactive'}"]
+        """The tags the run's trace carries: whether the classifier routes its model calls,
+        and the model experiment's tier the run is on."""
+        tags = [f"model_routing:{self.routing_arm}"]
+        if self.model_experiment is not None:
+            tags.append(f"model_experiment:{self.model_experiment}")
+        return tags
 
 
 class BrowserSpec(BaseModel):
@@ -355,8 +365,6 @@ class Catalog(BaseModel):
     # The thread's sandbox; None runs the file and shell tools through the files API alone.
     sandbox: SandboxSpec | None = None
     files: FilesSpec = FilesSpec()
-    # Whether each tool result is recorded as incident evidence, which the result then cites.
-    incident_evidence: bool = False
     # A review's browser; None gives a review none. The coding agent always has its own.
     browser: BrowserSpec | None = None
     # Where the Agent Server reports a launched worker's run ending; None launches none.

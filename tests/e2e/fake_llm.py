@@ -43,6 +43,7 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from runtime_api.provenance import Provenance
 
 
 def _slack_thread_ts(messages: list[BaseMessage]) -> str:
@@ -201,6 +202,79 @@ git push origin {FEATURE_BRANCH}
 echo PUSHED_OK
 """.strip()
 
+FILE_PREVIEWS_MARKER = "E2E_FILE_PREVIEWS"
+_FILE_PREVIEWS_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAACXBIWXMAAAABAAAAAQBPJcTWAAAATElEQVR4nO3OMR"
+    "HAIAAAMbjDVLWhGQ/du/xIh0RB5n7O+JN1O/AlVISKUBEqQkWoCBWhIlSEilARKkJFqAgVoSJUhIpQESpCRagIlRd6"
+    "pgJfMNIJbQAAAABJRU5ErkJggg=="
+)
+
+# A checkout named after the thread's repository, which the Files panel opens at,
+# holding one file of each kind file_previews.spec.ts renders.
+_FILE_PREVIEWS_SCRIPT = f"""
+set -e
+rm -rf demo
+git clone "$E2E_REMOTE" demo
+cd demo
+mkdir -p docs/img site/css site/js data
+echo '{_FILE_PREVIEWS_PNG}' | base64 -d > docs/img/badge.png
+cat > docs/guide.md <<'MD'
+# Preview guide
+
+A rendered **Markdown** file with an image beside it.
+
+![Badge](img/badge.png)
+
+Open [the deck](../site/index.html) or the [scores](../data/scores.csv).
+MD
+cat > site/index.html <<'HTML'
+<!doctype html>
+<html>
+<head>
+  <link rel="stylesheet" href="css/deck.css">
+  <script type="module" src="js/deck.mjs"></script>
+</head>
+<body><h1>Quarterly deck</h1><p id="status">waiting</p></body>
+</html>
+HTML
+cat > site/css/deck.css <<'CSS'
+h1 {{ color: rgb(124, 58, 237); }}
+CSS
+cat > site/js/deck.mjs <<'JS'
+document.getElementById("status").textContent = "module loaded";
+JS
+printf 'region,revenue\\nEMEA,120\\nAPAC,"95,5"\\n' > data/scores.csv
+python3 - data <<'XLSX'
+import sys
+import zipfile
+
+NS = "http://schemas.openxmlformats.org"
+PARTS = [
+    ("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="' + NS + '/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
+    ("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="' + NS + '/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + '/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
+    ("xl/workbook.xml", '<?xml version="1.0"?><workbook xmlns="' + NS + '/spreadsheetml/2006/main" xmlns:r="' + NS + '/officeDocument/2006/relationships"><sheets><sheet name="Summary" sheetId="1" r:id="rId1"/></sheets></workbook>'),
+    ("xl/_rels/workbook.xml.rels", '<?xml version="1.0"?><Relationships xmlns="' + NS + '/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + '/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'),
+]
+
+
+def book(path, rows):
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, text in PARTS:
+            archive.writestr(name, text)
+        archive.writestr("xl/worksheets/sheet1.xml", '<?xml version="1.0"?><worksheet xmlns="' + NS + '/spreadsheetml/2006/main"><sheetData>' + rows + '</sheetData></worksheet>')
+
+
+def text(ref, value):
+    return '<c r="' + ref + '" t="inlineStr"><is><t>' + value + '</t></is></c>'
+
+
+out = sys.argv[1]
+book(out + "/book.xlsx", '<row r="1">' + text("A1", "region") + text("B1", "revenue") + '</row><row r="2">' + text("A2", "EMEA") + '<c r="B2"><v>120</v></c></row>')
+book(out + "/bomb.xlsx", '<row r="100000000"><c r="A100000000"><v>1</v></c></row>')
+XLSX
+echo PREVIEW_FILES_OK
+""".strip()
+
 _IFRAME_HTML_PATH = "/workspace/iframe-output.html"
 _IFRAME_HTML = """<!doctype html>
 <html>
@@ -266,8 +340,8 @@ class SystemPromptRecord:
 LAST_SYSTEM_PROMPT = SystemPromptRecord()
 
 # Opening line of openswe/resources/prompts/thread-title.md. Title calls get an
-# empty reply so background titling never renames threads or code channels mid-spec.
-_THREAD_TITLE_PROMPT_PREFIX = "Generate a title that will help the user recognize"
+# empty reply so background titling never renames threads mid-spec.
+_THREAD_TITLE_PROMPT_PREFIX = "Generate a terse title that will help the user recognize"
 
 # Gives every reply of the run a thought, as a reasoning model's would carry.
 THOUGHT_MARKER = "E2E_THOUGHT"
@@ -1305,38 +1379,6 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
         _dynamic_step(_resolve_thread_step),
         StepSpec(content="Resolved the target thread through the thread tools."),
     ),
-    "code_channel": (
-        _tool_step(
-            "This task warrants a dedicated Slack code channel.",
-            "manage_code_channel",
-            {"action": "create", "title": "Investigate flaky CI failures"},
-            "call-code-channel-create",
-        ),
-        _tool_step(
-            "Continuing the task in its dedicated code channel.",
-            "slack_reply",
-            {
-                "message": "I created this code channel for the investigation. All updates and follow-ups stay in this one Open SWE session."
-            },
-            "call-code-channel-reply",
-        ),
-        _tool_step(
-            "Marking the code-channel session active.",
-            "manage_code_channel",
-            {"action": "status", "status": "active"},
-            "call-code-channel-active",
-        ),
-    ),
-    "code_channel_followup": (
-        _tool_step(
-            "Replying to the unmentioned code-channel follow-up.",
-            "slack_reply",
-            {
-                "message": "Status: the investigation is active, and this unmentioned follow-up reached the same Open SWE session."
-            },
-            "call-code-channel-followup",
-        ),
-    ),
     "inbox": tuple(_dynamic_step(_inbox_step) for _ in range(6)),
     "background_work": (
         _tool_step(
@@ -1375,6 +1417,21 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
             "call-background-work-listen",
         ),
         StepSpec(content="Started the build, the log monitor and a CI listener."),
+    ),
+    "file_previews": (
+        _tool_step(
+            "Writing the preview files.",
+            "execute",
+            {"command": _FILE_PREVIEWS_SCRIPT},
+            "call-file-previews",
+        ),
+        _tool_step(
+            "Telling the thread the files are ready.",
+            "slack_reply",
+            {"message": "The preview files are ready."},
+            "call-file-previews-reply",
+        ),
+        StepSpec(content="Wrote the preview files."),
     ),
     "iframe": (
         _tool_step(
@@ -1833,16 +1890,12 @@ SCRIPT_RULES: tuple[ScriptRule, ...] = (
         lambda ctx: ctx.human_count <= 1 and _is_thread_tools_request(ctx.first_text),
     ),
     ScriptRule(
-        "code_channel_followup",
-        lambda ctx: "E2E_CODE_CHANNEL_FOLLOWUP" in ctx.last_text,
-    ),
-    ScriptRule(
-        "code_channel",
-        lambda ctx: ctx.human_count <= 1 and "E2E_CODE_CHANNEL" in ctx.first_text,
-    ),
-    ScriptRule(
         "background_work",
         lambda ctx: ctx.human_count <= 1 and BACKGROUND_WORK_MARKER in ctx.first_text,
+    ),
+    ScriptRule(
+        "file_previews",
+        lambda ctx: ctx.human_count <= 1 and FILE_PREVIEWS_MARKER in ctx.first_text,
     ),
     ScriptRule("iframe", lambda ctx: ctx.human_count <= 1 and _is_iframe_request(ctx.first_text)),
     ScriptRule(
@@ -1938,6 +1991,87 @@ class FakeScriptedChatModel(BaseChatModel):
             and "display_description" in spec["function"].get("parameters", {}).get("required", [])
         ]
         return self
+
+    async def _memory_reply(self, messages: list[BaseMessage], context: ScriptContext) -> AIMessage:
+        if any(
+            isinstance(message, ToolMessage) and message.tool_call_id == "call-memory-reply"
+            for message in messages
+        ):
+            return AIMessage(content="")
+        if "E2E_MEMORY_SAVE" in context.last_text:
+            saved = next(
+                (
+                    message
+                    for message in reversed(messages)
+                    if isinstance(message, ToolMessage)
+                    and message.tool_call_id == "call-memory-save"
+                ),
+                None,
+            )
+            if saved is None:
+                number = re.search(r"E2E_MEMORY_SAVE (\d+)", context.last_text)
+                assert number is not None
+                return AIMessage(
+                    content="Saving your number in user memory.",
+                    tool_calls=[
+                        {
+                            "name": "write_file",
+                            "args": {
+                                "file_path": "/memories/user/AGENTS.md",
+                                "content": f"Remembered number: {number.group(1)}\n",
+                            },
+                            "id": "call-memory-save",
+                        }
+                    ],
+                )
+            assert saved.status != "error", saved.content
+            answer = "Your number is saved."
+        else:
+            assert not any(
+                "E2E_MEMORY_SAVE" in _text(message.content)
+                for message in messages
+                if isinstance(message, HumanMessage)
+                and (provenance := Provenance.of(message)) is not None
+                and provenance.kind == "human"
+            ), "Recall must not receive the original conversation"
+            prompt = "\n".join(
+                _text(message.content) for message in messages if isinstance(message, SystemMessage)
+            )
+            number = re.search(r"Remembered number: (\d+)", prompt)
+            answer = (
+                f"Your remembered number is {number.group(1)}."
+                if number
+                else "No remembered number found."
+            )
+        return AIMessage(
+            content="Replying about user memory.",
+            tool_calls=[
+                {
+                    "name": "slack_reply",
+                    "args": {"message": answer, "response_type": "final"},
+                    "id": "call-memory-reply",
+                }
+            ],
+        )
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: object = None,
+        **kwargs: object,
+    ) -> ChatResult:
+        humans = _script_humans(messages)
+        context = ScriptContext(
+            first_text=_text(humans[0].content) if humans else "",
+            last_text=_text(humans[-1].content) if humans else "",
+            human_count=len(humans),
+            pending_text=_latest_turn_text(messages),
+        )
+        if "E2E_MEMORY_SAVE" in context.last_text or "E2E_MEMORY_RECALL" in context.last_text:
+            reply = await self._memory_reply(messages, context)
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+        return await super()._agenerate(messages, stop=stop, **kwargs)
 
     def _generate(
         self,

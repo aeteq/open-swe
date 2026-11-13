@@ -504,6 +504,9 @@ class PullRequestClient:
             raise ValueError("GitHub answered the pull request without an object")
         return payload
 
+    async def update_title(self, title: str) -> None:
+        await self.repo.patch(f"pulls/{self.number}", {"title": title})
+
     async def update_description(self, body: str) -> None:
         await self.repo.patch(f"pulls/{self.number}", {"body": body})
 
@@ -671,14 +674,14 @@ class PullRequestClient:
         self,
         *,
         reason: str,
-        keep_review_id: int | None = None,
         keep_commit: str | None = None,
         scope_to_review_id: int | None = None,
         state: Literal["approved", "changes_requested"] = "approved",
     ) -> list[int]:
-        """Dismiss Open SWE's standing reviews in ``state`` other than the kept ones; the ids GitHub refused.
+        """Dismiss Robin's standing reviews in ``state`` except those of ``keep_commit``; the ids GitHub refused.
 
-        ``scope_to_review_id`` limits this to that review's login. An unknown review dismisses nothing.
+        ``scope_to_review_id`` limits this to that review's login and the reviews up to it.
+        An unknown review dismisses nothing.
         """
         reviews = _GITHUB_REVIEWS.validate_python(await self.reviews())
         only_login: str | None = None
@@ -694,15 +697,14 @@ class PullRequestClient:
                 or review.user is None
                 or review.user.login.lower() not in OPEN_SWE_GITHUB_LOGINS
                 or (only_login is not None and review.user.login.lower() != only_login)
-                or review.id == keep_review_id
+                or (scope_to_review_id is not None and review.id > scope_to_review_id)
                 or (keep_commit is not None and review.commit_id == keep_commit)
             ):
                 continue
             try:
                 await self.dismiss_review(review.id, reason)
             except httpx2.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    continue
+                # A submitted review cannot be deleted, so a 404 hides one that still stands.
                 logger.warning(
                     "GitHub refused to dismiss a stale Open SWE approval",
                     extra={
@@ -1078,6 +1080,10 @@ class PullRequestClient:
             config = await BranchConfig(self.repo.full_name, base_ref).read(self.repo.github.login)
             if config is not None:
                 result.conversation_resolution_required = config.requires_conversation_resolution
+                # GitHub's reviewDecision is often null under rulesets, so count approvals too.
+                if reviewers is not None and config.required_approving_reviews:
+                    approvals = sum(reviewer.state == "approved" for reviewer in reviewers)
+                    result.review_required |= approvals < config.required_approving_reviews
         if runs is None or statuses is None:
             return result
         failed, _, _ = _normalize_checks(runs, statuses)
@@ -1120,7 +1126,8 @@ class PullRequestClient:
             result.required_checks_passing = all(
                 check.reported_by(passing_runs, passing_statuses) for check in required
             )
-            result.missing_checks = unreported_required_checks(required, runs, statuses)
+            if not pending:
+                result.missing_checks = unreported_required_checks(required, runs, statuses)
         return result
 
 

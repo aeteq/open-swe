@@ -87,6 +87,49 @@ export interface ExpeditedExclusions {
   }[]
 }
 
+export interface EventLogFilters {
+  start_time: string
+  end_time: string
+  source?: string
+  event_type?: string
+  event_type_prefix?: string
+  delivery_id?: string
+  user_id?: string
+  workspace_id?: string
+  repository_id?: string
+  pull_request_id?: string
+}
+
+export interface LoggedEvent {
+  source: string
+  event_type: string
+  delivery_id: string
+  received_at: string
+  user_id: string | null
+  workspace_id: string | null
+  repository_id: string | null
+  pull_request_id: string | null
+  payload: unknown
+  visibility: "public" | "private" | "admin"
+  visible_to_user_id: string | null
+  user_name: string | null
+  workspace_name: string | null
+  repository_name: string | null
+  pull_request_name: string | null
+  pull_request_title: string | null
+}
+
+export interface EventLogUser {
+  id: string
+  display_name: string
+  logins: string
+}
+
+export interface EventLogPage {
+  items: LoggedEvent[]
+  cursor: string | null
+}
+
 export interface AuditLogsPage {
   items: AuditLog[]
   cursor: string | null
@@ -356,7 +399,6 @@ export interface Profile {
   auto_fix_ci?: boolean
   auto_human_review_enabled?: boolean
   concierge_mode?: boolean
-  experimental_conditional_approval?: boolean
   experimental_classify?: boolean
   draft_prs?: boolean
   review_draft_prs?: boolean | null
@@ -374,7 +416,6 @@ export interface ProfileUpdate {
   auto_fix_ci?: boolean
   auto_human_review_enabled?: boolean
   concierge_mode?: boolean
-  experimental_conditional_approval?: boolean
   experimental_classify?: boolean
   draft_prs?: boolean
   review_draft_prs?: boolean | null
@@ -425,6 +466,8 @@ export interface WorkspaceSettings {
   review_trace_links: boolean
   /** The apps whose review step reviews of private repositories follow, each at the release an admin approved. */
   review_apps?: Array<AppRelease> | null
+  /** Checks, by name, whose success means a pull request's preview serves its head commit. */
+  review_app_preview_checks?: Array<string> | null
   /** Instance only: listed apps added to everyone's web UI, each at the release an admin approved. */
   featured_apps?: Array<FeaturedApp> | null
   /** Instance only: the domains, each with its subdomains, a review's browser may sign in to. */
@@ -433,6 +476,8 @@ export interface WorkspaceSettings {
   review_browser_session_tool?: string | null
   /** Tri-state adaptive model routing toggle; threads may override this workspace default. */
   model_routing_enabled?: boolean | null
+  /** Routing v2: split Auto threads 50/50 between Balanced and Performance instead of classifying. */
+  model_routing_split?: boolean | null
   /** Tri-state LLM Gateway toggle; null inherits the LANGSMITH_GATEWAY_ENABLED default. */
   gateway_enabled?: boolean | null
   fable_enabled?: boolean
@@ -1176,16 +1221,13 @@ export type PullRequestActionRequest =
 export interface PullRequestActionResult {
   action: PullRequestActionName
   done: boolean
+  auto_merge?: boolean
 }
 
 export type PullRequestThreadIntent =
   | { intent: "open"; title: string }
   | { intent: "message"; title: string; message: string }
-  | {
-      intent: "fix"
-      context: OpenPullRequest | null
-    }
-  | { intent: "address-comments" }
+  | { intent: "fix-up"; context: OpenPullRequest | null }
   | { intent: "address-comment"; comment_url: string; instructions: string }
   | { intent: "comments"; comments: Array<AgentBatchComment> }
 
@@ -1908,6 +1950,15 @@ export const api = {
     if (cursor) params.set("cursor", cursor)
     return request<AuditLogsPage>(`/audit-logs?${params}`)
   },
+  searchEventLog: (filters: EventLogFilters, cursor?: string) => {
+    const params = new URLSearchParams({ ...filters, limit: "50" })
+    if (cursor) params.set("cursor", cursor)
+    return request<EventLogPage>(`/admin/event-log?${params}`)
+  },
+  searchEventLogUsers: (q: string) =>
+    request<EventLogUser[]>(
+      `/admin/event-log/users?q=${encodeURIComponent(q)}`
+    ),
   adminListUsers: (page = 1, pageSize = 20, search = "") =>
     request<AdminUsersPage>(
       `/admin/users?page=${page}&page_size=${pageSize}&search=${encodeURIComponent(search)}`
@@ -1936,10 +1987,8 @@ export const api = {
     ),
   pullRequestStatus: (repo: string, number: number) =>
     loadPrDetails(repo, number),
-  fixPullRequest: (pr: OpenPullRequest) =>
-    pullRequestThread(pr.repo, pr.number, { intent: "fix", context: pr }),
-  addressPullRequestComments: (pr: OpenPullRequest) =>
-    pullRequestThread(pr.repo, pr.number, { intent: "address-comments" }),
+  fixUpPullRequest: (pr: OpenPullRequest) =>
+    pullRequestThread(pr.repo, pr.number, { intent: "fix-up", context: pr }),
   sendCommentsToAgent: (
     repo: string,
     number: number,
@@ -1969,15 +2018,14 @@ export const api = {
   mergePullRequest: (
     pr: OpenPullRequest,
     method: MergeMethod,
-    resolveConversations = false
+    resolveConversations = false,
+    autoMerge = false
   ): Promise<PullRequestActionResult> =>
     pullRequestAction(pr, {
       action: "merge",
       sha: pr.headSha,
       merge_method: method,
-      ...(pr.ci === "pending" && pr.mergeState === "blocked"
-        ? { auto_merge: true }
-        : {}),
+      ...(autoMerge ? { auto_merge: true } : {}),
       ...(resolveConversations ? { resolve_conversations: true } : {}),
     }),
   closePullRequest: (
@@ -2022,6 +2070,16 @@ export const api = {
   getReview: (owner: string, repo: string, number: number) =>
     request<ReviewDetail>(
       `/reviews/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}`
+    ),
+  updatePullRequestTitle: (
+    owner: string,
+    repo: string,
+    number: number,
+    title: string
+  ) =>
+    request<void>(
+      `/reviews/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${number}/title`,
+      { method: "PATCH", body: JSON.stringify({ title }) }
     ),
   updatePullRequestDescription: (
     owner: string,
@@ -2262,21 +2320,29 @@ export function loginUrl(redirectTo?: string): string {
  * provider's consent page have separate cookie jars, so it runs the flow
  * itself and resolves once the connection is stored.
  */
+export type SlackRecovery = { recoveryToken: string; error?: string }
+export type ConnectResult = boolean | SlackRecovery
+
 export function connectService(
   provider: "slack" | "github",
-  redirectTo?: string
+  redirectTo?: string,
+  recoveryToken?: string
 ) {
   const action = productAnalytics.beginAction("integration_connect")
-  const pending = window.openSweDesktop?.connectService(provider)
+  const pending = window.openSweDesktop?.connectService(
+    provider,
+    recoveryToken ? { recoveryToken } : undefined
+  )
   if (!pending) {
     const target =
       redirectTo ??
       (provider === "slack"
         ? `${window.location.pathname}${window.location.search}${window.location.hash}`
         : "")
-    const query = target
-      ? `?${new URLSearchParams({ redirect_to: target })}`
-      : ""
+    const params = new URLSearchParams()
+    if (target) params.set("redirect_to", target)
+    if (recoveryToken) params.set("slack_recovery", recoveryToken)
+    const query = params.size ? `?${params}` : ""
     window.location.assign(
       `${API_BASE}/dashboard/api/${provider}/login${query}`
     )

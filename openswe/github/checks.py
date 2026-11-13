@@ -27,6 +27,8 @@ __all__ = ["github_headers"]
 logger = logging.getLogger(__name__)
 
 REVIEW_CHECK_RUN_NAME = "Jarvis Review"
+# Jarvis's merge gate: required by a repository's rulesets, failing while Jarvis holds a PR back.
+APPROVAL_CHECK_RUN_NAME = "Jarvis Approves"
 REVIEW_CHECK_TIMEOUT_JOB: Final = "review_check_timeout"
 # A review still open this long is hung; settle it so it never blocks the PR.
 REVIEW_CHECK_TIMEOUT: Final = timedelta(hours=1)
