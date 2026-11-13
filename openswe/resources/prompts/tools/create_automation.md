@@ -10,6 +10,7 @@ Args:
 - triggers: Everything that fires the automation, each with its own filters; any one of them starts a run:
   - ``{"kind": "schedule", "cron": "0 9 * * 1"}`` runs on a five-field UTC cron.
     Name any repository the run should work in in ``prompt``.
+    Optional ``slack_channels`` (IDs of public channels Robin is a member of) lets the automation's runs read those channels and their threads, such as for a digest; each run is told when the previous one started.
   - ``{"kind": "github", "repo": "owner/repo", "events": [...]}`` runs on events in that repository, passed to the run as untrusted context: "issues.opened", "pull_request.opened", "pull_request.closed" (merged or not), and "pull_request.merged".
   - ``{"kind": "slack", "channel": "C0123456789", "events": ["message.posted"]}`` runs on new top-level messages in a Slack channel Robin is a member of, passed to the run as untrusted context.
     Optional filters: ``senders`` ("anyone", "people", or "bots"), ``match`` (a case-insensitive regular expression the text must match), and ``max_runs_per_hour``.
