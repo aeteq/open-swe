@@ -217,6 +217,7 @@ from openswe.tools import (
     publish_app,
     publish_artifact,
     publish_workspace,
+    read_notion_page,
     read_only_sql,
     read_user_settings,
     recreate_sandbox,
@@ -755,6 +756,7 @@ AGENT_TOOLS: Final = (
     listen_events,
     list_event_types,
     comment_on_notion_task,
+    read_notion_page,
     create_notion_design,
     get_notion_design_template,
     manage_code_channel,
@@ -1147,7 +1149,7 @@ def _notion_task_run(cfg: RunConfig) -> bool:
 
 def _notion_design_tools(cfg: RunConfig) -> tuple[Any, ...]:
     """Design publishing for an assigned task, never for a question asked in a comment."""
-    if not _notion_task_run(cfg) or cfg.notion_page is None or cfg.notion_page.is_mention:
+    if not _notion_task_run(cfg) or cfg.notion_page is None or not cfg.notion_page.is_task:
         return ()
     settings = notion_settings()
     if not settings.documents_data_source_id:
@@ -2111,7 +2113,7 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             if sender_preferences.experimental_classify and SystemOneGateway.configured()
             else (classify,)
         ),
-        *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
+        *(() if _notion_task_run(cfg) else (comment_on_notion_task, read_notion_page)),
         *(
             tool
             for tool in (create_notion_design, get_notion_design_template)

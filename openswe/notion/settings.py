@@ -55,6 +55,13 @@ class NotionSettings:
     design_icon: str
     design_tag_property: str
     design_tags: tuple[str, ...]
+    reviews_designs: bool
+    summary_property: str
+    context_tags: tuple[str, ...]
+    context_statuses: frozenset[str]
+    adr_data_source_id: str
+    adr_status_property: str
+    adr_accepted_status: str
 
     def is_agent_user(self, user_id: str) -> bool:
         return normalize_notion_id(user_id) in self.agent_user_ids
@@ -99,4 +106,11 @@ def notion_settings() -> NotionSettings:
         design_icon=ENV.NOTION_DESIGN_ICON.get().strip(),
         design_tag_property=ENV.NOTION_DESIGN_TAG_PROPERTY.get(),
         design_tags=tuple(sorted(_name_set(ENV.NOTION_DESIGN_TAGS.get()))),
+        reviews_designs=ENV.NOTION_DESIGN_AUTO_REVIEW.get_bool(),
+        summary_property=ENV.NOTION_SUMMARY_PROPERTY.get(),
+        context_tags=tuple(sorted(_name_set(ENV.NOTION_CONTEXT_TAGS.get()))),
+        context_statuses=_name_set(ENV.NOTION_CONTEXT_STATUSES.get()),
+        adr_data_source_id=normalize_notion_id(ENV.NOTION_ADR_DATA_SOURCE_ID.get()),
+        adr_status_property=ENV.NOTION_ADR_STATUS_PROPERTY.get(),
+        adr_accepted_status=ENV.NOTION_ADR_ACCEPTED_STATUS.get(),
     )

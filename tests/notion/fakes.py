@@ -20,6 +20,8 @@ DOCS_DS = "3c3c0b65-a473-800f-8c5e-000b235e4641"
 ASSIGNEE_ID = "%40JSP"
 STATUS_ID = "AJ%3Fv"
 DESIGN_STATUS_ID = "fef2b450-e417-4bb5-9e1b-7e76b47a2985"
+TAG_ID = "RVBjXA"
+ADRS_DS = "3acc0b65-a473-80f8-a6e2-000b90f944be"
 
 type Json = dict[str, JsonValue]
 
@@ -79,13 +81,23 @@ def task_page(
     }
 
 
-def design_page(page_id: str, *, status: str, title: str = "Tech Design: app version") -> Json:
+def design_page(
+    page_id: str,
+    *,
+    status: str,
+    title: str = "Tech Design: app version",
+    tags: list[str] | None = None,
+    summary: str = "",
+    data_source_id: str = DOCS_DS,
+    created_by: str = ALICE,
+) -> Json:
     return {
         "object": "page",
         "id": page_id,
         "url": f"https://www.notion.so/{page_id.replace('-', '')}",
         "in_trash": False,
-        "parent": {"type": "data_source_id", "data_source_id": DOCS_DS},
+        "created_by": {"object": "user", "id": created_by},
+        "parent": {"type": "data_source_id", "data_source_id": data_source_id},
         "properties": {
             "Doc name": {
                 "id": "title",
@@ -93,6 +105,16 @@ def design_page(page_id: str, *, status: str, title: str = "Tech Design: app ver
                 "title": [{"type": "text", "plain_text": title}],
             },
             "Status": {"id": DESIGN_STATUS_ID, "type": "status", "status": {"name": status}},
+            "Tag": {
+                "id": TAG_ID,
+                "type": "multi_select",
+                "multi_select": [{"name": tag} for tag in tags or []],
+            },
+            "Summary": {
+                "id": "Sm",
+                "type": "rich_text",
+                "rich_text": [{"type": "text", "plain_text": summary}] if summary else [],
+            },
         },
     }
 
@@ -180,36 +202,50 @@ class FakeNotion:
         )
 
     def _matches(self, page: Json, condition: Json) -> bool:
-        prop = page["properties"][condition["property"]]  # type: ignore[index]
+        if "and" in condition or "or" in condition:
+            parts = condition.get("and") or condition.get("or")
+            assert isinstance(parts, list)
+            results = [isinstance(c, dict) and self._matches(page, c) for c in parts]
+            return all(results) if "and" in condition else any(results)
+        prop = page["properties"].get(condition["property"])  # type: ignore[union-attr]
+        if not isinstance(prop, dict):
+            return False
         if "url" in condition:
             return prop["url"] == condition["url"]["equals"]  # type: ignore[index]
-        return prop["unique_id"]["number"] == condition["unique_id"]["equals"]  # type: ignore[index]
+        if "unique_id" in condition:
+            return prop["unique_id"]["number"] == condition["unique_id"]["equals"]  # type: ignore[index]
+        if "relation" in condition:
+            wanted = normalize_notion_id(str(condition["relation"]["contains"]))  # type: ignore[index]
+            refs = prop["relation"]
+            assert isinstance(refs, list)
+            return any(
+                isinstance(ref, dict) and normalize_notion_id(str(ref["id"])) == wanted
+                for ref in refs
+            )
+        if "people" in condition:
+            wanted = normalize_notion_id(str(condition["people"]["contains"]))  # type: ignore[index]
+            people = prop["people"]
+            assert isinstance(people, list)
+            return any(
+                isinstance(person, dict) and normalize_notion_id(str(person["id"])) == wanted
+                for person in people
+            )
+        options = prop["multi_select"]
+        assert isinstance(options, list)
+        return any(
+            isinstance(option, dict) and option["name"] == condition["multi_select"]["contains"]  # type: ignore[index]
+            for option in options
+        )
 
-    def _query(self, body: Json) -> list[JsonValue]:
-        filter_ = body["filter"]
-        assert isinstance(filter_, dict)
-        if "or" in filter_:
-            alternatives = filter_["or"]
-            assert isinstance(alternatives, list)
-            return [
-                page
-                for page in self.pages.values()
-                if page["parent"]["data_source_id"] == TASKS_DS  # type: ignore[index]
-                and any(isinstance(c, dict) and self._matches(page, c) for c in alternatives)
-            ]
-        conditions = filter_["and"]
-        doc_id = normalize_notion_id(str(conditions[0]["relation"]["contains"]))  # type: ignore[index]
-        results: list[JsonValue] = []
-        for page in self.pages.values():
-            if page["parent"]["data_source_id"] != TASKS_DS:  # type: ignore[index]
-                continue
-            relation = page["properties"]["Design"]["relation"]  # type: ignore[index]
-            if isinstance(relation, list) and any(
-                isinstance(ref, dict) and normalize_notion_id(str(ref["id"])) == doc_id
-                for ref in relation
-            ):
-                results.append(page)
-        return results
+    def _query(self, data_source_id: str, body: Json) -> list[JsonValue]:
+        filter_ = body.get("filter")
+        return [
+            page
+            for page in self.pages.values()
+            if normalize_notion_id(str(page["parent"]["data_source_id"]))  # type: ignore[index]
+            == normalize_notion_id(data_source_id)
+            and (not isinstance(filter_, dict) or self._matches(page, filter_))
+        ]
 
     def handler(self, request: httpx2.Request) -> httpx2.Response:
         path = request.url.path
@@ -238,7 +274,9 @@ class FakeNotion:
         if parts[0] == "pages" and method == "PATCH":
             return httpx2.Response(200, json=self.pages[normalize_notion_id(parts[1])])
         if parts[0] == "data_sources" and len(parts) == 3:
-            return httpx2.Response(200, json={"results": self._query(body), "has_more": False})
+            return httpx2.Response(
+                200, json={"results": self._query(parts[1], body), "has_more": False}
+            )
         if parts[0] == "data_sources" and normalize_notion_id(parts[1]) in self.schemas:
             return httpx2.Response(200, json=self.schemas[normalize_notion_id(parts[1])])
         if parts[0] == "data_sources":
