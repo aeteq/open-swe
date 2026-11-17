@@ -220,7 +220,7 @@ async def test_open_swe_approval_does_not_count_as_a_human_review() -> None:
     pull = MagicMock(spec=PullRequestClient)
     pull.reviews = AsyncMock(
         return_value=[
-            {"user": {"login": "jarvis-aeteq[bot]"}, "state": "APPROVED"},
+            {"user": {"login": "open-swe[bot]"}, "state": "APPROVED"},
             {"user": {"login": "grace"}, "state": "CHANGES_REQUESTED"},
         ]
     )

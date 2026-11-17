@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx2
 
+from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS
 from openswe.github.pull_request_status import PullRequestClient
 from openswe.review.findings import (
     Finding,
@@ -26,7 +27,7 @@ ReviewThreadMatch = tuple[ReviewThread, int | None]
 
 
 def _is_open_swe_bot_comment(comment: ReviewThread) -> bool:
-    return comment.get("author") in {"jarvis-aeteq", "jarvis-aeteq[bot]"}
+    return comment.get("author") in OPEN_SWE_AUTHOR_LOGINS
 
 
 def _human_replies_after_bot_comment(
@@ -50,7 +51,7 @@ def _human_replies_after_bot_comment(
         if not seen_bot_comment:
             continue
         author = comment.get("author")
-        if author in {"jarvis-aeteq", "jarvis-aeteq[bot]"}:
+        if author in OPEN_SWE_AUTHOR_LOGINS:
             continue
         replies.append(comment)
     return replies

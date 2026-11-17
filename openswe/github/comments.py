@@ -35,7 +35,7 @@ __all__ = [
     "sanitize_github_comment_body",
 ]
 
-_DEFAULT_OPEN_SWE_TAGS = ("@jarvis-aeteq",)
+_DEFAULT_OPEN_SWE_TAGS = ("@robin-agent", "@openswe", "@open-swe", "@openswe-dev")
 
 
 def _load_open_swe_tags() -> tuple[str, ...]:
