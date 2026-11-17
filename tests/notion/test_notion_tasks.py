@@ -12,7 +12,11 @@ from openswe.notion import webhook as service
 from openswe.notion.design_review import DesignReview, ReviewedDesign
 from openswe.notion.models import WebhookEvent
 from openswe.notion.pending import PendingAssigner
-from openswe.thread_ids import notion_discussion_thread_id, notion_page_thread_id
+from openswe.thread_ids import (
+    notion_design_review_thread_id,
+    notion_discussion_thread_id,
+    notion_page_thread_id,
+)
 from openswe.users import User
 from tests.notion.fakes import (
     ADRS_DS,
@@ -755,7 +759,7 @@ async def test_the_first_round_reviews_the_design_against_its_task_and_context(
     assert await DesignReview.run(DOC) == "started"
 
     [run] = harness.dispatched
-    assert run["thread_id"] == notion_page_thread_id(DOC)
+    assert run["thread_id"] == notion_design_review_thread_id(DOC)
     configurable = _configurable_of(run)
     assert configurable["repo"] == {"owner": "aeteq", "name": "sportsbook"}
     notion_page = configurable["notion_page"]
@@ -796,11 +800,12 @@ async def test_a_reply_on_a_reviewed_design_stays_a_design_review(
 ) -> None:
     harness.notion.add(_in_review())
     harness.notion.comments[DOC.replace("-", "")] = [
-        comment("c-2", "The cache is per user.", page_id=DOC, discussion_id="d-f1")
+        comment("c-1", "Where is it read from?", author=JARVIS, discussion_id="d-f1"),
+        comment("c-2", "The cache is per user.", page_id=DOC, discussion_id="d-f1"),
     ]
 
     async def reviewed_thread(thread_id: str) -> dict[str, JsonValue] | None:
-        if thread_id != notion_page_thread_id(DOC):
+        if thread_id != notion_design_review_thread_id(DOC):
             return None
         return {
             "source": "notion",
@@ -817,3 +822,26 @@ async def test_a_reply_on_a_reviewed_design_stays_a_design_review(
     # Not a task run, so it gets no design-publishing tools.
     assert notion_page["kind"] == "design-review"
     assert notion_page["discussion_id"] == "d-f1"
+
+
+async def test_a_comment_anchored_in_a_reviewed_design_is_not_forwarded(
+    harness: Harness, reviews: Reviews, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    harness.notion.add(_in_review())
+    harness.notion.comments[DOC.replace("-", "")] = [
+        comment("c-3", "Rename this.", page_id=DOC, discussion_id="d-anchored")
+    ]
+
+    async def reviewed_thread(thread_id: str) -> dict[str, JsonValue] | None:
+        if thread_id != notion_design_review_thread_id(DOC):
+            return None
+        return {
+            "source": "notion",
+            "source_context": {"notion_page": {"id": DOC, "kind": "design-review"}},
+        }
+
+    monkeypatch.setattr(service.common, "get_thread_metadata_safe", reviewed_thread)
+
+    await service.handle_notion_event(_event("comment.created", "c-3", page_id=DOC))
+
+    assert harness.dispatched == []

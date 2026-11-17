@@ -35,7 +35,7 @@ from openswe.notion.properties import (
 from openswe.notion.runs import NOTION_SYSTEM, CommentAuthors, NotionRun, Requester
 from openswe.notion.settings import NotionSettings, normalize_notion_id, notion_settings
 from openswe.prompts import prompt
-from openswe.thread_ids import notion_page_thread_id
+from openswe.thread_ids import notion_design_review_thread_id
 from openswe.threads.store import THREADS
 from openswe.webhooks import common
 
@@ -135,7 +135,7 @@ class DesignReview:
         """Send the round to the design's thread, unless nothing changed since the last."""
         if self.page.in_trash or not self.in_review():
             return "not in review"
-        thread_id = notion_page_thread_id(self.page.id)
+        thread_id = notion_design_review_thread_id(self.page.id)
         thread = await THREADS.get(thread_id)
         if thread is not None and thread.status == "busy":
             # Starting now would interrupt the round still commenting.

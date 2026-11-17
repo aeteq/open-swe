@@ -1147,6 +1147,12 @@ def _notion_task_run(cfg: RunConfig) -> bool:
     return cfg.source == "notion" and cfg.notion_page is not None and bool(cfg.notion_page.id)
 
 
+def _notion_design_review_run(cfg: RunConfig) -> bool:
+    return (
+        _notion_task_run(cfg) and cfg.notion_page is not None and cfg.notion_page.is_design_review
+    )
+
+
 def _notion_design_tools(cfg: RunConfig) -> tuple[Any, ...]:
     """Design publishing for an assigned task, never for a question asked in a comment."""
     if not _notion_task_run(cfg) or cfg.notion_page is None or not cfg.notion_page.is_task:
@@ -2113,7 +2119,8 @@ async def agent_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
             if sender_preferences.experimental_classify and SystemOneGateway.configured()
             else (classify,)
         ),
-        *(() if _notion_task_run(cfg) else (comment_on_notion_task, read_notion_page)),
+        *(() if _notion_task_run(cfg) else (comment_on_notion_task,)),
+        *(() if _notion_design_review_run(cfg) else (read_notion_page,)),
         *(
             tool
             for tool in (create_notion_design, get_notion_design_template)

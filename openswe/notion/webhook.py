@@ -47,7 +47,11 @@ from openswe.notion.runs import NOTION_SYSTEM, CommentAuthors, NotionRun, Reques
 from openswe.notion.settings import NotionSettings, normalize_notion_id, notion_settings
 from openswe.prompts import prompt
 from openswe.source_context import SourceContext
-from openswe.thread_ids import notion_discussion_thread_id, notion_page_thread_id
+from openswe.thread_ids import (
+    notion_design_review_thread_id,
+    notion_discussion_thread_id,
+    notion_page_thread_id,
+)
 from openswe.webhooks import common
 
 logger = logging.getLogger(__name__)
@@ -556,6 +560,20 @@ async def _start_question(
     return TaskResult("dispatched", "question started")
 
 
+async def _in_agent_discussion(
+    client: NotionClient, page_id: str, comment: NotionComment, settings: NotionSettings
+) -> bool:
+    """Whether the comment replies in a page-level discussion the agent has written in."""
+    if not comment.discussion_id:
+        return False
+    wanted = normalize_notion_id(comment.discussion_id)
+    authors = CommentAuthors(client, settings)
+    for item in await client.list_comments(page_id):
+        if normalize_notion_id(item.discussion_id) == wanted and await authors.is_agent(item):
+            return True
+    return False
+
+
 async def _handle_comment(
     client: NotionClient, event: WebhookEvent, settings: NotionSettings
 ) -> TaskResult:
@@ -596,6 +614,14 @@ async def _handle_comment(
         )
     if comment.discussion_id and comment.mentions(settings.agent_user_ids):
         return await _start_question(client, page_id, comment, author, settings)
+    review_thread = notion_design_review_thread_id(page_id)
+    review_metadata = await common.get_thread_metadata_safe(review_thread)
+    if review_metadata is not None and await _in_agent_discussion(
+        client, page_id, comment, settings
+    ):
+        return await _forward_comment(
+            client, review_thread, review_metadata, page_id, comment, author, kind="design-review"
+        )
     return TaskResult("ignored", "comment neither mentions the agent nor continues a thread")
 
 

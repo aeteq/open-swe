@@ -20,8 +20,9 @@ class NotionPageResult(TypedDict, total=False):
 
 async def read_notion_page(page: str) -> NotionPageResult:
     """Implement the `read_notion_page` tool."""
-    if RunConfig.from_runtime().source != "notion":
-        return {"success": False, "error": "This run was not started from Notion"}
+    cfg = RunConfig.from_runtime()
+    if cfg.source != "notion" or cfg.notion_page is None or not cfg.notion_page.is_design_review:
+        return {"success": False, "error": "Only a Notion design review can read other pages"}
     page_id = page_id_from_reference(page)
     if not page_id:
         return {"success": False, "error": "Give a Notion page id or URL"}

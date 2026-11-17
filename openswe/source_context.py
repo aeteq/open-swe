@@ -103,6 +103,10 @@ class NotionPageRef(BaseModel):
         return self.kind == "mention"
 
     @property
+    def is_design_review(self) -> bool:
+        return self.kind == "design-review"
+
+    @property
     def is_task(self) -> bool:
         return not self.kind
 
