@@ -718,7 +718,7 @@ An hourly job deletes the objects no attachment names any longer, once they are 
 <details id="notion-tasks">
 <summary><strong>Notion tasks</strong></summary>
 
-Open SWE starts work when a task in a Notion task database is assigned to a dedicated Notion member, for example `jarvis@your-company.com`.
+Open SWE starts work when a task in a Notion task database is assigned to a dedicated Notion member, for example `robin@your-company.com`.
 It moves the task to **In progress**, comments on the task with questions and progress, and once it opens a PR, or links an existing one to the thread, it fills in the PR URL property, moves the task to **In review**, and posts the link as a comment.
 Replies to its comments are forwarded to the running thread.
 A task that links design documents waits until every one of them is **Approved**: Open SWE comments with the unapproved designs, then picks the task up automatically when the last one is approved.
@@ -746,7 +746,7 @@ A task that links design documents waits until every one of them is **Approved**
 A task without a Repository falls back to the assigner's dashboard default repository, then the workspace default repository.
 
 **Questions by mention.**
-Mention the agent member in a comment on any page the integration can access, for example `@Jarvis how do we roll back a release?`, and it answers in that comment's discussion.
+Mention the agent member in a comment on any page the integration can access, for example `@Robin how do we roll back a release?`, and it answers in that comment's discussion.
 Later replies in the discussion continue the same conversation without another mention.
 It works from the page's content and uses the page's Repository when the page is a task, otherwise the commenter's or the workspace's default repository, or no repository at all.
 A question never changes a task's status.

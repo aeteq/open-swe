@@ -37,9 +37,9 @@ _GITHUB_LOGIN_ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyz0123456789-")
 OPEN_SWE_BOT_NAME = sandbox_setup.GIT_NAME
 OPEN_SWE_BOT_EMAIL = sandbox_setup.GIT_EMAIL
 
-PR_ATTRIBUTION_TEXT = "Made by [Jarvis]"
-PR_ATTRIBUTION_TEXTS = (PR_ATTRIBUTION_TEXT, "Made by [Robin]", "Made by [Open SWE]")
-PR_ATTRIBUTION_DEFAULT_URL = "https://github.com/aeteq/open-swe"
+PR_ATTRIBUTION_TEXT = "Made by [Robin]"
+PR_ATTRIBUTION_TEXTS = (PR_ATTRIBUTION_TEXT, "Made by [Jarvis]", "Made by [Open SWE]")
+PR_ATTRIBUTION_DEFAULT_URL = "https://github.com/langchain-ai/open-swe"
 PR_ATTRIBUTION_FOOTER = f"{PR_ATTRIBUTION_TEXT}({PR_ATTRIBUTION_DEFAULT_URL})"
 
 

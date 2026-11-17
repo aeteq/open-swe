@@ -538,7 +538,7 @@ async def test_the_agent_member_s_own_comment_is_not_forwarded(harness: Harness)
         "object": "user",
         "id": JARVIS,
         "type": "person",
-        "name": "Jarvis",
+        "name": "Robin",
         "person": {"email": "jarvis@aeteq.com"},
     }
     harness.notion.add(task_page(TASK, status="In progress"))
