@@ -32,7 +32,6 @@ _OPEN_SWE_CHECK_NAMES: frozenset[str] = frozenset(
     [
         REVIEW_CHECK_RUN_NAME,
         "Open SWE Review",
-        "Jarvis Review",
         "Robin Auto-fix",
         "Open SWE Auto-fix",
     ]
