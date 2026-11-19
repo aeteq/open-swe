@@ -223,3 +223,42 @@ async def test_bot_channel_history_is_scoped_and_revocable(
 
     metadata["source_context"] = {}
     assert (await slack_read_channel_messages("C1"))["success"] is False
+
+
+async def test_an_automation_reads_only_the_channels_its_schedules_name(
+    metadata: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    slack_api: SlackAPI,
+) -> None:
+    from openswe.slack.tools.read_channel_messages import slack_read_channel_messages
+
+    metadata.update(owner_type="system")
+    cfg = _cfg(source="schedule", schedule_id="s-1", github_login=None)
+    monkeypatch.setattr(tool_access, "configurable", lambda: cfg)
+    schedule = {"kind": "schedule", "cron": "0 6 * * *", "slack_channels": ["C0DIGEST01"]}
+    automation = AsyncMock(
+        return_value={"prompt": "Digest", "triggers": [{"kind": "schedule", "config": schedule}]}
+    )
+    monkeypatch.setattr(tool_access, "authorized_schedule_run", automation)
+
+    assert (await slack_read_channel_messages("C0OTHER001"))["success"] is False
+    assert not slack_api.calls
+
+    slack_api.respond(
+        {
+            "ok": True,
+            "channel": {
+                "id": "C0DIGEST01",
+                "is_channel": True,
+                "is_private": False,
+                "is_ext_shared": False,
+                "is_pending_ext_shared": False,
+            },
+        }
+    )
+    slack_api.respond({"ok": True, "messages": [{"ts": "0.5", "text": "Use pattern matching"}]})
+    assert (await slack_read_channel_messages("C0DIGEST01"))["success"] is True
+
+    # Another automation's thread, or a schedule since edited to drop the channel.
+    automation.return_value = None
+    assert (await slack_read_channel_messages("C0DIGEST01"))["success"] is False
