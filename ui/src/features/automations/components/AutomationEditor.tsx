@@ -33,7 +33,10 @@ import { RepoSelector } from "@/features/settings/components/RepoSelector"
 import { WorkspaceSelector } from "@/features/agents/components/composer/WorkspaceSelector"
 import { AutomationRuns } from "@/features/automations/components/AutomationRuns"
 import { TriggerMenu } from "@/features/automations/components/TriggerMenu"
-import { SlackChannelCombobox } from "@/components/SlackChannelCombobox"
+import {
+  SlackChannelCombobox,
+  SlackChannelMultiCombobox,
+} from "@/components/SlackChannelCombobox"
 import { SlackChannelTextarea } from "@/components/SlackChannelTextarea"
 import { describeCron } from "@/features/automations/lib/cron"
 import type { TriggerDraft } from "@/features/automations/lib/triggers"
@@ -498,11 +501,23 @@ export function AutomationEditor({
                       </span>
                     </p>
                   )}
-                  {problem && (
-                    <p className="mt-space-1 text-xs text-error-secondary">
-                      {problem}
-                    </p>
-                  )}
+                  <SlackChannelMultiCombobox
+                    value={draft.slackChannels}
+                    onValueChange={(slackChannels) => set({ slackChannels })}
+                    eligible={(channel) =>
+                      channel.is_member &&
+                      !channel.is_private &&
+                      !channel.is_ext_shared
+                    }
+                    disabled={!canManage}
+                    placeholder="Slack channels runs read (optional)"
+                    aria-label="Slack channels runs read"
+                    className="mt-space-2 w-full"
+                  />
+                  {(problem || draft.slackChannels.length > 0) &&
+                    hint(
+                      "Runs can read these channels and their threads, and are told when the previous run started. What they read is untrusted context."
+                    )}
                 </TriggerCard>
               )
             }

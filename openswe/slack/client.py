@@ -433,7 +433,15 @@ def _slack_thread_reply_marker(message: dict[str, Any], *, with_ts: bool = True)
     if reply_count < 1:
         return ""
     plural = "reply" if reply_count == 1 else "replies"
-    return f" [thread: {reply_count} {plural}{f', thread_ts={thread_ts}' if with_ts else ''}]"
+    if not with_ts:
+        return f" [thread: {reply_count} {plural}]"
+    latest = message.get("latest_reply")
+    latest_note = (
+        f", latest_reply={latest}"
+        if isinstance(latest, str) and _SLACK_MESSAGE_TS_RE.fullmatch(latest)
+        else ""
+    )
+    return f" [thread: {reply_count} {plural}, thread_ts={thread_ts}{latest_note}]"
 
 
 def slack_ts_time(ts: str) -> str:

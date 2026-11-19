@@ -23,7 +23,12 @@ async def readable_public_channel(
     channel_id: str, current_access: tool_access.Access
 ) -> SlackChannel:
     """The public channel this run may read with the bot's own access, else ``ChannelNotReadable``."""
-    if not current_access.private:
+    if not current_access.private and channel_id not in current_access.slack_read_channels:
+        if current_access.slack_read_channels:
+            raise ChannelNotReadable(
+                "This automation reads only the Slack channels its schedules name: "
+                + ", ".join(sorted(current_access.slack_read_channels))
+            )
         if current_access.slack_bot_channel is None:
             raise ChannelNotReadable(prompt("slack/read-refused-shared-thread"))
         if current_access.slack_bot_channel != channel_id:

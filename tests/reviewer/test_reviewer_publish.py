@@ -136,7 +136,8 @@ def _f(**overrides: Any) -> Finding:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_publish_review_pr_state() -> Iterator[None]:
+def _isolate_publish_review_pr_state() -> Iterator[AsyncMock]:
+    request_human_review = AsyncMock(return_value=None)
     with (
         patch(
             "openswe.tools.publish_review.get_workspace_settings",
@@ -155,8 +156,9 @@ def _isolate_publish_review_pr_state() -> Iterator[None]:
                 side_effect=lambda thread_id, configurable: configurable.get("head_sha") or ""
             ),
         ),
+        patch("openswe.tools.publish_review.request_after_ai_review", request_human_review),
     ):
-        yield
+        yield request_human_review
 
 
 def _eval_config(**configurable: object) -> dict[str, object]:
@@ -296,7 +298,9 @@ async def test_post_pull_request_review_non_dict_body_surfaces_status_and_excerp
 
 
 @pytest.mark.asyncio
-async def test_publish_review_skips_findings_already_published() -> None:
+async def test_publish_review_skips_findings_already_published(
+    _isolate_publish_review_pr_state: AsyncMock,
+) -> None:
     """Re-runs must not re-post findings that already carry a review comment id."""
     from openswe.tools.publish_review import _publish_review_async
 
@@ -342,6 +346,7 @@ async def test_publish_review_skips_findings_already_published() -> None:
     posted = post_review.await_args.kwargs["inline_comments"]
     paths = {c["path"] for c in posted}
     assert paths == {"b.py"}
+    _isolate_publish_review_pr_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -437,7 +442,7 @@ async def test_published_review_registry_failure_does_not_complete_or_invite_dup
 @pytest.mark.asyncio
 @pytest.mark.parametrize("storage_fails", [False, True])
 async def test_publish_review_skips_post_on_re_review_with_no_new_findings(
-    storage_fails: bool,
+    storage_fails: bool, _isolate_publish_review_pr_state: AsyncMock
 ) -> None:
     """Re-review with nothing new to surface must not spam another comment."""
     from openswe.tools.publish_review import _publish_review_async
@@ -522,6 +527,7 @@ async def test_publish_review_skips_post_on_re_review_with_no_new_findings(
     assert result["surfaced_count"] == 0
     assert result["resolved_thread_count"] == 1
     assert result["skipped_empty_re_review"] is True
+    _isolate_publish_review_pr_state.assert_awaited_once()
 
 
 @pytest.mark.asyncio

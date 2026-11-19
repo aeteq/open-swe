@@ -14,9 +14,10 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal, get_args
 
+from croniter import croniter
 from fastapi import HTTPException
 from langgraph_sdk.errors import NotFoundError
-from pydantic import BaseModel, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, field_validator
 from runtime_api.github import FiredGitHubAutomation, GitHubThreadRun, GitHubTriggerEvent
 from runtime_api.linear import TEAM_KEY_PATTERN, LinearAutomationRun, PlanLinearAutomation
 from sqlalchemy import text
@@ -68,6 +69,17 @@ SLACK_EVENT_DESCRIPTIONS: dict[SlackTriggerEvent, str] = {
 }
 SlackSenders = Literal["anyone", "people", "bots"]
 _SLACK_TRIGGER_CHANNEL_RE = re.compile(r"^[CG][A-Z0-9]{8,}$")
+SlackChannelId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        to_upper=True,
+        min_length=9,
+        max_length=40,
+        # Checked before upper-casing, so it admits the lowercase spelling too.
+        pattern=r"^[CGcg][A-Za-z0-9]{8,}$",
+    ),
+]
 _SLACK_MESSAGE_MAX_CHARS = 8_000
 LinearTriggerEvent = Literal["issue.created", "issue.labeled"]
 _LINEAR_TEAM_KEY_RE = re.compile(TEAM_KEY_PATTERN)
@@ -85,13 +97,62 @@ def _normalized_repo(value: str) -> str:
 
 
 class ScheduleTrigger(BaseModel):
+    """Fires on a cron; its runs may read the public Slack channels it names."""
+
     kind: Literal["schedule"] = "schedule"
     cron: str = Field(min_length=1, max_length=120)
+    slack_channels: list[SlackChannelId] = Field(default_factory=list, max_length=20)
 
     @field_validator("cron")
     @classmethod
     def _valid_cron(cls, value: str) -> str:
         return normalize_cron_schedule(value)
+
+    @field_validator("slack_channels")
+    @classmethod
+    def _distinct_channels(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(value))
+
+    @staticmethod
+    def slack_channels_of(record: dict[str, Any]) -> frozenset[str]:
+        """The Slack channels an automation's runs may read: those its schedules name."""
+        return frozenset(
+            channel
+            for trigger in _parsed_triggers(record)
+            if isinstance(trigger, ScheduleTrigger)
+            for channel in trigger.slack_channels
+        )
+
+    def digest_since(self, now: datetime) -> datetime:
+        """Where a run this schedule starts at ``now`` picks up: the firing before its own.
+
+        Taken from the cron rather than the automation's last launch, which test runs
+        and its other triggers' runs move too.
+        """
+        fires = croniter(self.cron, now)
+        fires.get_prev(datetime)
+        return fires.get_prev(datetime)
+
+    def run_prompt(self, record: dict[str, Any]) -> str:
+        """What a run this schedule starts is asked: the automation's prompt, plus the
+        channels it reads and since when."""
+        channels = ScheduleTrigger.slack_channels_of(record)
+        if not channels:
+            return str(record["prompt"])
+        since = self.digest_since(datetime.now(UTC))
+        return prompt(
+            "runs/automation-slack-channels",
+            prompt=record["prompt"],
+            channels=", ".join(sorted(channels)),
+            since=since.isoformat(timespec="minutes"),
+            oldest=f"{since.timestamp():.6f}",
+        )
+
+    @staticmethod
+    def test_prompt(record: dict[str, Any]) -> str:
+        """What a test run is asked: as its first schedule would ask now, if it has one."""
+        first = next((t for t in _parsed_triggers(record) if isinstance(t, ScheduleTrigger)), None)
+        return first.run_prompt(record) if first else str(record["prompt"])
 
 
 class GitHubTrigger(BaseModel):
@@ -111,20 +172,12 @@ class SlackTrigger(BaseModel):
     """Fires on messages in one Slack channel Open SWE is a member of."""
 
     kind: Literal["slack"] = "slack"
-    channel: str = Field(min_length=9, max_length=40)
+    channel: SlackChannelId
     events: list[SlackTriggerEvent] = Field(min_length=1)
     senders: SlackSenders = "anyone"
     # Case-insensitive regular expression the message text must match.
     match: str | None = Field(default=None, max_length=200)
     max_runs_per_hour: int | None = Field(default=None, ge=1, le=100)
-
-    @field_validator("channel")
-    @classmethod
-    def _valid_channel(cls, value: str) -> str:
-        channel = value.strip().upper()
-        if not _SLACK_TRIGGER_CHANNEL_RE.fullmatch(channel):
-            raise ValueError("channel must be a Slack channel ID starting with C or G")
-        return channel
 
     @field_validator("match")
     @classmethod
@@ -624,17 +677,25 @@ async def _checked_triggers(
         else:
             await repo_config_for_user(login, repo)
     for channel in sorted({t.channel for t in triggers if isinstance(t, SlackTrigger)}):
-        await _require_watchable_slack_channel(channel)
+        await _require_slack_channel(channel, read=False)
+    read = {c for t in triggers if isinstance(t, ScheduleTrigger) for c in t.slack_channels}
+    for channel in sorted(read):
+        await _require_slack_channel(channel, read=True)
     return list(triggers)
 
 
-async def _require_watchable_slack_channel(channel_id: str) -> None:
-    """Refuse a channel whose messages Slack doesn't deliver to Open SWE."""
+async def _require_slack_channel(channel_id: str, *, read: bool) -> None:
+    """Refuse a channel whose messages Slack doesn't deliver to Open SWE, or, for one its
+    runs ``read``, whose history they may not read."""
     channel = await SlackChannel.load(channel_id, use_cache=False)
     if channel is None:
         raise HTTPException(422, f"Slack channel {channel_id} could not be read")
     if not channel.context.allows_operations:
-        raise HTTPException(422, "externally shared Slack channels can't trigger automations")
+        raise HTTPException(422, "automations can't use externally shared Slack channels")
+    if read and not channel.public:
+        raise HTTPException(
+            422, f"#{channel.name or channel_id} is private; automations read only public channels"
+        )
     if channel.payload.get("is_member") is not True:
         raise HTTPException(
             422, f"invite Robin to #{channel.name or channel_id} so it sees its messages"
@@ -1689,7 +1750,11 @@ async def launch_scheduled_agent_run(
     if fired is None:
         await _delete_orphan_crons(schedule_id, keep=cron_ids)
         return {"status": "trigger_mismatch", "schedule_id": schedule_id}
-    return await _launch_agent_schedule_record(record, repo=None)
+    return await _launch_agent_schedule_record(
+        record,
+        repo=None,
+        prompt=ScheduleTrigger.model_validate(fired["config"]).run_prompt(record),
+    )
 
 
 async def trigger_agent_schedule(schedule_id: str) -> dict[str, Any]:
@@ -1697,7 +1762,12 @@ async def trigger_agent_schedule(schedule_id: str) -> dict[str, Any]:
     _assert_schedule_exists(record)
     assert record is not None
 
-    result = await _launch_agent_schedule_record(record, repo=_test_run_repo(record), test_run=True)
+    result = await _launch_agent_schedule_record(
+        record,
+        repo=_test_run_repo(record),
+        test_run=True,
+        prompt=ScheduleTrigger.test_prompt(record),
+    )
     status = result.get("status")
     if status == "started":
         return result
