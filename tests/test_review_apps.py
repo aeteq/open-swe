@@ -15,6 +15,7 @@ from runtime_api.connections import ConnectionRef
 from openswe import reviewer
 from openswe.agent_api.reviewer import ReviewerKind
 from openswe.dashboard.workspace_settings import WorkspaceSettings, WorkspaceSettingsUpdate
+from openswe.mcp.models import MCPToolProvenance
 from openswe.mcp.runtime import MCPTools
 from openswe.plugins.manifest import PluginManifest, ReviewStep
 from openswe.plugins.records import AppVersion, DocumentScope, PluginApps, PluginDocuments
@@ -477,6 +478,66 @@ async def test_only_a_review_that_works_for_apps_gets_their_tools_and_browser(
     assert (await kind.tool(config, "save_app_document") is not None) is works
     assert await kind.tool(config, "ops__query") is None
     assert await kind.tool(config, "add_finding") is not None
+
+
+@pytest.mark.usefixtures("registry_db", "saved_thread_scope")
+@pytest.mark.parametrize("private", [True, False])
+async def test_a_private_review_reads_notion_through_either_connection_but_never_writes(
+    monkeypatch: pytest.MonkeyPatch, private: bool
+) -> None:
+    _instance_settings(monkeypatch, review_browser_session_tool="hub/mint_session")
+    monkeypatch.setattr(ReviewApps, "of", AsyncMock(return_value=_apps()))
+    monkeypatch.setattr(
+        reviewer, "cached_workspace_settings", AsyncMock(return_value=WorkspaceSettings({}))
+    )
+    signed_in = MCPTools(runtime_servers=[_hub()])
+    monkeypatch.setattr(review_browser_module, "load_mcp_tools", AsyncMock(return_value=signed_in))
+    provenance = MCPToolProvenance(connection_name="notion", scope="instance", overridden_scopes=[])
+
+    def served(name: str, server_name: str) -> BaseTool:
+        tool = _mcp_tool(name, server_name)
+        tool.metadata = {**(tool.metadata or {}), "mcp_provenance": provenance}
+        return tool
+
+    # One Notion server the backend serves, one on an MDA connection that the run calls.
+    notion = McpServerSpec(
+        name="notion",
+        url="https://mcp.notion.com/mcp",
+        transport="streamable_http",
+        tools={"fetch": "notion__fetch", "update-page": "notion__update_page"},
+        connection=ConnectionRef(slug="open-swe-mcp-notion", owner="agent"),
+    )
+    loaded = MCPTools(
+        [served("notion__search", "search"), served("notion__create", "create-pages")],
+        runtime_servers=[notion],
+    )
+    monkeypatch.setattr(reviewer, "mcp_tools_for", AsyncMock(return_value=loaded))
+    config = _base_config()
+    config["configurable"].update(
+        {
+            "repo": {"owner": "acme", "name": "widgets"},
+            "repo_private": private,
+            "pr_number": 7,
+            "head_sha": "b" * 40,
+        }
+    )
+    surface = ToolSurface()
+
+    await reviewer.reviewer_catalog(config, surface)
+
+    names = {getattr(tool, "name", "") for tool in surface.base_tools}
+    assert ("notion__search" in names) is private
+    assert "notion__create" not in names
+    # The app's sign-in server joins Notion's rather than replacing it.
+    notion_tools = [{"fetch": "notion__fetch"}] if private else []
+    expected = [*notion_tools, {"mint_session": "hub__mint_session"}]
+    assert [server.tools for server in surface.mcp_servers] == expected
+    kind = ReviewerKind()
+    assert (await kind.tool(config, "notion__search") is not None) is private
+    assert await kind.tool(config, "notion__create") is None
+    # The prompt names what the reviewer can read, whichever side calls it.
+    run = await reviewer.ReviewerMCP.of_run(RunConfig.from_config(config))
+    assert run.names == (["notion__search", "notion__fetch"] if private else [])
 
 
 @pytest.mark.usefixtures("registry_db")

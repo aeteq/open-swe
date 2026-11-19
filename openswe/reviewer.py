@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 from langgraph.graph.state import RunnableConfig
 from langgraph.runtime import Runtime
-from runtime_api.catalog import InboxSpec
+from runtime_api.catalog import InboxSpec, McpServerSpec
 
 warnings.filterwarnings("ignore", module="langchain_core._api.deprecation")
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", category=UserWarning)
@@ -1051,40 +1051,84 @@ READ_ONLY_MCP_TOOLS: Final[Mapping[str, frozenset[str]]] = {
             "ai-search",
             "fetch",
             "get-comments",
+            "query-data-sources",
             "notion-search",
             "notion-fetch",
             "notion-get-comments",
+            "notion-query-data-sources",
         }
     ),
 }
 
 
-def _read_only_mcp_tool(tool: BaseTool) -> bool:
-    metadata = tool.metadata or {}
-    provenance = metadata.get("mcp_provenance")
-    return isinstance(provenance, MCPToolProvenance) and metadata.get(
-        "mcp_tool_name"
-    ) in READ_ONLY_MCP_TOOLS.get(provenance.connection_name, frozenset())
+class ReviewerMCP:
+    """The read-only MCP tools a review may use, from the instance and workspace tiers.
 
+    Never a person's own connection. A tool the backend serves comes as a tool; a server
+    the run connects to itself, through an MDA connection, comes narrowed to the allowlist.
+    """
 
-async def reviewer_mcp_tools(workspace: str) -> list[BaseTool]:
-    """The instance and workspace MCP tools on the read-only allowlist, never a person's own."""
-    return [
-        tool for tool in await mcp_tools_for(None, workspace, None) if _read_only_mcp_tool(tool)
-    ]
+    def __init__(
+        self, tools: Sequence[BaseTool] = (), servers: Sequence[McpServerSpec] = ()
+    ) -> None:
+        self.tools = list(tools)
+        self.servers = list(servers)
 
+    @classmethod
+    async def of_run(cls, cfg: RunConfig) -> ReviewerMCP:
+        """What ``cfg``'s review may use: nothing for a benchmark run, which scores the
+        stock reviewer, or a public repository, where anyone can steer a review through the
+        PR's text and what it reads from private pages could end up in its public comments."""
+        if cfg.is_eval or not await cls._reviews_private_repo(cfg):
+            return cls()
+        loaded = await mcp_tools_for(None, cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG, None)
+        return cls(
+            [tool for tool in loaded if cls._read_only(tool)],
+            [
+                server.model_copy(update={"tools": tools})
+                for server in loaded.runtime_servers
+                if (
+                    tools := {
+                        name: called
+                        for name, called in server.tools.items()
+                        if name in READ_ONLY_MCP_TOOLS.get(server.name, frozenset())
+                    }
+                )
+            ],
+        )
 
-async def _reviews_private_repo(cfg: RunConfig) -> bool:
-    """Whether the reviewed repository is known to be private; unknown counts as public."""
-    if cfg.repo_private is not None:
-        return cfg.repo_private
-    if cfg.repo is None:
-        return False
-    full_name = f"{cfg.repo.owner}/{cfg.repo.name}"
-    private = await ttl_cache.cached(
-        f"reviewer:repo-private:{full_name}", 300, lambda: repo_is_private(full_name)
-    )
-    return private is True
+    @property
+    def names(self) -> list[str]:
+        """Every tool's name as the model calls it."""
+        return [
+            *(tool.name for tool in self.tools),
+            *(called for server in self.servers for called in server.tools.values()),
+        ]
+
+    def tool(self, name: str) -> BaseTool | None:
+        """The backend-served tool a call names; MDA calls a server's tools itself."""
+        return next((tool for tool in self.tools if tool.name == name), None)
+
+    @staticmethod
+    def _read_only(tool: BaseTool) -> bool:
+        metadata = tool.metadata or {}
+        provenance = metadata.get("mcp_provenance")
+        return isinstance(provenance, MCPToolProvenance) and metadata.get(
+            "mcp_tool_name"
+        ) in READ_ONLY_MCP_TOOLS.get(provenance.connection_name, frozenset())
+
+    @staticmethod
+    async def _reviews_private_repo(cfg: RunConfig) -> bool:
+        """Whether the reviewed repository is known to be private; unknown counts as public."""
+        if cfg.repo_private is not None:
+            return cfg.repo_private
+        if cfg.repo is None:
+            return False
+        full_name = f"{cfg.repo.owner}/{cfg.repo.name}"
+        private = await ttl_cache.cached(
+            f"reviewer:repo-private:{full_name}", 300, lambda: repo_is_private(full_name)
+        )
+        return private is True
 
 
 def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
@@ -1128,16 +1172,12 @@ async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None
         raise ValueError("A review run needs a thread")
 
     models = await resolve_reviewer_models(cfg)
-    # Benchmark runs score the stock reviewer, without our workspace's connections. Public
-    # repos never get them: anyone can steer a review there through the PR's text, and
-    # whatever it reads from private pages could end up in its public comments.
-    mcp_tools: list[BaseTool] = []
-    if not cfg.is_eval and await _reviews_private_repo(cfg):
-        async with aphase(cfg.thread_id, "factory.mcp_tools"):
-            mcp_tools = await reviewer_mcp_tools(cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG)
+    async with aphase(cfg.thread_id, "factory.mcp_tools"):
+        mcp = await ReviewerMCP.of_run(cfg)
     use_gateway = models.use_gateway
 
-    surface.base_tools = reviewer_tools(mcp_tools)
+    surface.base_tools = reviewer_tools(mcp.tools)
+    surface.mcp_servers = mcp.servers
     if (app_tools := await ReviewAppTools.of_run(cfg)) is not None:
         await app_tools.offer(surface)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)
