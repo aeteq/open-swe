@@ -61,7 +61,6 @@ class ReviewerKind(RunKind):
                 config=config,
                 use_gateway=models.use_gateway,
                 model=models.main,
-                notion_tools=(await ReviewerMCP.of_run(cfg)).names,
             )
         ]
 
