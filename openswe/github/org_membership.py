@@ -14,7 +14,14 @@ from openswe.github.http import GitHubAppUnavailable, GitHubClient
 logger = logging.getLogger(__name__)
 
 # The GitHub Apps Open SWE acts as; events they send are Open SWE's own.
-OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset({"jarvis-aeteq[bot]"})
+OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset(
+    {"open-swe[bot]", "open-swe-preview[bot]", "openswe-dev[bot]"}
+    | {
+        login.strip().lower()
+        for login in ENV.OPEN_SWE_GITHUB_LOGINS.get().split(",")
+        if login.strip()
+    }
+)
 # GraphQL names a GitHub App author by its slug, without the ``[bot]`` REST adds.
 OPEN_SWE_AUTHOR_LOGINS: frozenset[str] = OPEN_SWE_GITHUB_LOGINS | {
     login.removesuffix("[bot]") for login in OPEN_SWE_GITHUB_LOGINS

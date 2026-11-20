@@ -96,9 +96,10 @@ jobs:
           # The project .env is forwarded as the deployment's secrets: the backend it calls back,
           # the model key, the secret it signs its calls to the backend with (the backend acts on
           # the channels' threads with the same one, as MDA's ingress secret), and the commit its
-          # traces name as their revision.
-          printf 'OPEN_SWE_BACKEND_URL=%s\nANTHROPIC_API_KEY=%s\nMDA_SERVICE_SECRET=%s\nMDA_INGRESS_SECRET=%s\nLANGSMITH_REVISION_ID=%s\n' \
-            "$backend" "$ANTHROPIC_API_KEY" "$MDA_SERVICE_SECRET" "$MDA_SERVICE_SECRET" "$(git rev-parse HEAD)" >mda/.env
+          # traces name as their revision, and who sandbox commits are by: the jarvis-aeteq App.
+          printf 'OPEN_SWE_BACKEND_URL=%s\nANTHROPIC_API_KEY=%s\nMDA_SERVICE_SECRET=%s\nMDA_INGRESS_SECRET=%s\nLANGSMITH_REVISION_ID=%s\nOPEN_SWE_GIT_NAME=%s\nOPEN_SWE_GIT_EMAIL=%s\n' \
+            "$backend" "$ANTHROPIC_API_KEY" "$MDA_SERVICE_SECRET" "$MDA_SERVICE_SECRET" "$(git rev-parse HEAD)" \
+            "jarvis-aeteq[bot]" "jarvis-aeteq@users.noreply.github.com" >mda/.env
           # Deploy reads the App's key from a file. Set all of the App's values or none: an App ID
           # without its key fails the deploy.
           if [[ -n "$GITHUB_APP_PRIVATE_KEY" ]]; then

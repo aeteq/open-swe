@@ -17,6 +17,7 @@ from openswe.expedited_review.reviews import REVIEW_BODY_PREFIX
 from openswe.github.comments import GitHubAuthError
 from openswe.github.http import GitHubClient
 from openswe.github.notifications import notify_slack_review
+from openswe.github.org_membership import OPEN_SWE_GITHUB_LOGINS
 from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest, PullRequestEvent, PullRequestPayload
 from openswe.human_review.lifecycle import close_for_pull_request
@@ -776,8 +777,8 @@ async def _process_github_head_update(
     if metadata is None or metadata.get("kind") != common.REVIEWER_THREAD_KIND:
         common.logger.info(
             "Push to %s/%s#%s ignored: no reviewer thread for this PR. "
-            "Trigger a first review (Slack `@jarvis-aeteq review <url>` or request "
-            "jarvis-aeteq[bot] as a GitHub reviewer) to start watching.",
+            "Trigger a first review (Slack `@Robin review <url>` or request "
+            "open-swe[bot] as a GitHub reviewer) to start watching.",
             repo_config["owner"],
             repo_config["name"],
             pr_number,
@@ -1160,10 +1161,10 @@ async def process_github_pr_comment(
     agent_thread_id: str | None = None,
     channel: PrCommentChannel | None = None,
 ) -> None:
-    """Process a GitHub PR comment that tagged @jarvis-aeteq.
+    """Process a GitHub PR comment that tagged @open-swe.
 
     Retrieves the existing thread token, reacts with 👀, fetches all comments
-    since the last @jarvis-aeteq tag, then creates or queues a new run.
+    since the last @open-swe tag, then creates or queues a new run.
 
     Args:
         payload: The parsed GitHub webhook payload.
@@ -1305,7 +1306,7 @@ async def process_github_pr_comment(
             authorized_login=github_login if common.thread_is_private(thread_metadata) else None,
         )
     if not comments:
-        common.logger.info("No comments found since last @jarvis-aeteq tag for PR %s", pr_number)
+        common.logger.info("No comments found since last @open-swe tag for PR %s", pr_number)
         return
 
     if (
@@ -1514,7 +1515,7 @@ async def process_github_review_finding_reply(payload: dict[str, Any]) -> None:
 
     sender = payload.get("sender", {})
     sender_login = sender.get("login") if isinstance(sender, dict) else None
-    if sender_login == "jarvis-aeteq[bot]":
+    if isinstance(sender_login, str) and sender_login.lower() in OPEN_SWE_GITHUB_LOGINS:
         return
 
     repo = payload.get("repository", {})
