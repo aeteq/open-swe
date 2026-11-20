@@ -535,9 +535,6 @@ async def test_a_private_review_reads_notion_through_either_connection_but_never
     kind = ReviewerKind()
     assert (await kind.tool(config, "notion__search") is not None) is private
     assert await kind.tool(config, "notion__create") is None
-    # The prompt names what the reviewer can read, whichever side calls it.
-    run = await reviewer.ReviewerMCP.of_run(RunConfig.from_config(config))
-    assert run.names == (["notion__search", "notion__fetch"] if private else [])
 
 
 @pytest.mark.usefixtures("registry_db")

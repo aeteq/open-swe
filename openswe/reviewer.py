@@ -154,7 +154,6 @@ def _reviewer_system_prompt(
     api_standards_skill: str | None = None,
     skills_prompt: str | None = None,
     review_apps: ReviewApps | None = None,
-    notion_tools: Sequence[str] = (),
 ) -> SystemPrompt:
     """The reviewer's system prompt: what every review shares, then what its repository's
     do, then what depends on the pull request's changed files and checkout, such as the
@@ -168,7 +167,6 @@ def _reviewer_system_prompt(
             "reviewer/main",
             reviewer_eval=reviewer_eval,
             approval_assessment=bool(approval_policy),
-            notion_tools=list(notion_tools),
         ),
         workspace=prompt(
             "reviewer/repository",
@@ -558,13 +556,11 @@ class PrepareReviewerRunMiddleware(BasePrepareRunMiddleware):
         config: RunnableConfig,
         use_gateway: bool,
         model: ReviewerModelChoice,
-        notion_tools: Sequence[str] = (),
     ) -> None:
         self._thread_id = thread_id
         self._config = config
         self._use_gateway = use_gateway
         self._model = model
-        self._notion_tools = tuple(notion_tools)
 
     def _prepare_config_fingerprint(self) -> Any:
         cfg = RunConfig.from_config(self._config)
@@ -584,9 +580,7 @@ class PrepareReviewerRunMiddleware(BasePrepareRunMiddleware):
 
     async def _prepare(self, state: PrepareRunState, runtime: Runtime) -> dict[str, Any]:  # noqa: ARG002
         await self._record_run()
-        return await prepare_reviewer_run(
-            self._thread_id, self._config, runtime, notion_tools=self._notion_tools
-        )
+        return await prepare_reviewer_run(self._thread_id, self._config, runtime)
 
     async def _record_run(self) -> None:
         """Attribute the run to its model before the transcript and usage observers read it."""
@@ -624,8 +618,6 @@ async def prepare_reviewer_run(
     thread_id: str,
     config: RunnableConfig,
     runtime: Runtime,
-    *,
-    notion_tools: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Ready the sandbox, checkout and diff, and render this run's system prompt."""
     cfg = RunConfig.from_config(config)
@@ -931,7 +923,6 @@ async def prepare_reviewer_run(
         api_standards_skill=api_standards_skill,
         skills_prompt=checkout.skills_prompt,
         review_apps=await ReviewApps.of(cfg),
-        notion_tools=notion_tools,
     )
     run_context = prompt(
         "reviewer/run-context",
@@ -1096,14 +1087,6 @@ class ReviewerMCP:
                 )
             ],
         )
-
-    @property
-    def names(self) -> list[str]:
-        """Every tool's name as the model calls it."""
-        return [
-            *(tool.name for tool in self.tools),
-            *(called for server in self.servers for called in server.tools.values()),
-        ]
 
     def tool(self, name: str) -> BaseTool | None:
         """The backend-served tool a call names; MDA calls a server's tools itself."""
