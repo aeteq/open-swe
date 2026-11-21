@@ -1,22 +1,26 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e70e1090bee422b59a27565dda8687c16a87d75a095b2cf576f663d511de85e1",
+  "pageVersion": "sha256:08760d269639e2b4b5d653c75eb1aec2f7f895ec9b97dbc9d1357b1552ca5627",
   "claims": [
     {
       "id": "claim_6cbbd97db30a4ea28cefabb033ed91f3",
-      "statement": "MCP connections are organized in three tiers—instance (global), workspace (per-slug), and user (per-login)—consulted in order during tool loading so later tiers replace same-named connections from earlier tiers.",
+      "statement": "MCP connections are organized in four tiers—instance (global), workspace (per-slug), user (per-login), and managed-gateway (LangSmith Managed Tools per login)—consulted in order during tool loading so later tiers replace same-named connections from earlier tiers.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/instance.py#L1-L30",
           "version": "repo-lines-v1:sha256:faa0e8e0f04fd6ac91f74e9415b915f3b18a495b6b6442e520bf17cb552650e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YzJjM2MxYmYxN2IxMjM1M2NlNmU0NmU2YzUyNGU1ZDEyMTVlYWFjNjI3MWVkZGU2ZTMzOTQ0YWU1OWEwZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNmU3Y2ExNDI4OTgyMzIxNzViYWUwZWNhZjFlN2E3ZmQwNzIzODAyMzFjZDc2ZTNkM2Q4MTZlMDYyOTAyNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNWRlMDFmNjVmNDk2ZTY1OTMwMzQ1NGQ1MTVkNzc3ODFkZjRmNmQ0OGFlM2UxYTM2ZGZlOGIyYjQ4MjZhNjEifQ"
         },
         {
+          "resource": "repo://openswe/mcp/managed.py#L719-L734",
+          "version": "repo-lines-v1:sha256:544dee133039e531816c977e1da873ef381a0f4fe619b4faeaa6dd8ef02b52b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMTQ1NmViNzg4NzM1NGUyMDVjNDgyYzEyYjUzMGFjY2RjZTY4ZmUwYjk0ZGJmZTA0MzA5NWJjZjQ4MTdmY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxY2Q3ZjIxMTEwMmRhN2I3Njc1YWM2ZTFjNzMyMDNiZDA3Njc5YjE5NTY2ODVmYWYxZDg2MTczMjIxMzkxYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
           "resource": "repo://openswe/mcp/runtime.py#L416-L466",
           "version": "repo-lines-v1:sha256:21cde8b2da652b81dd81411a98968facff8bdbbecfdc83b1a3aaff743255de7a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhYjAyOTViMTlkYmFhM2E0M2M3ZGZhNzM2YmJhYzEyN2Q2MjI4NGJhNWRhMDgwNTI5YWUxYTMyYWFhYTQ5ZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/mcp/tiers.py#L12-L26",
-          "version": "repo-lines-v1:sha256:623d4a33c0bf3fe571dcc39c9d0ada35dfca1c0398066ac493629877a4afbc05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/mcp/tiers.py#L10-L24",
+          "version": "repo-lines-v1:sha256:057fab42f2648d9d9db24cd8c6c1ea8d98d759e0edbedc77daaf0cbeadfe2a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://openswe/mcp/user.py#L1-L30",
@@ -30,19 +34,23 @@
     },
     {
       "id": "claim_b67072d4aeca42e5a8d8c2b5307ee389",
-      "statement": "MCP connections store encrypted tokens at rest with openswe.encryption, including OAuth tokens, client secrets, headers, and optional tool allowlists; stored in tier-specific Store namespaces (instance_mcps, workspace_mcps, user_mcps).",
+      "statement": "MCP connections store encrypted tokens at rest with openswe.encryption, including OAuth tokens, client secrets, headers, and optional tool allowlists; stored in tier-specific Store namespaces (instance_mcps, workspace_mcps, user_mcps); managed-gateway tokens are resolved fresh on each lookup and never stored.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/instance.py#L1-L30",
-          "version": "repo-lines-v1:sha256:faa0e8e0f04fd6ac91f74e9415b915f3b18a495b6b6442e520bf17cb552650e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YzJjM2MxYmYxN2IxMjM1M2NlNmU0NmU2YzUyNGU1ZDEyMTVlYWFjNjI3MWVkZGU2ZTMzOTQ0YWU1OWEwZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNmU3Y2ExNDI4OTgyMzIxNzViYWUwZWNhZjFlN2E3ZmQwNzIzODAyMzFjZDc2ZTNkM2Q4MTZlMDYyOTAyNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4ZDc3NGNiZDhiMWQ3ZDYwMDM3NjdiM2M5ZjI1OTIwZjczMTcxYTY1Nzg3ZjMxOTQxMDgyZjA5MTM5Yzk0NzAifQ"
+          "version": "repo-lines-v1:sha256:faa0e8e0f04fd6ac91f74e9415b915f3b18a495b6b6442e520bf17cb552650e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YzJjM2MxYmYxN2IxMjM1M2NlNmU0NmU2YzUyNGU1ZDEyMTVlYWFjNjI3MWVkZGU2ZTMzOTQ0YWU1OWEwZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNmU3Y2ExNDI4OTgyMzIxNzViYWUwZWNhZjFlN2E3ZmQwNzIzODAyMzFjZDc2ZTNkM2Q4MTZlMDYyOTAyNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNWRlMDFmNjVmNDk2ZTY1OTMwMzQ1NGQ1MTVkNzc3ODFkZjRmNmQ0OGFlM2UxYTM2ZGZlOGIyYjQ4MjZhNjEifQ"
+        },
+        {
+          "resource": "repo://openswe/mcp/managed.py#L685-L710",
+          "version": "repo-lines-v1:sha256:48ef6fda070d539548d5124a961abbba5a14d0c994aec6b7140b690eb276f8f9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwODY2MmM4M2RjOTVmNWNlOTFjOTM3NDI3NjE1MmYxM2Q3OGViYjVkNDY0MmJkNzRhMGEwZjAxNDVlZDMyZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4YTE5YzQ5NGE0NDJkNGUyMzJhMzJkNGE0NzZmNjE1YjVlMDhkZjZiODkzMjhmNmJiNWI1ZjBkZDc1NjU2MjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyMjlkYmZmM2E2ODY1YzA0ZmU4ZTc3MzFmZGRkOTBkZDBjOWFkMjE3OTc0NThmMjBlYTE4ZjMwNmZjMjNjZWUifQ"
         },
         {
           "resource": "repo://openswe/mcp/records.py#L28-L30",
           "version": "repo-lines-v1:sha256:e314e068511d6bdfc363fc86dcf89ed24733177c7ea8513f3fbfc71556bf34ff:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmJmM2MxOGFlNzU0OTZmMzQ1ZjdiNWY0OGUwZjE5MmUzMjExNzRiN2NkNWI1ODhlMTdmYzU4ZGQ5NDk5ODU5OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZmJmNmJmMmIxYmYwOWYyODZlODVlNGYyM2IzOTMyNmJjOTc0ZWIwNDBkMzNmYWFkZTliNTY4YjUxZGRkNDNkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGU4NDViOWY0ZWU3MWMyYzhhYTI0Njk2OWMyOTAwNDRkODk4YmM0ZDY1ZDVmZWRmMjg5NWMzYmM2ZGFkM2JkNiJ9"
         },
         {
-          "resource": "repo://openswe/mcp/workspace.py#L62-L88",
-          "version": "repo-lines-v1:sha256:732827b37f11dce05585f231076bbd47620616f4aa59233671358319251777ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjczMjEyODhmZjJiYzdiZjNmYzI0NDY1ZDBhNDI0OWZlYWU0M2E5OTk1NjY2NGQ0ZDIwZjczNzI0NzA0OTg2YTEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwZjcxYTRjNjMwNjFlMDE5NmFmM2NiZTM2ZWZlYjNmYmFiMTVlNzg1NjhmNzE1OGM3ZDg4NWIzNDc3MDZiNzAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjFiMmZkNGI1MjI0ZGQxNmM5YzgzYTk4MjQzNjQyMjg4OTQ2YWFiZDUzZmE2MWNmZGRiZGE2NDEyNDJmM2I3OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkzYmZmYmMzMTU1M2NkNTlhMjg1ZDY0Y2M0ZTUyZmEyZjhhZjQ0YzYyZDQzMWNlYzIxMGY2ODYzZGQ4YTIxODkifQ"
+          "resource": "repo://openswe/mcp/workspace.py#L62-L105",
+          "version": "repo-lines-v1:sha256:9bdc08e90d386d013bdf56bde45ce1a9a76e8def3981f170561a8069893214fe:eyJzZWxlY3RlZExpbmVDb3VudCI6NDQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc2YTNmNTQ1YWJhNGQ4YWU3NTUwMWY5NjVmYzZhZGRmYWYxOGQ2YWFkYjEyMjJmODY4NDk3N2JkZDYzOTkyMzUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxOTA4ZDY5ODQxZjc1YjRlYmI3ZjljZTQwMDBjYjRlNzQ4ODc3MjVkNzJkZWY1YTgwM2U1M2M5NjFiYzE4ZTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAyOGUwNWU1ZThlZWEwYTk5OTQ0N2VmZDY4MzY5OGViZWI3NTlhYTNmOGZiMWY0NzA4OGIzOTdlOWQ3OWYyZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -51,22 +59,22 @@
       "statement": "MCP tool loading defers the server handshake via DynamicToolMiddleware until the agent explicitly calls load_integration_tools, exposing only tool names initially to avoid blocking the first model call when availability is uncertain.",
       "evidence": [
         {
-          "resource": "repo://openswe/mcp/tiers.py#L12-L26",
-          "version": "repo-lines-v1:sha256:623d4a33c0bf3fe571dcc39c9d0ada35dfca1c0398066ac493629877a4afbc05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/mcp/tiers.py#L10-L24",
+          "version": "repo-lines-v1:sha256:057fab42f2648d9d9db24cd8c6c1ea8d98d759e0edbedc77daaf0cbeadfe2a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/middleware/dynamic_tools.py#L117-L170",
-          "version": "repo-lines-v1:sha256:76e2a9097a2dea75564c7ff70bcad3315e1e3fba9c8ca00bf595f161616cc7b7:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0MGYxMjBhNDdkYWE5MWY1Y2JkYTcyZmIxMGI1YWFlMjIzMWE2N2U3MWMyYjNiYThkZDE4MWRkMjJiZmQ1YzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcyNjQxMjkyNTBhOThjZWRjOTlhMjkxZGM4OTkxZjViYTIwYzcyNjdkYzU5ODc0MjU0NDNhNWIzMjVmYjMwOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3NjI0Yzk3ZTlkNDMwNzU0ZGFiZTY3MmM1ZjE3ZWQwYWUzMTA5Y2JhM2ZmNDBjYjlmMDE0YTUxZTg2M2I1NTIifQ"
+          "resource": "repo://openswe/middleware/dynamic_tools.py#L28-L30",
+          "version": "repo-lines-v1:sha256:a1055882593d391625845afb4d1a182f9dd4b726b1d274e1edd551253f09774d:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNzY2ZTQ2Yjg2MTE4MTdmNGE0YWE4YzVhN2I5YzdkZmY1N2EyODMzOTNhZTlkZmNjMzIyN2Q5MjAyODI1Nzc2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2RiZTUzMmIyMTMxNDMyMjQwODExMGZiOWFjMDI2ZGIxYjg3ZjVlNDE2NzhhNWU0ZWU3MGM0YzA0YTVmYzM3ZiJ9"
         },
         {
-          "resource": "repo://openswe/middleware/dynamic_tools.py#L57-L90",
-          "version": "repo-lines-v1:sha256:3e24ec1412dd27796cd3e1ea56e86e8e617413153a54db0aaff1b2ea0d9af08d:eyJzZWxlY3RlZExpbmVDb3VudCI6MzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhY2RlYmVhMDUyYWQ4Yzc5Y2RiZWU5YWY0ZTFlN2U0YzcwYTFhNWY5MmI0ZWVjNjMzNzFjZDM3MWQyOTE5OGYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2MzdlZmZkMDNhZGZlZjY2YzA0MjIyYzBmYjdjZGFmZDlhODM4MGEwMTIwYjU1NGZlMjYxNDMwY2RmMjI5MjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmNjNhYmUzMzA3Yzg5NTA3MGFhNDZmZjE1Y2JkYzUxYjY2YTlkYjY5NGQzM2M4N2NjNGY1OTg5MjNiMWE3YTAifQ"
+          "resource": "repo://openswe/middleware/dynamic_tools.py#L57-L115",
+          "version": "repo-lines-v1:sha256:aa49ecb96adc7416b55076a3a36c8f24605e9cde112e19e6727e51f36963c2c4:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2OWExMzk3NWMyNTZlYzgzMjBlMjAxNjA4M2M5NmRmNjM3Y2EzZDM1YmViZGUyMzE0YmVlM2E0NzExYjU2Y2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2MzdlZmZkMDNhZGZlZjY2YzA0MjIyYzBmYjdjZGFmZDlhODM4MGEwMTIwYjU1NGZlMjYxNDMwY2RmMjI5MjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI4ZGU2MjA3M2JhMjkzMGViYjdkZTA2NjY2ZTViNDdjZWNjMTA2MTNkOTRmNDI4YTc5YWYxYmJjM2JhY2JjNTIifQ"
         }
       ]
     },
     {
       "id": "claim_80847cc9342e4131a3f358c29563b8da",
-      "statement": "MCP tool loaders use TTL caching (300 seconds typical, 24 hours max age) and per-load timeouts (30 seconds), returning an empty tool list on exception or timeout rather than failing the run; Store reads are fail-soft so unreachable backends cost optional tools, not the run itself.",
+      "statement": "MCP tool loaders use TTL caching (10 minutes typical, 24 hours max age) and per-load timeouts (30 seconds), returning an empty tool list on exception or timeout rather than failing the run; Store reads are fail-soft so unreachable backends cost optional tools, not the run itself.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/runtime.py#L35-L50",
@@ -80,15 +88,15 @@
     },
     {
       "id": "claim_887a1a021481457a8a007dd788d64d81",
-      "statement": "During agent assembly for non-local, non-summary runs with known credential scope, MCP tools from instance, workspace, and user tiers are loaded concurrently via asyncio.gather.",
+      "statement": "During agent assembly for non-local, non-summary runs with known credential scope, MCP tools from instance, workspace, user, and managed-gateway tiers are loaded concurrently via asyncio.gather.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/runtime.py#L416-L466",
           "version": "repo-lines-v1:sha256:21cde8b2da652b81dd81411a98968facff8bdbbecfdc83b1a3aaff743255de7a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhYjAyOTViMTlkYmFhM2E0M2M3ZGZhNzM2YmJhYzEyN2Q2MjI4NGJhNWRhMDgwNTI5YWUxYTMyYWFhYTQ5ZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/mcp/tiers.py#L12-L26",
-          "version": "repo-lines-v1:sha256:623d4a33c0bf3fe571dcc39c9d0ada35dfca1c0398066ac493629877a4afbc05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/mcp/tiers.py#L10-L24",
+          "version": "repo-lines-v1:sha256:057fab42f2648d9d9db24cd8c6c1ea8d98d759e0edbedc77daaf0cbeadfe2a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -197,8 +205,8 @@
       "statement": "User tier MCP connections require authorization verification via private_credential_login to ensure only private thread owners can access personal integrations.",
       "evidence": [
         {
-          "resource": "repo://openswe/mcp/user.py#L60-L68",
-          "version": "repo-lines-v1:sha256:51479cbf478bb6afe6600276eb797541237e08bdf453f4f23ea012c37248b748:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzY3MTQzMGEyMTA4ZThiZjdmZjRmODFiNzVmYWI3ODU4MTE4YjJhZDczNjMxOTQzYjBmYmNiYmRjZTI1NjgyYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOTQxZWQyNjQ1ZWFkYTc2NzYxODFlMjk5NmU3OWQ1YTA3MTQ5NDlmMmZhMDY4N2IwZjMyYzBhNGUyYzhiOTJhYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjA4OWRlNTMwZGE1NTBjYzY2NzVlMDk5OTgyYzQ5NWY2MTAwMzc3N2QzZDczMjJkN2JkZjMxYmVjMTk1ODZjMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
+          "resource": "repo://openswe/mcp/user.py#L60-L70",
+          "version": "repo-lines-v1:sha256:89521efde1fe5ea956e9cfcdaa4fb950d43242854d0fe01bda504669d7c3e992:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MWVkMjY0NWVhZGE3Njc2MTgxZTI5OTZlNzlkNWEwNzE0OTQ5ZjJmYTA2ODdiMGYzMmMwYTRlMmM4YjkyYWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE0OWMwOGZiMjA5YmViOGQ5MDNjYzk3MTliMDk5NTliNTYzNGI4NjM1NjNhMTU2OTQ2MmE2OTY5NDBmMWM3N2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -237,10 +245,56 @@
           "version": "repo-lines-v1:sha256:3ca5247968c754e2310d190c647126e571b9a65d6cb2ee6d2626fb44fc0ce531:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4YjU4ZTlkZTEyMTA2OTM4ZGFhOGJmNzRhYjBmMjI4YTQ4MTVlNzJlZGEzMmIwNzZhNTRmZThkMjE4NzA0ZWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlMjYzNThjYTZiMzYwMTEwZjMzMmNlNjBiZDQ2NjdlZDY1YWQ4YzFkYzc3ZTllNjJmZDg2NGQ4NjE3NTZiMjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzOTJmZTAwYzdmOGZiNzBkY2M2N2NlZDQyN2QyZDgxYmU5YWU2NmMyZTE2NTg1ODRhYjY4MTQ1YTg0MjQxNGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhhZmE1NDkyMzBlODY2YjdiMzI0NzM3YmEzYTUyMTk3ZTI3YmM0YWRkNGZkZjFmM2I1MTFlYTEzNzU1YWEzYzYifQ"
         }
       ]
+    },
+    {
+      "id": "claim_40405a368b244decb9840368ecc5f191",
+      "statement": "Managed-gateway MCP connections carry fresh LangSmith OAuth tokens on every lookup; tokens are resolved via langsmith_access_token() and never stored, ensuring expired tokens never block tool invocation and workspace admins never see user credentials.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/mcp/managed.py#L189-L200",
+          "version": "repo-lines-v1:sha256:dc95e640d529f6d78c0d14edf7d43ba5584afe0411f0aadd3491e32325ec0a50:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA0MmU3NGRjYzI1NjEwN2E4MmQxZDlmNDkzNzQ4NTRiNjdjZGIxOTZjNDQ2NWMzNzEyZmVjMjE4Mjc2YTI0ZmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxNGEyOWFmNGY3MjIzZTE0ZjlkMmVmMmIxZDc3NzIwNTg5NTRhMzdhODRiNGFhYzRlNDZhY2JiZjNkNzI0ZDYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyN2U3MDk2YWM5MjhmMzZlNTBmNTkxYTA0MjU3NmVhODdkOWY5NGYxMmVjODA5NzlkNmNkNzAzOTgzOWVlN2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0MzZlMmRjZjM1NWFhYWQzNWIwODlhNzY1ODQxNzhlYzE4ZGIxOTdjZjU0YmE1MzVmNTAwNjIxYzIyZDg1M2IifQ"
+        },
+        {
+          "resource": "repo://openswe/mcp/managed.py#L685-L710",
+          "version": "repo-lines-v1:sha256:48ef6fda070d539548d5124a961abbba5a14d0c994aec6b7140b690eb276f8f9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIwODY2MmM4M2RjOTVmNWNlOTFjOTM3NDI3NjE1MmYxM2Q3OGViYjVkNDY0MmJkNzRhMGEwZjAxNDVlZDMyZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImY4YTE5YzQ5NGE0NDJkNGUyMzJhMzJkNGE0NzZmNjE1YjVlMDhkZjZiODkzMjhmNmJiNWI1ZjBkZDc1NjU2MjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcyMjlkYmZmM2E2ODY1YzA0ZmU4ZTc3MzFmZGRkOTBkZDBjOWFkMjE3OTc0NThmMjBlYTE4ZjMwNmZjMjNjZWUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_fad3572dda044e0da2c7177061ac6dcd",
+      "statement": "Managed-gateway tools are gated by user authorization via private_credential_login(), matching the user tier's requirement so only private-thread owners can invoke managed tools, isolating user LangSmith tokens and provider credentials to the authenticated user.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/mcp/managed.py#L719-L734",
+          "version": "repo-lines-v1:sha256:544dee133039e531816c977e1da873ef381a0f4fe619b4faeaa6dd8ef02b52b5:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFjMTQ1NmViNzg4NzM1NGUyMDVjNDgyYzEyYjUzMGFjY2RjZTY4ZmUwYjk0ZGJmZTA0MzA5NWJjZjQ4MTdmY2UiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxY2Q3ZjIxMTEwMmRhN2I3Njc1YWM2ZTFjNzMyMDNiZDA3Njc5YjE5NTY2ODVmYWYxZDg2MTczMjIxMzkxYzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://openswe/mcp/managed.py#L723-L727",
+          "version": "repo-lines-v1:sha256:88777ac83b98e41e42e7be68dd963076932db9c4f870aa9176a37dc0cb6c0acc:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYTRhZTA3ZTZmMzk0NDczMzM4NjJiYTAwMTdlMGFhMjhmMzlmNTQ1ZDNiODY1ZDgwNmY1ZGE1NDg1YzQxMjYzMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDZlNzU3ZjU0MWJmYjVlM2I5NzBiMjllMDdkOGNhOGYxZjEyYmZkMmJkYjA1NTczZWU4MTMxOGM1NmI3Y2ZiNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2FmMjkyMjc2MTVhM2JhZTdlM2Q1M2FiZDI5NjkwNWNkNDVjZjZiZDU1ZDE4NTFmZmVkNmIwMzkzZTQ2NzAxMCJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_09828ac3b6b2458684f8c03a6791b096",
+      "statement": "LangSmith Managed Tools gateway integration handles incomplete service credentials with a 428 response and consent links; the gateway returns no tools until all required services are connected, or returns partial tools when services are optional; refresh_tools() re-queries the gateway after service connection.",
+      "evidence": [
+        {
+          "resource": "repo://openswe/mcp/managed.py#L239-L252",
+          "version": "repo-lines-v1:sha256:499ba83f92502272f20684c4434d67448c136d567291a199683488995823aed9:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU1NWVkZWEyN2ExNzljYjc0Zjg5MjgxMWEyNDI3MzBkNDgwOGRkNzQxZTBkNjgyN2I2NmM2OGYzNDk4MGU0NzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwNjE3YjAyYjY1NWEyOWQ3ODU3MTQyNjY3NjViMzhlZWQyZTJiM2NlMGMxNGI1ZDU0MGE4Y2FiMmM4ZGRiNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg3OTExMTJmZGMxYTZhNGUzNTQ5YjRkZGI1MzBhYzg4MGQ2NzdlZmJjZjY3YWYxYTYwMTcyODkzNzBlN2JiN2EiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkNDFkYTU0NmU5ZGRlMzZhYTgzNGIwODU4Y2ViZjYzODAwZThlNGM1MmM1MzJlODZkNTgyNWE3MjJmNjgyYjcifQ"
+        },
+        {
+          "resource": "repo://openswe/mcp/managed.py#L524-L543",
+          "version": "repo-lines-v1:sha256:80f2c2a3775b8e0f2dab215bac36cd6720efdc68ba4149fff8ec4efbcc192408:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiYTk5Njg3ZGIyMTJhYWNlYWQ1ZThhMDIwOWJiMjAwNDYxMzYwZjUyYTk3OGYxM2NlYjFiMGUwNjAxMDJkOTMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQ3MjIzMTA2ZmQ4NzQyYjcwZWEyMzNmOWRjMzU5ZjRiMDJiYmIwNjliNzI4M2VlZjc2MjQ5OTUxNmJkN2I5YzgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4MzNjNTU0ZDVmOGU5NDhhYWJiNTAxZjQ4YjMyMGQwODJjMGU2YWE5NjlkYzk3YzkxYjNjMzA2ZDA1Mzc5MWYifQ"
+        },
+        {
+          "resource": "repo://openswe/mcp/managed.py#L637-L639",
+          "version": "repo-lines-v1:sha256:42f596c7a01389f7d1e10ac0db75f0191e255a16d737d34da125ce365a48feec:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzJhYTcwNzYyMWIyNTRhOThlZjVkNWE4YmE2YTNkNDdiMmNmYzU1OWViYTRjMWM2YTM0NTAwMDY0Y2NiMDhjYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWU3YzRhOTY1ZGUxZDIwYTRkNzAzNzIzNzdmODdmMmY0MTFkMWQ2ZDkwYWVmZmI0M2QyZGE4NjdmZDkyZTAwOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjNkZjJhY2YwNmU4YzNmMDNjNzEzNWM2ZThhYzVhOWNhNTQzMmFiZTA2YTc0YWNhMGZkZDlhNTNhMDA4Zjk4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMjI5N2RhMjlkYjM2MWU0MWQ1NWNmMmVkNDkzOTc1N2UxOTJlOGNhNjZjYjM5ZGVjMTgzYmRhMTNjY2M1ODQ1NyJ9"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-21T15:59:40.690Z"
   }
 }

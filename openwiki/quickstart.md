@@ -25,7 +25,7 @@ sources:
 generated: { by: "openwiki/0.4.2", at: "2026-11-02T18:01:41.066Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-21T15:59:40.690Z
 ---
 
 # Quick Start: Navigate the Open SWE Codebase

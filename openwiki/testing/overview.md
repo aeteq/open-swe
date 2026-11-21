@@ -1,8 +1,11 @@
 ---
 type: testing strategy
-title: Testing Infrastructure and Validation Patterns
-description: Test organization, fixture strategies, E2E setup, and focused validation patterns for agent behavior, middleware, integrations, and production boundaries.
-tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
+title: Testing Strategy and Patterns
+description: Test organization by owner, shared fixtures and isolation, deterministic pytest patterns, E2E escalation, and focused validation patterns for agent behavior, middleware, integrations, and production boundaries.
+tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes, unit-testing]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-21T15:59:40.690Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -36,13 +39,10 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-21T15:59:40.690Z" }
 ---
 
-# Testing Infrastructure and Validation Patterns
+# Testing Strategy and Patterns
 
 The testing strategy separates concerns by layer: focused pytest tests for agent, middleware, reviewer, sandbox, and webhook behavior; dashboard Vitest for React rendering and client state; desktop Node tests for Electron main-process code; and Playwright for real webhook, authenticated dashboard, git/sandbox, and Electron integration. Choose the test layer that owns the contract being changed, running it in isolation with fakes and mocking only external boundaries.
 

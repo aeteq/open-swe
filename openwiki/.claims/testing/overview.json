@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:0985138e9a0474b3c454984b887539a1d8a44b3d7bf6397d58d5d8a88f6f3f33",
+  "pageVersion": "sha256:1d1b1d57b333eb2bb47d97d8c3b9bdeee932670ab7b45158eec8d4f25777c475",
   "claims": [
     {
       "id": "claim_9a77e9c5301a46b8bbd02832b9de5a90",
@@ -31,8 +31,8 @@
           "version": "repo-lines-v1:sha256:4acc6a762f11eefc5086577d8339b55c7b8337df97164ffad72a7acd6aae3220:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzZjNTgwMTljOTcwZTNiMTczMmFlNjZjOTAwODU2NDM4MjQ2OTUzZjEyY2JhMjlkNjE5YjAwNTcyZmZmMjQ1NyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZhYmIyYTMxZDhjZDE1OTA2ZjBkZDhlZmMzZDFmYjVhZjRlZGY4ZTZlZTY5YzQ2ZjAyMmIwNGRmN2NiYjQxZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFmNzc1NjM2MTQ0YzU5YTlkMmMwOTM2Zjg3NzRkZWEzY2I5NTgxZmFiMzY5MjdhZjFlMTAyYzQyODgwZTY0NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOGU3OTFlZjI4YTZmZGM4Y2RhNDlkMzk5ZjdlZTk1Mzk5ZTFiY2Q2YjA2MDgxNDNhOGU5ODlmMTZiMjhhYTgzZiJ9"
         },
         {
-          "resource": "repo://pyproject.toml#L54-L60",
-          "version": "repo-lines-v1:sha256:fa07a07a6f37083623e1278f16dcc1dfdc0b65b1298b6a98446883812b24981c:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYjhhMzNmNWI2YzljZjg4NzRkYTkyODQ2ZmUzYmJkMzljNzdmZGY4Mzk1ZWI1Yjg0MmNhNzA1ZGQ1YjE0M2QzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjk0MTZlMDlmNzhiYTMxNmMwMzI1NjgyMTNiODU1ZWU3NTZlNDE1NjVkOTE4ZjA5NTE5YzgxZmQ2MjBmNDA2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTQzNGRhZWIyMmM4Y2E1M2JmOTlmZjJkNmRkMjAxMmNjNjAzYWQyNzBjODk3OGMzYmIwY2M0Y2FjZDIwZWJhZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDRlM2Y4MjdjNzhmMzhhYTAxZWMwNjYyNzRlMzFjZjJmZWE2ZDU1ZTMwNThmNDgwZWY4MzRjMTdhNjk0ODVmMiJ9"
+          "resource": "repo://pyproject.toml#L52-L60",
+          "version": "repo-lines-v1:sha256:304075239648aa3f3607b179600203c70f603d7a9b44abe89698dfa383a2e06a:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTkyMThkYzRjZTk3MWNiZTNkMzhkNzc0MzBlNjM5OTE4ODg0ZGQ3N2Q3MTg0YzdiOTNkZmRjMmU5OTg2OTFiNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZjk0MTZlMDlmNzhiYTMxNmMwMzI1NjgyMTNiODU1ZWU3NTZlNDE1NjVkOTE4ZjA5NTE5YzgxZmQ2MjBmNDA2MCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDRjZjJlOGM4MWNhZmI4YjNiMWZiM2Q4ZGZmODU5YTJjMGE1NjI0NDU0YjhiYTRmZDdmMDQ4NjBmODEzYTNkNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDRlM2Y4MjdjNzhmMzhhYTAxZWMwNjYyNzRlMzFjZjJmZWE2ZDU1ZTMwNThmNDgwZWY4MzRjMTdhNjk0ODVmMiJ9"
         }
       ]
     },
@@ -153,8 +153,8 @@
           "version": "repo-lines-v1:sha256:b30a1dd94e9048714ce28bc3205ced78b3ccb80129dcb56746d93b981fab55b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzgxZGJiZTM5NDc2MjY2M2VjYWZhNmIwMDc3OTI2MDc0MDU2ZmIxZTgzNDdhMDA4MmNkOTFiMTI1NDEzMWVkOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMWYwY2RiOTcyYTdiZmI3ZWQyNDZmOWZmNjcyMzg1ZTU1ZjQ5NjhmYzExMDQzZGM1YjY4NGQ1MWRmYTMxZGJjYiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTliYzBjYzk4NjczNmVlMTc5Y2FlZTcyOGE3ZDZkYmY1MDlhYzExMWU3OWY1OWRhN2UzMWZiZTZlOWYwZDUzOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYTVhZjhiZWZkN2NkNmJmOTMwN2Q1NDcyZTRiNTg4YjdmYmExZmU5NjVjYWE0Y2RkOTVjODMzNzhkZjQ3MTIyYyJ9"
         },
         {
-          "resource": "repo://ui/package.json#L9-L9",
-          "version": "repo-lines-v1:sha256:241fc249efa71b0e7a97f7f4eb8b89494a59cb3f87d71be6aad63aa3ba5e3d3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQxZmMyNDllZmE3MWIwZTdhOTdmN2Y0ZWI4Yjg5NDk0YTU5Y2IzZjg3ZDcxYmU2YWFkNjNhYTNiYTVlM2QzYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQxZmMyNDllZmE3MWIwZTdhOTdmN2Y0ZWI4Yjg5NDk0YTU5Y2IzZjg3ZDcxYmU2YWFkNjNhYTNiYTVlM2QzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDM1NGY2MWFiYjRiNTMyZTVmZGJmNWMxMjczZGU2MGJiOGNlNTc0MmFhMDUyNmZhNDM5NGEyZmEwMjkxNDlhOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDUwM2I1MTcwZWM5MjBiYjlkODUzNjlhMGVlNGY2M2RjNTEyOTY2ZGJiZTU5NmRjOGJmODE3YTgzMTYzNGEwMyJ9"
+          "resource": "repo://ui/package.json#L10-L10",
+          "version": "repo-lines-v1:sha256:241fc249efa71b0e7a97f7f4eb8b89494a59cb3f87d71be6aad63aa3ba5e3d3c:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQxZmMyNDllZmE3MWIwZTdhOTdmN2Y0ZWI4Yjg5NDk0YTU5Y2IzZjg3ZDcxYmU2YWFkNjNhYTNiYTVlM2QzYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjQxZmMyNDllZmE3MWIwZTdhOTdmN2Y0ZWI4Yjg5NDk0YTU5Y2IzZjg3ZDcxYmU2YWFkNjNhYTNiYTVlM2QzYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTFjOGMxYjlmZThkYmM1NDM0ZWJkNGQ4MTM0ZjA0OGYzZjM1MTJjMTdhYjI3YWE5YjRlZjk1YTJhZmQ1ZDBlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDUwM2I1MTcwZWM5MjBiYjlkODUzNjlhMGVlNGY2M2RjNTEyOTY2ZGJiZTU5NmRjOGJmODE3YTgzMTYzNGEwMyJ9"
         }
       ]
     },
@@ -173,8 +173,8 @@
       "statement": "The Electron e2e test resets shared harness state, clones the seeded local bare remote into an isolated temporary project, injects a harness-issued osw_session cookie, runs a local-agent request, and verifies both the local project edit and fake-GitHub PR fields.",
       "evidence": [
         {
-          "resource": "repo://tests/e2e/tests/desktop.spec.ts#L91-L127",
-          "version": "repo-lines-v1:sha256:4f8cd8e2093629f7e50264c9ac4f67818c01c50259e4216cae179e587c823d15:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhM2U0NmY5NDI3NmI2ZjZmNGVkMWYwMmFmNzhiZWY2YTJlZTFjNDM5ZGQ1NTg0Yjk3Mzk0ODMxMzIxNGQyYjciLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZTQyMDhjZDZmZmI4YzRhMzU0N2IyZjU0YWRhMTk5NzhjM2YzNjVlNzhmOTUwMmVmNTE0NWNkZDJhYTg1NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImRkNmM3NDM2NGI4YjA5N2VlZWM5NWZlZDI0NDBiMmZkMzcxYTViMzlmOWEyOTJiZTYzNGYzYjM4NmJkYTViZmQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzY2JlYTJkOTgwMzhhNTdjNzhhZTVjZDU5NGEzODZjMTAxNjI5YTI5NDkyYjM0YmZlYjllOWYwNDcyZTYyMWMifQ"
+          "resource": "repo://tests/e2e/tests/desktop.spec.ts#L47-L127",
+          "version": "repo-lines-v1:sha256:17343d2125fee979bbfd5e514935a974d9586731e48198296404531e961ffe68:eyJzZWxlY3RlZExpbmVDb3VudCI6ODEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2NDA1NzZmMzM3MjUwZjI2ZWMyNjhjYzYwZGUzNzMxYWJhYzhmNDQ2ZDA1NjRkZDk0YzllYWIwZTM3ZDc3OTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0ZTQyMDhjZDZmZmI4YzRhMzU0N2IyZjU0YWRhMTk5NzhjM2YzNjVlNzhmOTUwMmVmNTE0NWNkZDJhYTg1NDMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImJmOTk5YWYyNDFlYjdmODE0OTNiMjUzYTc3Mjg2ODZjZDVmMGE3ZmMzNzc1NGRiNzM0OWRlOTkxZWQ5MWRhZmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImQzY2JlYTJkOTgwMzhhNTdjNzhhZTVjZDU5NGEzODZjMTAxNjI5YTI5NDkyYjM0YmZlYjllOWYwNDcyZTYyMWMifQ"
         }
       ]
     },
@@ -193,8 +193,8 @@
       "statement": "Sandbox-state tests require the backend proxy to remain BaseSandbox-compatible for capture offload, delegate or safely fall back from offload, share one concurrent reconnect, survive waiter cancellation, retry failed startup, and recover a sandbox ID from live thread metadata.",
       "evidence": [
         {
-          "resource": "repo://tests/sandbox/test_sandbox_state.py#L35-L170",
-          "version": "repo-lines-v1:sha256:ad7c37d6ce1a26e9b81e40294f4970b1daffefbfcb6e57be38bbe39c40f1c683:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM2LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJiZDk5NDJkZWI3ZGJhYmMxMTRiMWM0OGQwMmRhNDYzODZlOWFjYTUxNWE1MmZiN2IzYzQxMmRjNjI3OTIxYjA4IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI4OTE0M2MzN2IzMjFkYWE3YjExZTY2Y2I5OWRiOTQ5NzhmOTYxY2IwMTc3Njk5ODdkYTg1Y2IyYWJmNzFjNzcyIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI2NzAyY2QyNmEzYjI4Y2Q0MDQ0OTgxN2E2MjNiM2E1ZGMyMzYwZmI5OTZlNDU2YzFmNTNjYTI5YmVhYmY4MTNiIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MCwiZm9sbG93aW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1In0"
+          "resource": "repo://tests/sandbox/test_sandbox_state.py#L35-L80",
+          "version": "repo-lines-v1:sha256:f65e3b0e11fb53b4162580aaca6818d37964a65f72d37106151566878c777888:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkOTk0MmRlYjdkYmFiYzExNGIxYzQ4ZDAyZGE0NjM4NmU5YWNhNTE1YTUyZmI3YjNjNDEyZGM2Mjc5MjFiMDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFjMDExOGY4NGUyM2Y4ZTZkNTgxMDQwODYwYWMwMmNkNmVhMTE2NWYwOTI2MjQ1NDEzOTliYmE3NmFlOWZhOTciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY3MDJjZDI2YTNiMjhjZDQwNDQ5ODE3YTYyM2IzYTVkYzIzNjBmYjk5NmU0NTZjMWY1M2NhMjliZWFiZjgxM2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBjZDYwNTkwNWYyMGZlMjMzYTEzZWE0YTM1YzBjOTZmYmJiMjVkYTQ2MGU2MTcxMWU1ZjA5NWVmNmUxZWFkYmIifQ"
         }
       ]
     },
@@ -203,8 +203,8 @@
       "statement": "The Electron e2e spec explicitly traces its Electron context, attaches screenshots for unified and completed local-agent views, and removes temporary desktop state unless E2E_KEEP_TMP is set.",
       "evidence": [
         {
-          "resource": "repo://tests/e2e/tests/desktop.spec.ts#L91-L227",
-          "version": "repo-lines-v1:sha256:aae4e534ccf40c9ea62a3e128f4e7f0fd269e40a39b847f2e583e9221e295e2e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTM3LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIzYTNlNDZmOTQyNzZiNmY2ZjRlZDFmMDJhZjc4YmVmNmEyZWUxYzQzOWRkNTU4NGI5NzM5NDgzMTMyMTRkMmI3IiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJmNDMyZTI3ZWM5MjZkMjM1ODYxZTZlNmRkODY1NmIxZmZjOWUxOGZkNDAzMjMzOTE4NzBjNjNlNDY4NzBlZmFkIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiJkZDZjNzQzNjRiOGIwOTdlZWVjOTVmZWQyNDQwYjJmZDM3MWE1YjM5ZjlhMjkyYmU2MzRmM2IzODZiZGE1YmZkIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIyMWQ0YWMzYzA3ZTdiODEzYWQxMGVmNjljYjhhZTcyNWRmYzAxYjIxYmVmMDg4NmVlOWY3YTUxMGRiM2I2NTkxIn0"
+          "resource": "repo://tests/e2e/tests/desktop.spec.ts#L93-L99",
+          "version": "repo-lines-v1:sha256:83ad82ff3aa5e24879f6aa6f6a081c94577900b52c410e8c770522d9c8900375:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiM2RlMjVkOThjYTIyMjcxNjZkMDc0YTkwMzYzNGY2OGQ0NDg2MjEwZjYzMmY3Y2RkZmY3ZGIzNGNkMzIwNjgxZCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGE0MTMwZDI1NzJkMTMxOTk1NjMzZDdiYWVmMzdhODkwODMyMjRmNTIxZmQ1ZTFmMGJhMDMwNDc0OTQyNjY0ZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDljZDMzYTQ5Y2NjYWNhZDI3ZWYxYjQxYzIyZDYyYzIyOWJjYjc0YzQ3YzI3NzQ5MmRiODM0NWNkZGRiOGEyOCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWJmZDRiMGVhMTIzMzZiOGVhOGQ3ZWQ4ZmMxYzliYTg1MTE3MWQ4NDc5Zjk5ODViMTdkNWUzOTEwMmI2YjgxYSJ9"
         }
       ]
     },
@@ -213,8 +213,8 @@
       "statement": "Agent assembly tests verify that the main agent receives an initialized sandbox-backed composite backend with deepagents context eviction and summarization support, and verify source-sensitive skills/tools plus middleware and parent-tool boundaries.",
       "evidence": [
         {
-          "resource": "repo://tests/agent/test_agent_assembly_context.py#L1-L119",
-          "version": "repo-lines-v1:sha256:8419090605467a3e779ff36cc8816a1441e6fb95067ff1dae523e2c5a7972102:eyJzZWxlY3RlZExpbmVDb3VudCI6MTE5LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI2YmE5YTk0ZjA5YjY4Njk2MjNjOGE5YWJjNzMwYTY1NDM3NWExMDBkOGNjZjRjZmEyYjMwYWE5ZjhhY2MyZTllIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI5NGM0ODVmM2YyOWU3ZWIwODA0MmNjMGRiNmU0MzNkMTE2ZTQyYjAxYWJlNTc0Y2U2ODhlZDNlNTNkMjRhYWQyIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJiMzRhM2NjOGM0MTg0ZGRlOGExNThhZDA4NDA3N2ZhNjUwMDViNjA3NDc3ODIzZGFjY2QwN2U2OWNjNmQzNTBjIn0"
+          "resource": "repo://tests/agent/test_agent_assembly_context.py#L47-L119",
+          "version": "repo-lines-v1:sha256:c75f9a40dd247c15289d02e70fe85185cd0e1c5c75722d437418ef5944faae80:eyJzZWxlY3RlZExpbmVDb3VudCI6NzMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkOTk0MmRlYjdkYmFiYzExNGIxYzQ4ZDAyZGE0NjM4NmU5YWNhNTE1YTUyZmI3YjNjNDEyZGM2Mjc5MjFiMDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0YzQ4NWYzZjI5ZTdlYjA4MDQyY2MwZGI2ZTQzM2QxMTZlNDJiMDFhYmU1NzRjZTY4OGVkM2U1M2QyNGFhZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkxZmJhYjUxYzczN2ZmYTIwNzdjZmMzYmFjYjM2ZGFmODg5MmRjYzU5MWNhMWZmZGUxMWRlMTVmMDMyNDM0Y2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImIzNGEzY2M4YzQxODRkZGU4YTE1OGFkMDg0MDc3ZmE2NTAwNWI2MDc0Nzc4MjNkYWNjZDA3ZTY5Y2M2ZDM1MGMifQ"
         }
       ]
     },
@@ -223,8 +223,8 @@
       "statement": "An autouse conftest fixture sets DASHBOARD_STATIC_DIR to a missing temporary path, preventing a locally built ui/.output from affecting Python tests.",
       "evidence": [
         {
-          "resource": "repo://tests/conftest.py#L429-L431",
-          "version": "repo-lines-v1:sha256:de21affef79a7f03a8831af5f09658efed219de8f847ab34c6afcd04a875da23:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzYwYmM3ODBmNmEyNjFmMjczMDZkMjA0NjdmMmQ5OTRlZmQ2OWY2MWI4NjRkNDRkZTdhZDJjZGJhYmIyODA0YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJmODgyZGJiNDAzMDBhYjY5MTkxMzU5MmZlMTYxODRjZDllNWQ5NzY1ZDhkNGJiMDA3YTc0MmI3MjM5NTBlOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWVmMTFjOWI3MTY3YzBhZGM0MmZlYTg1NGFiNjM0OTk3NzA4MTRiMGU3MTgxMDNhOWVjMGY5YmU3YWY2OTk3OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWVmMTFjOWI3MTY3YzBhZGM0MmZlYTg1NGFiNjM0OTk3NzA4MTRiMGU3MTgxMDNhOWVjMGY5YmU3YWY2OTk3OSJ9"
+          "resource": "repo://tests/conftest.py#L428-L431",
+          "version": "repo-lines-v1:sha256:c7127c4e630ab98f5489d64794de1451144949a04e85f8bf1abec502a9d13bd1:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmYwODY2ZjQwMTFlNTg1ZmZjMDkwOTJlZGYwODMyZTE3YjUyZjRjOTBjNGNhMGI0MmRjZmEwNTBmYTM3NWI1YSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjJmODgyZGJiNDAzMDBhYjY5MTkxMzU5MmZlMTYxODRjZDllNWQ5NzY1ZDhkNGJiMDA3YTc0MmI3MjM5NTBlOCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWM3ZGQ4MTUzNzE4ZGM5OGQ5YmY1MTJjNThkNjQ2Y2ExNmMxYzYzZjY2MmE2NmJjZmJmNzNmZjVhNjNjZjk1NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWVmMTFjOWI3MTY3YzBhZGM0MmZlYTg1NGFiNjM0OTk3NzA4MTRiMGU3MTgxMDNhOWVjMGY5YmU3YWY2OTk3OSJ9"
         }
       ]
     },
@@ -233,8 +233,8 @@
       "statement": "Reviewer outcome tests map resolved and dismissed finding states and GitHub or Slack feedback to true- or false-positive outcomes; outcome storage is a no-op without the required credentials or repository configuration.",
       "evidence": [
         {
-          "resource": "repo://tests/reviewer/test_reviewer_outcomes.py#L74-L108",
-          "version": "repo-lines-v1:sha256:5cf550992b193a080e972e819a82bcf6366a6d6984ba760029cf3b59640a1270:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhlNDZlNWE4ZmU0NDEyYjE2NjMxMjM1NmMzMTM0NWZkZTI1MGMwMzIzMDM3YmZjMThkMzJmNDdhNzg2NTQ5MjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4ZGE3NWRhMjJhNGE2MDYxMmExNjgxNmFhNDM1YmNmYTMxOGZhMWMwYmY5MjY4YjZkNTk4MGNiOWNkNGNmZGEifQ"
+          "resource": "repo://tests/reviewer/test_reviewer_outcomes.py#L74-L80",
+          "version": "repo-lines-v1:sha256:50d5f064fa1259f495d857643ae040ac09a5ca9a186687cce57281a2132414cf:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOGU0NmU1YThmZTQ0MTJiMTY2MzEyMzU2YzMxMzQ1ZmRlMjUwYzAzMjMwMzdiZmMxOGQzMmY0N2E3ODY1NDkyMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGMyYWJiNDc1Yzc3MjMwYWU3MzYyYzkyNzAxNDU4Mzc0NzY0ZDQ5MDAyZmNhZTM3NTc5YTQ5ODBjZWFiMjU0MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGNjNGE3ZDFjYzc5NmFiYTNlNDY3MjMzMjdmNTE3ZTlmODExOTgyZDI1MGYwNzAyOTg2ZTRiNTc2NGFkOTU4OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDRhMzhiMTcwMTg3ZGE3YjVmN2E4NWFhODJmNWRlMTA2OGQyODZjMWZiZDI2YWE5YWY4NWUwODVkZjM0MGEwZCJ9"
         }
       ]
     },
@@ -331,6 +331,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-21T15:59:40.690Z"
   }
 }

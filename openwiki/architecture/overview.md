@@ -5,7 +5,7 @@ description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable d
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-21T15:59:40.690Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -47,7 +47,7 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-21T15:59:40.690Z" }
 ---
 
 # Runtime and Product Architecture
@@ -78,32 +78,34 @@ It also operates as a reviewer (runs on-demand or automatic reviews, publishes f
 
 All three graphs are re-exports of `openswe.graphs.read_only:read_only_graph`, which serves graph state reads for threads created before Managed Deep Agents migration. New runs execute on Managed Deep Agents and route through `openswe.threads.router:ThreadRouter` middleware. Attempting to execute a run on a pre-MDA thread raises `ReadOnlyThreadError`, directing users to start a new thread.
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
-flowchart TD
-  Slack["Slack"] --> WebhookRouters["Webhook routers<br/>(GitHub, Linear, Slack, Notion)"]
-  Linear["Linear"] --> WebhookRouters
-  GitHub["GitHub"] --> WebhookRouters
-  Notion["Notion"] --> WebhookRouters
-  Browser["Web dashboard"] --> DashboardRouter["Dashboard router"]
-  JobQueue["Job queue"] --> BackgroundJobs["Background jobs<br/>(reconcile, watch, costs)"]
-  DashboardRouter --> Chat["PR chat proxy"]
+```mermaid
+sequenceDiagram
+    participant Slack
+    participant Linear
+    participant GitHub
+    participant Notion
+    participant Browser
+    participant JobQueue
+    participant App as FastAPI App
+    participant Dispatch as dispatch_agent_run
+    participant TR as ThreadRouter
+    participant MDA as Managed Deep Agents
+    participant Agent as agent/reviewer<br/>graphs
+    participant Backend as Thread Backend
 
-  subgraph App["FastAPI app"]
-    WebhookRouters
-    DashboardRouter
-  end
-
-  WebhookRouters --> Dispatch["dispatch_agent_run"]
-  DashboardRouter --> Dispatch
-  Dispatch --> ThreadRouter["ThreadRouter middleware"]
-  ThreadRouter --> MDA["Managed Deep Agents execution"]
-  MDA --> Agent["agent graph"]
-  MDA --> Reviewer["reviewer graph"]
-  Agent --> Backend["Thread sandbox or desktop backend"]
-  Reviewer --> Backend
-  Chat --> Agent
-  BackgroundJobs --> Dispatch
+    Slack->>App: POST /slack/events
+    Linear->>App: POST /linear/channel
+    GitHub->>App: POST webhooks
+    Notion->>App: POST /notion/events
+    Browser->>App: POST /dashboard/api/*
+    JobQueue->>App: Background job
+    
+    App->>Dispatch: dispatch_agent_run
+    Dispatch->>TR: create_durable_run
+    TR->>MDA: Route to Managed Deep Agents
+    MDA->>Agent: Select agent/reviewer
+    Agent->>Backend: Access thread sandbox
+    Backend-->>Agent: State & execution context
 ```
 
 `dispatch_agent_run` is the shared creation boundary for agent and reviewer runs. Chat and background work do not go through dispatch or registered graphs.
@@ -112,7 +114,7 @@ flowchart TD
 
 Execution now runs on Managed Deep Agents via the LangGraph platform's execution runtime. The registered graphs (`agent`, `reviewer`, `review-scout`) serve state reads only; they re-export `openswe.graphs.read_only:read_only_graph`, which raises `ReadOnlyThreadError` if a run attempts to execute on a pre-MDA thread and otherwise returns an empty deep agent with only the caching middleware.
 
-New runs created via `dispatch_agent_run` route through `openswe.threads.router:ThreadRouter` middleware, which detects the thread's execution model and routes to Managed Deep Agents. The platform's execution runtime handles tool invocation, subagent dispatch, and model calls. Thread metadata persists sandbox ID and related settings across workers; the sandbox cache is in process and keyed by thread ID. An existing unreachable sandbox raises rather than being automatically replaced, because silent replacement can discard uncommitted work.
+New runs created via `dispatch_agent_run` route through `openswe.threads.router:ThreadRouter` middleware, which detects the thread's execution model and routes to Managed Deep Agents. The platform's execution runtime handles tool invocation, subagent dispatch, and model calls. Thread metadata persists sandbox ID and related settings across workers; the sandbox cache is in process and keyed by thread ID. An existing unreachable sandbox raises rather than being automatically replaced, because silent replacement can discard uncommitted work. Reviewer callers can allow replacement because their checkout is re-derived. The sandbox is published to the cache only after initialization and metadata binding succeed.
 
 PR chat is intentionally sandbox-less and read-only. Rather than being a separate graph, it is a FastAPI proxy in `openswe/review/chat.py` that proxies requests through to the main agent thread. The dashboard review-chat handlers seed the PR diff, findings, and overview via the existing agent thread's state. Filesystem tools can read that context, while `execute`, writes, edits, and deletion are excluded; GitHub-backed tools use a repository-scoped GitHub App token rather than a user credential.
 
@@ -144,7 +146,7 @@ Thread execution context is durable: LangGraph checkpointing retains graph state
 
 ## Cloud and desktop product surfaces
 
-The cloud manifest currently pins Python 3.14 and LangGraph API version >~=0.15.0rc1. Its checkpointer TTL uses `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes (30 days). The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
+The cloud manifest currently pins Python 3.14 and LangGraph API version 0.18.2. Its checkpointer TTL uses `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes (30 days). The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
 
 The `ui/` application is a TanStack Router React client with routes for agent sessions and threads, local sessions, plans, automations, skills, reviews and styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes and selects `cloud` or `local` streaming transport from the active route. Router `basepath` follows Vite's build base, allowing the bundle to run below a configured mount prefix.
 

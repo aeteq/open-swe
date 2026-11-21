@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:4b68b0b55db75e3df20e95ca1bb06a66e2cb61031e159940eaa838ac4863c797",
+  "pageVersion": "sha256:21b87c59ccbe816f8452a1ab81154ade3bbdde7134d66164def36f2a7c620897",
   "claims": [
     {
       "id": "claim_5705cfc7c26a4fecbe1f78d84822fd3c",
@@ -33,8 +33,8 @@
           "version": "repo-lines-v1:sha256:c1e27f2d6f817335b2e0699b90cd4ff6ae61b4b288a0320e77cfab13108fff81:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNWYxZDc0NWJiZmIzMzliZDkxZTZmZTgwZWU5NDk4ZWU3M2M4ZjcwNTgyMjk0ZmExYWNjYWI0OGVlNzk2ZTYzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGQ1Y2QyZmI0ZjNkZjg4NDUxNTI1NWIzOTUyM2YyZjhiNTQ3MmJlZWE5ZjU2NmZmY2EyMDRkYjgwMjU2MTA0MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2RlODIwMmY0OTJkY2FlNDhkN2JjZTY4ODU4OTBkNTZlYTdmY2ViYzU3ZjY0Zjc2ZmI1MzM2NTNjNTYyOTY1OCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzQ4NTFiODc0Y2VhMzdjOWRhNmE4ZjMyNTI4ZjljZDgyZDJhN2Y4NmYyNTczNjYwZDI0OGM0OTBkZDQxZTk0OSJ9"
         },
         {
-          "resource": "repo://openswe/api/app.py#L1-L5",
-          "version": "repo-lines-v1:sha256:72dfc7ef7641b44e87b3ca536cb261377fa3626d8806ac9d606b9c6cdf9bf56b:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOWNjMDA5YzgyMjdkMGVkMzBlNzEyOWU3MWRjMjEyN2ZhN2ViYmM2OTE5ZmFhODlkMWQ0Y2JjNDllNmViYzBmNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYzk4MzY0Y2VkYmU0MmU4ZmMzMzQ1ZjYyYjJmOTcxZjM3NGRjOWIyNjAxOWJlNWM1YWJiOThmMDM0OGZlNjRmMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjg1YTNlMjM4ZWYxYzFjMjM1OGJjMThiYjQ4OTNjMTk2MjM2MDMzMWI3YTgwNWFkMDhjZjVkYzBhNDhkZDBlMSJ9"
+          "resource": "repo://openswe/api/app.py#L213-L213",
+          "version": "repo-lines-v1:sha256:827528b024c346bb0dbc2edf46b32db53b4710040088fd294a5c761369075463:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODI3NTI4YjAyNGMzNDZiYjBkYmMyZWRmNDZiMzJkYjUzYjQ3MTAwNDAwODhmZDI5NGE1Yzc2MTM2OTA3NTQ2MyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODI3NTI4YjAyNGMzNDZiYjBkYmMyZWRmNDZiMzJkYjUzYjQ3MTAwNDAwODhmZDI5NGE1Yzc2MTM2OTA3NTQ2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWVmYWM5YTZiNjhkMDk0NGZkMzM2ZGM4ZjM5MzhiOGExNWNkZjZjNDZlYmI4NWI0OTgzNWI4MjE0Y2EwMTk1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjAsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSJ9"
         },
         {
           "resource": "repo://openswe/webapp.py#L1-L5",
@@ -67,8 +67,8 @@
       "statement": "The chat flow is a read-only FastAPI proxy in openswe/review/chat.py that routes requests through to the main agent thread; PR context is accessed via the existing agent thread's state, and filesystem tools can read context while execute, writes, edits, and deletion are excluded.",
       "evidence": [
         {
-          "resource": "repo://openswe/review/chat.py#L1-L80",
-          "version": "repo-lines-v1:sha256:0a7e192c60060e10034b7cf32cbae2adcda1b02343781c1a957bd1a208596153:eyJzZWxlY3RlZExpbmVDb3VudCI6ODAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUyZjI4ZGExZTBjMzk2OGUzNDgxNDAzZTBmMTg2NDY1N2M2MTA5NTlmNDNjNTIzZDMxMjlkNTgyNGJkOWZmZDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNkMjJlMDUxMWIyZDg4MTJlMzA0ZWE4MjdkYzIwYjYwNGUwZWI0MzAyYzNmMDcxYzM1MWJkODkwYmEyMjlhNTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4MzUwODYxNDNkNzk5OTIyNWU0YWRkNTg3NjhkODU4NTc4ZDExZTllZDFhMzU3NTY2ZGYzYzk2NWQ2YTkzNTgifQ"
+          "resource": "repo://openswe/review/chat.py#L1-L100",
+          "version": "repo-lines-v1:sha256:ada3500b2920d8aa3acc814e9e9456452f346c2e31d13e62a6682986cd171fb2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJlMmYyOGRhMWUwYzM5NjhlMzQ4MTQwM2UwZjE4NjQ2NTdjNjEwOTU5ZjQzYzUyM2QzMTI5ZDU4MjRiZDlmZmQwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1Zjg1YzAzZDExNDBlYWFlOTEzMDU3YjYwZDZlNmFmYjU4OTNiZjk5ZGY0NjQyNjFmNjE4OTVkZDllOTgyYjUzIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0ZTFjYmRmYTg0ZGNkMDc3MGJiMGE2Nzc0YWFkZDc4NTU3ZWQ0ZmQ0MGZjNDRhY2EzNTlmNjQzNTJiM2U4M2ZkIn0"
         }
       ]
     },
@@ -87,8 +87,8 @@
       "statement": "The dashboard router is an APIRouter prefixed at /dashboard/api guarded by a same-origin dependency for mutations, owning the browser-facing OAuth, profiles, admin endpoints, team defaults, repository and review-style management, and thread APIs.",
       "evidence": [
         {
-          "resource": "repo://openswe/dashboard/routes.py#L42-L50",
-          "version": "repo-lines-v1:sha256:84dca9cfeb7f0626cd70e71ad48f4db87494af6042eece266a2ac165110312d5:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMWJlNzAzODg3YTBjYmIzNTUzY2MyMjhkOWI1N2U3MDRmMTk4NWNmMjJlYmViNTljMjY4MzQ5MDQyZTY5NmRjYiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNGJlOTEwMzUyODE2NjI1YjQwOTQwNzY0YTlmMmRiYTdjNjg1OTQ1NTVlODA2N2NkYzgzM2IwMmYwMmU2ODYzYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOWE0ZDdlNjYzYjBjYTQ2MmU2NjZmYmZhYWViODM5NmNmMzgyMzA4MjRiYWYyNmFjMjYyZDNhOWVkMjY2OTU4ZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTBlZjg5OWRmYmEwOGRlMjM2YzBkNWZmYTg5ZTUyNDU0ZjhiY2ZkMjI2ODAzMjZkYjQzNTg2ZmVlMmM4MWU5OCJ9"
+          "resource": "repo://openswe/dashboard/routes.py#L42-L70",
+          "version": "repo-lines-v1:sha256:7c72cb2eec5d5a67588587dedce9c87b95813752ebfd332b55f98ac118a7ba5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjFiZTcwMzg4N2EwY2JiMzU1M2NjMjI4ZDliNTdlNzA0ZjE5ODVjZjIyZWJlYjU5YzI2ODM0OTA0MmU2OTZkY2IiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViZTFkNTM0YzgyMTA3MThmYjMzYzIyMGE4OWI1NTA4YjE3OWQ0OTc2YTY2ZjFhOGI5YjRhMmU1NzQzYzI1ZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjlhNGQ3ZTY2M2IwY2E0NjJlNjY2ZmJmYWFlYjgzOTZjZjM4MjMwODI0YmFmMjZhYzI2MmQzYTllZDI2Njk1OGQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlYTdjZjY1ZGRhY2M4NjcyMWE4NzQ1MDQ3ZTkzMWJiM2JhZjZkYmNiZDUxOGMzZjk3ZjQwZGE5NDgxYjMxNzgifQ"
         }
       ]
     },
@@ -129,8 +129,8 @@
       "statement": "Every agent/reviewer run trigger (Slack, Linear, GitHub, Notion, dashboard, scheduler) routes through a single durable dispatch contract, openswe/dispatch.py:dispatch_agent_run, which selects the graph via assistant_id ('agent' or 'reviewer') and treats source as metadata/logging only.",
       "evidence": [
         {
-          "resource": "repo://openswe/dispatch.py#L473-L500",
-          "version": "repo-lines-v1:sha256:f358603b8c26d2a204179ba3f53128aa2e6aaf39fdb510dc626b70a089a174e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1Y2FiY2JkOGFkOTJhYTM0MGYyNjcyM2I2Yjk2YjlhNzEzOWIzYTMzNWU3MDM4ZTdhMDAwYTE0OTJkMmRjNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTVhMDMzMDkwMmNhZGNiNjU5OWViZDA2YjEwNzNiZTE5MDgxMTg0NTE4Mjk5OWFhYjA0NTkxOTUxZmUxYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0Y2Q4ZjY1MWJkZGMyNDJkMzhjYWQyZjc2YjJjZTlmNmI2OWQ1ZTU0NWMyNzEyZWIwOWNkNWFiMWNlYTY5M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmYjQ3MThjNzlkOTY2ZTU2NTNhNTUwZTQ3MzE1Y2MzODMwMzY2OWU3ZjhjZjE1MGQzMWFlYTY2ODA3Y2ZkNWYifQ"
+          "resource": "repo://openswe/dispatch.py#L541-L593",
+          "version": "repo-lines-v1:sha256:7505ad17459535d5557d0c17427d99cef357f9856dc46d57d2306fab39fc37d8:eyJzZWxlY3RlZExpbmVDb3VudCI6NTMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MGNlNzc2OGIwZmMzMDA2ZmQ0MWYzZjUxOTU2M2FhZWFjYjc3OGQ3NDEwODM3YjM2NDcxYzJlNDgwZjJiM2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3NGRlNjBlNmIxYzBkNjA1OTlmMWI3NTU5YzA0M2ZiODBlOTFkYTdlZGNlODdjZjM1Y2JmM2U1NzNkY2FlYzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -143,8 +143,8 @@
           "version": "repo-lines-v1:sha256:4a9bd84c0392c07c18c12c370c6d79b452ecadb44654a1bface6e858d493f5f4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjBlMzgxZGU4NjA0OWNiMjBhYmU5NmI2YWQyODlhMDI4OWJhZThmOTVhZWFlY2ZjNzUxNTI2ZDIwYTNiMmRkZDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzMDNlY2RkNGE0ZDEwZjE5YzczZmQ0MmZkMTI0MzdmZDMzNTRhODI2ODE2MDVkYTUyNTVhOTdhMzkwNjhkYmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE1YWUwYzIwY2Y2N2I3ZWI2NWNkYWQ1MTIyZmI1YmU2OTA5Njk3MmJkYzYzMjYxZWI0MmY4OGViYzc5NWU2ODEifQ"
         },
         {
-          "resource": "repo://openswe/dispatch.py#L473-L500",
-          "version": "repo-lines-v1:sha256:f358603b8c26d2a204179ba3f53128aa2e6aaf39fdb510dc626b70a089a174e9:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1Y2FiY2JkOGFkOTJhYTM0MGYyNjcyM2I2Yjk2YjlhNzEzOWIzYTMzNWU3MDM4ZTdhMDAwYTE0OTJkMmRjNDAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3MTVhMDMzMDkwMmNhZGNiNjU5OWViZDA2YjEwNzNiZTE5MDgxMTg0NTE4Mjk5OWFhYjA0NTkxOTUxZmUxYzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA0Y2Q4ZjY1MWJkZGMyNDJkMzhjYWQyZjc2YjJjZTlmNmI2OWQ1ZTU0NWMyNzEyZWIwOWNkNWFiMWNlYTY5M2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjNmYjQ3MThjNzlkOTY2ZTU2NTNhNTUwZTQ3MzE1Y2MzODMwMzY2OWU3ZjhjZjE1MGQzMWFlYTY2ODA3Y2ZkNWYifQ"
+          "resource": "repo://openswe/dispatch.py#L505-L525",
+          "version": "repo-lines-v1:sha256:2bfdf24aee39743caaa51d1aed61a67d5e8f0653d646bf01fecaedefe74f4a0b:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NDJiMWY0NDJkYjcwNWEyNmYyZjI3ZjFkNWExY2I3MDY1M2U0ZmVjYTBiZmYxOTBhNzM4MGQ0NTBhYzdiZjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgyMWQzNGQzZWI4ZWE2MGEyMTA0YTUwNmNhMDMyN2ZjYTA2MjNkZWVhZGNmZDBjYWQxYjJiY2Y2YmVkODVmZDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImMxN2Q0NTIwMjBlYjdiYWVmMDc4NmRmMTdjNGQ2OTBhZGJiN2JjNTc1NWQ5NzNiMjVmNTMzM2QxN2U2ODFlMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJmOThkOTU2NGI0OThlNjllZmExZTY5OTExNzU5Mzc5OGNjZTE4YWMxNDU1ZjU4ZDU4Yjc2ZWU3MTg0MGVkYjQifQ"
         }
       ]
     },
@@ -160,11 +160,11 @@
     },
     {
       "id": "claim_648529033ee943358728fb7277ab7d00",
-      "statement": "langgraph.json pins python_version 3.14 and api_version >~=0.15.0rc1, configures checkpointer TTL with a delete strategy, a 60-minute sweep interval, a default TTL of 43200 minutes (30 days), loads env from .env, and best-effort builds the dashboard static UI into the deployment image.",
+      "statement": "langgraph.json pins python_version 3.14 and api_version 0.18.2, configures checkpointer TTL with a delete strategy, a 60-minute sweep interval, a default TTL of 43200 minutes (30 days), loads env from .env, and best-effort builds the dashboard static UI into the deployment image.",
       "evidence": [
         {
           "resource": "repo://langgraph.json#L1-L47",
-          "version": "repo-lines-v1:sha256:5961f5a5d8ad9beba981b30713993d86ab452bf1b40fa18938cbeb8434c4a5c4:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmIwOGZkYTFhY2I5NTdiNjExNmJkMzc4MTFhMWZlNDFhMDE2MTFjMDYzMWVkYmY3ODZkNjg4OWEyN2E1NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:0f058420f012111f1a2f8d610ac679dc8b9b42e03417f97814bbc609c3141587:eyJzZWxlY3RlZExpbmVDb3VudCI6NDcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE2ZmIwOGZkYTFhY2I5NTdiNjExNmJkMzc4MTFhMWZlNDFhMDE2MTFjMDYzMWVkYmY3ODZkNjg4OWEyN2E1NWMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -281,6 +281,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-21T15:59:40.690Z"
   }
 }
