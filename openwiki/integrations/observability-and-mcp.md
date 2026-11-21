@@ -2,7 +2,7 @@
 type: integration and observability architecture
 title: Observability, Browser, and MCP Integrations
 description: LangSmith tracing and cost collection, analytics event capture, invocation and session cost tracking, MCP connections and tool discovery, full-transcript recording for debugging and replay, image model fallback, and browser automation support.
-tags: [observability, tracing, mcp, analytics, langsmith, credentials, costs, transcript, error-tracking, browser, image-fallback]
+tags: [observability, tracing, mcp, analytics, langsmith, credentials, costs, transcript, error-tracking, browser, image-fallback, managed-tools]
 sources:
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py
@@ -14,6 +14,8 @@ sources:
     resource: repo://openswe/dashboard/options.py
   - id: openwiki-source-8e86bc5c07d70c0696441776
     resource: repo://openswe/mcp/instance.py
+  - id: openwiki-source-4afcd479d253b0b0aa95860a
+    resource: repo://openswe/mcp/managed.py
   - id: openwiki-source-bcad329e419936bbe20b5ee9
     resource: repo://openswe/mcp/oauth.py
   - id: openwiki-source-67faae85e3ecd320e29f3e28
@@ -46,10 +48,10 @@ sources:
     resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-21T15:59:40.690Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-21T15:59:40.690Z
 ---
 
 # Observability, Browser, and MCP Integrations
@@ -60,7 +62,7 @@ The agent combines multiple observability and integration systems:
 
 2. **Analytics event capture**: Invocation starts, completions, failures, and deferred cost updates flow through a fail-soft event system backed by PostgreSQL. Session costs track per-workspace usage for attribution.
 
-3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, and user. Missing credentials or connection failures remove optional tools rather than blocking a run.
+3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, user, and managed-gateway. Missing credentials or connection failures remove optional tools rather than blocking a run.
 
 Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call error classification in completion handlers for observability and recovery, provides image model fallback so agents can handle image inputs even when the selected model does not support them, and enables browser automation through LangSmith's browser API.
 
@@ -153,11 +155,12 @@ Browser state is transparent to the agent: it receives actions via tools and see
 
 ## MCP connection scoping and discovery
 
-MCP connections are organized in a three-tier hierarchy: **instance** (globally managed by deployment admins), **workspace** (managed by workspace admins per slug), and **user** (personal connections owned by an individual GitHub login). When loading tools for a run, all three tiers are consulted in order; a later tier's connection with the same name replaces the earlier one.
+MCP connections are organized in a four-tier hierarchy: **instance** (globally managed by deployment admins), **workspace** (managed by workspace admins per slug), **user** (personal connections owned by an individual GitHub login), and **managed-gateway** (LangSmith Managed Tools, owned by user with per-user LangSmith tokens). When loading tools for a run, tiers are consulted in order; a later tier's connection with the same name replaces the earlier one.
 
 - **Instance tier** (`openswe/mcp/instance.py`): Connections stored at the instance level that every run can access. The tier functions as the global deployment layer for connections all workspaces inherit.
 - **Workspace tier** (`openswe/mcp/workspace.py`): Connections stored under `["workspace_mcps", <slug>]`, where `<slug>` is the lowercase workspace identifier. Each workspace has its own set of connections managed by workspace administrators.
 - **User tier** (`openswe/mcp/user.py`): Personal connections stored under `["user_mcps", <login>]`, scoped to a GitHub login and visible only in runs where that login is the triggering user. Authorization checks verify the connection lookup is made only for private threads whose owner is the current login.
+- **Managed-gateway tier** (`openswe/mcp/managed.py`): LangSmith Managed Tools gateway integration, scoped to a user and loaded only for private threads. Each tool call carries a freshly refreshed OAuth token from the user's LangSmith account; tokens are never stored and the gateway is used as the last-tier override so the workspace never sees a user's LangSmith credentials. The managed gateway requires the user to sign in with LangSmith via OAuth and have connected required services in LangSmith.
 
 Each tier exposes its own admin UI route for creation, validation, token refresh, and discovery. A connection is a reusable MCP server reference with a name, URL, transport (streamable_http or SSE), optional headers (including OAuth token URLs and client secrets), and an optional allowlist of tool names to expose. Stored tokens are encrypted at rest with `openswe.encryption`.
 
@@ -170,9 +173,22 @@ Each tier exposes its own admin UI route for creation, validation, token refresh
 - Failed token requests raise `MCPOAuthError` with a safe user-facing message that never echoes credentials or request details.
 - The `_ClientCredentialsAuth` handler automatically refreshes expired tokens on 401 responses within a request.
 
+### Managed-tools integration with LangSmith gateway
+
+LangSmith Managed Tools (LMT) provides a curated gateway of MCP servers, allowing users to authorize individual services within LangSmith and have tools immediately available in Robin. The integration operates as follows:
+
+- **Configuration**: An instance admin configures one LMT gateway (a UUID) via instance settings (`ENV.LMT_TENANT_ID` optionally pins the gateway to a specific LangSmith workspace).
+- **User authorization**: Users sign in with their LangSmith account via `langsmith_oauth_configured()` and `langsmith_access_token()`. Their LangSmith token is used to authorize individual service connections within the gateway (e.g., connecting Google Calendar, Jira, Slack).
+- **Tool availability**: The gateway's MCP endpoint (`/v1/managed-tools/kits/<gateway-id>/mcp`) is queried using the user's LangSmith token. The gateway returns only the tools from services the user has connected.
+- **Service consent flow**: If a service requires authorization, LangSmith returns a 428 response with consent links. The user follows a link to authorize that service, then Robin refreshes the tool list via `refresh_tools()`.
+- **Lazy token refresh**: Each MCP tool invocation looks up the connection fresh via `_connection()`, which fetches a new LangSmith token. This ensures token expiration never blocks tool calls.
+- **Credential isolation**: LangSmith holds provider tokens (e.g., Google Calendar credentials); the user's LangSmith token never reaches the agent and provider credentials never leave LangSmith. The MCP server proxies all calls through the gateway.
+
+Managed tools require `LANGSMITH_API_KEY`, `LANGSMITH_ENDPOINT`, and an OAuth integration on the deployment's LangSmith workspace. See [Configuration](../operations/configuration.md) for setup.
+
 ## Tool loading and availability
 
-The server loads MCP tools during agent assembly for non-summary, non-local runs with a known credential scope. It loads the three tiers via `mcp_tools_for` in `openswe/mcp/tiers.py`, which calls `load_mcp_tools(*sources)` from `openswe/mcp/runtime.py`, walking each source's connection list, discovering tool definitions, and building runnable tools. The `DynamicToolMiddleware` exposes only tool *names* initially and defers the MCP handshake (which may fail, timeout, or be expensive) until the agent explicitly calls `load_integration_tools` and requests to use them. This lazy strategy avoids blocking the first model call when MCP availability is uncertain.
+The server loads MCP tools during agent assembly for non-summary, non-local runs with a known credential scope. It loads the tiers via `mcp_tools_for` in `openswe/mcp/tiers.py`, which calls `load_mcp_tools(*sources)` from `openswe/mcp/runtime.py`, walking each source's connection list, discovering tool definitions, and building runnable tools. The `DynamicToolMiddleware` exposes only tool *names* initially and defers the MCP handshake (which may fail, timeout, or be expensive) until the agent explicitly calls `load_integration_tools` and requests to use them. This lazy strategy avoids blocking the first model call when MCP availability is uncertain.
 
 Tool loaders use a stale-while-revalidate TTL cache (10 minutes for most tiers, 24 hours max age) and enforce a per-load timeout (30 seconds). An exception, timeout, or missing credentials returns an empty tool list rather than failing the run. Reads on the tool-loading path are fail-soft: if the Store backend is unreachable, the run continues without those tools, whereas dashboard status reads surface Store failures.
 
@@ -184,9 +200,11 @@ graph TD
   Load --> Instance["Instance tier"]
   Load --> Workspace["Workspace tier"]
   Load --> User["User tier if known login"]
+  Load --> Managed["Managed-gateway tier if configured"]
   Instance --> Discover["MCP discovery and cache"]
   Workspace --> Discover
   User --> Discover
+  Managed --> Discover
   Discover --> Dynamic["DynamicToolMiddleware exposes names only"]
   Skip --> Server["LangGraph server"]
   Dynamic --> Server
@@ -194,13 +212,13 @@ graph TD
   Server --> MCP
 ```
 
-MCP tool loading flow: credential scope gates tool loading, then instance, workspace, and user tiers are consulted in order and combined before exposure to the agent via DynamicToolMiddleware.
+MCP tool loading flow: credential scope gates tool loading, then instance, workspace, user, and managed-gateway tiers are consulted in order and combined before exposure to the agent via DynamicToolMiddleware.
 
 ## Tool loading lifecycle and failures
 
 While assembling a non-local, non-summary agent for a run with known credential scope, the server loads:
 
-- **MCP tools** from instance, workspace, and user tiers using concurrent loading via asyncio.gather.
+- **MCP tools** from instance, workspace, user, and managed-gateway tiers using concurrent loading via asyncio.gather.
 
 Summary-stop and local/desktop runs skip optional tool loading. The tool loader is wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers the tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load the group and begin using its tools.
 
@@ -216,6 +234,7 @@ The combination of these systems enforces key invariants:
 - **Cost attribution**: Session costs and invocation costs are tracked independently with bounded-retry scheduling, ensuring cost data eventually reaches Slack replies and analytics even if LangSmith is temporarily unavailable.
 - **Error recovery**: Model-call errors are classified and recorded so upstream systems and human operators can decide recovery strategies without relying on exception message inspection.
 - **Capability fallbacks**: Image model fallback and browser automation support ensure agents can handle diverse input types and navigate web interfaces even when model selection constraints or feature availability would otherwise pose obstacles.
+- **Credential isolation**: Managed-gateway tools isolate user credentials in LangSmith; provider tokens and user consent are never exposed to the agent or workspace.
 
 ## Focused verification
 
@@ -229,3 +248,4 @@ Relevant tests cover:
 - **Error tracking**: Model error classification and recording in completion handler tests in `tests/completion/`.
 - **Image model fallback**: Image fallback behavior tested in `tests/slack/test_slack_image_models.py` and queue-based image handling in `tests/middleware/` message queue tests.
 - **Browser automation**: Browser state management and cleanup in `tests/threads/test_thread_handlers.py` when sharing threads.
+- **Managed tools**: Gateway enumeration, service connection, consent flow, and tool discovery in `tests/mcp/test_managed_tools.py` and dashboard integration tests.

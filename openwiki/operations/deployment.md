@@ -42,10 +42,10 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-21T15:59:40.690Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-21T15:59:40.690Z" }
 ---
 
 # Development, Deployment, and Serving
@@ -58,7 +58,7 @@ See [Configuration](../operations/configuration.md) for the complete environment
 
 ### Manifest and runtime versions
 
-Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.19.0.dev3` and `langgraph-runtime-inmem==0.39.0.dev5` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
+Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.19.0.dev3` and `langgraph-runtime-inmem==0.39.0rc4` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`0.18.2`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
 
 For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build using Node 26 and pnpm 11.22.0: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.17.1-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
 
@@ -279,7 +279,7 @@ docker run \
   open-swe
 ```
 
-The standalone image uses `langchain/langgraph-api:0.16.9-py3.14` and requires Agent Server backing services:
+The standalone image uses `langchain/langgraph-api:0.17.1-py3.14` and requires Agent Server backing services:
 - `DATABASE_URI` (Postgres connection)
 - `REDIS_URI` (Redis connection)
 - `LANGSMITH_API_KEY` (LangSmith workspace API key)

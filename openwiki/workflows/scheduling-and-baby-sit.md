@@ -3,6 +3,9 @@ type: workflow
 title: Scheduled and Background Work Dispatch
 description: How the job queue routes cron and delayed work into durable automations, cost refreshes, background-task monitoring, CI watches, and thread wakeups without any LLM involvement.
 tags: [job-queue, cron, baby-sit, ci-monitoring, background-tasks, thread-wakeup, reconciliation, cost-refresh]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-21T15:59:40.690Z
 sources:
   - id: openwiki-source-dcac5237c97d18021dd8e1b7
     resource: repo://openswe/agent_cost.py
@@ -46,10 +49,7 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-21T15:59:40.690Z" }
 ---
 
 # Scheduled and Background Work Dispatch
@@ -83,7 +83,7 @@ When a handler raises an error, the job worker retries with exponential back-off
 
 ## Scheduled agent runs (dashboard automations)
 
-`openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage with `normalize_cron_schedule()`, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds (minute 0–59, hour 0–23, day-of-month 1–31, month 1–12, day-of-week 0–6). On a dashboard schedule fire, the queue stores a job with `kind=agent_schedule` and `schedule_id`.
+`openswe/schedules/store.py` owns user-defined recurring agent automations. It normalizes and validates a five-field cron expression before storage with `normalize_cron_schedule()`, accepting numeric values, `*`, ranges, steps, and lists within field-specific bounds (minute 0–59, hour 0–23, day-of-month 1–31, month 1–12, day-of-week 0–7). On a dashboard schedule fire, the queue stores a job with `kind=agent_schedule` and `schedule_id`.
 
 The handler `launch_scheduled_agent_run` loads the schedule record, creates a fresh `agent` thread/run with system/automation input context, and stores scheduling results separately from the definition. Its run-state namespace retains `last_thread_id`, `last_run_id`, and `last_triggered_at`, or error information. Keeping run state separate allows schedule configuration and operational status to evolve independently. Deduplication via `event_claims` ensures a schedule that matures again during replay (after a deploy/crash) launches at most once.
 

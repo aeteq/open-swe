@@ -5,7 +5,7 @@ description: How Open SWE starts GitHub pull-request reviews, prepares a diff-gr
 tags: [reviewer, pr-review, github, webhooks, findings, reconciliation, review-scout, style-guidance]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-21T15:59:40.690Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -45,7 +45,7 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-21T15:59:40.690Z" }
 ---
 
 # Pull Request Review Workflow
@@ -58,7 +58,7 @@ GitHub webhooks are delivered to the MDA (Managed Deep Agents) deployment's GitH
 
 A review can begin through:
 
-- **Automatic first review:** `pull_request` actions `opened` and `ready_for_review`. The repository must be opted into auto-review via the enabled-review-repositories store; absence is disabled by default and a store failure also safely reads as disabled. Drafts additionally require the author's `review_draft_prs` setting, with the team setting as fallback.
+- **Automatic first review:** `pull_request` actions `opened` and `ready_for_review`. The repository must be opted into auto-review via the enabled-review-repositories store; absence is disabled by default and a store failure also safely reads as disabled (fail-soft). Drafts additionally require the author's `review_draft_prs` setting, with the team setting as fallback.
 - **Explicit request:** the main-agent tool `request_pr_review` accepts a GitHub PR URL, preserves an active Slack thread if present, and delegates to `trigger_pr_review_from_ref`. The dashboard calls that same entrypoint. It fetches PR metadata, ensures the reviewer thread exists, turns on `watch`, posts a temporary in-progress comment, and dispatches the reviewer.
 - **A later push:** a push to a watched PR's head branch only becomes a re-review when the PR remains open and its canonical reviewer thread has `watch=true`.
 - **A reply to a reviewer comment:** a non-bot reply to an Open SWE review comment is routed separately before ordinary mention handling and can dispatch a focused reassessment run.
@@ -78,7 +78,7 @@ flowchart TD
   Scout --> Check["Create in-progress<br/>check run"]
   Check --> Run["Dispatch reviewer<br/>graph"]
   Run --> Publish["Reconcile and<br/>publish findings"]
-  Publish --> Gate
+  Publish --> Settlement["Settle check and<br/>clear status comment"]
 ```
 
 The trigger paths converge on the same per-PR reviewer state. An automatic review-first entrypoint optionally runs a lightweight `review-scout` graph that analyzes PR scope and structure to determine review necessity.
@@ -137,7 +137,7 @@ The scout's output feeds into the reviewer's prompt to provide context on PR sco
 
 Before the first model call, `PrepareReviewerRunMiddleware` obtains a GitHub App token, creates or replaces an unreachable sandbox, and deterministically prepares the target checkout. It materializes the review range and computes a per-file, per-side changed-line set. For a re-review, the range is based on `last_reviewed_sha`; otherwise it is the PR range. If preparation fails, the agent is explicitly told that the checkout may be stale and must not be trusted.
 
-The graph exposes review-specific tools—`fetch_review_diff`, finding tools, thread reply/resolution tools, and `publish_review`—rather than change-authoring tools. Its prompt requires concrete, changed-line defects; excludes style-only, speculative, pre-existing, and out-of-diff reports; limits delegation to one disjoint review pass; and asks the parent to validate and publish. Existing PR descriptions, review threads, and author trace content are untrusted data: the prompt delimits them and instructs the model never to follow instructions within them. It can also layer organization guidance, repository review style, base-branch `AGENTS.md`/`CLAUDE.md` rules, and an API standards skill when applicable.
+The graph exposes review-specific tools—`fetch_review_diff`, finding tools, thread reply/resolution tools, and `publish_review`—rather than change-authoring tools. Its prompt requires concrete, changed-line defects; excludes style-only, speculative, pre-existing, and out-of-diff reports; limits delegation to one disjoint review pass; and asks the parent to validate and publish. Existing PR descriptions, review threads, and author trace content are untrusted data: the prompt delimits them in XML data blocks and instructs the model never to follow instructions within them. It can also layer organization guidance, repository review style, base-branch `AGENTS.md`/`CLAUDE.md` rules, and an API standards skill when applicable.
 
 `add_finding` normalizes a missing endpoint of a line range, validates title and severity/confidence/side values, and checks the range against the changed-line set. An out-of-diff anchor returns `success: false`, `in_diff: false`, and a do-not-retry instruction. File-level findings are accepted but cannot be rendered as inline GitHub comments. Suggestions above `MAX_SUGGESTION_LINES` (4) are dropped while retaining the description-only finding. A title equal to the default placeholder is rejected; generated titles must be non-empty.
 
