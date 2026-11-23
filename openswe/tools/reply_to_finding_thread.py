@@ -72,6 +72,8 @@ async def _reply_to_finding_thread_async(
         return {"success": False, "error": "GitHub did not accept the reply"}
 
     reply_id = response.get("id")
+    user = response.get("user")
+    author = user.get("login") if isinstance(user, dict) else None
     updates: dict[str, Any] = {"last_reconciliation_note": "Replied to GitHub review thread."}
     if isinstance(reply_id, int):
         updates["last_review_reply_comment_id"] = reply_id
@@ -80,7 +82,7 @@ async def _reply_to_finding_thread_async(
         "kind": "bot_reply",
         "github_comment_id": reply_id if isinstance(reply_id, int) else None,
         "github_parent_comment_id": comment_id,
-        "author": "jarvis-aeteq[bot]",
+        "author": author if isinstance(author, str) else "",
         "body": body.strip(),
         "created_at": "",
         "needs_reassessment": False,

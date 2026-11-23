@@ -331,7 +331,7 @@ def comment(
         rich_text.append(
             {
                 "type": "mention",
-                "plain_text": "@Jarvis ",
+                "plain_text": "@Robin ",
                 "mention": {"type": "user", "user": {"object": "user", "id": mentions}},
             }
         )

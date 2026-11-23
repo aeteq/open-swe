@@ -139,7 +139,7 @@ async def test_assess_classifies_required_failures_on_a_pr_waiting_for_approval(
 
 
 @pytest.mark.parametrize("live_approval_id", [None, 123])
-@pytest.mark.parametrize("review_name", ["Jarvis Review", "Open SWE Review"])
+@pytest.mark.parametrize("review_name", ["Robin Review", "Open SWE Review"])
 async def test_assess_readiness_does_not_wait_on_an_open_swe_review(
     live_approval_id: int | None,
     review_name: str,
@@ -220,7 +220,7 @@ async def test_open_swe_approval_does_not_count_as_a_human_review() -> None:
     pull = MagicMock(spec=PullRequestClient)
     pull.reviews = AsyncMock(
         return_value=[
-            {"user": {"login": "jarvis-aeteq[bot]"}, "state": "APPROVED"},
+            {"user": {"login": "open-swe[bot]"}, "state": "APPROVED"},
             {"user": {"login": "grace"}, "state": "CHANGES_REQUESTED"},
         ]
     )

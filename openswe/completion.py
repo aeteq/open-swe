@@ -119,7 +119,7 @@ _REASON_TEXT = {
 _DEFAULT_FOLLOW_UP = "Send another message and it will pick this back up."
 _REASON_FOLLOW_UP = {
     "context_too_long": "Start a new thread to continue.",
-    "model_unavailable": "Pick a different model in Jarvis Web, then retry.",
+    "model_unavailable": "Pick a different model in Robin Web, then retry.",
     "backend_interrupted": "Re-trigger the run to try again.",
     "run_stalled": "Send your message again to retry.",
 }
