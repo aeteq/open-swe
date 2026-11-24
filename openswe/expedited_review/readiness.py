@@ -1,6 +1,7 @@
 """When a pull request revision is ready to merge on its expedited approvals.
 
-Ready means: open, not a draft, no merge conflict, no check still running, no
+Ready means: open, not a draft, targeting the repository's default branch, no
+merge conflict, no check still running, no
 required check failing or yet to report, no unresolved review thread, and no
 standing request for changes.
 
@@ -44,6 +45,8 @@ class PullRequestSnapshot:
     approved_review_ids: frozenset[int] = frozenset()
     # The latest time any check or status on the head finished.
     checks_finished_at: datetime | None = None
+    base_ref: str = ""
+    default_branch: str = ""
 
     @property
     def green(self) -> bool:
@@ -98,13 +101,12 @@ class Readiness:
             return None
         user = pr.get("user")
         author = user.get("login") if isinstance(user, Mapping) else None
+        base_ref = PullRequestPayload.model_validate(pr).base_ref
 
         checks = await CommitChecks.read(pull.repo, head_sha)
         if checks is None:
             return None
-        required = await RequiredCheck.for_branch(
-            pull.repo, PullRequestPayload.model_validate(pr).base_ref, require_mappable_rules=True
-        )
+        required = await RequiredCheck.for_branch(pull.repo, base_ref, require_mappable_rules=True)
         if required is None:
             return None
         threads = await pull.unresolved_threads()
@@ -153,8 +155,17 @@ class Readiness:
                 if parsed.state == "APPROVED" and parsed.id is not None
             ),
             checks_finished_at=_checks_finished_at(checks.runs, checks.statuses),
+            base_ref=base_ref,
+            default_branch=_default_branch(pr),
         )
         return cls(snapshot=snapshot, blockers=readiness_blockers(snapshot))
+
+
+def _default_branch(pr: Mapping[str, Any]) -> str:
+    base = pr.get("base")
+    repo = base.get("repo") if isinstance(base, Mapping) else None
+    branch = repo.get("default_branch") if isinstance(repo, Mapping) else None
+    return branch if isinstance(branch, str) else ""
 
 
 def _failed_check_blocker(snapshot: PullRequestSnapshot) -> str:
@@ -170,6 +181,12 @@ def readiness_blockers(snapshot: PullRequestSnapshot) -> list[str]:
         blockers.append("the pull request is closed")
     if snapshot.draft:
         blockers.append("the pull request is a draft")
+    if snapshot.default_branch and snapshot.base_ref != snapshot.default_branch:
+        # A stacked pull request would merge into its parent's branch, not the default branch.
+        blockers.append(
+            f"the pull request targets `{snapshot.base_ref}`, "
+            f"not the default branch `{snapshot.default_branch}`"
+        )
     if snapshot.mergeable is False or snapshot.mergeable_state == "dirty":
         blockers.append("the pull request has merge conflicts")
     elif snapshot.mergeable is None:

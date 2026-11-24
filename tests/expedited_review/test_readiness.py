@@ -67,6 +67,19 @@ def test_checks_still_running_block_even_when_nothing_is_required() -> None:
     assert any("still running" in blocker for blocker in blockers)
 
 
+def test_a_pull_request_stacked_on_another_branch_waits_for_its_base_to_merge() -> None:
+    blockers = readiness_blockers(_snapshot(base_ref="feat-parent", default_branch="main"))
+
+    assert blockers == ["the pull request targets `feat-parent`, not the default branch `main`"]
+
+
+@pytest.mark.parametrize("default_branch", ["main", ""])
+def test_a_pull_request_on_the_default_branch_or_an_unknown_one_is_not_held(
+    default_branch: str,
+) -> None:
+    assert readiness_blockers(_snapshot(base_ref="main", default_branch=default_branch)) == []
+
+
 def test_every_gate_reports_independently() -> None:
     blockers = readiness_blockers(
         _snapshot(
@@ -136,6 +149,47 @@ async def test_assess_classifies_required_failures_on_a_pr_waiting_for_approval(
     assert result is not None
     assert result.blockers == blockers
     assert result.ready == (not blockers)
+
+
+async def test_assess_reads_the_base_and_the_repository_default_branch() -> None:
+    with (
+        patch.object(
+            PullRequestClient,
+            "pull",
+            AsyncMock(
+                return_value={
+                    "state": "open",
+                    "head": {"sha": "newsha"},
+                    "base": {"ref": "feat-parent", "repo": {"default_branch": "main"}},
+                    "user": {"login": "ada"},
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                }
+            ),
+        ),
+        patch.object(
+            RepoClient,
+            "check_runs",
+            AsyncMock(
+                return_value=[{"name": "unit", "status": "completed", "conclusion": "success"}]
+            ),
+        ),
+        patch.object(RepoClient, "commit_statuses", AsyncMock(return_value=[])),
+        patch.object(RequiredCheck, "for_branch", AsyncMock(return_value=set())),
+        patch.object(PullRequestClient, "unresolved_threads", AsyncMock(return_value=[])),
+        patch.object(PullRequestClient, "reviews", AsyncMock(return_value=[])),
+        patch.object(PullRequestClient, "mergeability", AsyncMock(return_value=None)),
+    ):
+        result = await Readiness.assess(
+            GitHubClient(MagicMock()).repo("lc", "repo").pull_request(7)
+        )
+
+    assert result is not None
+    assert result.snapshot.base_ref == "feat-parent"
+    assert result.snapshot.default_branch == "main"
+    assert result.blockers == [
+        "the pull request targets `feat-parent`, not the default branch `main`"
+    ]
 
 
 @pytest.mark.parametrize("live_approval_id", [None, 123])

@@ -147,6 +147,13 @@ def _review(action: str = "submitted", body: str = "") -> dict:
             ("wake_merge_queue", "track_pull_request_state"),
             id="pr-edited",
         ),
+        pytest.param(
+            "pull_request",
+            {"action": "edited", "changes": {"base": {"ref": {"from": "feat-parent"}}}},
+            _FACTS,
+            ("wake_merge_queue", "track_pull_request_state", "settle_human_reviews"),
+            id="pr-retargeted-after-its-base-merged",
+        ),
         pytest.param("push", {}, _FACTS, ("wake_merge_queue", "review_push"), id="push"),
         pytest.param(
             "push", {}, _facts(auto_review=False), ("wake_merge_queue",), id="push-without-review"

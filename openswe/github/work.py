@@ -46,7 +46,7 @@ def delivery_work(
     if event in {"push", "pull_request", "pull_request_review"}:
         work.append("wake_merge_queue")
     if event == "pull_request":
-        return (*work, *_pull_request(action, facts))
+        return (*work, *_pull_request(action, payload, facts))
     if event == "push":
         if facts.auto_review:
             work.append("review_push")
@@ -63,7 +63,9 @@ def delivery_work(
     return tuple(work)
 
 
-def _pull_request(action: str, facts: GitHubDeliveryFacts) -> list[GitHubWorkName]:
+def _pull_request(
+    action: str, payload: Mapping[str, object], facts: GitHubDeliveryFacts
+) -> list[GitHubWorkName]:
     if facts.gated:
         # The public-repo gate turned the sender away.
         return []
@@ -79,10 +81,16 @@ def _pull_request(action: str, facts: GitHubDeliveryFacts) -> list[GitHubWorkNam
         work.append("track_pull_request_usage")
     if action == "closed":
         work += ["settle_review_on_close", "delete_app_documents_on_close"]
-    elif action in GH_PR_AGENT_STATE_ACTIONS:
+    elif action in GH_PR_AGENT_STATE_ACTIONS or _base_changed(action, payload):
+        # A stacked pull request's approval waits for its base; GitHub retargets it once that merges.
         work.append("settle_human_reviews")
     if action in GH_PR_WATCH_TOGGLE_ACTIONS:
         work.append("update_reviewer_watch")
     elif action in GH_PR_FIRST_REVIEW_ACTIONS and facts.auto_review:
         work.append("review_pull_request")
     return work
+
+
+def _base_changed(action: str, payload: Mapping[str, object]) -> bool:
+    changes = payload.get("changes")
+    return action == "edited" and isinstance(changes, Mapping) and "base" in changes
