@@ -35,6 +35,7 @@ from openswe.dispatch import FOLLOW_UP_PICKUP_KIND, RunMetadata, channel_of
 from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
 from openswe.invocation import resolve_invocation_id
+from openswe.notion.notifications import post_notion_comment
 from openswe.review.findings import REVIEWER_SHADOW_THREAD_KIND, REVIEWER_THREAD_KIND
 from openswe.review.run_failure import ReviewRunFailure
 from openswe.review_apps.outcomes import ReviewOutcomes
@@ -237,6 +238,15 @@ async def _post_failure_reply(
                 blocks=blocks,
                 agent_thread_id=thread_id,
                 notice=notice,
+            )
+        return False
+
+    if source == "notion":
+        if ctx.notion_page and ctx.notion_page.id:
+            return await post_notion_comment(
+                ctx.notion_page.id,
+                _failure_text(status, reason_code=reason_code),
+                discussion_id=ctx.notion_page.discussion_id,
             )
         return False
 

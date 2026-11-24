@@ -21,6 +21,7 @@ from openswe.expedited_review.reviews import REVIEW_BODY_PREFIX
 from openswe.github.comments import GitHubAuthError
 from openswe.github.http import GitHubClient, RepoClient
 from openswe.github.notifications import notify_slack_review
+from openswe.github.org_membership import OPEN_SWE_GITHUB_LOGINS
 from openswe.github.pull_requests import PullRequest, PullRequestEvent, PullRequestPayload
 from openswe.human_review.lifecycle import close_for_pull_request
 from openswe.human_review.requests import HumanReviewRequest
@@ -37,6 +38,7 @@ from openswe.input_messages import (
 )
 from openswe.jobs import queue
 from openswe.jobs.queue import Job
+from openswe.notion.notifications import record_pull_request_merged
 from openswe.prompts import prompt
 from openswe.review.approval_withdrawal import ApprovalWithdrawal
 from openswe.review.approvals import (
@@ -535,6 +537,14 @@ async def settle_human_review_on_close(payload: dict[str, Any]) -> None:
     if identity is None:
         return
     await close_for_pull_request(*identity)
+
+
+async def record_merge_on_notion_tasks(payload: dict[str, Any]) -> None:
+    """Move the Notion tasks a merged PR links or names in its title to done."""
+    event = PullRequestEvent.parse(payload)
+    if event is None or not event.pull_request.merged or not event.pull_request.html_url:
+        return
+    await record_pull_request_merged(event.pull_request.html_url, event.pull_request.title)
 
 
 async def withdraw_superseded_approvals(payload: dict[str, Any]) -> None:
@@ -2172,7 +2182,7 @@ async def process_github_review_finding_reply(payload: dict[str, Any]) -> None:
 
     sender = payload.get("sender", {})
     sender_login = sender.get("login") if isinstance(sender, dict) else None
-    if sender_login == "open-swe[bot]":
+    if isinstance(sender_login, str) and sender_login.lower() in OPEN_SWE_GITHUB_LOGINS:
         return
 
     repo = payload.get("repository", {})

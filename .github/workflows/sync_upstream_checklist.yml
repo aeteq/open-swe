@@ -1,0 +1,29 @@
+name: Sync upstream checklist
+
+# Holds the upstream sync PR until every deployment-impact item that
+# scripts/sync_upstream_report.py wrote into its body is ticked. Make this check
+# required on main for it to block the merge.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  checklist:
+    name: Deployment impact checked
+    if: github.head_ref == 'sync-upstream'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail while any item is unticked
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          UNTICKED=$(grep -E '^- \[ \] ' <<<"$BODY" | sed -E 's/^- \[ \] \*\*([^*]+)\*\*.*/- \1/' || true)
+          if [ -n "$UNTICKED" ]; then
+            echo "::error::Tick each deployment-impact item in the PR description once it is handled:"
+            echo "$UNTICKED"
+            exit 1
+          fi

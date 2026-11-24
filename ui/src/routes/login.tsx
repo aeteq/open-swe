@@ -1,3 +1,4 @@
+import { queryOptions, useQuery } from "@tanstack/react-query"
 import { createFileRoute, useHydrated } from "@tanstack/react-router"
 import { useEffect, useMemo } from "react"
 
@@ -7,7 +8,7 @@ import { Skeleton } from "@/components/Skeleton"
 import { Text } from "@langchain/macaw-components/Text"
 
 import { LogoMark } from "@/components/Branding"
-import { loginUrl } from "@/lib/api"
+import { api, loginUrl } from "@/lib/api"
 import { appDistribution } from "@/lib/pageTitle"
 import { pageTitle } from "@/lib/pageTitle"
 import {
@@ -20,16 +21,29 @@ import { useSession } from "@/lib/session"
 
 type LoginSearch = { redirect?: string }
 
+const signInOptionsQuery = queryOptions({
+  queryKey: ["sign-in-options"],
+  queryFn: api.signInOptions,
+  staleTime: Infinity,
+})
+
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
   }),
+  // Fetched while rendering so the server sends the sign-in button, not a skeleton.
+  loader: ({ context }) =>
+    context.queryClient
+      .ensureQueryData(signInOptionsQuery)
+      .catch(() => undefined),
   head: () => ({ meta: [{ title: pageTitle("Sign in") }] }),
   component: Login,
 })
 function Login() {
   const session = useSession()
   const hydrated = useHydrated()
+  const signInOptions = useQuery(signInOptionsQuery)
+  const signInWithGitHub = signInOptions.data?.provider === "github"
   const search = Route.useSearch()
   const redirectParam = search.redirect
   const intendedPath = useMemo(
@@ -45,7 +59,11 @@ function Login() {
   )
   // The server knows only that a visitor with no session cookie is signed out,
   // so a session the browser resolved before hydrating waits until it has.
-  if (session.isLoading || (!hydrated && session.data !== null)) {
+  if (
+    session.isLoading ||
+    signInOptions.isLoading ||
+    (!hydrated && session.data !== null)
+  ) {
     return (
       <main className="flex min-h-svh items-center justify-center bg-surface-level-1 p-space-5">
         <Skeleton className="h-40 w-80" />
@@ -74,12 +92,16 @@ function Login() {
           size="md"
           className="w-full"
         >
-          Continue with LangSmith
+          {signInWithGitHub
+            ? "Continue with GitHub"
+            : "Continue with LangSmith"}
         </Button>
-        <Text as="p" variant="sm" color="secondary">
-          Link your GitHub account after signing in to use coding features and
-          return to your existing coding threads.
-        </Text>
+        {!signInWithGitHub && (
+          <Text as="p" variant="sm" color="secondary">
+            Link your GitHub account after signing in to use coding features and
+            return to your existing coding threads.
+          </Text>
+        )}
       </Card>
     </main>
   )

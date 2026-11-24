@@ -23,6 +23,7 @@ export type TriggerDraft =
       timezone: string
       /** Edit the cron as text rather than through a preset. */
       custom: boolean
+      slackChannels: Array<string>
     }
   | {
       key: string
@@ -83,7 +84,8 @@ const draftKey = () => `trigger-${++nextKey}`
 /** A new schedule runs in the viewer's own time zone; a saved one keeps its own. */
 export function scheduleDraft(
   cron: string = DEFAULT_SCHEDULE.cron,
-  timezone: string = localTimeZone()
+  timezone: string = localTimeZone(),
+  slackChannels: Array<string> = []
 ) {
   return {
     key: draftKey(),
@@ -91,6 +93,7 @@ export function scheduleDraft(
     cron,
     timezone,
     custom: ScheduleSpec.parse(cron) === null,
+    slackChannels,
   }
 }
 
@@ -158,7 +161,11 @@ export function draftsFor(
   return schedule.triggers.map((trigger): TriggerDraft => {
     switch (trigger.kind) {
       case "schedule":
-        return scheduleDraft(trigger.cron, trigger.timezone ?? "UTC")
+        return scheduleDraft(
+          trigger.cron,
+          trigger.timezone ?? "UTC",
+          trigger.slack_channels
+        )
       case "github":
         return githubDraft(trigger)
       case "slack":
@@ -228,6 +235,9 @@ export function toTriggers(
             kind: "schedule",
             cron: draft.cron.trim(),
             timezone: draft.timezone,
+            ...(draft.slackChannels.length > 0 && {
+              slack_channels: draft.slackChannels,
+            }),
           },
         ]
       case "github":
@@ -278,7 +288,11 @@ export function toTriggers(
 export function describeTriggers(schedule: AgentSchedule): string {
   const parts = schedule.triggers.map((trigger) => {
     if (trigger.kind === "schedule") {
-      return describeCron(trigger.cron, trigger.timezone ?? "UTC")
+      const when = describeCron(trigger.cron, trigger.timezone ?? "UTC")
+      const reads = trigger.slack_channels?.length ?? 0
+      return reads > 0
+        ? `${when}, reading ${reads} Slack channel${reads === 1 ? "" : "s"}`
+        : when
     }
     const provider = AUTOMATION_EVENT_PROVIDERS[trigger.kind]
     const events: Record<string, string> = provider.events

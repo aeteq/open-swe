@@ -19,7 +19,6 @@ from openswe.run_config import RunConfig
 from openswe.slack.cards import run_slack_location
 from openswe.slack.channels import SlackChannel
 from openswe.slack.client import parse_github_pr_url
-from openswe.tools.manage_baby_sit import dispatch_run_config
 from openswe.tools.mcp_exposure import expose_mcp
 from openswe.users import User
 
@@ -104,7 +103,7 @@ async def expedite_pr_approval(
     origin = Origin(
         requester=requester,
         thread_id=thread_id,
-        run_config=dispatch_run_config(cfg, thread_id, None) if thread_id else {},
+        run_config=cfg.wake_config(thread_id) if thread_id else {},
         slack_channel_id=own_channel,
         slack_thread_ts=own_thread,
     )

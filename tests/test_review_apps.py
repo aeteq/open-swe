@@ -1491,6 +1491,43 @@ async def test_a_run_for_a_deployed_preview_cannot_change_the_reviews_findings(
     assert changes_findings.isdisjoint(surface.tools) is (event == "preview_ready")
 
 
+@pytest.mark.usefixtures("registry_db", "saved_thread_scope")
+@pytest.mark.parametrize("private", [True, False])
+async def test_a_private_review_reads_notion_from_the_bot_kit_but_never_writes(
+    monkeypatch: pytest.MonkeyPatch, private: bool
+) -> None:
+    _instance_settings(monkeypatch)
+    monkeypatch.setattr(ReviewApps, "of", AsyncMock(return_value=_apps(browser=False)))
+    monkeypatch.setattr(reviewer, "cached_settings", AsyncMock(return_value=Settings({})))
+    monkeypatch.setattr(reviewer.BotTools, "configured", lambda _self: True)
+    loaded = MCPTools(
+        [
+            _mcp_tool("mcp_lmt_notion_search", "notion_search"),
+            _mcp_tool("mcp_lmt_notion_create_pages", "notion_create_pages"),
+        ]
+    )
+    monkeypatch.setattr(reviewer, "load_mcp_tools", AsyncMock(return_value=loaded))
+    config = _base_config()
+    config["configurable"].update(
+        {
+            "repo": {"owner": "acme", "name": "widgets"},
+            "repo_private": private,
+            "pr_number": 7,
+            "head_sha": "b" * 40,
+        }
+    )
+    surface = ToolSurface()
+
+    await reviewer.reviewer_catalog(config, surface)
+
+    names = {getattr(tool, "name", "") for tool in surface.base_tools}
+    assert ("mcp_lmt_notion_search" in names) is private
+    assert "mcp_lmt_notion_create_pages" not in names
+    kind = ReviewerKind()
+    assert (await kind.tool(config, "mcp_lmt_notion_search") is not None) is private
+    assert await kind.tool(config, "mcp_lmt_notion_create_pages") is None
+
+
 @pytest.mark.usefixtures("registry_db")
 async def test_closing_a_pull_request_deletes_what_reviews_saved_for_it(
     monkeypatch: pytest.MonkeyPatch,

@@ -52,6 +52,7 @@ export function toolKind(name: string): ToolKind {
   )
     return "managed-tools"
   if (lowered === "linear_comment") return "linear"
+  if (lowered === "comment_on_notion_task") return "notion"
   if (
     EDIT_TOOLS.has(lowered) ||
     ["edit", "write", "replace"].some((t) => lowered.includes(t))

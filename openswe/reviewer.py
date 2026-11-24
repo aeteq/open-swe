@@ -21,6 +21,7 @@ import posixpath
 import re
 import uuid
 import warnings
+from collections.abc import Sequence
 from typing import Any, Final, NamedTuple, NotRequired, cast
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ from runtime_api.provenance import Provenance
 
 from openswe.analytics.usage import record_agent_invocation_usage
 from openswe.dashboard.options import gate_fable_model
+from openswe.dashboard.repo_access import repo_is_private
 from openswe.dashboard.settings_cache import cached_settings
 from openswe.execution import ExecutionProfile
 from openswe.github.app import get_github_app_installation_token_with_expiry
@@ -52,6 +54,8 @@ from openswe.github.http import GitHubClient
 from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS
 from openswe.github.pull_requests import PullRequest
 from openswe.github.thread_token import cache_github_token_for_thread
+from openswe.mcp.managed import BotTools
+from openswe.mcp.runtime import load_mcp_tools
 from openswe.middleware import (
     BasePrepareRunMiddleware,
 )
@@ -59,7 +63,7 @@ from openswe.middleware.prepare_run import PrepareRunState
 from openswe.middleware.require_user_reply import WEB_REPLY_SURFACE
 from openswe.middleware.sandbox_circuit_breaker import post_sandbox_unreachable_notification
 from openswe.prompt import SystemPrompt
-from openswe.prompts import apply_tool_descriptions, prompt
+from openswe.prompts import apply_tool_descriptions, escape_for_data_block, prompt
 from openswe.review.approvals import (
     ApprovalPolicy,
     approval_policy_for_review,
@@ -313,10 +317,7 @@ def _safe_login(value: object) -> str:
     return "unknown"
 
 
-# Closing tags of the wrappers used in this module. XML tolerates whitespace
-# around the tag name (e.g. `</body >`, `</ body\n>`), so a literal `.replace()`
-# of the canonical spelling alone is insufficient — we match each end tag
-# whitespace-tolerantly and rewrite it to an inert, human-readable form.
+# The wrappers this module puts untrusted text in.
 _DATA_BLOCK_WRAPPER_TAGS = (
     "pr_review_threads",
     "thread",
@@ -329,20 +330,10 @@ _DATA_BLOCK_WRAPPER_TAGS = (
     "summary",
     "files",
 )
-_CLOSING_TAG_RE = re.compile(
-    r"</\s*(" + "|".join(_DATA_BLOCK_WRAPPER_TAGS) + r")\s*>",
-    re.IGNORECASE,
-)
 
 
 def _escape_for_data_block(text: str) -> str:
-    """Neutralize closing tags so an attacker-controlled body can't break out.
-
-    Matches each wrapper's end tag whitespace-tolerantly (XML allows whitespace
-    before/after the tag name) and rewrites it to an inert ``</name_>`` form
-    that stays human-readable but is no longer a valid closer.
-    """
-    return _CLOSING_TAG_RE.sub(lambda m: f"</{m.group(1).lower()}_>", text)
+    return escape_for_data_block(text, _DATA_BLOCK_WRAPPER_TAGS)
 
 
 def _format_pr_review_threads(threads: list[dict]) -> str:
@@ -1083,22 +1074,81 @@ PREVIEW_READY_EXCLUDED_TOOLS: Final = frozenset(
 )
 
 
-def reviewer_tools() -> list[BaseTool]:
+# Read-only Notion tools, by the names Robin's bot kit and Notion's hosted server give them.
+# Every other tool, which may write, stays off the reviewer: a generic `fetch` from another
+# service could send requests with that service's credentials.
+READ_ONLY_MCP_TOOLS: Final = frozenset(
+    {
+        "notion_search",
+        "notion_fetch",
+        "notion_get_comments",
+        "notion_query_data_sources",
+        "notion-search",
+        "notion-fetch",
+        "notion-get-comments",
+        "notion-query-data-sources",
+    }
+)
+
+
+class ReviewerMCP:
+    """The read-only MCP tools a review may use, from Robin's bot kit; never a person's own."""
+
+    def __init__(self, tools: Sequence[BaseTool] = ()) -> None:
+        self.tools = list(tools)
+
+    @classmethod
+    async def of_run(cls, cfg: RunConfig) -> ReviewerMCP:
+        """What ``cfg``'s review may use: nothing for a benchmark run, which scores the
+        stock reviewer, or a public repository, where anyone can steer a review through the
+        PR's text and what it reads from private pages could end up in its public comments."""
+        bot = BotTools()
+        if cfg.is_eval or not bot.configured() or not await cls._reviews_private_repo(cfg):
+            return cls()
+        loaded = await load_mcp_tools(bot.source())
+        return cls([tool for tool in loaded if cls._read_only(tool)])
+
+    def tool(self, name: str) -> BaseTool | None:
+        """The tool a call names."""
+        return next((tool for tool in self.tools if tool.name == name), None)
+
+    @staticmethod
+    def _read_only(tool: BaseTool) -> bool:
+        return (tool.metadata or {}).get("mcp_tool_name") in READ_ONLY_MCP_TOOLS
+
+    @staticmethod
+    async def _reviews_private_repo(cfg: RunConfig) -> bool:
+        """Whether the reviewed repository is known to be private; unknown counts as public."""
+        if cfg.repo_private is not None:
+            return cfg.repo_private
+        if cfg.repo is None:
+            return False
+        full_name = f"{cfg.repo.owner}/{cfg.repo.name}"
+        private = await ttl_cache.cached(
+            f"reviewer:repo-private:{full_name}", 300, lambda: repo_is_private(full_name)
+        )
+        return private is True
+
+
+def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
     """The reviewer's tools, wherever the graph that calls them runs."""
-    return apply_tool_descriptions(
-        [
-            fetch_review_diff,
-            add_finding,
-            update_finding,
-            list_findings,
-            publish_review,
-            resolve_finding_thread,
-            reply_to_finding_thread,
-            fetch_url,
-            http_request,
-            suggest_task,
-        ]
-    )
+    return [
+        *apply_tool_descriptions(
+            [
+                fetch_review_diff,
+                add_finding,
+                update_finding,
+                list_findings,
+                publish_review,
+                resolve_finding_thread,
+                reply_to_finding_thread,
+                fetch_url,
+                http_request,
+                suggest_task,
+            ]
+        ),
+        *mcp_tools,
+    ]
 
 
 async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
@@ -1108,8 +1158,10 @@ async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None
         raise ValueError("A review run needs a thread")
 
     models = await resolve_reviewer_models(cfg)
+    async with aphase(cfg.thread_id, "factory.mcp_tools"):
+        mcp = await ReviewerMCP.of_run(cfg)
 
-    surface.base_tools = reviewer_tools()
+    surface.base_tools = reviewer_tools(mcp.tools)
     if (app_tools := await ReviewAppTools.of_run(cfg)) is not None:
         await app_tools.offer(surface)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)

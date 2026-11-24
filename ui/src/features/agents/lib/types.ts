@@ -27,6 +27,7 @@ export type AgentSource =
   | "github"
   | "slack"
   | "linear"
+  | "notion"
   | "schedule"
   | "claude_code"
 
@@ -65,6 +66,7 @@ export type AcpToolKind =
   | "fetch"
   | "slack"
   | "linear"
+  | "notion"
   | "sql"
   | "managed-tools"
   /** deepagents `task` tool — spawns a subagent; rendered as a subagent card. */
@@ -298,7 +300,13 @@ export type LinearTriggerEvent =
 
 /** One way an automation fires; `kind` names the provider, the rest are its filters. */
 export type AutomationTriggerConfig =
-  | { kind: "schedule"; cron: string; timezone?: string }
+  | {
+      kind: "schedule"
+      cron: string
+      timezone?: string
+      /** Public Slack channels the automation's runs may read. */
+      slack_channels?: Array<string>
+    }
   | {
       kind: "github"
       repo: string

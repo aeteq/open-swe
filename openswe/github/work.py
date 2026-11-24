@@ -92,6 +92,7 @@ def _pull_request(action: str, facts: GitHubDeliveryFacts) -> list[GitHubWorkNam
     if action == "closed":
         work += [
             "settle_review_on_close",
+            "record_merge_on_notion_tasks",
             "stop_preview_runs_on_close",
             "delete_app_documents_on_close",
         ]

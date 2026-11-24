@@ -3,7 +3,7 @@ Read the most recent top-level messages in a public Slack channel.
 Use this to see what a channel has been talking about — the conversation around a request that names something you cannot otherwise see ("this error", "that PR", "the thing we discussed").
 Provide the channel_id and optionally how many messages to read (default 30, newest last).
 
-Available in private assistant threads and in Slack threads in verified public, internal channels.
+Available in private assistant threads, in Slack threads in verified public, internal channels, and for automation runs in the channels their schedules name.
 Bot-triggered Slack runs can read only their current public channel.
 Use recent alerts to locate earlier investigations before investigating a repeated failure.
 
@@ -11,4 +11,4 @@ Public channels only: this reads with the workspace bot's own access rather than
 Ask the person for what you need instead.
 
 Channel history does not contain thread replies.
-A message with replies is marked `[thread: N replies, thread_ts=...]`; pass that thread_ts to `slack_read_thread_messages` to read the thread itself.
+A message with replies is marked `[thread: N replies, thread_ts=..., latest_reply=...]`; pass that thread_ts to `slack_read_thread_messages` to read the thread itself.

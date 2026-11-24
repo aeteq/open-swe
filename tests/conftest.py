@@ -21,6 +21,7 @@ from pydantic import JsonValue, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openswe.dashboard import langsmith_api_keys
+from openswe.dashboard.github_link import GitHubLink
 from openswe.dashboard.langsmith_login import LangSmithLogin
 from openswe.dashboard.principal import DashboardPrincipal
 from openswe.github.changed_files import CHANGED_FILES
@@ -487,6 +488,12 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", guarded)
     monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", guarded_async2)
     monkeypatch.setattr(httpx2.HTTPTransport, "handle_request", guarded2)
+
+
+@pytest.fixture(autouse=True)
+def _langsmith_is_the_sign_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run upstream's tests as upstream signs in; the fork's GitHub sign-in tests opt back in."""
+    monkeypatch.setattr(GitHubLink, "is_sign_in", staticmethod(lambda: False))
 
 
 @pytest.fixture(autouse=True)

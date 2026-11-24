@@ -32,7 +32,10 @@ import {
   TriggerKindMenu,
   scheduleHint,
 } from "@/features/automations/components/TriggerFields"
-import { SlackChannelCombobox } from "@/components/SlackChannelCombobox"
+import {
+  SlackChannelCombobox,
+  SlackChannelMultiCombobox,
+} from "@/components/SlackChannelCombobox"
 import { SlackChannelTextarea } from "@/components/SlackChannelTextarea"
 import type { TriggerDraft } from "@/features/automations/lib/triggers"
 import {
@@ -511,6 +514,30 @@ export function AutomationEditor({
                   )}
                 </div>
                 {draft.kind === "schedule" && hint(scheduleHint(draft))}
+                {draft.kind === "schedule" && (
+                  <>
+                    <SlackChannelMultiCombobox
+                      value={draft.slackChannels}
+                      onValueChange={(slackChannels) => set({ slackChannels })}
+                      eligible={(channel) =>
+                        channel.is_member &&
+                        !channel.is_private &&
+                        !channel.is_ext_shared
+                      }
+                      disabled={!canManage}
+                      placeholder="Slack channels runs read (optional)"
+                      aria-label="Slack channels runs read"
+                      className="mt-space-2 w-full"
+                    />
+                    {draft.slackChannels.length > 0 && (
+                      <p className="mt-space-2 text-xs text-tertiary">
+                        Runs can read these channels and their threads, and are
+                        told when the previous run started. What they read is
+                        untrusted context.
+                      </p>
+                    )}
+                  </>
+                )}
                 {draft.kind === "github" && (
                   <>
                     <EventChips

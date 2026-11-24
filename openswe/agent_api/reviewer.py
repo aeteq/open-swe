@@ -19,6 +19,7 @@ from openswe.review_apps.apps import ReviewApps
 from openswe.review_apps.outcomes import ReviewOutcomes
 from openswe.reviewer import (
     PrepareReviewerRunMiddleware,
+    ReviewerMCP,
     ensure_reviewer_github_token,
     resolve_reviewer_models,
     reviewer_catalog,
@@ -126,6 +127,9 @@ class ReviewerKind(RunKind):
         static = _tools_by_name().get(name)
         if static is not None:
             return static
-        # The tools the configured review apps add, as the run's catalog offered them.
-        app_tools = await ReviewAppTools.of_run(RunConfig.from_config(config))
-        return None if app_tools is None else await app_tools.tool(name)
+        cfg = RunConfig.from_config(config)
+        # The tools the workspace's review apps add, as the run's catalog offered them.
+        app_tools = await ReviewAppTools.of_run(cfg)
+        if app_tools is not None and (found := await app_tools.tool(name)) is not None:
+            return found
+        return (await ReviewerMCP.of_run(cfg)).tool(name)

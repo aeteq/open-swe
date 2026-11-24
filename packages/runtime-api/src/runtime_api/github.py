@@ -100,6 +100,8 @@ type GitHubWorkName = Literal[
     "withdraw_superseded_approvals",
     "review_fork_push",
     "settle_review_on_close",
+    # A pull request merged: the Notion tasks it links or names move to done.
+    "record_merge_on_notion_tasks",
     # A pull request closed: its apps-only runs for a deployed preview stop (``PreviewReady``).
     "stop_preview_runs_on_close",
     # A pull request closed: what reviews saved to apps for it is deleted.

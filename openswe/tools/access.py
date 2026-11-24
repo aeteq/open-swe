@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from openswe.config import ENV
 from openswe.credential_scope import private_owner_login
 from openswe.run_config import RunConfig
+from openswe.schedules.store import ScheduleTrigger, authorized_schedule_run
 from openswe.slack.client import SLACK_THREAD_MAX_MESSAGES, fetch_slack_thread_messages
 from openswe.source_context import SourceContext
 from openswe.tools.admin_gate import actor_is_admin, configurable, is_private_admin_surface
@@ -127,6 +128,8 @@ class Access:
     # A system thread a bot or a channel rule started reads only its own channel.
     slack_own_channel: str | None = None
     slack_public_channel: str | None = None
+    # Public channels the automation running this names for its runs to read.
+    slack_read_channels: frozenset[str] = frozenset()
     # The run was started from a Slack thread; the bot's own reach applies there.
     slack_context: bool = False
 
@@ -314,6 +317,7 @@ async def resolve_access(cfg: RunConfig | None = None, *, login: str | None = No
         )
         else None
     )
+    automation = await authorized_schedule_run(cfg)
     return Access(
         private=private,
         owner=private_owner_login(cfg, metadata) is not None,
@@ -324,6 +328,9 @@ async def resolve_access(cfg: RunConfig | None = None, *, login: str | None = No
         direct=direct_user_run(cfg),
         slack_own_channel=slack_own_channel,
         slack_public_channel=slack_public_channel,
+        slack_read_channels=(
+            ScheduleTrigger.slack_channels_of(automation) if automation else frozenset()
+        ),
         slack_context=cfg.slack_context,
     )
 

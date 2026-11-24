@@ -11,12 +11,13 @@ Args:
   System runs act as the automation, not as you: they can read public threads, including their own earlier runs, but cannot message or start other agent conversations or see private conversations.
   For anything they report, name a channel, or say to send it to you: a run can DM its result to the automation's creator, and only to them.
 - triggers: Everything that fires the automation, each with its own filters; any one of them starts a run:
-  - ``{"kind": "schedule", "cron": "0 9 * * 1", "timezone": "America/New_York"}`` runs on a five-field cron in an IANA time zone.
+  - ``{"kind": "schedule", "cron": "0 9 * * 1", "timezone": "America/New_York"}`` runs on a five-field cron in an IANA time zone (optional ``slack_channels``: public channels Robin is in that its runs may read, such as for a digest).
     Omitted ``cron`` defaults to weekly, Mondays at 09:00 (``0 9 * * 1``).
     Omitted ``timezone`` defaults to UTC, preserving existing schedules.
     Use a region time zone, not an abbreviation or fixed offset, for local schedules that follow daylight saving time.
     At DST transitions, nonexistent local times run at the first valid time after the gap; repeated local times can run at both occurrences.
     Name any repository the run should work in in ``prompt``.
+    Optional ``slack_channels`` (IDs of public channels Robin is a member of) lets the automation's runs read those channels and their threads, such as for a digest; each run is told when the previous one started.
   - ``{"kind": "github", "repo": "owner/repo", "events": [...]}`` runs on events in that repository, passed to the run as untrusted context: "issues.opened", "pull_request.opened", "pull_request.closed" (merged or not), and "pull_request.merged".
     A public repository is refused unless the trigger sets ``"allow_public_repo": true``: anyone on the internet can write its issues and pull requests, and that text becomes part of the run's prompt while the run acts as the creator.
     Set it only after the user confirms they want that, never by yourself.

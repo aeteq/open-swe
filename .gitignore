@@ -90,3 +90,5 @@ blob-report/
 !/vendor/
 # The Managed Deep Agents SDK checkout and CLI builds of `make mda-cli`
 /.mda-sdk/
+# intellij
+.idea

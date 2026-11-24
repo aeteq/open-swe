@@ -6,11 +6,14 @@ find an existing thread. Changing a formula orphans live threads, so the exact
 input strings and namespaces are part of the persisted data model.
 """
 
+import hashlib
 import re
 import uuid
 
 __all__ = [
     "mda_successor_thread_id",
+    "notion_discussion_thread_id",
+    "notion_page_thread_id",
     "pr_comment_thread_id",
     "review_chat_thread_id",
     "review_shadow_thread_id",
@@ -27,6 +30,11 @@ _UUID_RE = re.compile(
 
 def _url_uuid(stable_key: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, stable_key))
+
+
+def _sha256_uuid(stable_key: str) -> str:
+    digest = hashlib.sha256(stable_key.encode()).hexdigest()
+    return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
 
 
 def reviewer_thread_id(owner: str, repo: str, pr_number: int) -> str:
@@ -60,6 +68,18 @@ def plugin_chat_thread_id(
 
 def slack_thread_id(channel: str, timestamp: str, nonce: str | None = None) -> str:
     return _url_uuid(f"slack:{channel}:{timestamp}:{nonce or ''}")
+
+
+def notion_page_thread_id(page_id: str) -> str:
+    return _sha256_uuid(f"notion-page:{page_id.replace('-', '').lower()}")
+
+
+def notion_discussion_thread_id(discussion_id: str) -> str:
+    return _sha256_uuid(f"notion-discussion:{discussion_id.replace('-', '').lower()}")
+
+
+def github_issue_thread_id(issue_id: str) -> str:
+    return _sha256_uuid(f"github-issue:{issue_id}")
 
 
 def mda_successor_thread_id(thread_id: str) -> str:

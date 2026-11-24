@@ -42,7 +42,7 @@ It is refused unless `langgraph dev` is the runtime, and the `ALLOWED_GITHUB_USE
    `make dev` covers this when 2024 is free and you want its postgres container; otherwise run it directly:
 
    ```bash
-   uv run langgraph dev --no-browser --port 2026 --n-jobs-per-worker 10
+   uv run --extra dev langgraph dev --no-browser --port 2026 --n-jobs-per-worker 10
    ```
 
 5. Start Vite against it:

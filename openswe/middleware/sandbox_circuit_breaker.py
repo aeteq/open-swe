@@ -8,6 +8,7 @@ from typing import Any
 from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
 from openswe.github.thread_token import resolve_thread_github_token
+from openswe.notion.notifications import post_notion_comment
 from openswe.run_config import RunConfig
 from openswe.slack.client import (
     SANDBOX_UNREACHABLE_NOTICE,
@@ -149,6 +150,12 @@ async def post_sandbox_unreachable_notification(
         else:
             await post_slack_thread_reply(channel_id, thread_ts, message, notice=notice)
         logger.info("Sent sandbox unreachable notification to Slack thread %s", thread_ts)
+        return
+
+    if cfg.notion_page and cfg.notion_page.id:
+        await post_notion_comment(
+            cfg.notion_page.id, message, discussion_id=cfg.notion_page.discussion_id
+        )
         return
 
     github_target = _get_github_target(cfg)
