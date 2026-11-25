@@ -76,6 +76,10 @@ def test_full_collections_run_a_tenth_as_often(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.delenv("GC_FULL_COLLECTION_EVERY", raising=False)
     young, middle, _ = gc.get_threshold()
 
+    gc.set_threshold(young, middle, 7)
+    if gc.get_threshold()[2] != 7:
+        pytest.skip("this Python's collector ignores the full-collection threshold")
+
     GcPauses.space_out_full_collections()
 
     assert gc.get_threshold() == (young, middle, 100)
