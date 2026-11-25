@@ -12,3 +12,15 @@ tests/e2e/tests/plan_review.spec.ts
 openswe/slack/webhook.py
 tests/conftest.py
 tests/slack/test_slack_ask.py
+# The Managed Deep Agents SDK stays vendored until MDA 0.11 is on PyPI: upstream installs it
+# from the private langchainplus repository, which the fork's builds can't read.
+pyproject.toml
+uv.lock
+mda/pyproject.toml
+mda/uv.lock
+langgraph.json
+Makefile
+.github/workflows/ci.yml
+scripts/vendor.py
+vendor/README.md
+vendor/managed-deepagents-sdk/*
