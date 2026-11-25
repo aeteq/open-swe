@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:632b3cf523ba56aade2c0951ef55f57ae694ab3ca95a2495d5672f6ca6e707d5",
+  "pageVersion": "sha256:7faf33e51c5250e023fd65c31eb94b1d4bbcb099c30f52f2fcd02bb25a6a3fa1",
   "claims": [
     {
       "id": "claim_11517f4004d84d74a9aa5799a8d72849",
@@ -55,8 +55,8 @@
       "statement": "openswe/reviewer.py:reviewer_tools wires curated review tools fetch_review_diff, add_finding, update_finding, list_findings, publish_review, resolve_finding_thread, reply_to_finding_thread, suggest_task, plus web_search, fetch_url, and http_request; it does not wire open_pull_request as a curated reviewer tool.",
       "evidence": [
         {
-          "resource": "repo://openswe/reviewer.py#L1090-L1109",
-          "version": "repo-lines-v1:sha256:05bfc2ac18b20d5a9be8deb2359f99a596973e3b248f5da81db39b4413cafc1c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0MWZmZDVkMTQ4ODRmMTMyNzQwZjk4YmQ5MDZlZmU4YjQxMGVmYTY0ODMzMjBiMGZjZTU0NGNhYWE3NTY2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkZDI0NDU4MmI2ZmIwM2QyM2I4NDE1YWJlY2QzNDZiMGM5ZjQ2NmI2Zjc1MmIwNjgxODljZTdlOWEyZGMzNTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwNTJlODM5MDIzNjZjMDE0OGI2MmI1MWFkYzMwN2QzYTgyYTAwYzUwNDg2ZTM0ZTk5M2E5ZTJkYzY1NjFkMjkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4OWQxNGQ4ZjE1YTUwNDEzM2U1YTRkYWZjNDFmOGM4ZTQ2ZDY0NjBmNjRiZTM3OGY3ODE1MmIxZjU0ZDA3NzQifQ"
+          "resource": "repo://openswe/reviewer.py#L1117-L1136",
+          "version": "repo-lines-v1:sha256:05bfc2ac18b20d5a9be8deb2359f99a596973e3b248f5da81db39b4413cafc1c:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0MWZmZDVkMTQ4ODRmMTMyNzQwZjk4YmQ5MDZlZmU4YjQxMGVmYTY0ODMzMjBiMGZjZTU0NGNhYWE3NTY2OTgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImFkZDI0NDU4MmI2ZmIwM2QyM2I4NDE1YWJlY2QzNDZiMGM5ZjQ2NmI2Zjc1MmIwNjgxODljZTdlOWEyZGMzNTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1YWQwN2Q3ODBjZWZlZmI5YmEwMDJhNGI4MjE0MzQzZmNlODY3OGMwN2U4YmIzYjc1MmFjMjllMTUwMmMyMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4OWQxNGQ4ZjE1YTUwNDEzM2U1YTRkYWZjNDFmOGM4ZTQ2ZDY0NjBmNjRiZTM3OGY3ODE1MmIxZjU0ZDA3NzQifQ"
         }
       ]
     },
@@ -169,8 +169,8 @@
       "statement": "Tool access policies use the @access decorator with a Policy object specifying where a tool may run (anywhere, private thread, admin_thread, admin_surface, channel_history, thread_history, or curator), who can use it (anyone, owner, or admin), and optional result projection for sole writers; the access decorator rechecks at runtime, applies sole-writer projection when appropriate, and returns a refused error if the current run's Access mode does not permit the tool.",
       "evidence": [
         {
-          "resource": "repo://openswe/tools/access.py#L36-L156",
-          "version": "repo-lines-v1:sha256:1cc158f93d3925879e33dbabdf15dd9d8bf580f67a2e6c60d78d3c8ef0c95c08:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJkMTA0MjRiZGUzYWQ5MWZmOGRhZWE4MWE0YWE1MDRiMmZlOWQzNzkyM2Y1OTM3OTE1MmQ1NDNkN2I0ZGVhZjcxIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI0Y2M0NDA5YWJjM2Y5Y2U5NTJiMDUxNmQ0ODIwOTJiZTUxYTIyODc3NGYzZTBkNmI1Nzk2N2Q4NDg2ODg4ZDk0IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI5MzlhMTg3ZDYxZTMzNzFlYjIxYWMzZTFhYWZlMDE5OGJiNDdkZmZhMWI3ODc3NTA3ODA0MjRmMGVkNjc0OTJiIn0"
+          "resource": "repo://openswe/tools/access.py#L36-L160",
+          "version": "repo-lines-v1:sha256:5d550c82a749ace06551a875430719667723b494d077cec6c681b32b6b4fb248:eyJzZWxlY3RlZExpbmVDb3VudCI6MTI1LCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0ZTE2OTc4OGNkOWYxNDU0ZDgzYzg0OTY5ODk2OWNmNWEyNTIwOGM0ZWRlYWM3YTVhYjUzMGUzZGE5NGE5NWYwIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiIwMWJhNDcxOWM4MGI2ZmU5MTFiMDkxYTdjMDUxMjRiNjRlZWVjZTk2NGUwOWMwNThlZjhmOTgwNWRhY2E1NDZiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1ZDY5Mzg1YjVjMmM5N2M3YjdmNzc0NzlhNDY5YmFmMWYxYjQ3MjUyOTY3Yzg3Zjg1NzUyYzFhYTliOTAwZmYxIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiI0OWVmNDAyNjBjN2E0ODQwNWJkNjEzYWYyNzk4NWVhYWRlMDI0MmU1YzU1MjdhOGU1NjcxNDA3ZGYwZmRkOWEyIn0"
         }
       ]
     },
@@ -221,6 +221,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-25T18:33:42.659Z"
   }
 }

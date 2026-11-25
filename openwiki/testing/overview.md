@@ -3,6 +3,9 @@ type: testing strategy
 title: Testing Infrastructure and Validation Patterns
 description: Test organization, fixture strategies, E2E setup, and focused validation patterns for agent behavior, middleware, integrations, and production boundaries.
 tags: [testing, pytest, vitest, playwright, e2e, fixtures, isolation, fakes]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-25T18:33:42.659Z
 sources:
   - id: openwiki-source-8037e2358a2c4f9b2c722a11
     resource: repo://AGENTS.md
@@ -36,10 +39,7 @@ sources:
     resource: repo://turbo.json
   - id: openwiki-source-436f4179fe22abf615d2f7d0
     resource: repo://ui/package.json
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
 ---
 
 # Testing Infrastructure and Validation Patterns
@@ -88,7 +88,7 @@ make typecheck
 - **`_reset_sandbox_registries`** (autouse): Clears `SANDBOX_BACKENDS` and `SANDBOX_CONNECTIONS` (process globals) to prevent one test's sandbox from answering for another's thread.
 - **`_default_enable_auto_review`** (autouse): Stubs `is_review_repo_enabled` to return `True` for every repository because the dashboard opt-in list is empty without a live Store. Tests targeting the auto-review gate must override it with a stricter policy.
 - **`_offline`** (autouse): Refuses real network requests, allowing only loopback and ASGITransport; unit tests must fake all external boundaries via MockTransport or local test servers.
-- **`registry_db`** and **`registry_db_if_available`**: Isolated PostgreSQL schemas for pull-request and repository rows; required for tests using the real database code path. Set `TEST_ANALYTICS_POSTGRES_URI` to enable.
+- **`registry_db`**: Isolated PostgreSQL schema for pull-request and repository rows; required for tests using the real database code path. Set `TEST_ANALYTICS_POSTGRES_URI` to enable.
 - **`slack_api`**: A mock Slack API server for tests driving real Slack endpoints without credentials.
 - **`allowed_bot`**: Seeds a test Slack bot configuration; requires the `registry_db` fixture.
 - **`user_records`**: In-memory store for UserRecords keyed like PostgreSQL resolves logins, for tests that need to seed user data.

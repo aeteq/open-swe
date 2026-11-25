@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:9aa5d352b4edfa0a6f7eab734a4cc5325d508439728176abf0c6a131cf8e20a4",
+  "pageVersion": "sha256:b4d8ef4f16a6be5e5d435ed1b8a2006c25c316eb0c3766a284975b9a3ebf1797",
   "claims": [
     {
       "id": "claim_df9c6bba98df46a6b4db1f4d0ee8cfbd",
@@ -14,7 +14,7 @@
     },
     {
       "id": "claim_c004ad4e9610426b8a100f06a57650aa",
-      "statement": "record_run_usage is an after-agent hook that persists summarized token usage for a configured preparation run and schedules deferred cost enrichment; failures in that bookkeeping are caught and do not alter the agent result.",
+      "statement": "RecordRunUsageMiddleware is an after-agent hook that persists summarized token usage for a configured preparation run and schedules deferred cost enrichment; failures in that bookkeeping are caught and do not alter the agent result.",
       "evidence": [
         {
           "resource": "repo://openswe/middleware/record_run_usage.py#L81-L92",
@@ -24,7 +24,7 @@
     },
     {
       "id": "claim_19265aa0a6a8475ba9b2d49b8c670e9b",
-      "statement": "settle_review_check_on_exit closes an unpublished tracked reviewer check as neutral so an incomplete review is not presented as a PR code failure, but retries a stored pending real conclusion when publish_review completed and only its completion PATCH failed.",
+      "statement": "settle_review_check closes an unpublished tracked reviewer check as neutral so an incomplete review is not presented as a PR code failure, but retries a stored pending real conclusion when publish_review completed and only its completion PATCH failed.",
       "evidence": [
         {
           "resource": "repo://openswe/middleware/settle_review_check.py#L24-L55",
@@ -44,11 +44,11 @@
     },
     {
       "id": "claim_7dcf38076ef5472f9f0758a6038acd65",
-      "statement": "notify_step_limit is an after-agent hook that recognizes the ModelCallLimitMiddleware marker and posts an explanatory Slack message when the agent hits its step limit.",
+      "statement": "notify_step_limit is an after-agent hook that recognizes when the step limit is reached and posts an explanatory Slack message to the run's thread.",
       "evidence": [
         {
           "resource": "repo://openswe/middleware/notify_step_limit.py#L17-L55",
-          "version": "repo-lines-v1:sha256:9611fef0511884fb8c6741447f9cecbb77e8fb6f864fa27c724788afc5480fa0:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTgzYzFjODBlMWQ1YjY3YTlkZWZhNzliODZhZjU2YTI3ODM1ZWI5MjgwZDhkYjNmNjU3ZGJiN2JhZjc1YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMTNlY2FhODllMjI2ZDc5MWNhOGNiODUzNGZjZTc2NTUwYzY4NWM4M2I1ODc3MmIxOTMyYTBmNzhlZDhlODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyZDRjMjM4NGUwNTVmMTk0ZjQ5OTEyNGM1OGMxYjQzOTM4OGE5M2Y0YWIyNzBjYjViOGVkODhhZGE4NTRmYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "version": "repo-lines-v1:sha256:ddfad88695dde43ac9843fec4225d0187900ce0b6706381a9e83a602b67f3a94:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ1ZTgzYzFjODBlMWQ1YjY3YTlkZWZhNzliODZhZjU2YTI3ODM1ZWI5MjgwZDhkYjNmNjU3ZGJiN2JhZjc1YWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEyMTNlY2FhODllMjI2ZDc5MWNhOGNiODUzNGZjZTc2NTUwYzY4NWM4M2I1ODc3MmIxOTMyYTBmNzhlZDhlODciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQyZDRjMjM4NGUwNTVmMTk0ZjQ5OTEyNGM1OGMxYjQzOTM4OGE5M2Y0YWIyNzBjYjViOGVkODhhZGE4NTRmYTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -81,8 +81,8 @@
           "version": "repo-lines-v1:sha256:7e2d0fea4aada1af5eed42e27e233c576a5205a4ca856762d04517ea6d44fa75:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY2Mzg0YmIzZDk4NDYwMmM3MGU1ZDU4NDg4NTIwYTY3YTIxNTNkOGFlZTEyMGY0M2I4NGE5OTk4MzY4NGQyZmQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdhYjExZjc0MzZmYzUwOGRlMzFmYTk2NTA1MmMxM2FjNjYyMzJmNTkzYmQ0NmI2YTY0NDk2MDllMzQ1YzNhODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjYzZTQxZDYyOTZlNTE3MWJhMGRmNzc2MThlNTQyN2E0MzQ2NWNiZDczYjhjMWYwNjE3ZTUwMDVjOGI4YzRjNTYifQ"
         },
         {
-          "resource": "repo://openswe/middleware/transcript.py#L849-L870",
-          "version": "repo-lines-v1:sha256:fb14ca48becc104ac095dc4d9dd1aa8c98673182008849addd3ac31ed3adc011:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg1MTBhNmM2MDdkYTdkMzE0N2ExN2VhNWZhMjczZWZjZTRkMzE5ZjllNzY3YjI0YThiODA3Zjg0MTdkNTNlYTAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNhZDJiMWZjMGQ1Njk1M2U5NWMyZjU3OTA4MGZiY2MzNzE1OGVjZGJhODlkOWYxOWFhYmYyYTNjYjBjNjc4NTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjUwMWIwYWNhZWJmMGU2NTBlNGQyZGY1YjcxMTRiMzFmYTQ0OTIyNDc4NGE2ZDYwMWZhYTkzZDQ0YTRlZDA3NmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIxNGY2NWZiMmU3ZTAwZTc3MTRlN2UxZWE2ZjkwNTYxOTExM2U1YjY2Y2UzZTE0ZTkwODEzMzY1ZTY4MzgxMDIifQ"
+          "resource": "repo://openswe/middleware/transcript.py#L301-L315",
+          "version": "repo-lines-v1:sha256:46f72141e14fff7f5252e184cf08a41de22aafca31ee908b6208268af7fd4689:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwMWJjOTRhNDg4MDg1MTY2MGU4YTY3OWIyOWM1MjM1Y2RiOWNhZGY2ZWEzMjBjZmU5NTUzZjMxNDZkZTMxNmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAxYmE0NzE5YzgwYjZmZTkxMWIwOTFhN2MwNTEyNGI2NGVlZWNlOTY0ZTA5YzA1OGVmOGY5ODA1ZGFjYTU0NmIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImIzZGYyYWNmMDZlOGMzZjAzYzcxMzVjNmU4YWM1YTljYTU0MzJhYmUwNmE3NGFjYTBmZGQ5YTUzYTAwOGY5ODciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4M2YzNmFjNGQ2ZWU1ZWNhYWE2M2U0YmJiMmZkMGJhMjY3OGFlODQyNTVkMWNkZTFkMjZjNWJlYWZmNDE0MjkifQ"
         }
       ]
     },
@@ -90,10 +90,6 @@
       "id": "claim_e2ce510928524960a4bf2dba1dfce0a5",
       "statement": "TranscriptMiddleware uses a module-level registry keyed by thread_id:run_id for per-run state management since LangGraph runs each node in its own copied context where ContextVar values set in one node are invisible to later nodes; the subagent namespace ContextVar is the exception, traveling downward into nested graph invocations from within tool coroutines.",
       "evidence": [
-        {
-          "resource": "repo://openswe/middleware/transcript.py#L301-L305",
-          "version": "repo-lines-v1:sha256:029c7413aac5295fd8cdc2d9892feb464bb714842b22573174b2ed20e4da5b8e:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMzAxYmM5NGE0ODgwODUxNjYwZThhNjc5YjI5YzUyMzVjZGI5Y2FkZjZlYTMyMGNmZTk1NTNmMzE0NmRlMzE2YiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZGZkMTc5NGRhMTZkMmQ4YzYzYTY1ZWI4ZjQzNGQ3ZGZmOGRhMDcwN2IwOTFkM2E1N2JiYzVlYzQ5ODI5NjJjMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjNkZjJhY2YwNmU4YzNmMDNjNzEzNWM2ZThhYzVhOWNhNTQzMmFiZTA2YTc0YWNhMGZkZDlhNTNhMDA4Zjk4NyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjQ4YWRjNjk3YmY4NmUxYWE4MTJkOWFiNjE5MjBhZTFjMDgzZWI4MzAwODkxY2Y5NDViMzdhNDQ2MTgzN2ExMCJ9"
-        },
         {
           "resource": "repo://openswe/middleware/transcript.py#L98-L113",
           "version": "repo-lines-v1:sha256:b1e92cd3802efeb0e533ee6947078d8a1679e19fdfbece5b250b61a540036e73:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlYTgzNjVjYTE4YzQyNDM1YjM4OTYzMzk3MDA1M2QzNDkxYWIxZDFlNmQwNmI1ZjE3OGZlNjRmODhkNjZjMGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI1MjI5MWFiNDYxMDllZmFiN2JiOTU1MGRhNjg0ODRlMzI0MWVmOTU2YjVlNDBjMzRkMGE1NmE5MjA1MjNmZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkODRkMmZhMWIyZWJiOTFiYTdhNDFkMjM0ZDI5NGI1M2Y3M2I3OTU4MmRlZmRkNjZjYTk3ZjY4NGI3Mjc1YTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUwNjVkYjg1ZWQ5NDJjN2YwNTBhMjMwZjk5YjQ1OWUwYzJlNThkNTlhMThjYTYwNDliZGM3Yjg3ZDgxNGY4MjQifQ"
@@ -115,8 +111,8 @@
       "statement": "WorkflowPushGuardMiddleware detects git push commands targeting .github/workflows files through shell command parsing, computes a SHA256 fingerprint from the diff to ensure only exact push changes are approved, and prompts for approval only once per unique fingerprint via a Slack message with diff preview and approval URL.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/workflow_push_guard.py#L200-L400",
-          "version": "repo-lines-v1:sha256:13bd78e04d66faf2313bd8846e38ec7222428fa87afae636e253f15ad9a540cd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MDU3OWQ5ZWQ1Y2QxOGNiNTRmOTJkYjI0OGNkNzY5MTVhZTk2NDA5MDlmZDU5YmM0YzIwOTJhODk4ZWM3NDMxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1MDQ5YjUwMzEwZDgyMjAyYjJmNDQ3YjYzZWQ4MjdjYjQ4OTlkMGU0ZDE4NjdhYWJlODg1ZmMwMjMzN2IxZmM0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1Y2I0NjlkOGVjY2M4ZTJiZjRjNWRjYjc4ZmMxYzZiNWI4YjhlMzg2ODAwMzUzZDIyNmE0MWM4NzFjOTBmOWQwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmNzdkMGI4NjA1OTkyMmZjYmUyZDg2YmY0YjBlYTBlOWJjMTkyOTE4MmYwMDA5NWI1ZWMwZWE4M2YxNGY1ZGRlIn0"
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L1-L120",
+          "version": "repo-lines-v1:sha256:c240c1322e7b695f342425aa3ed026af1ce7832cdd9389b026d0d3fad69f2398:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIwLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJkMmRlYThmMGMxMDdlOGQ2MmYwOWRkMDIzMTE4YTczNGE1NTcwZjBkM2E1MTQwMTJlOTBlYmI4YTk5OTkwODgxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlYzBhNmU3ODhmZmQ2ZDNiZWIyY2M5MWM0OTJjODAwOGQwMzg2NzVmOTU0NzA5NDllNDMyNTk1ZjYyMDNkZmFiIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MCwicHJlY2VkaW5nQ29udGV4dEhhc2giOiJlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmMGMzMzNhNDYyMzdmN2ZkYzFiYzU2MjQ5NWY2NDRmYjU1MDRmZDdiZDY5ZTgwOTFlOTlkMjFmMzI4NjQ4NmE3In0"
         }
       ]
     },
@@ -125,8 +121,8 @@
       "statement": "WorkflowPushGuardMiddleware checks database approval records and blocks the push if not approved, returns a blocked ToolMessage with the approval URL if pending or never seen, and marks the notification only after posting to avoid re-prompting until the push diff changes.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/workflow_push_guard.py#L200-L400",
-          "version": "repo-lines-v1:sha256:13bd78e04d66faf2313bd8846e38ec7222428fa87afae636e253f15ad9a540cd:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MDU3OWQ5ZWQ1Y2QxOGNiNTRmOTJkYjI0OGNkNzY5MTVhZTk2NDA5MDlmZDU5YmM0YzIwOTJhODk4ZWM3NDMxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiI1MDQ5YjUwMzEwZDgyMjAyYjJmNDQ3YjYzZWQ4MjdjYjQ4OTlkMGU0ZDE4NjdhYWJlODg1ZmMwMjMzN2IxZmM0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1Y2I0NjlkOGVjY2M4ZTJiZjRjNWRjYjc4ZmMxYzZiNWI4YjhlMzg2ODAwMzUzZDIyNmE0MWM4NzFjOTBmOWQwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmNzdkMGI4NjA1OTkyMmZjYmUyZDg2YmY0YjBlYTBlOWJjMTkyOTE4MmYwMDA5NWI1ZWMwZWE4M2YxNGY1ZGRlIn0"
+          "resource": "repo://openswe/middleware/workflow_push_guard.py#L200-L350",
+          "version": "repo-lines-v1:sha256:68d6061651caa7c6a63937736a104d56d69a50c17a49c3fbf5ea3184998fafd4:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiI0MDU3OWQ5ZWQ1Y2QxOGNiNTRmOTJkYjI0OGNkNzY5MTVhZTk2NDA5MDlmZDU5YmM0YzIwOTJhODk4ZWM3NDMxIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJlZTdjOTU3YmNiNDRmYjY3M2M5OGIwMDUwYTc1ZDM4MDgyZGI4MWQ5MThkZTMxM2EzZjA3YzEyMzUzMDZkN2VjIiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI1Y2I0NjlkOGVjY2M4ZTJiZjRjNWRjYjc4ZmMxYzZiNWI4YjhlMzg2ODAwMzUzZDIyNmE0MWM4NzFjOTBmOWQwIiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiIxNDVjNDIyZDI4ZDNjMmEzNjAyNjlmMjQ2OTYzZjlmNzRiNTdiZDEzNjI3ZGVjYmY5MDA2OGEzYjU5NmQ0YTAzIn0"
         }
       ]
     },
@@ -159,7 +155,7 @@
           "version": "repo-lines-v1:sha256:58318a0a19a507a1e77d3673c1c9f5609eae60e4f0ea2c88a5af8fbf9c6018d6:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMTY2M2U1NjRiYTFiOTA4YmRmY2M2MTY3MWNkMDg3MWQ4NzAxN2FkYzdhODQ3ZWMxOGY3ZmFjMDliYjk3M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZlZGNiYTI3ZmU0MWY2NjNmOGZlNTI3YzEzODBjYWEzODZhZmM1M2FlMmY0MjY0NTVlZjEzM2U0MjVkNDE3NDUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkMjI0NTJiOTI5NDI2OWU3YTI2N2IwOWZhZWU0OTBkZjU2ZDhlODA2NGU4YTQ4NzgwNzY1ZmM1M2ZmNmEyNWEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk0ZmM3ZmE2ZDg2YTQwNDFjYjI1ZTI4ODhiZThlZWZkMTM2YzMwN2JlMGRlMzhiOTcyODM0NzllYTY4NmExMjYifQ"
         },
         {
-          "resource": "repo://openswe/agent_api/reviewer.py#L49-L64",
+          "resource": "repo://openswe/agent_api/reviewer.py#L50-L65",
           "version": "repo-lines-v1:sha256:559528b7f452e9d75839bae7504599250ec69ae63062d3a04064d54b115a191b:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYyMTY2M2U1NjRiYTFiOTA4YmRmY2M2MTY3MWNkMDg3MWQ4NzAxN2FkYzdhODQ3ZWMxOGY3ZmFjMDliYjk3M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJhYWU4YTBjYTc2Zjk4ZjdiN2RjNzk4NDk1MWQ2M2U1N2RiM2M2NDU1NzljYTUxYmFkNmE1MzlkNjE0ZWRiYmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImYzMWIyMmViNGFjYmViNTI5OWJiOTAwMmY5MzhmNzkwNWJhMWY3OTJkNjQ4Y2E4YTczM2Q0ZWE1YjJlMTUzZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjkyNTAxZmE4NzlmZjY1OWFmMTkzMDczMjYzYWY5NWY4MTIwZmM5MGZmMjBmNWNhYmRlNzg4ZGJhNzY1NWVmYzIifQ"
         }
       ]
@@ -169,8 +165,8 @@
       "statement": "AgentKind.reporters includes TranscriptMiddleware and record_run_usage, which are shared middleware installed on the coding agent run; shell_guards (PullRequestCreationGuardMiddleware and WorkflowPushGuardMiddleware) are applied at tool-execution time, not in the middleware list.",
       "evidence": [
         {
-          "resource": "repo://openswe/agent_api/agent.py#L50-L56",
-          "version": "repo-lines-v1:sha256:f1786abf4786a609030bb5ae2d1c3f1b0d5cb32beaccd45b4af527564782cf12:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNzJjZGQ1MTQ2NjNhMmU1OWUwMGJiMzkyMDIxMDk2NjVkYjA1NjA3YmUzNDc5MGZjODAzMTI3ZjE5N2NjNzRhMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYWY2NDBlMDU4MTBmYTVhM2E4YmZkNTBjMTA4YTQyN2E1ZTYyYTVlMjVhMjdhMTI1NzI3MDhkMjFiOWUyZmNlYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2QyMjQ1MmI5Mjk0MjY5ZTdhMjY3YjA5ZmFlZTQ5MGRmNTZkOGU4MDY0ZThhNDg3ODA3NjVmYzUzZmY2YTI1YSJ9"
+          "resource": "repo://openswe/agent_api/agent.py#L48-L56",
+          "version": "repo-lines-v1:sha256:b834d14de1fae19a23b88e461dbc949f3c3946c67586ac6d3cc138cddcdfa678:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzMyZDkzNjgwNzU3YzVhN2QyNTFjNDYwN2NiNmE2MjA2NGIzYmQ1MjM2OTA1Y2Q4ODExMTE1YzQ5NmE3NGRkZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjgwZGUxYWRkYzI0M2M1NGFlZDMxYWQ1ZWQyMDhlZWJlMmZjMTM5MmRiM2Q3ZWZhMjNlZjFmMmNlNWNjMWExYyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTVjMWM0NjJlMmEzOWQ3NDc1OWY1ZTFiMTI2Zjc2ODNhMmI3MzAxMThlMThmNTEyMmIwOGNlZGVlYjY1MGUyMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmJkYWJlMzllMjJlMmIxZTBmMzQwNTVlYTVhNWQxNmNlNzM5MzVjMDY1ZmJkMTgwMzQxYzZkNzQzMWFhMDY5MCJ9"
         }
       ]
     },
@@ -179,8 +175,8 @@
       "statement": "ReviewerKind.reporters includes TranscriptMiddleware and record_run_usage, which are shared middleware installed on the reviewer run.",
       "evidence": [
         {
-          "resource": "repo://openswe/agent_api/reviewer.py#L42-L44",
-          "version": "repo-lines-v1:sha256:eb9258de79d7175aa663c09a97bb898b43921f8ad086aa57d58d00f8de708ade:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYzg2M2U3ODA3Yzg1YzliMjYxNDI2NDNhOGJmODczMTgyZjAyNTg3NzhlNDk3ZmI5OGY1Mjc1ZTdhOTBhNGY2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFiYTQ3MTljODBiNmZlOTExYjA5MWE3YzA1MTI0YjY0ZWVlY2U5NjRlMDljMDU4ZWY4Zjk4MDVkYWNhNTQ2YiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTBmZTlmN2YzNjJiZWI0NWJlMzgyOGIwODIyMDE3ZjM3ZGRlMDM0OWU1MDljZDYzZGFkNzM0NjYyZjBlYTc2MiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjMxYjIyZWI0YWNiZWI1Mjk5YmI5MDAyZjkzOGY3OTA1YmExZjc5MmQ2NDhjYThhNzMzZDRlYTViMmUxNTNkNyJ9"
+          "resource": "repo://openswe/agent_api/reviewer.py#L40-L45",
+          "version": "repo-lines-v1:sha256:ad4686ede5c5859071d54875616c9caacea7caa2bd943ff7bed463582e86b522:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjgwYjY2ZWJiZmRlYzk3YmFiM2JjODFmODgxN2IzZDRkMGUzMGJkMzQ0MTJjMGU2Njk1MjA4NjQzNWNiZDkzMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZDRiYjQ4MGUxN2YyNjY5ZDVkZmEwNzg0OTk4ZmRmZWYxNWVkNGM3M2MxZGE5NTliODUxOTE0ZDEzYTQ0Y2U2MyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDU3MTkyMTM2M2NiNDBiMzAxZWJmMDg0YjNlZDYwZmRlMTU5MDlmNTRhM2M3MTk2NDhhZjg0YWE4M2Y1NGQ4NCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYzVhZTcyZWNkMjk3YWJhYjU5MWUxMzhiZWRmYTE2YjkxOWIxZjZhZTg5YTE0ZWZmNDYwY2Q0YzUzMGY4ZmM2NSJ9"
         }
       ]
     },
@@ -189,8 +185,8 @@
       "statement": "DynamicToolMiddleware exposes configured integration groups (MCPs, Notion) lazily: tool names are visible to the model up front, but actual tools are built only after the model requests them, avoiding loading integrations during retries.",
       "evidence": [
         {
-          "resource": "repo://openswe/middleware/dynamic_tools.py#L80-L120",
-          "version": "repo-lines-v1:sha256:a4023e77c9be5ff8966170356c88f1777daefa05ea0ec486b0bba07061c723f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMWFiYTEyNDNiNDUyM2MyN2NhOTkwNGU2MTg3OGQ1MzA5M2FjNzAxZjVkMWE0YzhmOWYzODBmZTE4ODM5ZmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjNhZjE2MmEwZmNiMmE2ODM2NjE1MGU1NTJiNWFhMjc0N2FmMDQwOTI2ZDQ0NzMyMTQ4ZTRmZTQ0NDMyZjkyODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5MzgxNWRkOGMwMGVjYjQ3MWM0MjkwNjI5NmViMDRjNjZlNDhiYjc2OGE4MzBmMTdiOGQ5N2I0MmQ4OTUwYjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc0YzgzMzQ5Y2FlZGViNWYwMjJiOTJmYmJiYzk4ODcwYmJmZWI0M2M0ZTM3YzkwODdhZmZiZTE2OWQ1MGU4MTQifQ"
+          "resource": "repo://openswe/middleware/dynamic_tools.py#L80-L200",
+          "version": "repo-lines-v1:sha256:1412106cf09cbeb0d0c8fce08b0f753fc63080385637055cc979f6ec1705bde6:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIxLCJmaXJzdFNlbGVjdGVkTGluZUhhc2giOiJmYTFhYmExMjQzYjQ1MjNjMjdjYTk5MDRlNjE4NzhkNTMwOTNhYzcwMWY1ZDFhNGM4ZjlmMzgwZmUxODgzOWZlIiwibGFzdFNlbGVjdGVkTGluZUhhc2giOiJkNjljYmZkZmUwODNhZjNhNzk0MGE1MmQ0NWNlNjkzYmYzMmNiNThmZTk5M2ExNGUzMDUwNWIxMDNhNjJkZDM0IiwicHJlY2VkaW5nQ29udGV4dExpbmVDb3VudCI6MywicHJlY2VkaW5nQ29udGV4dEhhc2giOiI4OTM4MTVkZDhjMDBlY2I0NzFjNDI5MDYyOTZlYjA0YzY2ZTQ4YmI3NjhhODMwZjE3YjhkOTdiNDJkODk1MGI1IiwiZm9sbG93aW5nQ29udGV4dExpbmVDb3VudCI6MywiZm9sbG93aW5nQ29udGV4dEhhc2giOiJmYzBiNTY0ZTZkYzhlOWQ5ZmYxZDQyZDQ4YzNiYmVjZjhkZTNlMGJmMmE3NGM0ZjAxMjc5ZDEyMzYwYjNmZGFiIn0"
         }
       ]
     },
@@ -207,6 +203,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-25T18:33:42.659Z"
   }
 }

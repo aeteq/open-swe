@@ -14,6 +14,8 @@ sources:
     resource: repo://openswe/dashboard/options.py
   - id: openwiki-source-8e86bc5c07d70c0696441776
     resource: repo://openswe/mcp/instance.py
+  - id: openwiki-source-4afcd479d253b0b0aa95860a
+    resource: repo://openswe/mcp/managed.py
   - id: openwiki-source-bcad329e419936bbe20b5ee9
     resource: repo://openswe/mcp/oauth.py
   - id: openwiki-source-67faae85e3ecd320e29f3e28
@@ -46,10 +48,10 @@ sources:
     resource: repo://openswe/threads/handlers.py
   - id: openwiki-source-78aaabb479325754c1118320
     resource: repo://openswe/utils/langsmith.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-25T18:33:42.659Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
 ---
 
 # Observability, Browser, and MCP Integrations
@@ -60,7 +62,7 @@ The agent combines multiple observability and integration systems:
 
 2. **Analytics event capture**: Invocation starts, completions, failures, and deferred cost updates flow through a fail-soft event system backed by PostgreSQL. Session costs track per-workspace usage for attribution.
 
-3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, and user. Missing credentials or connection failures remove optional tools rather than blocking a run.
+3. **Extensible integrations**: MCP (Model Context Protocol) connections are scoped by instance, workspace, user, and optionally by LangSmith Managed Tools. Missing credentials or connection failures remove optional tools rather than blocking a run.
 
 Additionally, the system maintains a **full append-only transcript** for debugging, replay, and audit purposes, wraps middleware with tracing policies that omit sensitive input payloads, tracks model-call error classification in completion handlers for observability and recovery, provides image model fallback so agents can handle image inputs even when the selected model does not support them, and enables browser automation through LangSmith's browser API.
 
@@ -153,11 +155,12 @@ Browser state is transparent to the agent: it receives actions via tools and see
 
 ## MCP connection scoping and discovery
 
-MCP connections are organized in a three-tier hierarchy: **instance** (globally managed by deployment admins), **workspace** (managed by workspace admins per slug), and **user** (personal connections owned by an individual GitHub login). When loading tools for a run, all three tiers are consulted in order; a later tier's connection with the same name replaces the earlier one.
+MCP connections are organized in a four-tier hierarchy: **instance** (globally managed by deployment admins), **workspace** (managed by workspace admins per slug), **user** (personal connections owned by an individual GitHub login), and **LangSmith Managed Tools** (gateway-based integrations in LangSmith, accessed with the user's own LangSmith token). When loading tools for a run, tiers are consulted in order; a later tier's connection with the same name replaces the earlier one.
 
 - **Instance tier** (`openswe/mcp/instance.py`): Connections stored at the instance level that every run can access. The tier functions as the global deployment layer for connections all workspaces inherit.
 - **Workspace tier** (`openswe/mcp/workspace.py`): Connections stored under `["workspace_mcps", <slug>]`, where `<slug>` is the lowercase workspace identifier. Each workspace has its own set of connections managed by workspace administrators.
 - **User tier** (`openswe/mcp/user.py`): Personal connections stored under `["user_mcps", <login>]`, scoped to a GitHub login and visible only in runs where that login is the triggering user. Authorization checks verify the connection lookup is made only for private threads whose owner is the current login.
+- **Managed Tools tier** (`openswe/mcp/managed.py`): LangSmith Managed Tools gateway loaded with the owner's LangSmith token for private threads, providing access to curated provider integrations managed by LangSmith. This tier is used only when configured and the user is authenticated.
 
 Each tier exposes its own admin UI route for creation, validation, token refresh, and discovery. A connection is a reusable MCP server reference with a name, URL, transport (streamable_http or SSE), optional headers (including OAuth token URLs and client secrets), and an optional allowlist of tool names to expose. Stored tokens are encrypted at rest with `openswe.encryption`.
 
@@ -172,7 +175,7 @@ Each tier exposes its own admin UI route for creation, validation, token refresh
 
 ## Tool loading and availability
 
-The server loads MCP tools during agent assembly for non-summary, non-local runs with a known credential scope. It loads the three tiers via `mcp_tools_for` in `openswe/mcp/tiers.py`, which calls `load_mcp_tools(*sources)` from `openswe/mcp/runtime.py`, walking each source's connection list, discovering tool definitions, and building runnable tools. The `DynamicToolMiddleware` exposes only tool *names* initially and defers the MCP handshake (which may fail, timeout, or be expensive) until the agent explicitly calls `load_integration_tools` and requests to use them. This lazy strategy avoids blocking the first model call when MCP availability is uncertain.
+The server loads MCP tools during agent assembly for non-summary, non-local runs with a known credential scope. It loads the tiers via `mcp_tools_for` in `openswe/mcp/tiers.py`, which calls `load_mcp_tools(*sources)` from `openswe/mcp/runtime.py`, walking each source's connection list, discovering tool definitions, and building runnable tools. The `DynamicToolMiddleware` exposes only tool *names* initially and defers the MCP handshake (which may fail, timeout, or be expensive) until the agent explicitly calls `load_integration_tools` and requests to use them. This lazy strategy avoids blocking the first model call when MCP availability is uncertain.
 
 Tool loaders use a stale-while-revalidate TTL cache (10 minutes for most tiers, 24 hours max age) and enforce a per-load timeout (30 seconds). An exception, timeout, or missing credentials returns an empty tool list rather than failing the run. Reads on the tool-loading path are fail-soft: if the Store backend is unreachable, the run continues without those tools, whereas dashboard status reads surface Store failures.
 
@@ -184,9 +187,11 @@ graph TD
   Load --> Instance["Instance tier"]
   Load --> Workspace["Workspace tier"]
   Load --> User["User tier if known login"]
+  Load --> Managed["Managed tier if LMT configured"]
   Instance --> Discover["MCP discovery and cache"]
   Workspace --> Discover
   User --> Discover
+  Managed --> Discover
   Discover --> Dynamic["DynamicToolMiddleware exposes names only"]
   Skip --> Server["LangGraph server"]
   Dynamic --> Server
@@ -194,13 +199,15 @@ graph TD
   Server --> MCP
 ```
 
-MCP tool loading flow: credential scope gates tool loading, then instance, workspace, and user tiers are consulted in order and combined before exposure to the agent via DynamicToolMiddleware.
+MCP tool loading flow: credential scope gates tool loading, then instance, workspace, user, and managed tiers are consulted in order and combined before exposure to the agent via DynamicToolMiddleware.
 
 ## Tool loading lifecycle and failures
 
 While assembling a non-local, non-summary agent for a run with known credential scope, the server loads:
 
-- **MCP tools** from instance, workspace, and user tiers using concurrent loading via asyncio.gather.
+- **MCP tools** from instance, workspace, user, and managed tiers using concurrent loading via asyncio.gather.
+- **Connection precedence**: Later tiers replace same-named connections from earlier tiers, allowing workspace administrators and users to override instance defaults, and managed tools to override all others when personal provider grants are available.
+- **Lazy handshakes**: Tool names are exposed before the MCP server handshake occurs, so the first model call completes even if an MCP server is unavailable or slow to respond.
 
 Summary-stop and local/desktop runs skip optional tool loading. The tool loader is wrapped in a TTL cache and timeout, returning an empty list on failure. The server then registers the tool group with `DynamicToolMiddleware`, which defers the MCP handshake. The agent can call `load_integration_tools` to load the group and begin using its tools.
 

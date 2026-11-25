@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:96dfe1a069c983728b7a290e314b11e96605b0bf4a9810d3e1014579c86d22ea",
+  "pageVersion": "sha256:144810a1eff7b39610c48ea41570ff22cf379ddbd4300732e066bd26fa713634",
   "claims": [
     {
       "id": "claim_16867de3ca5946d1b3de2199f82d880f",
@@ -110,11 +110,11 @@
     },
     {
       "id": "claim_1a3069f12ec84f1088cab7d1de7714c8",
-      "statement": "Auth-failure notices posted into a shared Slack thread are token-free and link only to build_settings_url() rather than a per-user GitHub auth URL, so nobody else in the thread can complete auth and bind the wrong account.",
+      "statement": "Authentication failure notices posted into a shared Slack thread are token-free and link only to build_settings_url() rather than a per-user GitHub auth URL, so nobody else in the thread can complete auth and bind the wrong account.",
       "evidence": [
         {
           "resource": "repo://openswe/webhooks/common.py#L1003-L1048",
-          "version": "repo-lines-v1:sha256:0834b3c8093297b9a223c9ab5180f022b223e1067ff74012441a62d5140dd336:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NGVhYzdhOTA2YmNmODYxZTcyZjI3Mjk2MjUzMzcwMDczMTQ1NmJkZTM5Zjc0ZWJiMWI3ZWRhNDU2MDZmYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmNDFhYWY0ZWMzYzZmYzFkZTIzYTM3Y2ZmNDc0YTljZWJiYzczYWQ0ODQ0OGJkNWI3YjcxNzkxYjc0OTlhN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljN2NiNDcxZmRiZTNkMzg4Y2U0MGJhNzFkODQ2NjdhMDZiZmMxOGMyMmI1MDQ3ZDg3MTYwZDNmNGYyNzM5MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkMDNlZmNmYmY3ZGFlOTIxMmI3OTdkOTQ0ODJhZjlhMGFjNWZjNmEwOTM5MmVhZDc3NmFlOGY5OGMyOWUxODQifQ"
+          "version": "repo-lines-v1:sha256:94ec4741cb2a8c0aa77589f00d965a19f9db07774a307fed1488c0d09e596972:eyJzZWxlY3RlZExpbmVDb3VudCI6NDYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0NGVhYzdhOTA2YmNmODYxZTcyZjI3Mjk2MjUzMzcwMDczMTQ1NmJkZTM5Zjc0ZWJiMWI3ZWRhNDU2MDZmYWIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVmNDFhYWY0ZWMzYzZmYzFkZTIzYTM3Y2ZmNDc0YTljZWJiYzczYWQ0ODQ0OGJkNWI3YjcxNzkxYjc0OTlhN2IiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljN2NiNDcxZmRiZTNkMzg4Y2U0MGJhNzFkODQ2NjdhMDZiZmMxOGMyMmI1MDQ3ZDg3MTYwZDNmNGYyNzM5MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImJkMDNlZmNmYmY3ZGFlOTIxMmI3OTdkOTQ0ODJhZjlhMGFjNWZjNmEwOTM5MmVhZDc3NmFlOGY5OGMyOWUxODQifQ"
         }
       ]
     },
@@ -313,6 +313,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-25T18:33:42.659Z"
   }
 }

@@ -3,6 +3,9 @@ type: tool catalog and authorization model
 title: Tools and Tool Access
 description: How tools are defined, registered, dynamically loaded, and exposed to agents; tool categories (sandbox, integration, review, etc.), authorization policies, and mode-specific controls.
 tags: [tools, agent, authorization, integrations, dynamic-tools, automation, reviewer, access-control, mcp]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-25T18:33:42.659Z
 sources:
   - id: openwiki-source-75a672d9a8b6d6c500b1cf8d
     resource: repo://openswe/middleware/dynamic_tools.py
@@ -24,10 +27,7 @@ sources:
     resource: repo://openswe/tools/automations.py
   - id: openwiki-source-1a477779016142ec6f3dc601
     resource: repo://openswe/tools/read_user_settings.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-06T15:47:54.369Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
 ---
 
 # Tools and Tool Access
@@ -47,7 +47,7 @@ Deep Agents separately supplies filesystem and delegation tools: `read_file`, `w
 | Graph | Curated tools and intent |
 | --- | --- |
 | **Main agent** | Context-dependent static tools, eligible dynamic groups (MCPs, workspace skills), and Deep Agents built-ins. Resolves access policies and excludes tools based on run mode. |
-| **Reviewer** | Finding operations (`add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, `reply_to_finding_thread`), `fetch_review_diff`, `suggest_task`, plus `web_search`, `fetch_url`, and `http_request`. Does not include PR creation or modification. |
+| **Reviewer** | Finding operations (`add_finding`, `update_finding`, `list_findings`, `publish_review`, `resolve_finding_thread`, `reply_to_finding_thread`), `fetch_review_diff`, `suggest_task`, plus `web_search`, `fetch_url`, and `http_request`. Does not include PR creation, mutation, or design tools. |
 | **PR chat** | Read-only tools for GitHub-backed PR context with virtual `/pr/` file seeding. No sandbox. Excludes shell and write built-ins (`execute`, `write_file`, `edit_file`, `delete`). Operates as a proxy to the parent PR-fixes thread, with read-only access controlled at the thread proxy layer. |
 
 ## Main coding agent assembly
