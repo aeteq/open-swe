@@ -3,9 +3,6 @@ type: architecture overview
 title: Runtime and Product Architecture
 description: LangGraph deployment, graph entrypoints, FastAPI ingress, durable dispatch, sandbox ownership, and the dashboard and desktop product surfaces.
 tags: [architecture, langgraph, fastapi, dashboard, runtime]
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
@@ -47,7 +44,10 @@ sources:
     resource: repo://ui/src/router.tsx
   - id: openwiki-source-c7a3ad58e4b4017484c1e326
     resource: repo://ui/src/routes/agents.tsx
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-25T18:33:42.659Z
 ---
 
 # Runtime and Product Architecture
@@ -106,6 +106,8 @@ flowchart TD
   BackgroundJobs --> Dispatch
 ```
 
+Request and execution flow from integration triggers and dashboard through dispatch and ThreadRouter to Managed Deep Agents.
+
 `dispatch_agent_run` is the shared creation boundary for agent and reviewer runs. Chat and background work do not go through dispatch or registered graphs.
 
 ## Graph and execution boundaries
@@ -144,7 +146,7 @@ Thread execution context is durable: LangGraph checkpointing retains graph state
 
 ## Cloud and desktop product surfaces
 
-The cloud manifest currently pins Python 3.14 and LangGraph API version >~=0.15.0rc1. Its checkpointer TTL uses `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes (30 days). The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
+The cloud manifest currently pins Python 3.14 and LangGraph API version 0.18.2. Its checkpointer TTL uses `delete` strategy, sweeps every 60 minutes, and defaults to 43,200 minutes (30 days). The Dockerfile instructions attempt to build and install the dashboard static assets but allow a backend-only deployment if that build fails.
 
 The `ui/` application is a TanStack Router React client with routes for agent sessions and threads, local sessions, plans, automations, skills, reviews and styles, administration, integrations, usage, settings, environments, instructions, and sandbox views. The `/agents` layout requires a session except for enabled desktop-local routes and selects `cloud` or `local` streaming transport from the active route. Router `basepath` follows Vite's build base, allowing the bundle to run below a configured mount prefix.
 

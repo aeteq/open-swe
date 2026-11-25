@@ -1,22 +1,26 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e70e1090bee422b59a27565dda8687c16a87d75a095b2cf576f663d511de85e1",
+  "pageVersion": "sha256:3a923975705554088561bcff56f5c97a6be56968bca4abc999c55402b4eaec49",
   "claims": [
     {
       "id": "claim_6cbbd97db30a4ea28cefabb033ed91f3",
-      "statement": "MCP connections are organized in three tiers—instance (global), workspace (per-slug), and user (per-login)—consulted in order during tool loading so later tiers replace same-named connections from earlier tiers.",
+      "statement": "MCP connections are organized in tiers—instance (global), workspace (per-slug), user (per-login), and managed tools (LangSmith-hosted gateway)—consulted in order during tool loading so later tiers replace same-named connections from earlier tiers.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/instance.py#L1-L30",
           "version": "repo-lines-v1:sha256:faa0e8e0f04fd6ac91f74e9415b915f3b18a495b6b6442e520bf17cb552650e1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk3YzJjM2MxYmYxN2IxMjM1M2NlNmU0NmU2YzUyNGU1ZDEyMTVlYWFjNjI3MWVkZGU2ZTMzOTQ0YWU1OWEwZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhmNmU3Y2ExNDI4OTgyMzIxNzViYWUwZWNhZjFlN2E3ZmQwNzIzODAyMzFjZDc2ZTNkM2Q4MTZlMDYyOTAyNWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgxNWRlMDFmNjVmNDk2ZTY1OTMwMzQ1NGQ1MTVkNzc3ODFkZjRmNmQ0OGFlM2UxYTM2ZGZlOGIyYjQ4MjZhNjEifQ"
         },
         {
+          "resource": "repo://openswe/mcp/managed.py#L1-L50",
+          "version": "repo-lines-v1:sha256:8f3c588e58207b4c388cb88662bd1cfaa5cd428e01664800deeb7227aeafda78:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjA3YzdjOGI3M2FiNGRjYjgwMDJiN2VjYTJmYmE1MDZiNmE1NmJlODFlZjBjNjgxZTIyMDZlMzg1MjIxZDcxZWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY0OGQwZDZjMWFjYjA2YWQzZDI5YjNhZGEwY2FlNWU4NTFiN2NmYWFmZjc3NGQ1YmQ4ZjdhYWRlMzExMDQ5YjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4NGMwODk1YmU5NGE4NTRiYzMwYzFhNzQ3NmQ0ZjVjZWJlNjY2MGYxY2YyZDY2ZGFhOWFkMjA1OTZjZWVlYjYifQ"
+        },
+        {
           "resource": "repo://openswe/mcp/runtime.py#L416-L466",
           "version": "repo-lines-v1:sha256:21cde8b2da652b81dd81411a98968facff8bdbbecfdc83b1a3aaff743255de7a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhYjAyOTViMTlkYmFhM2E0M2M3ZGZhNzM2YmJhYzEyN2Q2MjI4NGJhNWRhMDgwNTI5YWUxYTMyYWFhYTQ5ZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/mcp/tiers.py#L12-L26",
-          "version": "repo-lines-v1:sha256:623d4a33c0bf3fe571dcc39c9d0ada35dfca1c0398066ac493629877a4afbc05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/mcp/tiers.py#L10-L24",
+          "version": "repo-lines-v1:sha256:057fab42f2648d9d9db24cd8c6c1ea8d98d759e0edbedc77daaf0cbeadfe2a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://openswe/mcp/user.py#L1-L30",
@@ -51,8 +55,8 @@
       "statement": "MCP tool loading defers the server handshake via DynamicToolMiddleware until the agent explicitly calls load_integration_tools, exposing only tool names initially to avoid blocking the first model call when availability is uncertain.",
       "evidence": [
         {
-          "resource": "repo://openswe/mcp/tiers.py#L12-L26",
-          "version": "repo-lines-v1:sha256:623d4a33c0bf3fe571dcc39c9d0ada35dfca1c0398066ac493629877a4afbc05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/mcp/tiers.py#L10-L24",
+          "version": "repo-lines-v1:sha256:057fab42f2648d9d9db24cd8c6c1ea8d98d759e0edbedc77daaf0cbeadfe2a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
           "resource": "repo://openswe/middleware/dynamic_tools.py#L117-L170",
@@ -66,7 +70,7 @@
     },
     {
       "id": "claim_80847cc9342e4131a3f358c29563b8da",
-      "statement": "MCP tool loaders use TTL caching (300 seconds typical, 24 hours max age) and per-load timeouts (30 seconds), returning an empty tool list on exception or timeout rather than failing the run; Store reads are fail-soft so unreachable backends cost optional tools, not the run itself.",
+      "statement": "MCP tool loaders use TTL caching (10 minutes typical, 24 hours max age) and per-load timeouts (30 seconds), returning an empty tool list on exception or timeout rather than failing the run; Store reads are fail-soft so unreachable backends cost optional tools, not the run itself.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/runtime.py#L35-L50",
@@ -80,15 +84,15 @@
     },
     {
       "id": "claim_887a1a021481457a8a007dd788d64d81",
-      "statement": "During agent assembly for non-local, non-summary runs with known credential scope, MCP tools from instance, workspace, and user tiers are loaded concurrently via asyncio.gather.",
+      "statement": "During agent assembly for non-local, non-summary runs with known credential scope, MCP tools from instance, workspace, user, and managed tiers are loaded concurrently via asyncio.gather.",
       "evidence": [
         {
           "resource": "repo://openswe/mcp/runtime.py#L416-L466",
           "version": "repo-lines-v1:sha256:21cde8b2da652b81dd81411a98968facff8bdbbecfdc83b1a3aaff743255de7a:eyJzZWxlY3RlZExpbmVDb3VudCI6NTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhhYjAyOTViMTlkYmFhM2E0M2M3ZGZhNzM2YmJhYzEyN2Q2MjI4NGJhNWRhMDgwNTI5YWUxYTMyYWFhYTQ5ZjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhMTFjMDU2N2QwYTVmOWU5YjEzNWY2NWNkMjUzNzJkZmQ2Mjg3NzVmN2MxZWQyNTNmOGJhZDQyZGQyZDY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://openswe/mcp/tiers.py#L12-L26",
-          "version": "repo-lines-v1:sha256:623d4a33c0bf3fe571dcc39c9d0ada35dfca1c0398066ac493629877a4afbc05:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+          "resource": "repo://openswe/mcp/tiers.py#L10-L24",
+          "version": "repo-lines-v1:sha256:057fab42f2648d9d9db24cd8c6c1ea8d98d759e0edbedc77daaf0cbeadfe2a3f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYwOTQyM2JhOTZkODMzMTdiODJmYTZiZDI1OWI3YzE0N2VkYmI1OGY0MjU0MmQzMzBjMjAyOTA1YjFiZDYyNjYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI0ZGZiMDE0Y2ZlZmFhN2NjMDMwOGQxMTM0ZWQ0MmNkMWM0NDE5ZGYwNTJhYzRhYzU1YWM4MTU0ZDFjNGU5ODMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImZlY2Q1MmExZGI2MDFiYzEzMGFmODg3NWM1ODkxZTIwNzg0YmNhNjdjNDVmYjY3ZGJmYTRhNTkyOWM4ZDM5ZDciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -241,6 +245,6 @@
   ],
   "verification": {
     "by": "openwiki/0.4.2",
-    "at": "2026-11-11T15:58:52.285Z"
+    "at": "2026-11-25T18:33:42.659Z"
   }
 }

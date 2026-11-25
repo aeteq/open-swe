@@ -46,10 +46,10 @@ sources:
     resource: repo://tests/reviewer/test_reconcile_sweep.py
   - id: openwiki-source-7416596e0d9fc9b802355ff6
     resource: repo://tests/tools/test_schedule_thread_wakeup.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-25T18:33:42.659Z
 ---
 
 # Scheduled and Background Work Dispatch
@@ -202,16 +202,12 @@ The agent may rerun only evidence-backed flaky GitHub Actions failures. After a 
 
 ### Agent-facing guardrails
 
-`manage_baby_sit` accepts only canonical GitHub PR URLs and requires an executable thread. It rejects a PR outside the thread's configured repository. Starting verifies GitHub authentication, an open PR with head SHA/ref, and a GitHub App installation; stopping and retry recording enforce that the watch belongs to the current thread. `record_retry` additionally requires a head SHA, check name, and concise evidence.
+The `manage_baby_sit` tool is the agent-facing surface for durable watches, offering start / stop / record_retry actions, enforcing that the PR matches the thread's configured repo and that stop/record_retry operate only on a watch owned by the current thread.
 
-## Focused verification
+Cloud runs create a durable watch through `manage_baby_sit` with action `start`. Local/desktop runs use one bounded foreground `gh pr checks --watch` loop (line 25–26 of SKILL.md specifies the timeout as 3300 seconds / ~55 minutes) and never call `manage_baby_sit` or `schedule_thread_wakeup`. This means only cloud deployments use the durable job queue watch and thread wakeup mechanism; local runs provide the same user-facing `/baby-sit` behavior without consuming model tokens during polling.
 
-Tests cover:
-- Job dispatch and worker claim/release/retry semantics
-- Scheduled agent runs with deduplication and missing-schedule recovery
-- Baby-sit lifecycle, concurrency, locking, and deduplication across webhook and polling triggers
-- Signed CI webhook routing and delivery ID deduplication
-- Stale-run reconciliation with pagination, per-thread error isolation, and timeout handling
-- Session and agent cost refresh with bounded retry budgets
-- Thread wakeup validation, budget enforcement, correlation, and cleanup
-- Expired cron purge with conservative matching and full pagination
+Flaky reruns are capped per head SHA at MAX_RETRIES_PER_HEAD (3), and record_retry increments the durable retry count (rejecting the call when the head changed or the cap is reached) while posting the flaky-CI alert only on the first occurrence of a given check/URL for that head via alert_keys dedupe.
+
+## Focused test coverage
+
+Focused tests cover job dispatch, scheduled agent runs with deduplication, baby-sit lifecycle/concurrency/deduplication, signed CI routing, stale-run pagination and failure isolation, bounded cost refreshes, and wakeup validation, correlation, limits, and cleanup.

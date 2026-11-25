@@ -3,6 +3,9 @@ type: operations-guide
 title: Development, Deployment, and Serving
 description: Deploy Open SWE as a single LangGraph service across multiple topologies — local development with Docker PostgreSQL, standalone Docker, LangGraph Platform, Electron desktop, and multiple replicas. Covers environment setup, dashboard mounting, webhook exposure, authentication modes, checkpointer durability, and health checks.
 tags: [deployment, development, docker, langgraph, dashboard, webhooks, desktop, postgresql, operations, migrations, checkpointer]
+verified:
+  - by: openwiki/0.4.2
+    at: 2026-11-25T18:33:42.659Z
 sources:
   - id: openwiki-source-2f66613e587b7c57d9be522e
     resource: repo://desktop/README.md
@@ -42,10 +45,7 @@ sources:
     resource: repo://ui/server/backend-proxy.ts
   - id: openwiki-source-a741d432f952c0dbfb4fb35d
     resource: repo://ui/vite.config.ts
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
-verified:
-  - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
 ---
 
 # Development, Deployment, and Serving
@@ -58,7 +58,7 @@ See [Configuration](../operations/configuration.md) for the complete environment
 
 ### Manifest and runtime versions
 
-Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.19.0.dev3` and `langgraph-runtime-inmem==0.39.0.dev5` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`>~=0.15.0rc1`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
+Open SWE's local development runtime uses Python 3.14 and LangGraph constraints `langgraph-api==0.19.0.dev3` and `langgraph-runtime-inmem==0.39.0rc4` (set in `pyproject.toml` as constraint-dependencies). The manifest `langgraph.json` declares the Python version (`3.14`), LangGraph API version (`0.18.2`), the three registered graphs and FastAPI app (`http.app`), a checkpointer TTL policy (60-minute sweep interval, 43,200-minute—30 day—default TTL with delete strategy), and loads `.env` from the repository root.
 
 For LangGraph Platform deployments, `langgraph.json` includes `dockerfile_lines` that perform a best-effort dashboard build using Node 26 and pnpm 11.22.0: the platform extracts the `http.mount_prefix` from the manifest and supplies it to the build, then continues backend deployment even if the UI build fails. The standalone `Dockerfile` builds a production image using `langchain/langgraph-api:0.17.1-py3.14`, installs Open SWE with `uv`, and bakes graph registrations (via `LANGSERVE_GRAPHS`), the FastAPI app (via `LANGGRAPH_HTTP`), and checkpointer settings (via `LANGGRAPH_CHECKPOINTER`) into environment variables rather than manifest declarations.
 
@@ -279,7 +279,7 @@ docker run \
   open-swe
 ```
 
-The standalone image uses `langchain/langgraph-api:0.16.9-py3.14` and requires Agent Server backing services:
+The standalone image uses `langchain/langgraph-api:0.17.1-py3.14` and requires Agent Server backing services:
 - `DATABASE_URI` (Postgres connection)
 - `REDIS_URI` (Redis connection)
 - `LANGSMITH_API_KEY` (LangSmith workspace API key)
@@ -316,7 +316,7 @@ The desktop app is an experimental Electron client that connects to a shared bac
 
 - **Local development:** By default, connects to `http://localhost:2024`; override with `--backend-url` or `OPEN_SWE_BACKEND_URL`
 - **Packaged builds:** Ask for the backend URL on first launch and store it in local user data
-- **Alternative environments:** When the backend sets `OPENSWE_ALTERNATIVE_ENVS="preview:https://...,staging:https://..."`, **Open SWE → Environment** switches between them (changes only until restart)
+- **Alternative environments:** When the backend sets `OPENSWE_ALTERNATIVE_ENVS="preview:https://...,staging:https://..."`, **Robin → Environment** switches between them (changes only until restart)
 - **Desktop UI selection:** The backend `/desktop-ui.json` descriptor selects a GitHub Release archive by commit, SHA-256, and bridge protocol version
 - **Proxy routes:** Electron proxies `/dashboard/api/*` requests to the selected backend, so the browser never receives LangSmith API keys or calls the raw LangGraph API directly
 

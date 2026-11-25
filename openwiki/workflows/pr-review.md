@@ -5,12 +5,10 @@ description: How Open SWE starts GitHub pull-request reviews, prepares a diff-gr
 tags: [reviewer, pr-review, github, webhooks, findings, reconciliation, review-scout, style-guidance]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-25T18:33:42.659Z
 sources:
   - id: openwiki-source-5bbba7b2a8ea8360ff233d63
     resource: repo://langgraph.json
-  - id: openwiki-source-657c0da6093807548cc5e23d
-    resource: repo://openswe/github/channel.py
   - id: openwiki-source-9ad7888a549990068f28dbdc
     resource: repo://openswe/github/webhook.py
   - id: openwiki-source-7f78050909c084a5110d4c49
@@ -45,7 +43,7 @@ sources:
     resource: repo://tests/reviewer/test_reviewer_tools.py
   - id: openwiki-source-83b74fcdcdb9d5b5b177c97b
     resource: repo://tests/reviewer/test_reviewer_watch.py
-generated: { by: "openwiki/0.4.2", at: "2026-11-11T15:58:52.285Z" }
+generated: { by: "openwiki/0.4.2", at: "2026-11-25T18:33:42.659Z" }
 ---
 
 # Pull Request Review Workflow
@@ -54,7 +52,7 @@ Open SWE reviews a pull request through a dedicated `reviewer` graph. A PR has o
 
 ## Entrypoints and admission
 
-GitHub webhooks are delivered to the MDA (Managed Deep Agents) deployment's GitHub channel, which verifies each delivery's signature and dispatches it to the backend via `record_github_delivery`. The backend runs work handlers synchronously (like background tasks, not a separate route) and answers MDA's queries about repository state. Work handlers verify X-Hub-Signature-256 HMAC signatures, ignore unsupported event types or PR actions, and admit them subject to public-repository and organization gates. Processing is asynchronous: webhooks return quickly and work proceeds in the background.
+GitHub webhooks are delivered to the backend, which verifies each delivery's signature and routes it to work handlers. Work handlers verify X-Hub-Signature-256 HMAC signatures, ignore unsupported event types or PR actions, and admit them subject to public-repository and organization gates. Processing is asynchronous: webhooks return quickly and work proceeds in the background.
 
 A review can begin through:
 
@@ -63,31 +61,11 @@ A review can begin through:
 - **A later push:** a push to a watched PR's head branch only becomes a re-review when the PR remains open and its canonical reviewer thread has `watch=true`.
 - **A reply to a reviewer comment:** a non-bot reply to an Open SWE review comment is routed separately before ordinary mention handling and can dispatch a focused reassessment run.
 
-<!-- openwiki: mermaid parse failed and this diagram was converted to a text fence so it does not break rendering. Fix the diagram source and restore the mermaid fence. Parser error: Heuristic: an unescaped angle bracket inside a label breaks rendering; rephrase the label. -->
-```text
-flowchart TD
-  Webhook["GitHub webhook"] --> Verify["Verify signature"]
-  Verify --> Action{"PR opened, ready,<br/>or push?"}
-  Webhook --> Reply{"Review-comment reply?"}
-  Action -->|"opened / ready"| Gate["Repository and<br/>draft gates"]
-  Gate -->|"accepted"| ThreadID["Derive or<br/>update thread"]
-  Action -->|"push"| Watch{"Thread exists<br/>and watching?"}
-  Watch -->|"yes"| ThreadID
-  Reply -->|"yes"| ThreadID
-  ThreadID --> Scout["Run review-scout<br/>on PR"]
-  Scout --> Check["Create in-progress<br/>check run"]
-  Check --> Run["Dispatch reviewer<br/>graph"]
-  Run --> Publish["Reconcile and<br/>publish findings"]
-  Publish --> Gate
-```
-
-The trigger paths converge on the same per-PR reviewer state. An automatic review-first entrypoint optionally runs a lightweight `review-scout` graph that analyzes PR scope and structure to determine review necessity.
-
 ## Canonical thread and review state
 
 `reviewer_thread_id(owner, repo, pr_number)` is UUIDv5 over `"{owner}/{repo}/pr/{pr_number}/reviewer"`. Webhooks, the dashboard, and tools all derive it, making the formula a cross-process persisted-data contract: changing it strands existing state.
 
-The LangGraph thread metadata is the durable state owner. It is marked `kind="reviewer"` and contains PR metadata, `head_sha`, `last_reviewed_sha`, `watch`, optional Slack origin, transient status/check identifiers, the current run id, and finding storage pointers. Thread metadata is deliberately used because it survives sandbox eviction and is queryable across threads. Review runs use `assistant_id="reviewer"`, mapped by `langgraph.json` to `openswe.graphs.reviewer:traced_reviewer_agent`.
+The LangGraph thread metadata is the durable state owner. It is marked `kind="reviewer"` and contains PR metadata, `head_sha`, `last_reviewed_sha`, `last_reviewed_base_sha`, `watch`, optional Slack origin, transient status/check identifiers, the current run id, and finding storage pointers. Thread metadata is deliberately used because it survives sandbox eviction and is queryable across threads. Review runs use `assistant_id="reviewer"`, mapped by `langgraph.json` to `openswe.graphs.reviewer:traced_reviewer_agent`.
 
 ## Findings model and persistence
 
@@ -99,8 +77,9 @@ Findings live in PostgreSQL under the pull request they were raised on (owned by
 - **Status lifecycle:** open → resolved or dismissed
 - **GitHub publication:** review ID, comment IDs, thread IDs, resolved thread markers
 - **Tracing:** SHA where first seen, last confirmed SHA, fingerprint for deduplication
+- **Surface state:** monotonic progression from not_surfaced → surfaced → resolve_pending → resolved
 
-Before findings moved to PostgreSQL, they lived in thread metadata; the first access to a legacy thread copies them over once, marked by a `pull_request_finding_state` row. Reads normalize legacy singular GitHub-identity fields and nested `surface` data to canonical ID lists plus a forward-only `surface_state` (not_surfaced → surfaced → resolve_pending → resolved). The storage API serializes mutations per thread/event loop, reads the freshest state, and writes only on change; snapshot replacement merges by finding ID. `append_finding` deduplicates against open findings by fingerprint. A missing reviewer thread raises `ReviewerThreadMissingError`; tools return a structured `thread_not_found` response directing the agent not to retry.
+Before findings moved to PostgreSQL, they lived in thread metadata; the first access to a legacy thread copies them over once, marked by a `pull_request_finding_state` row. Reads normalize legacy singular GitHub-identity fields and nested `surface` data to canonical ID lists plus a forward-only `surface_state`. The storage API serializes mutations per thread/event loop, reads the freshest state, and writes only on change; snapshot replacement merges by finding ID to avoid concurrent-addition loss. `append_finding` deduplicates against open findings by fingerprint. A missing reviewer thread raises `ReviewerThreadMissingError`; tools return a structured `thread_missing_tool_result` response directing the agent not to retry.
 
 ### Finding lifecycle and state
 
@@ -108,7 +87,7 @@ Before findings moved to PostgreSQL, they lived in thread metadata; the first ac
 stateDiagram-v2
   [*] --> OpenNotSurfaced: add_finding
   OpenNotSurfaced --> OpenSurfaced: publish_review posts inline comment
-  OpenSurfaced --> OpenResolvePending: review thread resolved or dismissed
+  OpenSurfaced --> OpenResolvePending: GitHub thread resolved or dismissed
   OpenResolvePending --> Resolved: GitHub thread marked resolved
   
   OpenNotSurfaced --> UpdatedNotSurfaced: update_finding
@@ -154,7 +133,7 @@ At preparation time, the reviewer fetches the repository's custom style prompt (
 
 ## Selection and publication
 
-Publication selects only open, in-diff findings at or above the requested severity (default `medium`), orders them by the reviewer's assigned rank, then by severity descending, then file/line for stable ordering. Confidence is stored for calibration but does not gate publication. A re-review additionally limits new publication to unsurfaced findings first seen at the current head, preventing duplicate comments.
+Publication selects only open, in-diff findings at or above the requested severity (default `medium`), orders them by rank (reviewer-assigned order), then by severity descending, then file/line for stable ordering. Confidence is stored for calibration but does not gate publication. A re-review additionally limits new publication to unsurfaced findings first seen at the current head, preventing duplicate comments.
 
 `publish_review` first reconciles findings with live GitHub threads (backfilling GitHub identities), resolves the live head from thread metadata rather than trusting a run's frozen config, then emits one GitHub PR Review. Inline comments contain a hidden finding marker (JSON with finding ID and location), generated title, description, line reference, and optional fenced suggestion; the top-level body is host-formatted and carries a summary marker. Returned review and comment identities are recorded before later thread handling, enabling reconciliation and resolution.
 
@@ -197,6 +176,6 @@ Each dispatched automatic review creates an **Open SWE Review** check and saves 
 
 ## Operational checks and focused tests
 
-Enable automatic review explicitly with the enabled-review-repositories store; installing the GitHub App alone does not opt a repository in. Operators should investigate a missing completion check through reviewer-thread metadata (`review_check_run_id` and `review_check_pending_result`), token availability, and sandbox preparation failures. A `thread_not_found` tool result is terminal for that run, not a request to retry.
+Enable automatic review explicitly with the enabled-review-repositories store; installing the GitHub App alone does not opt a repository in. Operators should investigate a missing completion check through reviewer-thread metadata (`review_check_run_id` and `review_check_pending_result`), token availability, and sandbox preparation failures. A `thread_missing_tool_result` tool result is terminal for that run, not a request to retry.
 
 `tests/reviewer/` provides focused coverage for automatic PR gating (`test_pr_ready_auto_review.py`), watch and unchanged-diff behavior (`test_reviewer_watch.py`), finding storage and tool validation (`test_reviewer_findings.py`, `test_reviewer_tools.py`), reconciliation (`test_reviewer_reconcile.py`), and publishing/status comments/retry behavior (`test_reviewer_publish.py`).

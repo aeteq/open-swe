@@ -5,7 +5,7 @@ description: Ordering-sensitive middleware, retry/timeout policies, permission g
 tags: [middleware, agent, reviewer, model-call, tool-call, state-management, transcript, PrepareRunState, failure-handling]
 verified:
   - by: openwiki/0.4.2
-    at: 2026-11-11T15:58:52.285Z
+    at: 2026-11-25T18:33:42.659Z
 sources:
   - id: openwiki-source-0190f218684562b378eff2f1
     resource: repo://openswe/agent_api/agent.py
