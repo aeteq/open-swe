@@ -93,6 +93,7 @@ async def publish_review(
     severity_threshold: Severity = "medium",
     state: Annotated[dict[str, Any] | None, InjectedState] = None,
     assessment: ReviewAssessment | None = None,
+    summary: str = "",
 ) -> dict[str, Any]:
     """Implement the `publish_review` tool."""
     if _has_sibling_tool_calls(state):
@@ -164,6 +165,7 @@ async def publish_review(
             trace_link_config_override=cfg.review_trace_link_enabled,
             state=state,
             assessment=assessment,
+            summary=summary,
         )
         events = ReviewEvents.from_config(cfg)
         if events is not None:
@@ -318,6 +320,7 @@ async def _publish_review_async(
     state: dict[str, Any] | None = None,
     assessment: ReviewAssessment | None = None,
     base_sha: str = "",
+    summary: str = "",
 ) -> dict[str, Any]:
     thread_id = get_thread_id_from_runtime()
     dry_run = True
@@ -484,7 +487,7 @@ async def _publish_review_async(
             title=check_title,
             summary=check_summary,
         )
-        await request_after_ai_review(pull_request)
+        await request_after_ai_review(pull_request, summary)
         return {
             "success": True,
             "review_id": None,
@@ -773,7 +776,7 @@ async def _publish_review_async(
         title=check_title,
         summary=check_summary,
     )
-    await request_after_ai_review(pull_request)
+    await request_after_ai_review(pull_request, summary)
 
     result: dict[str, Any] = {
         "success": True,

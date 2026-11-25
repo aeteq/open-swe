@@ -20,6 +20,9 @@ Args:
   The host may submit an approval only when an admin has set the repository to approve and the reviewed commit is still current; otherwise it posts the assessment as a comment.
   No merge is performed.
   Assessments are omitted in eval mode and when publication retries with only a subset of findings.
+- summary: One plain sentence, in your own words, on what the PR does and why, for a person deciding whether to review it (at most 200 characters), such as "Lets back-office users duplicate a workspace tab".
+  No Markdown, file paths or code.
+  Shown on the human review card Robin may post after this review; ignored once the PR already has one.
 - severity_threshold: Lowest severity to surface as inline GitHub comments (default ``medium``).
   Lower-severity findings stay in state and are mentioned in the review summary with a link to the web app, but are not posted as inline PR comments.
   Returns: Dictionary with ``success``, ``review_id``, ``surfaced_count``, ``hidden_count``, ``resolved_thread_count``, and sometimes ``unresolvable_findings``, plus the flags below.
