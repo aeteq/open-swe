@@ -24,3 +24,11 @@ Makefile
 scripts/vendor.py
 vendor/README.md
 vendor/managed-deepagents-sdk/*
+# Shorter human review card with the reviewer's one-line summary:
+openswe/human_review/card.py
+openswe/human_review/standard.py
+openswe/tools/publish_review.py
+openswe/resources/prompts/reviewer/main.md.jinja
+openswe/resources/prompts/tools/publish_review.md
+tests/human_review/test_standard.py
+tests/reviewer/test_reviewer_publish.py

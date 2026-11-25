@@ -97,6 +97,7 @@ async def publish_review(
     severity_threshold: Severity = "medium",
     state: Annotated[dict[str, Any] | None, InjectedState] = None,
     assessment: ReviewAssessment | None = None,
+    summary: str = "",
 ) -> dict[str, Any]:
     """Implement the `publish_review` tool."""
     if _has_sibling_tool_calls(state):
@@ -177,6 +178,7 @@ async def publish_review(
             assessment=assessment,
             apps_only=apps_only,
             app_results=app_results,
+            summary=summary,
         )
         events = ReviewEvents.from_config(cfg)
         if events is not None:
@@ -338,6 +340,7 @@ async def _publish_review_async(
     base_sha: str = "",
     apps_only: bool = False,
     app_results: tuple[ReviewAppResult, ...] = (),
+    summary: str = "",
 ) -> dict[str, Any]:
     """Publish findings and verified app results without changing the code verdict for apps-only runs."""
     thread_id = get_thread_id_from_runtime()
@@ -517,7 +520,7 @@ async def _publish_review_async(
             title=check_title,
             summary=check_summary,
         )
-        await request_after_ai_review(pull_request)
+        await request_after_ai_review(pull_request, summary)
         return {
             "success": True,
             "review_id": None,
@@ -845,7 +848,7 @@ async def _publish_review_async(
         title=check_title,
         summary=check_summary,
     )
-    await request_after_ai_review(pull_request)
+    await request_after_ai_review(pull_request, summary)
 
     result: dict[str, Any] = {
         "success": True,

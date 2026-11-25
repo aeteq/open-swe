@@ -565,6 +565,7 @@ async def test_publish_review_skips_findings_already_published(
             severity_threshold="medium",
             is_re_review=False,
             app_results=(saved,) if app_history_unavailable else (),
+            summary="Adds upload retries",
         )
 
     assert result["success"] is True
@@ -577,6 +578,7 @@ async def test_publish_review_skips_findings_already_published(
     paths = {c["path"] for c in posted}
     assert paths == {"b.py"}
     _isolate_publish_review_pr_state.assert_awaited_once()
+    assert _isolate_publish_review_pr_state.await_args.args[1] == "Adds upload retries"
 
 
 @pytest.mark.asyncio

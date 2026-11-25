@@ -5,6 +5,7 @@ signed up to review it on GitHub and where each of them stands.
 """
 
 import json
+from typing import Final
 
 from openswe.expedited_review.eligibility import ChangedFile
 from openswe.human_review.pick_modals import PICK_MODALS
@@ -13,6 +14,8 @@ from openswe.slack.blocks import Block, ButtonElement, actions, button, context,
 from openswe.users import User
 
 BUTTON_TYPE = "human_review"
+# What an open request waits on before anyone approves; the heading already says so.
+AWAITING_FIRST_APPROVAL: Final = "an approval on GitHub"
 
 _STATE_LABELS = {
     "APPROVED": ":white_check_mark: approved",
@@ -74,13 +77,7 @@ async def _approvers(request: HumanReviewRequest, states: dict[str, str]) -> str
     return ", ".join(approvers)
 
 
-def _stats(
-    request: HumanReviewRequest,
-    author: str,
-    requester: str | None,
-    files: list[ChangedFile] | None,
-) -> str:
-    pr = request.pull_request
+def _stats(author: str, requester: str | None, files: list[ChangedFile] | None) -> str:
     parts = [f"By {author}"]
     if files is not None:
         non_test_files = [file for file in files if not file.is_test]
@@ -88,8 +85,6 @@ def _stats(
         deletions = sum(file.deletions for file in non_test_files)
         noun = "file" if len(non_test_files) == 1 else "files"
         parts.append(f"+{additions} −{deletions} in {len(non_test_files)} non-test {noun}")
-    if pr.head_ref and pr.base_ref:
-        parts.append(f"`{escape(pr.head_ref)}` → `{escape(pr.base_ref)}`")
     if requester is not None and requester != author:
         parts.append(f"Requested by {requester}")
     return "  ·  ".join(parts)
@@ -157,12 +152,11 @@ async def open_card(
     blocks: list[Block] = [section(f"{await _heading(request, review_states)}\n*{escape(title)}*")]
     if request.tldr:
         blocks.append(section("\n".join(f">{line}" for line in escape(request.tldr).splitlines())))
-    blocks.append(context(_stats(request, author, requester, files)))
-    blocks.append(
-        context("Auto-merge enabled" if request.auto_merge else "Manual merge — auto-merge is off")
-    )
+    blocks.append(context(_stats(author, requester, files)))
+    if request.auto_merge:
+        blocks.append(context("Auto-merge enabled"))
     blocks.extend(_reviewers(request, review_states))
-    if request.detail:
+    if request.detail and request.detail != AWAITING_FIRST_APPROVAL:
         blocks.append(context(f"Waiting on: {escape(request.detail)}."))
     blocks.append(actions(*_buttons(request)))
     return f"Review requested for {_label(request)}: {title}", blocks
