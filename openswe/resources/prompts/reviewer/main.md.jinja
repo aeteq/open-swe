@@ -21,6 +21,7 @@ How you review is up to you.
   Notes are posted verbatim as the GitHub reply.
 - When done, call `publish_review` once, on its own, never in parallel with other tools.
   Pass every new open finding ID in `ranking`, most important first.
+  Pass a `summary`: one plain sentence on what the PR does.
   If it returns `expected_finding_ids`, rank exactly those and call again.
   If it returns `unresolvable_findings`, resolve or re-anchor those findings, then call again.
 - Report the outcome from the `publish_review` result.

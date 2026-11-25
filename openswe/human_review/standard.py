@@ -46,7 +46,13 @@ from openswe.github.org_membership import OPEN_SWE_GITHUB_LOGINS
 from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest, PullRequestPayload
 from openswe.github.repo_files import RepoFileUnreadableError, RepoSettings
-from openswe.human_review.card import accept_button, decline_button, mention, snooze_button
+from openswe.human_review.card import (
+    AWAITING_FIRST_APPROVAL,
+    accept_button,
+    decline_button,
+    mention,
+    snooze_button,
+)
 from openswe.human_review.deadlines import schedule as _schedule
 from openswe.human_review.lifecycle import ReviewCard, ReviewPicks
 from openswe.human_review.merging import merge_pull_request
@@ -103,6 +109,9 @@ logger = logging.getLogger(__name__)
 AUTO_MERGE_AFTER_HOURS = 2
 SUMMARY_MAX_CHARS = 280
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+# A description's headings (`## Summary`) and list markers read as noise on one line.
+_MARKDOWN_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t].*)?$", re.MULTILINE)
+_LIST_MARKER = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", re.MULTILINE)
 DeadlineStep = Literal["unclaimed", "pick_expiry", "auto_merge"]
 # A deadline run may start a little before the wait its timer was set for has passed.
 _SCHEDULER_EARLINESS = timedelta(minutes=1)
@@ -191,8 +200,9 @@ def _failure(error: str) -> RequestResult:
 
 
 def summary_line(text: str) -> str:
-    """``text`` on one line, cut at a word boundary to fit the card."""
-    flat = " ".join(_HTML_COMMENT.sub("", text).split())
+    """``text`` on one line without Markdown structure, cut at a word boundary to fit the card."""
+    plain = _LIST_MARKER.sub("", _MARKDOWN_HEADING.sub("", _HTML_COMMENT.sub("", text)))
+    flat = " ".join(plain.split())
     if len(flat) <= SUMMARY_MAX_CHARS:
         return flat
     return flat[: SUMMARY_MAX_CHARS - 1].rsplit(" ", 1)[0].rstrip(" ,.;:") + "…"
@@ -457,13 +467,16 @@ async def request_review(
     return result
 
 
-async def request_after_ai_review(pull_request: PullRequest) -> AutoAssignResult | None:
+async def request_after_ai_review(
+    pull_request: PullRequest, summary: str = ""
+) -> AutoAssignResult | None:
     """After a Robin review, post a card and pick a human reviewer, if the repository opted in.
 
     Only the default branch's settings count, so a pull request cannot opt itself in or
     out. Each review retries until the pull request has had a request, so one blocked
     at its first review (a draft, failing checks) still gets a reviewer later. The card
-    summarizes the pull request's description. ``None`` when nothing was requested;
+    shows the reviewer's ``summary``, or the start of the pull request's description
+    without one. ``None`` when nothing was requested;
     failures are logged, since the published review stands regardless.
     """
     pr_ref = GitHubPrRef(
@@ -479,7 +492,9 @@ async def request_after_ai_review(pull_request: PullRequest) -> AutoAssignResult
         if await HumanReviewRequest.ever_for(pr_ref.owner, pr_ref.repo, pr_ref.number):
             return None
         async with PullRequestClient.as_app(pr_ref.owner, pr_ref.repo, pr_ref.number) as pull:
-            result = await _request_review(pr_ref, pull, Origin(), channel="", inline_summary=None)
+            result = await _request_review(
+                pr_ref, pull, Origin(), channel="", inline_summary=summary.strip() or None
+            )
         if not result.success or result.reused:
             logger.info(
                 "No human review requested after the AI review",
@@ -1058,7 +1073,7 @@ def merge_wait(
     """
     approvers = {login.lower() for login, state in states.items() if state == "APPROVED"}
     if not approvers:
-        return "an approval on GitHub"
+        return AWAITING_FIRST_APPROVAL
     pending = [login for login in reviewers if login.lower() not in approvers]
     deadline_passed = (
         auto_merge

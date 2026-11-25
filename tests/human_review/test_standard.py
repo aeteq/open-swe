@@ -612,6 +612,60 @@ def test_a_short_description_is_shown_whole_without_its_template_comments() -> N
     assert summary_line("<!-- template -->\nFixes the\nretry loop.\n") == "Fixes the retry loop."
 
 
+def test_a_description_loses_its_headings_and_list_markers() -> None:
+    description = "## Summary\n\n- Adds retries.\n* Logs failures.\n1. Keeps #42 open.\n"
+    assert summary_line(description) == "Adds retries. Logs failures. Keeps #42 open."
+
+
+@pytest.mark.parametrize("auto_merge", [True, False])
+async def test_open_card_shows_only_what_a_reviewer_needs(auto_merge: bool) -> None:
+    pr = PullRequest(
+        owner="o",
+        repo="r",
+        number=1,
+        title="Fix",
+        author="ada",
+        head_ref="fix-retries",
+        base_ref="main",
+    )
+    request = HumanReviewRequest(
+        pull_request_id=pr.id,
+        head_sha="abc",
+        kind="standard",
+        auto_merge=auto_merge,
+        detail="an approval on GitHub",
+    )
+    request.pull_request = pr
+    request.requested_by = None
+    with (
+        patch.object(ReviewCard, "_files", AsyncMock(return_value=None)),
+        patch.object(ReviewCard, "_review_states", AsyncMock(return_value={})),
+        patch.object(HumanReviewRequest, "author_mention", AsyncMock(return_value="@ada")),
+    ):
+        _, blocks = await ReviewCard(request)._render_standard(None)
+    rendered = str(block_payload(blocks))
+    assert "fix-retries" not in rendered
+    assert "Manual merge" not in rendered
+    assert "Waiting on" not in rendered
+    assert ("Auto-merge enabled" in rendered) is auto_merge
+
+
+async def test_open_card_shows_a_wait_other_than_the_first_approval() -> None:
+    pr = PullRequest(owner="o", repo="r", number=1, title="Fix", author="ada")
+    request = HumanReviewRequest(
+        pull_request_id=pr.id, head_sha="abc", kind="standard", detail="approval from @grace"
+    )
+    request.pull_request = pr
+    request.requested_by = None
+    with (
+        patch.object(ReviewCard, "_files", AsyncMock(return_value=None)),
+        patch.object(ReviewCard, "_review_states", AsyncMock(return_value={})),
+        patch.object(HumanReviewRequest, "author_mention", AsyncMock(return_value="@ada")),
+    ):
+        _, blocks = await ReviewCard(request)._render_standard(None)
+    assert "Waiting on: approval from @grace." in str(block_payload(blocks))
+
+
 def test_a_long_description_is_cut_at_a_word_with_an_ellipsis() -> None:
     description = "Retries failed uploads, " * 40
     line = summary_line(description)
