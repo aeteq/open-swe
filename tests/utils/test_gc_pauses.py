@@ -16,9 +16,9 @@ def _unfrozen() -> Iterator[None]:
     gc.unfreeze()
 
 
-def _slow_collection(_phase: str, _info: dict[str, int]) -> None:
+def _slow_collection(phase: str, info: dict[str, int]) -> None:
     """Stands in for a collection walking a large heap, timed from inside its callbacks."""
-    if _phase == "start":
+    if phase == "start" and info["generation"] == 2:
         time.sleep(0.15)
 
 
@@ -36,9 +36,13 @@ def test_a_long_collection_is_logged_and_a_short_one_is_not(
         finally:
             gc.callbacks.remove(_slow_collection)
 
-    (paused,) = [r for r in caplog.records if r.message == "Garbage collection paused the process"]
+    # Other collections may also run long on a busy runner; only the forced full one is ours.
+    (paused,) = [
+        r
+        for r in caplog.records
+        if r.message == "Garbage collection paused the process" and r.gc_generation == 2
+    ]
     assert paused.gc_pause_ms >= 100
-    assert paused.gc_generation == 2
     assert not any(isinstance(c, GcPauses) for c in gc.callbacks)
 
 
