@@ -63,6 +63,7 @@ from openswe.github.org_membership import INTERNAL_BOT_LOGINS, OPEN_SWE_GITHUB_L
 from openswe.github.pull_request_key import PullRequestKey
 from openswe.github.pull_request_status import PullRequestClient, pull_request_identity
 from openswe.github.repositories import Repository
+from openswe.input_messages import SystemIdentity
 from openswe.review.findings import REVIEWER_THREAD_KIND
 from openswe.users.models import User, UserIdentity
 from openswe.utils.json_types import JsonObject, thread_metadata
@@ -410,8 +411,9 @@ class PullRequest(Base):
         link = self.agent_link
         return link is not None and bool(link.wake_config)
 
-    async def wake_author(self, prompt: str) -> bool:
-        """Queue ``prompt`` on the agent thread that opened this PR; whether it could be woken."""
+    async def wake_author(self, prompt: str, *, sender: SystemIdentity) -> bool:
+        """Queue ``prompt`` from ``sender`` on the agent thread that opened this PR; whether it
+        could be woken."""
         link = self.agent_link
         if link is None or not link.wake_config:
             return False
@@ -426,7 +428,10 @@ class PullRequest(Base):
             prompt,
             configurable,
             source=str(configurable.get("source") or "github"),
+            origin="github",
             thread_title=None,
+            context={"sender_id": sender["id"], "surface": "automation", "kind": "system"},
+            systems=[sender],
             metadata={},
             multitask_strategy="enqueue",
         )

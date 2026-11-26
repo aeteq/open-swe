@@ -65,6 +65,14 @@ class DashboardPrincipal:
         """The GitHub login the session acts as; a LangSmith session has one once linked."""
         return None if self.subject.startswith("user:") else self.subject
 
+    @property
+    def holds_langsmith_grant(self) -> bool:
+        """Whether this sign in carries a LangSmith grant to check; a GitHub sign in, where
+        GitHub is the sign-in, holds none."""
+        from openswe.dashboard.github_link import GitHubLink
+
+        return not (self.provider == "github" and GitHubLink.is_sign_in())
+
     def authorize_path(self, path: str, method: str) -> None:
         if self.github_login is not None:
             return
@@ -139,12 +147,11 @@ class DashboardPrincipal:
         return user
 
     async def authorize(self, *, path: str | None = None) -> None:
-        from openswe.dashboard.github_link import GitHubLink
         from openswe.dashboard.langsmith_login import LangSmithLogin
 
         user = await self.user()
         if user is None:
             raise HTTPException(401, "Sign in with LangSmith to use Robin")
-        if self.provider == "github" and GitHubLink.is_sign_in():
+        if not self.holds_langsmith_grant:
             return
         await LangSmithLogin().authorize_user(user)

@@ -473,11 +473,15 @@ class LangSmithLogin:
         self, principal: DashboardPrincipal
     ) -> AsyncIterator[tuple[AsyncSession, User]]:
         """Share local authorization reads; release the transaction for provider calls."""
-        await self.require_configured()
+        if principal.holds_langsmith_grant:
+            await self.require_configured()
         async with postgres.session() as session:
             user = await principal.user(session=session)
             if user is None:
                 raise HTTPException(401, "Sign in with LangSmith to use Robin")
+            if not principal.holds_langsmith_grant:
+                yield session, user
+                return
             identity = next(
                 (item for item in user.identities if item.provider == "langsmith"), None
             )

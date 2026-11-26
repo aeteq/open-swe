@@ -1,13 +1,16 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openswe.dashboard.deps import session_is_admin
 from openswe.dashboard.github_link import GitHubLink
 from openswe.dashboard.langsmith_login import LangSmithLogin
 from openswe.dashboard.principal import DashboardPrincipal
+from openswe.database import postgres
 from openswe.threads.principals import Principal
 from openswe.users import User
 from openswe.users.models import UserIdentity
@@ -125,9 +128,22 @@ async def test_every_dashboard_session_requires_langsmith(monkeypatch, provider)
 
 @pytest.mark.asyncio
 async def test_github_session_needs_no_langsmith_where_github_is_the_sign_in(monkeypatch):
+    for name in ("LANGSMITH_OAUTH_CLIENT_ID", "LANGSMITH_OAUTH_CLIENT_SECRET", "LANGSMITH_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(GitHubLink, "is_sign_in", staticmethod(lambda: True))
-    monkeypatch.setattr(DashboardPrincipal, "user", AsyncMock(return_value=User()))
-    await DashboardPrincipal("github", "alice", None).authorize()
+    user = User()
+    monkeypatch.setattr(DashboardPrincipal, "user", AsyncMock(return_value=user))
+
+    @asynccontextmanager
+    async def session(existing=None):
+        yield AsyncSession()
+
+    monkeypatch.setattr(postgres, "session", session)
+    principal = DashboardPrincipal("github", "alice", None)
+
+    await principal.authorize()
+    async with LangSmithLogin().authorized_person(principal) as (_session, authorized):
+        assert authorized is user
 
 
 @pytest.mark.parametrize(

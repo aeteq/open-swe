@@ -27,6 +27,7 @@ from openswe.jobs import queue
 from openswe.review.approval_withdrawal import ApprovalWithdrawal
 from openswe.review.approvals import approval_mode_for
 from openswe.review.assessment_feedback import PublishedAssessment
+from openswe.review.author_handoff import AuthorHandoff
 from openswe.review.diff import compute_diff_line_set, fetch_pr_diff, is_range_in_diff
 from openswe.review.events import ReviewEvents
 from openswe.review.findings import (
@@ -848,7 +849,21 @@ async def _publish_review_async(
         title=check_title,
         summary=check_summary,
     )
-    await request_after_ai_review(pull_request, summary)
+    published_ids = {finding.get("id") for finding, _ in eligible_with_payload}
+    handed_off = await AuthorHandoff.send(
+        pull_request,
+        review_url=pull_request.url
+        + (f"#pullrequestreview-{review_id}" if isinstance(review_id, int) else ""),
+        findings=[
+            finding
+            for finding in await list_findings_async(thread_id)
+            if finding.get("id") in published_ids
+        ],
+    )
+    if not handed_off:
+        # The opening agent addresses the findings first; its push brings the re-review
+        # that asks a person once nothing new is found.
+        await request_after_ai_review(pull_request, summary)
 
     result: dict[str, Any] = {
         "success": True,
