@@ -5,16 +5,19 @@ from pydantic import BaseModel, Field
 from openswe.input_messages import SystemIdentity
 from openswe.slack.failures import SlackRequestTarget
 from openswe.slack.payloads import SlackChannelContext
+from openswe.trace_metadata import RunOrigin
 from openswe.utils.json_types import JsonObject
 
 
 class SlackRequest(BaseModel):
     channel_id: str
+    origin: RunOrigin = RunOrigin.SLACK
     thread_ts: str
     event_ts: str = ""
     original_message_ts: str = ""
     source_message_ts: str = ""
     retry_message_ts: str = ""
+    retry_user_id: str = ""
     event_id: str = ""
     user_id: str = ""
     user_name: str = ""
@@ -39,8 +42,6 @@ class SlackRequest(BaseModel):
     context_channel_id: str = ""
     breakout_root_suffix: str | None = None
     prior_message_text: str = ""
-    # A breakout's workspace, inherited from the thread it broke out of.
-    inherited_workspace: str | None = None
     # A `/btw` question, answered on this request's thread rather than as a turn.
     by_the_way: str | None = None
     # A bare `/breakout` in a conversation MDA's channel holds: the run moves the thread,
@@ -50,9 +51,8 @@ class SlackRequest(BaseModel):
     # Guidance for this turn alone, from whatever stood in for a typed message.
     turn_context: str = ""
     treat_all_messages_as_mentions: bool = False
-    kitchen_channel: bool = False
+    listening_channel: bool = False
     message_update: bool = False
-    code_channel: bool = False
     concierge_mode: bool = False
     web_only: bool = False
     explicit_request: bool = False
@@ -65,7 +65,7 @@ class SlackRequest(BaseModel):
             thread_ts=self.thread_ts,
             event_id=self.event_id,
             agent_thread_id=self.thread_id,
-            user_id=self.user_id,
+            user_id=self.retry_user_id or self.user_id,
             message_ts=self.retry_message_ts,
             reply_thread_ts=self.reply_thread_ts,
         )

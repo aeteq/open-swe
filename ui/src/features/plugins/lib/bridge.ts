@@ -6,6 +6,7 @@
  * Cap'n Web exposes a target's prototype methods and nothing else.
  */
 import type {
+  AppRelease,
   AttachmentType,
   CollectionApi,
   ChatScope,
@@ -30,10 +31,17 @@ import type {
   RoomEvent,
   RoomScope,
   SharedRepository,
+  SlackBot,
   StoredAttachment,
   StoredDocument,
   StoredJson,
   Subscription,
+  ThreadArtifact,
+  ThreadListOptions,
+  ThreadMessages,
+  ThreadPage,
+  ThreadSource,
+  ThreadSummary,
   Toast,
 } from "@openswe/plugin-sdk"
 import { RpcTarget } from "capnweb"
@@ -41,7 +49,7 @@ import type { RpcStub } from "capnweb"
 
 import {
   MAX_IMAGE_BYTES,
-  MAX_IMAGE_COUNT,
+  MAX_IMAGE_BATCH_BASE64,
   SUPPORTED_IMAGE_TYPES,
 } from "@/features/agents/components/composer/ChatComposer"
 import type { ImageChunk } from "@/features/agents/lib/types"
@@ -114,9 +122,17 @@ export interface BridgeHost {
   subscribe: (listener: (event: HostEvent) => void) => () => void
   navigate: (path: string, replace: boolean) => void
   openThread: (threadId: string) => void
+  /** Opens Robin's review page of a pull request in a shared repository. */
+  openReview: (repository: string, number: number) => void
   toast: (toast: Toast) => void
+  /** Counts an action the person took in the plugin. */
+  track: (action: string) => void
   /** The page's title, before " · Open SWE"; `null` is the plugin's name. */
   setTitle: (title: string | null) => void
+  /** The app's newest release when it's newer than the one running; `null` otherwise. */
+  newerRelease: () => Promise<AppRelease | null>
+  /** Asks the person to update to the newest release; resolves whether they did. */
+  updateApp: () => Promise<boolean>
   /** Whether to open `url`: only while the plugin is on screen, and outside GitHub only once the person agrees. */
   confirmLink: (url: string) => Promise<boolean>
   /** Shows the person a picker and shares what they choose; resolves to it, `[]` if they cancel. */
@@ -263,6 +279,7 @@ function pathName(
 
 const COLLECTION = /^[a-z][a-z0-9_-]{0,63}$/
 const DOCUMENT_KEY = /^[A-Za-z0-9._:@/-]{1,200}$/
+const APP_ACTION = /^[a-z][a-z0-9_]{0,39}$/
 const FIELD_PATH = /^[A-Za-z0-9_-]{1,64}(\.[A-Za-z0-9_-]{1,64}){0,7}$/
 
 function cursor(value: unknown, name: string): CursorWire | undefined {
@@ -327,6 +344,47 @@ function pullRole(value: unknown): PullRequestRole {
   return value
 }
 
+const THREAD_SOURCES = new Set<string>([
+  "dashboard",
+  "web",
+  "github",
+  "slack",
+  "linear",
+  "schedule",
+  "api",
+  "claude_code",
+  "incidents_agent",
+] satisfies Array<ThreadSource>)
+
+function threadSource(value: unknown): ThreadSource {
+  if (typeof value !== "string" || !THREAD_SOURCES.has(value))
+    invalid(`source must be one of ${[...THREAD_SOURCES].join(", ")}`)
+  return value as ThreadSource
+}
+
+function boundedInteger(
+  value: unknown,
+  name: string,
+  min: number,
+  max: number
+): number | undefined {
+  const found = optionalInteger(value, name)
+  if (found !== undefined && (found < min || found > max))
+    invalid(`${name} must be from ${min} to ${max}`)
+  return found
+}
+
+const threadIdArg = (value: unknown) => text(value, "threadId", 200)
+
+const SLACK_BOT = /^(\*|[A-Z0-9]{1,32}:[A-Z0-9]{1,32})$/
+
+function optionalBot(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== "string" || !SLACK_BOT.test(value))
+    invalid('bot must be a bot\'s key, "<team_id>:<bot_id>", or "*"')
+  return value
+}
+
 function attachmentType(value: unknown): AttachmentType {
   if (typeof value !== "string" || !ATTACHMENT_TYPES.has(value))
     invalid(
@@ -349,14 +407,17 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/
 function draftImages(value: unknown): Array<ImageChunk> {
   // Plugins built before draft images send none.
   if (value === undefined || value === null) return []
-  if (!Array.isArray(value) || value.length > MAX_IMAGE_COUNT)
-    invalid(`images must be a list of at most ${MAX_IMAGE_COUNT}`)
+  if (!Array.isArray(value)) invalid("images must be a list")
+  let totalBase64 = 0
   return value.map((item: unknown, index): ImageChunk => {
     const image: Partial<DraftImage> = record(item, `images[${index}]`)
     const mimeType = text(image.mimeType, "mimeType", 20)
     if (!SUPPORTED_IMAGE_TYPES.has(mimeType))
       invalid("images must be PNG, JPEG, WebP or GIF")
     const base64 = text(image.base64, "base64", MAX_DRAFT_IMAGE_BASE64)
+    totalBase64 += base64.length
+    if (totalBase64 > MAX_IMAGE_BATCH_BASE64)
+      invalid("images exceed 50MB total limit")
     if (!BASE64.test(base64)) invalid("base64 must be base64-encoded bytes")
     return {
       kind: "image",
@@ -688,6 +749,21 @@ export class PluginHostApi extends RpcTarget implements HostApi {
     )
   }
 
+  openReview(repository: string, number: number): Promise<void> {
+    return this.#budget.run(() => {
+      const host = this.#host()
+      const name = text(repository, "repository", 200).toLowerCase()
+      if (!host.plugin.repositories.some((one) => one.toLowerCase() === name))
+        throw new BridgeRequestError(
+          `${name} is not shared with the plugin`,
+          403
+        )
+      if (!Number.isInteger(number) || number < 1 || number > 2 ** 31 - 1)
+        invalid("number must be a pull request number")
+      host.openReview(name, number)
+    })
+  }
+
   openExternal(link: string): Promise<void> {
     return this.#budget.run(async () => {
       const url = webUrl(link).toString()
@@ -711,10 +787,26 @@ export class PluginHostApi extends RpcTarget implements HostApi {
     })
   }
 
+  track(action: string): Promise<void> {
+    return this.#budget.run(() => {
+      if (typeof action !== "string" || !APP_ACTION.test(action))
+        invalid("action must be lowercase letters, digits and _, at most 40")
+      this.#host().track(action)
+    })
+  }
+
   setTitle(title: string | null): Promise<void> {
     return this.#budget.run(() =>
       this.#host().setTitle(optionalText(title, "title", 120) ?? null)
     )
+  }
+
+  newerRelease(): Promise<AppRelease | null> {
+    return this.#budget.run(() => this.#host().newerRelease())
+  }
+
+  updateApp(): Promise<boolean> {
+    return this.#budget.run(() => this.#host().updateApp())
   }
 
   people(logins: Array<string>) {
@@ -723,6 +815,18 @@ export class PluginHostApi extends RpcTarget implements HostApi {
       if (checked.length === 0 || checked.length > 100)
         invalid("logins must name 1 to 100 people")
       return pluginsApi.people(this.#host().plugin.id, checked)
+    })
+  }
+
+  searchPeople(query: string, limit?: number) {
+    return this.#budget.run(() => {
+      if (typeof query !== "string" || query.length > 100)
+        invalid("query must be a string of at most 100 characters")
+      return pluginsApi.searchPeople(
+        this.#host().plugin.id,
+        query,
+        boundedInteger(limit, "limit", 1, 50)
+      )
     })
   }
 
@@ -795,10 +899,72 @@ export class PluginHostApi extends RpcTarget implements HostApi {
     )
   }
 
-  searchPulls(role: PullRequestRole): Promise<PullRequestSearch> {
-    return this.#budget.run(() =>
-      pluginsApi.searchPulls(this.#host().plugin.id, pullRole(role))
-    )
+  searchPulls(
+    role: PullRequestRole,
+    page?: number,
+    author?: string
+  ): Promise<PullRequestSearch> {
+    return this.#budget.run(() => {
+      if (
+        page !== undefined &&
+        (!Number.isInteger(page) || page < 1 || page > 10)
+      )
+        invalid("page must be an integer from 1 to 10")
+      const login = optionalText(author, "author", 39)
+      if (login !== undefined && role !== "author")
+        invalid('author needs role "author"')
+      return pluginsApi.searchPulls(
+        this.#host().plugin.id,
+        pullRole(role),
+        page,
+        login
+      )
+    })
+  }
+
+  listThreads(options: ThreadListOptions): Promise<ThreadPage> {
+    return this.#budget.run(() => {
+      this.#require("threads:read")
+      const fields = record(options, "options")
+      return pluginsApi.listThreads(this.#host().plugin.id, {
+        source: threadSource(fields.source),
+        bot: optionalBot(fields.bot),
+        limit: boundedInteger(fields.limit, "limit", 1, 50),
+        offset: boundedInteger(fields.offset, "offset", 0, 10_000),
+      })
+    })
+  }
+
+  slackBots(): Promise<Array<SlackBot>> {
+    return this.#budget.run(() => {
+      this.#require("threads:read")
+      return pluginsApi.slackBots(this.#host().plugin.id)
+    })
+  }
+
+  thread(id: string): Promise<ThreadSummary | null> {
+    return this.#budget.run(() => {
+      this.#require("threads:read")
+      return pluginsApi.thread(this.#host().plugin.id, threadIdArg(id))
+    })
+  }
+
+  threadMessages(id: string, limit?: number): Promise<ThreadMessages | null> {
+    return this.#budget.run(() => {
+      this.#require("threads:read")
+      return pluginsApi.threadMessages(
+        this.#host().plugin.id,
+        threadIdArg(id),
+        boundedInteger(limit, "limit", 1, 200)
+      )
+    })
+  }
+
+  threadArtifact(id: string): Promise<ThreadArtifact | null> {
+    return this.#budget.run(() => {
+      this.#require("threads:read")
+      return pluginsApi.threadArtifact(this.#host().plugin.id, threadIdArg(id))
+    })
   }
 
   provideTools(
@@ -1106,6 +1272,16 @@ class RepositoryTarget extends RpcTarget implements GitHubRepositoryApi {
     this.#release = release
   }
 
+  requestReview(number: number) {
+    return this.#budget.run(() =>
+      pluginsApi.requestReview(
+        this.#plugin,
+        this.#repository,
+        pullNumber(number)
+      )
+    )
+  }
+
   info() {
     return this.#budget.run(() =>
       pluginsApi.repository(this.#plugin, this.#repository)
@@ -1197,6 +1373,12 @@ class RepositoryTarget extends RpcTarget implements GitHubRepositoryApi {
   pull(number: number) {
     return this.#budget.run(() =>
       pluginsApi.pull(this.#plugin, this.#repository, pullNumber(number))
+    )
+  }
+
+  pullFiles(number: number) {
+    return this.#budget.run(() =>
+      pluginsApi.pullFiles(this.#plugin, this.#repository, pullNumber(number))
     )
   }
 

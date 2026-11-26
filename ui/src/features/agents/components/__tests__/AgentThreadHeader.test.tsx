@@ -16,26 +16,29 @@ import type { AgentThread } from "@/features/agents/lib/types"
 
 import { toast } from "sonner"
 
-const { shareThread } = vi.hoisted(() => ({ shareThread: vi.fn() }))
+const { shareThread, useSidebarPinnedThreads, useSidebarRepos } = vi.hoisted(
+  () => ({
+    shareThread: vi.fn(),
+    useSidebarPinnedThreads: vi.fn(() => ({ data: [] })),
+    useSidebarRepos: vi.fn(() => ({ data: [] })),
+  })
+)
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ data: { login: "owner" } }),
-}))
-vi.mock("@/features/agents/lib/desktopLocal", () => ({
-  useLocalThread: () => null,
 }))
 vi.mock("@/features/agents/lib/sidebarPrefs", () => ({
   useSidebarPrefs: () => ({ prefs: { filters: {} } }),
 }))
 vi.mock("@/features/agents/lib/queries", () => ({
-  useSidebarPinnedThreads: () => ({ data: [] }),
-  useSidebarRepos: () => ({ data: [] }),
+  useSidebarPinnedThreads,
+  useSidebarRepos,
   useSetAgentThreadViewed: () => ({ isPending: false, mutate: vi.fn() }),
   usePinAgentThread: () => ({ isPending: false, mutate: vi.fn() }),
   useResolveAgentThread: () => ({ isPending: false, mutate: vi.fn() }),
   useDeleteAgentThread: () => ({ isPending: false, mutate: vi.fn() }),
   useContinueThreadPrivately: () => ({ isPending: false, mutate: vi.fn() }),
-  useShareThreadWithWorkspace: () => ({
+  useShareThread: () => ({
     isPending: false,
     mutate: shareThread,
   }),
@@ -55,7 +58,6 @@ describe("AgentThreadHeader", () => {
     vi.stubGlobal("openSweDesktop", { copyPageLink })
     render(
       <AgentThreadHeader
-        target="Cloud"
         panelCollapsed={false}
         thread={
           {
@@ -74,7 +76,7 @@ describe("AgentThreadHeader", () => {
       }
     )
     fireEvent.click(
-      await screen.findByRole("menuitemradio", { name: "Workspace" })
+      await screen.findByRole("menuitemradio", { name: "Shared" })
     )
     fireEvent.click(screen.getByRole("checkbox"))
     fireEvent.click(screen.getByRole("button", { name: "Share entire thread" }))
@@ -100,11 +102,9 @@ describe("AgentThreadHeader", () => {
       visibility: "private",
     } as AgentThread
     const { rerender } = render(
-      <AgentThreadHeader
-        target="Cloud"
-        panelCollapsed={false}
-        thread={thread}
-      />
+      <TooltipProvider>
+        <AgentThreadHeader panelCollapsed={false} thread={thread} />
+      </TooltipProvider>
     )
     fireEvent.keyDown(
       screen.getByRole("button", { name: "Thread visibility" }),
@@ -117,11 +117,12 @@ describe("AgentThreadHeader", () => {
       screen.queryByRole("menuitem", { name: "Copy thread link" })
     ).toBeNull()
     rerender(
-      <AgentThreadHeader
-        target="Cloud"
-        panelCollapsed={false}
-        thread={{ ...thread, visibility: "public" }}
-      />
+      <TooltipProvider>
+        <AgentThreadHeader
+          panelCollapsed={false}
+          thread={{ ...thread, visibility: "public" }}
+        />
+      </TooltipProvider>
     )
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "Copy thread link" })
@@ -129,26 +130,16 @@ describe("AgentThreadHeader", () => {
     await waitFor(() => expect(copyPageLink).toHaveBeenCalledOnce())
   })
 
-  it.each(["Cloud", "This Mac", "Local CLI"] as const)(
-    "only shows the run target indicator for local targets: %s",
-    (target) => {
-      render(<AgentThreadHeader target={target} panelCollapsed={false} />)
-      const indicator = screen.queryByRole("img", {
-        name: `Runs on ${target}`,
-      })
-      expect(Boolean(indicator)).toBe(target !== "Cloud")
-    }
-  )
-
   it("saves a trimmed title once on Enter then blur", async () => {
     const onRename = vi.fn().mockResolvedValue(undefined)
     render(
-      <AgentThreadHeader
-        title={title}
-        target="Cloud"
-        panelCollapsed={false}
-        onRename={onRename}
-      />
+      <TooltipProvider>
+        <AgentThreadHeader
+          panelCollapsed={false}
+          thread={{ id: "thread-1", title, repoFullName: "" } as AgentThread}
+          onRename={onRename}
+        />
+      </TooltipProvider>
     )
     fireEvent.click(screen.getByRole("button", { name: "Rename thread" }))
     const input = screen.getByRole("textbox") as HTMLInputElement
@@ -180,8 +171,6 @@ describe("AgentThreadHeader", () => {
     render(
       <TooltipProvider>
         <AgentThreadHeader
-          title={title}
-          target="Cloud"
           panelCollapsed={false}
           thread={{ id: "thread-1", title, repoFullName: "" } as AgentThread}
           onRename={onRename}
@@ -221,12 +210,13 @@ describe("AgentThreadHeader", () => {
   it("discards edits on Escape", () => {
     const onRename = vi.fn()
     render(
-      <AgentThreadHeader
-        title={title}
-        target="Cloud"
-        panelCollapsed={false}
-        onRename={onRename}
-      />
+      <TooltipProvider>
+        <AgentThreadHeader
+          panelCollapsed={false}
+          thread={{ id: "thread-1", title, repoFullName: "" } as AgentThread}
+          onRename={onRename}
+        />
+      </TooltipProvider>
     )
     fireEvent.click(screen.getByRole("button", { name: "Rename thread" }))
     const input = screen.getByRole("textbox")
@@ -236,5 +226,33 @@ describe("AgentThreadHeader", () => {
     expect(onRename).not.toHaveBeenCalled()
     expect(screen.queryByRole("textbox")).toBeNull()
     expect(screen.getByText(title)).toBeTruthy()
+  })
+
+  it("renders repository indicator from thread metadata without fetching repos or pins on remount", () => {
+    render(
+      <TooltipProvider>
+        <AgentThreadHeader
+          panelCollapsed={false}
+          thread={
+            {
+              id: "thread-1",
+              title,
+              repo: "langchainplus",
+              repoFullName: "langchain-ai/langchainplus",
+            } as AgentThread
+          }
+        />
+      </TooltipProvider>
+    )
+    expect(
+      screen.getByRole("button", { name: "Repository: langchainplus" })
+    ).toBeTruthy()
+    expect(useSidebarRepos).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: false })
+    )
+    expect(useSidebarPinnedThreads).toHaveBeenCalledWith({
+      enabled: true,
+      refetchOnMount: false,
+    })
   })
 })

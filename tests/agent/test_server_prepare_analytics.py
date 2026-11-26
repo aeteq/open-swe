@@ -17,9 +17,10 @@ from runtime_api.loop import RunStarted
 
 import openswe.server as server
 from openswe.agent_api.tokens import AgentTurnSettings
+from openswe.execution import ExecutionProfile
 from openswe.middleware.prepare_run import PrepareRunState
 from openswe.prompt import SystemPrompt, construct_system_prompt
-from openswe.sandboxes.providers.langsmith import TimeoutLangSmithSandbox
+from openswe.sandboxes.providers.langsmith import LangSmithCreateOptions, TimeoutLangSmithSandbox
 from openswe.utils import ttl_cache
 
 _INSTALLATION_TOKEN = "installation-token"
@@ -114,7 +115,7 @@ def prepare_harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return "/workspace"
 
     monkeypatch.setattr(server, "resolve_sandbox_work_dir", fake_work_dir)
-    monkeypatch.setattr(server, "load_workspace", _async_none)
+    monkeypatch.setattr(server, "cached_settings", AsyncMock(return_value={}))
     monkeypatch.setattr(server, "_resolve_prompt_default_repo", _async_none)
     monkeypatch.setattr(server, "_resolve_user_custom_instructions", _async_none)
     monkeypatch.setattr(server, "_thread_participant_identities", _async_list)
@@ -323,7 +324,7 @@ async def test_a_thread_keeps_its_system_prompt_while_each_turn_says_where_it_ca
 ) -> None:
     """Any change to the system prompt misses the model provider's cache for the whole thread."""
     monkeypatch.setattr(server, "construct_system_prompt", construct_system_prompt)
-    monkeypatch.setattr(server, "cached_workspace_settings", AsyncMock(return_value={}))
+    monkeypatch.setattr(server, "cached_settings", AsyncMock(return_value={}))
     prepare_harness["thread_metadata"] = {}
     backend = TimeoutLangSmithSandbox(MagicMock(name="sandbox-test"))
     proxy = _ReadyProxy()
@@ -370,6 +371,39 @@ async def test_a_thread_keeps_its_system_prompt_while_each_turn_says_where_it_ca
     )
     assert rerendered["rendered_system_prompt"] == system_prompt
 
+    profile = ExecutionProfile(
+        create=LangSmithCreateOptions.resolve(),
+        instructions="Global execution guidance.",
+        repos=["acme/global"],
+    )
+    with ExecutionProfile.bind(profile):
+        activated = await _middleware({"configurable": dashboard})._prepare(later, runtime)
+        active = cast(PrepareRunState, {**later, **activated})
+        activated_prompt = activated["rendered_system_prompt"]
+        assert isinstance(activated_prompt, str)
+        assert "Global execution guidance." in activated_prompt
+        assert active["rendered_thread_prompt"] == later["rendered_thread_prompt"]
+        unchanged = await _middleware({"configurable": dashboard})._prepare(active, runtime)
+        assert "rendered_system_prompt" not in unchanged
+    edited = profile.model_copy(update={"instructions": "Updated global guidance."})
+    with ExecutionProfile.bind(edited):
+        updated = await _middleware({"configurable": dashboard})._prepare(active, runtime)
+        updated_prompt = updated["rendered_system_prompt"]
+        assert isinstance(updated_prompt, str)
+        assert "Updated global guidance." in updated_prompt
+        assert updated["rendered_thread_prompt"] == later["rendered_thread_prompt"]
+    pre_segment = dict(later)
+    pre_segment.pop("rendered_execution_prompt", None)
+    pre_segment.pop("rendered_thread_prompt", None)
+    with ExecutionProfile.bind(profile):
+        migrated = await _middleware({"configurable": dashboard})._prepare(
+            cast(PrepareRunState, pre_segment), runtime
+        )
+        migrated_prompt = migrated["rendered_system_prompt"]
+        assert isinstance(migrated_prompt, str)
+        assert "Global execution guidance." in migrated_prompt
+        assert migrated["rendered_thread_prompt"] == later["rendered_thread_prompt"]
+
 
 def test_threads_share_their_system_prompt_up_to_what_only_each_says() -> None:
     """A new thread's first call reads the shared part from the cache another wrote."""
@@ -378,10 +412,7 @@ def test_threads_share_their_system_prompt_up_to_what_only_each_says() -> None:
         artifact_url="https://dashboard.invalid/threads/1/plan",
         default_repo={"owner": "acme", "name": "api"},
         repo_custom_instructions="Run make test.",
-        workspace_name="Backend",
-        workspace_instructions="Use uv.",
-        workspace_repos=["acme/api"],
-        admin_workspaces=True,
+        admin=True,
         sole_writer=True,
         continued_from_collaborative=True,
     )

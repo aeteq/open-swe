@@ -13,10 +13,9 @@
  * the agent started". A run joined mid-stream may have missed the message and
  * then carries no `generation_start`.
  *
- * The span also counts protocol events and text deltas, samples the lag between the
- * server's event timestamp and receipt (clock skew included, so read it as a
- * trend rather than an absolute), and, in development builds, accumulates React
- * commit time for the transcript while the run streams.
+ * The span also counts stream events and text chunks, samples the lag between an
+ * event's timestamp and its handling, and, in development builds, accumulates
+ * React commit time for the transcript while the run streams.
  *
  * The stream pool keeps background runs alive, so request and transcript
  * timings are matched to a tracker by thread id and never charged to a
@@ -25,7 +24,7 @@
 
 import { subscribeRequestTimings } from "./fetchTiming"
 import { startSpan } from "./trace"
-import type { PerfAttributes, SpanHandle } from "./trace"
+import type { PerfAttributes, PerfThreadSource, SpanHandle } from "./trace"
 
 export type RunEndReason = "success" | "error" | "interrupt" | "stopped"
 
@@ -59,6 +58,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
+/** An assistant message chunk, as the server streams it or the SDK names it. */
+const AI_MESSAGE_TYPES = new Set<unknown>(["ai", "AIMessageChunk"])
+
+/** Whether a message chunk's content carries any text. */
+function hasText(content: unknown): boolean {
+  if (typeof content === "string") return content.length > 0
+  return (
+    Array.isArray(content) &&
+    content.some(
+      (block) =>
+        isRecord(block) &&
+        block["type"] === "text" &&
+        typeof block["text"] === "string" &&
+        block["text"].length > 0
+    )
+  )
+}
+
 function openRunsFor(threadId: string): Array<RunTracker> {
   const key = threadId.toLowerCase()
   return [...openRuns].filter((run) => run.threadId === key)
@@ -79,12 +96,16 @@ subscribeRequestTimings((timing) => {
 export class RunTracker {
   state: RunState | null = null
   threadId: string | null
+  private readonly threadSource: PerfThreadSource
 
   constructor(options: {
     /** `null` until a lazily created thread has an id; see `bindThread`. */
     threadId: string | null
+    /** The backend whose runs this tracker times, sent as `thread_source`. */
+    threadSource: PerfThreadSource
   }) {
     this.threadId = options.threadId?.toLowerCase() ?? null
+    this.threadSource = options.threadSource
   }
 
   private begin(
@@ -95,7 +116,10 @@ export class RunTracker {
       this.state.span.abandon("superseded")
     }
     this.state = {
-      span: startSpan("agent_run", extra),
+      span: startSpan("agent_run", {
+        ...extra,
+        thread_source: this.threadSource,
+      }),
       turnId: null,
       ...submission,
       events: 0,
@@ -131,23 +155,16 @@ export class RunTracker {
     this.state?.span.mark("accepted")
   }
 
-  /** A raw protocol event from the `lifecycle` or `messages` channel. */
+  /** An event of the `lifecycle` or `messages` channel, as `useChannelEffect` gives it. */
   event(event: unknown): void {
     if (!isRecord(event) || !isRecord(event["params"])) return
     const params = event["params"]
-    const data = params["data"]
-    if (!isRecord(data)) return
     const method = event["method"]
-    const namespace = params["namespace"]
 
-    if (
-      method === "lifecycle" &&
-      Array.isArray(namespace) &&
-      namespace.length === 0 &&
-      data["event"] === "running"
-    ) {
-      // A run this client did not submit (queued message, another tab, Slack).
-      if (!this.state || this.state.span.ended) this.begin({ joined: true })
+    // A run this client did not submit (queued message, another tab, Slack)
+    // shows first as its output: no event says a run started.
+    if (method === "messages" && (!this.state || this.state.span.ended)) {
+      this.begin({ joined: true })
       this.state?.span.mark("accepted")
     }
 
@@ -166,17 +183,10 @@ export class RunTracker {
     }
 
     if (method !== "messages") return
-
-    if (data["event"] === "message-start") {
-      if (data["role"] === "ai") state.span.mark("generation_start")
-      return
-    }
-
-    if (data["event"] !== "content-block-delta") return
-    const delta = data["delta"]
-    if (!isRecord(delta) || delta["type"] !== "text-delta") return
-    const text = delta["text"]
-    if (typeof text !== "string" || !text) return
+    const [message] = Array.isArray(params["data"]) ? params["data"] : []
+    if (!isRecord(message) || !AI_MESSAGE_TYPES.has(message["type"])) return
+    state.span.mark("generation_start")
+    if (!hasText(message["content"])) return
     state.textDeltas += 1
     state.span.mark("first_text")
   }

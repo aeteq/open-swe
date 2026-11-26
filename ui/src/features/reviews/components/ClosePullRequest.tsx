@@ -11,7 +11,7 @@ export function ClosePullRequest({
   onClosed,
 }: {
   pr: OpenPullRequest
-  apply: () => () => void
+  apply?: () => () => void
   onClosed?: () => void
 }) {
   const close = usePullRequestAction({
@@ -21,7 +21,7 @@ export function ClosePullRequest({
     onDone: onClosed,
   })
   return (
-    <div>
+    <div className="flex">
       <TextPopover
         trigger={
           <Button

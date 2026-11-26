@@ -1,11 +1,15 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid7
 
+import httpx
 import pytest
 from fastapi import HTTPException
+from langgraph_sdk.errors import NotFoundError
 
 from openswe.sandboxes import browsers
 from openswe.sandboxes.browsers import LangSmithBrowser, ThreadBrowser
+from openswe.schedules import store as schedules
 from openswe.threads import (
     access,
     blobs,
@@ -17,6 +21,9 @@ from openswe.threads import (
 )
 from openswe.tools import threads as tools
 from openswe.ui_invalidations.topics import Topic
+from openswe.users import User
+from openswe.utils.json_types import ThreadLike
+from tests.conftest import LangSmithUsers, serve_threads_from
 
 _ADMINS = {"admin", "admin@example.com"}
 
@@ -43,8 +50,9 @@ def private_thread(monkeypatch, request):
         ),
         runs=SimpleNamespace(cancel_many=AsyncMock(), list=AsyncMock(return_value=[])),
     )
-    for module in (access, handlers, listing, tools):
+    for module in (handlers, listing, tools):
         monkeypatch.setattr(module, "langgraph_client", lambda: client)
+    serve_threads_from(monkeypatch, client.threads.get)
     monkeypatch.setattr(
         handlers, "_thread_summary", AsyncMock(side_effect=lambda t, **_: t["metadata"])
     )
@@ -105,6 +113,101 @@ def test_private_readable_by_owner_and_admin_but_promptable_by_owner_only(privat
     assert summary.thread_is_promptable({"source": "dashboard"}, "bob")
 
 
+def test_historical_mirrored_session_stays_private_and_read_only(private_thread):
+    thread, _ = private_thread
+    metadata = {**thread["metadata"], "source": "claude_code"}
+    assert summary.thread_is_readable(metadata, "alice")
+    assert summary.thread_is_readable(metadata, "admin")
+    assert not summary.thread_is_readable(metadata, "bob")
+    for login in ("alice", "admin", "bob"):
+        assert not summary.thread_is_promptable(metadata, login)
+
+
+@pytest.mark.parametrize("github_linked", [True, False])
+async def test_personal_automation_owner_can_reply_after_automation_is_deleted(
+    monkeypatch: pytest.MonkeyPatch, langsmith_users: LangSmithUsers, github_linked: bool
+) -> None:
+    owner = langsmith_users.add("alice" if github_linked else "user:owner")
+    langsmith_users.add("bob")
+    login = owner.github_login or f"user:{owner.id}"
+    metadata = {
+        "source": "schedule",
+        "thread_category": "automation",
+        "schedule_id": str(uuid7()),
+        "owner_type": "user",
+        "visibility": "private",
+        "owner_login": login,
+        "owner_user_id": str(owner.id),
+        "automation_creator_user_id": str(owner.id),
+    }
+    monkeypatch.setattr(schedules, "get_agent_schedule", AsyncMock(return_value=None))
+    assert summary.thread_is_readable(metadata, login)
+    assert not summary.thread_is_readable(metadata, "bob")
+    await summary.assert_thread_postable(metadata, login)
+    with pytest.raises(HTTPException) as denied:
+        await summary.assert_thread_postable(metadata, "bob")
+    assert denied.value.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("case", "allowed"),
+    [
+        ("legacy", True),
+        ("snapshot", True),
+        ("deleted", False),
+        ("creator_mismatch", False),
+        ("malformed_snapshot", False),
+        ("deleted_owner", False),
+        ("system", False),
+    ],
+)
+async def test_automation_replies_resolve_ownership_without_reassigning_orphans(
+    monkeypatch: pytest.MonkeyPatch, langsmith_users: LangSmithUsers, case: str, allowed: bool
+) -> None:
+    owner = langsmith_users.add("alice")
+    other = langsmith_users.add("bob")
+    langsmith_users.add("admin")
+    monkeypatch.setenv("CONFIGURED_ADMINS", "admin")
+    metadata: dict[str, object] = {
+        "source": "schedule",
+        "thread_category": "automation",
+        "schedule_id": str(uuid7()),
+        "created_by": "alice",
+        "visibility": "public",
+    }
+    record: dict[str, object] | None = {
+        "created_by": "alice",
+        "created_by_user_id": str(owner.id),
+    }
+    if case == "snapshot":
+        metadata["automation_creator_user_id"] = str(owner.id)
+        record = None
+    elif case == "deleted":
+        record = None
+    elif case == "creator_mismatch":
+        record["created_by_user_id"] = str(other.id)
+    elif case == "malformed_snapshot":
+        metadata["automation_creator_user_id"] = "not-a-user-id"
+    elif case == "deleted_owner":
+        metadata["automation_creator_user_id"] = str(uuid7())
+        monkeypatch.setattr(User, "get", AsyncMock(return_value=None))
+    elif case == "system":
+        metadata["automation_system"] = True
+        metadata["automation_creator_user_id"] = str(owner.id)
+    monkeypatch.setattr(schedules, "get_agent_schedule", AsyncMock(return_value=record))
+
+    if allowed:
+        await summary.assert_thread_postable(metadata, "alice")
+    else:
+        with pytest.raises(HTTPException) as denied:
+            await summary.assert_thread_postable(metadata, "alice")
+        assert denied.value.status_code == 403
+    with pytest.raises(HTTPException) as denied:
+        await summary.assert_thread_postable(metadata, "bob")
+    assert denied.value.status_code == 403
+    await summary.assert_thread_postable(metadata, "admin")
+
+
 def test_review_chat_is_hidden_without_hiding_normal_pr_threads():
     metadata = {
         "source": "dashboard",
@@ -125,8 +228,13 @@ def test_review_chat_is_hidden_without_hiding_normal_pr_threads():
     [(True, "0", False), (True, "123.456", True), (False, "0", True)],
 )
 async def test_only_concierge_dms_are_unlisted(
-    is_im: bool, thread_ts: str, listed: bool, monkeypatch: pytest.MonkeyPatch
+    is_im: bool,
+    thread_ts: str,
+    listed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    langsmith_users: LangSmithUsers,
 ):
+    langsmith_users.add("alice")
     metadata = {
         "source": "slack",
         "visibility": "private",
@@ -169,6 +277,29 @@ async def test_private_routes_deny_nonowner_before_side_effects(private_thread, 
     client.runs.cancel_many.assert_not_awaited()
 
 
+async def test_thread_lookup_does_not_disclose_private_existence(private_thread, monkeypatch):
+    _, client = private_thread
+    monkeypatch.setattr(tools, "_actor", AsyncMock(return_value=tools._Actor("bob", None, "bob")))
+    monkeypatch.setattr(
+        tools, "get_open_swe_thread_id_from_langsmith", AsyncMock(return_value=None)
+    )
+    thread_id = "11111111-1111-4111-8111-111111111111"
+
+    denied = await tools.get_thread(thread_id)
+    client.threads.get.side_effect = NotFoundError(
+        "not found",
+        response=httpx.Response(404, request=httpx.Request("GET", "http://test")),
+        body=None,
+    )
+    missing = await tools.get_thread(thread_id)
+
+    assert denied == missing
+    assert denied["status_code"] == 404
+    assert "not found or inaccessible" in denied["error"]
+    assert "may be private" in denied["error"]
+    client.threads.get_state.assert_not_awaited()
+
+
 async def test_admin_can_view_but_not_open_terminal(private_thread):
     thread, _ = private_thread
     thread["metadata"]["sandbox_id"] = "sbx"
@@ -209,18 +340,94 @@ async def test_admin_can_read_artifact_but_not_mutate(private_thread, monkeypatc
 async def test_private_candidates_filtered_before_pagination(private_thread, monkeypatch):
     thread, client = private_thread
     public = {"thread_id": "public-thread", "metadata": {"source": "dashboard"}}
-    monkeypatch.setattr(listing, "_search_threads_batch", AsyncMock(return_value=[thread, public]))
+    threads: list[ThreadLike] = [
+        *({**thread, "thread_id": f"private-{i}"} for i in range(2535)),
+        public,
+    ]
+
+    class Search:
+        calls: int = 0
+        scanned: int = 0
+
+        async def page(
+            self, metadata: object, *, limit: int, offset: int, **kwargs: object
+        ) -> list[ThreadLike]:
+            self.calls += 1
+            self.scanned += len(threads[offset : offset + limit])
+            return threads[offset : offset + limit]
+
+    search = Search()
+    monkeypatch.setattr(listing, "_search_threads_batch", search.page)
     result = await listing._collect_thread_candidates(
         client, [{}], viewer_login="bob", target_per_search=1
     )
     assert [item["thread_id"] for item in result] == ["public-thread"]
+    assert search.calls <= 7
+    assert search.scanned == len(threads)
     for viewer in ("alice", "admin"):
         result = await listing._collect_thread_candidates(client, [{}], viewer_login=viewer)
-        assert len(result) == 2
+        assert len(result) == len(threads)
     result = await listing._collect_thread_candidates(
         client, [{}], viewer_login="alice", include_private=False
     )
     assert [item["thread_id"] for item in result] == ["public-thread"]
+
+    search.calls = search.scanned = 0
+    await listing._collect_thread_candidates(
+        client, [{}], viewer_login="alice", target_per_search=1
+    )
+    assert search.calls == 1
+    assert search.scanned == listing._THREADS_SEARCH_PAGE
+
+    monkeypatch.setattr(listing, "_THREADS_PAGE_SCAN_CAP", 2000)
+    search.scanned = 0
+    result = await listing._collect_thread_candidates(client, [{}], viewer_login="bob")
+    assert result == []
+    assert search.scanned == 2000
+
+
+@pytest.mark.parametrize(("viewed", "status"), [(False, None), (None, "finished")])
+async def test_filtered_hierarchy_bounds_run_summaries(
+    monkeypatch: pytest.MonkeyPatch, viewed: bool | None, status: str | None
+) -> None:
+    threads: list[ThreadLike] = [
+        {"thread_id": f"thread-{i}", "metadata": {"source": "dashboard"}} for i in range(1550)
+    ]
+
+    class Search:
+        summarized: int = 0
+
+        async def page(
+            self, metadata: object, *, limit: int, offset: int, **kwargs: object
+        ) -> list[ThreadLike]:
+            return threads[offset : offset + limit]
+
+        async def summaries(
+            self, client: object, batch: list[ThreadLike], **kwargs: object
+        ) -> list[dict[str, object]]:
+            self.summarized += len(batch)
+            return [
+                {
+                    "id": thread["thread_id"],
+                    "viewed": int(str(thread["thread_id"]).split("-")[1]) < 750,
+                    "status": (
+                        "running"
+                        if int(str(thread["thread_id"]).split("-")[1]) < 750
+                        else "finished"
+                    ),
+                }
+                for thread in batch
+            ]
+
+    search = Search()
+    monkeypatch.setattr(listing, "_search_threads_batch", search.page)
+    monkeypatch.setattr(listing, "_summarize_threads", search.summaries)
+    monkeypatch.setattr(listing, "sidebar_memberships", AsyncMock(return_value={}))
+    result = await listing._collect_thread_candidates(
+        None, [{}], hierarchy=True, viewed=viewed, status=status, target_per_search=1
+    )
+    assert {thread["thread_id"] for thread in result} == {f"thread-{i}" for i in range(750, 800)}
+    assert search.summarized == 800
 
 
 async def test_owner_can_publish_thread_without_retaining_admin_capabilities(
@@ -230,7 +437,7 @@ async def test_owner_can_publish_thread_without_retaining_admin_capabilities(
     thread["metadata"].update(admin_thread=True, unlisted=True, sandbox_id="sbx")
     mirror = AsyncMock()
     monkeypatch.setattr(handlers, "mirror_thread_metadata", mirror)
-    shared = await handlers.share_thread_with_workspace("private-thread", "ALICE")
+    shared = await handlers.share_thread("private-thread", "ALICE")
     assert summary.thread_is_readable(shared, "bob")
     assert summary.thread_is_promptable(shared, "bob")
     assert shared["visibility"] == "public"
@@ -255,7 +462,7 @@ async def test_sharing_deletes_the_threads_browser(private_thread, monkeypatch):
     monkeypatch.setattr(handlers, "mirror_thread_metadata", AsyncMock())
     monkeypatch.setattr(Topic.THREAD_BROWSERS, "invalidate", AsyncMock())
 
-    await handlers.share_thread_with_workspace("private-thread", "alice")
+    await handlers.share_thread("private-thread", "alice")
 
     assert deleted == ["browser-1"]
     # MDA keeps the name, so the panel can still open a fresh browser.
@@ -287,38 +494,17 @@ async def test_sharing_waits_for_the_threads_browser_to_go(private_thread, monke
     )
 
     with pytest.raises(HTTPException) as exc:
-        await handlers.share_thread_with_workspace("private-thread", "alice")
+        await handlers.share_thread("private-thread", "alice")
 
     assert exc.value.status_code == 502
     client.threads.update.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "binding",
-    [
-        {"sandbox_id": "bridge:b1", "sandbox_kind": "bridge", "sandbox_bridge_client": "cli"},
-        {"sandbox_id": "sbx", "sandbox_handoff_from": "bridge:b1"},
-    ],
-)
-async def test_a_thread_on_its_owners_machine_stays_theirs(private_thread, binding):
-    thread, client = private_thread
-    thread["metadata"].update(binding)
-    with pytest.raises(HTTPException) as exc:
-        await handlers.share_thread_with_workspace("private-thread", "alice")
-    assert exc.value.status_code == 409
-    client.threads.update.assert_not_awaited()
-    # Shared before such threads were kept private.
-    shared = {**thread["metadata"], "visibility": "public"}
-    assert summary.thread_is_promptable(shared, "alice")
-    assert not summary.thread_is_promptable(shared, "bob")
-    assert not summary.thread_is_promptable(shared, "admin")
 
 
 @pytest.mark.parametrize("login", ["bob", "admin"])
 async def test_only_owner_can_publish_even_when_admin_can_read(private_thread, login):
     _, client = private_thread
     with pytest.raises(HTTPException):
-        await handlers.share_thread_with_workspace("private-thread", login)
+        await handlers.share_thread("private-thread", login)
     client.threads.update.assert_not_awaited()
 
 
@@ -332,7 +518,7 @@ async def test_publish_refuses_live_runs(private_thread, status):
             [{"run_id": "r"}] if kw["status"] == status else []
         )
     with pytest.raises(HTTPException) as exc:
-        await handlers.share_thread_with_workspace("private-thread", "alice")
+        await handlers.share_thread("private-thread", "alice")
     assert exc.value.status_code == 409
     client.threads.update.assert_not_awaited()
 
@@ -425,26 +611,6 @@ async def test_continue_privately_rolls_back_when_blob_copy_fails(private_thread
     assert exc.value.status_code == 502
     client.threads.update_state.assert_not_awaited()
     client.threads.delete.assert_awaited_once()
-
-
-async def test_continue_privately_carries_new_workspace_key(private_thread):
-    thread, client = private_thread
-    thread["metadata"] = {"source": "slack", "workspace": "oss"}
-    client.threads.get_state.return_value = {"values": {"messages": []}}
-    await handlers.continue_thread_privately("private-thread", "bob")
-    metadata = client.threads.create.call_args.kwargs["metadata"]
-    assert metadata["workspace"] == "oss"
-    assert "environment" not in metadata
-
-
-async def test_continue_privately_falls_back_to_legacy_environment_key(private_thread):
-    thread, client = private_thread
-    thread["metadata"] = {"source": "slack", "environment": "old"}
-    client.threads.get_state.return_value = {"values": {"messages": []}}
-    await handlers.continue_thread_privately("private-thread", "bob")
-    metadata = client.threads.create.call_args.kwargs["metadata"]
-    assert metadata["workspace"] == "old"
-    assert "environment" not in metadata
 
 
 async def test_continue_privately_rolls_back_when_copy_fails(private_thread):

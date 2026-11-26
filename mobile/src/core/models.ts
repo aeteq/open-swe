@@ -129,13 +129,11 @@ export interface AgentThread {
   status: AgentStatus
   viewed: boolean
   resolved: boolean
-  attentionReason?: string
   createdAt: Date
   updatedAt: Date
   source?: string
   threadCategory?: string
   ownerLogin?: string
-  sandboxBridgeClient?: string
   pr?: PullRequestSummary
   diffStats?: DiffStats
 }
@@ -187,13 +185,11 @@ export function decodeThread(value: unknown): AgentThread {
     status,
     viewed: typeof value.viewed === "boolean" ? value.viewed : true,
     resolved: value.resolved === true,
-    attentionReason: stringAt(value, "attentionReason"),
     createdAt: dateFromMilliseconds(value.createdAt),
     updatedAt: dateFromMilliseconds(value.updatedAt),
     source: stringAt(value, "source"),
     threadCategory: stringAt(value, "threadCategory"),
     ownerLogin: stringAt(value, "ownerLogin"),
-    sandboxBridgeClient: stringAt(value, "sandboxBridgeClient"),
     pr: decodePullRequest(value.pr),
     diffStats: decodeDiffStats(value.diffStats),
   }
@@ -229,7 +225,6 @@ export function threadCategory(thread: AgentThread): InboxCategory {
     return "inReview"
   if (
     !thread.viewed ||
-    thread.attentionReason ||
     thread.status === "error" ||
     thread.status === "interrupted"
   ) {
@@ -258,10 +253,6 @@ export function workspaceKey(thread: AgentThread): string {
 export function workspaceName(thread: AgentThread): string {
   if (thread.repo) return thread.repo
   return thread.repoFullName || "No Repo"
-}
-
-export function isLocal(thread: AgentThread): boolean {
-  return thread.sandboxBridgeClient !== undefined
 }
 
 export const AGENT_SOURCES = [

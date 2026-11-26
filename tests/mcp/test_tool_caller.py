@@ -4,13 +4,9 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from mcp.types import CallToolResult, TextContent, Tool
-from pydantic import JsonValue
 
-from openswe.mcp import MCPConnection, runtime
 from openswe.mcp.caller import ToolCaller, UnknownTool
 from openswe.sandboxes.tool_runtime import tool_parameters
-from tests.mcp_helpers import Transport, fake_mcp_server
 
 USER = ToolCaller(login="user", email=None)
 ADMIN = ToolCaller(login="admin", email=None)
@@ -25,8 +21,11 @@ async def test_catalog_respects_admin_and_uses_python_schema(
     tools = await ADMIN.tools()
     assert "read_only_sql" in tools
     assert "execute_database_sql" in tools
+    assert "read_execution_defaults" in tools
+    assert {"read_settings", "patch_settings", "read_usage"} <= tools.keys()
+    assert {"read_settings", "patch_settings", "read_usage"} <= (await USER.tools()).keys()
+    assert "configure_execution_defaults" in tools
     assert "upload_session" in tools
-    assert "publish_workspace" not in tools
     parameters = tool_parameters(tools["manage_feature_flags"][0])
     assert parameters["required"] == ["action"]
     properties = parameters["properties"]
@@ -60,69 +59,14 @@ async def test_invoke_validates_python_parameters(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_remote_mcp_tools_use_scoped_sources_and_recheck_allowed_tools(
+async def test_structured_settings_invocation_rechecks_resource_policy(
+    registry_db: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    instance = {
-        "linear": MCPConnection(
-            name="linear",
-            url="https://instance.example/mcp",
-            allowed_tools=["search"],
-            revision="instance-revision",
-            updated_at="2026-09-09T00:00:00Z",
-        )
-    }
-    personal = {
-        "linear": MCPConnection(
-            name="linear",
-            url="https://alice.example/mcp",
-            allowed_tools=["search"],
-            revision="user-revision",
-            updated_at="2026-09-09T00:00:00Z",
-        )
-    }
-
-    def source(
-        scope: runtime.MCPScope, namespace: tuple[str, ...], records: dict[str, MCPConnection]
-    ) -> runtime.MCPSource:
-        async def list_connections() -> list[MCPConnection]:
-            return list(records.values())
-
-        async def get_connection(name: str) -> MCPConnection | None:
-            return records.get(name)
-
-        return runtime.MCPSource(namespace, list_connections, get_connection, scope=scope)
-
-    monkeypatch.setattr(
-        "openswe.mcp.instance.instance_mcp_source",
-        lambda: source("instance", ("instance_mcps",), instance),
+    monkeypatch.setenv("CONFIGURED_ADMINS", "admin")
+    result = await ADMIN.invoke("read_settings", {"resource": "instance", "schema_only": True})
+    assert (
+        "personal_settings_tools_enabled" not in json.loads(result.content)["schema"]["properties"]
     )
-    monkeypatch.setattr(
-        "openswe.mcp.workspace.workspace_mcp_source",
-        lambda workspace: source("workspace", ("workspace_mcps", workspace), {}),
-    )
-    monkeypatch.setattr(
-        "openswe.mcp.user.user_mcp_source",
-        lambda login: source("user", ("user_mcps", login), personal if login == "alice" else {}),
-    )
-
-    async def discover(record: MCPConnection, namespace: tuple[str, ...]) -> list[Tool]:
-        return [Tool(name="search", input_schema={"type": "object"})]
-
-    async def call(
-        transport: Transport, name: str, arguments: dict[str, JsonValue]
-    ) -> CallToolResult:
-        return CallToolResult(content=[TextContent(type="text", text=transport.url)])
-
-    monkeypatch.setattr(runtime, "_discover_tools", discover)
-    fake_mcp_server(monkeypatch, call=call)
-    alice = ToolCaller(login="alice", email=None)
-    bob = ToolCaller(login="bob", email=None)
-    name = next(name for name in await alice.tools() if name == "mcp_linear_search")
-    assert tool_parameters((await alice.tools())[name][0])["type"] == "object"
-    assert name in await bob.tools()
-    assert "alice.example" in str((await alice.invoke(name, {})).content)
-    assert "instance.example" in str((await bob.invoke(name, {})).content)
-    personal["linear"] = personal["linear"].model_copy(update={"allowed_tools": []})
-    with pytest.raises(UnknownTool):
-        await alice.invoke(name, {})
+    refused = await USER.invoke("read_settings", {"resource": "instance", "schema_only": True})
+    assert json.loads(refused.content)["ok"] is False

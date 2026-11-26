@@ -13,18 +13,13 @@ from openswe.analytics.events import (
     EventName,
     FeedbackSubmittedPayload,
     FindingObservedPayload,
-    FindingStatePayload,
-    FindingSurfacedPayload,
     PRDistanceMeasuredPayload,
     PRObservedPayload,
     PROpenedPayload,
     PRRunLinkedPayload,
     PRStatePayload,
     ReviewPublishedPayload,
-    RunCanceledPayload,
-    RunCompletedPayload,
     RunCostRecordedPayload,
-    RunFailedPayload,
     RunStartedPayload,
     StrictPayload,
     TaskAcceptedPayload,
@@ -138,53 +133,6 @@ async def run_started(
         user_id=user_id or opaque_person("github", immutable_person_key),
         repository_id=opaque_id("repository", repository_key),
         model_id=model_id,
-    )
-
-
-@fail_soft
-async def run_terminal(
-    *,
-    run_key: str,
-    thread_key: str,
-    status: str,
-    input_tokens: int | None = None,
-    output_tokens: int | None = None,
-    total_tokens: int | None = None,
-    failure_code: str | None = None,
-    producer_suffix: str = "terminal",
-) -> None:
-    if status == "success":
-        name = EventName.RUN_COMPLETED
-        payload: StrictPayload = RunCompletedPayload(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-        )
-    elif status in {"interrupted", "canceled"}:
-        name = EventName.RUN_CANCELED
-        payload = RunCanceledPayload(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            cancellation_source="superseded" if status == "interrupted" else "user",
-        )
-    else:
-        name = EventName.RUN_FAILED
-        payload = RunFailedPayload(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            failure_class="timeout" if status == "timeout" else "error",
-            failure_code=failure_code,
-        )
-    await emit(
-        name,
-        f"run:{run_key}:{producer_suffix}:{name.value}",
-        payload,
-        run_id=opaque_id("run", run_key),
-        preparation_run_id=opaque_id("preparation_run", run_key),
-        thread_id=opaque_id("thread", thread_key),
-        task_id=opaque_id("task", thread_key),
     )
 
 
@@ -397,55 +345,6 @@ async def review_published(
         pr_id=opaque_id("pr", pr_key),
         repository_id=opaque_id("repository", f"{owner.lower()}/{repo.lower()}"),
     )
-
-
-@fail_soft
-async def finding_transition(
-    *,
-    thread_key: str,
-    finding_key: str,
-    head_sha: str,
-    owner: str,
-    repo: str,
-    number: int,
-    state: str,
-    severity: Literal["low", "medium", "high", "critical"],
-    category: str,
-    version: str,
-) -> None:
-    pr_key = f"{owner.lower()}/{repo.lower()}#{number}"
-    finding_id = opaque_id("finding", f"{thread_key}:{finding_key}")
-    pr_id = opaque_id("pr", pr_key)
-    repository_id = opaque_id("repository", f"{owner.lower()}/{repo.lower()}")
-    if finding_id is None or pr_id is None or repository_id is None:
-        return
-    if state == "surfaced":
-        await emit(
-            EventName.FINDING_SURFACED,
-            f"finding:{thread_key}:{finding_key}:surfaced:{version}",
-            FindingSurfacedPayload(severity=severity, category=category or "unknown"),
-            source="github",
-            finding_id=finding_id,
-            review_id=opaque_id("review", f"{thread_key}:{head_sha}"),
-            pr_id=pr_id,
-            repository_id=repository_id,
-        )
-        return
-    name = {
-        "resolved": EventName.FINDING_RESOLVED,
-        "dismissed": EventName.FINDING_DISMISSED,
-        "reopened": EventName.FINDING_REOPENED,
-    }.get(state)
-    if name is not None:
-        await emit(
-            name,
-            f"finding:{thread_key}:{finding_key}:{state}:{version}",
-            FindingStatePayload(previous_state=None),
-            source="github",
-            finding_id=finding_id,
-            pr_id=pr_id,
-            repository_id=repository_id,
-        )
 
 
 async def pr_observed(

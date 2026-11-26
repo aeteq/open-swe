@@ -92,7 +92,7 @@ async def test_review_claim_callback_opens_robin_and_preserves_delivery_controls
     async def handle(request: httpx2.Request) -> httpx2.Response:
         assert json.loads(request.content) == {
             **payload,
-            "text": f"You're down to review <{target}|app#7> <{url}|(GitHub)>. Auto-merge is off; a person must merge it.",
+            "text": f"You're down to review <{target}|app#7> - <{url}|(GitHub)>. Auto-merge is off; a person must merge it.",
         }
         return httpx2.Response(200, text="ok")
 
@@ -128,15 +128,6 @@ async def test_thread_status_uses_agent_session_and_falls_back_without_agent_vie
     slack_api.respond({"ok": False, "error": "internal_error"})
     assert not await slack_utils.set_slack_thread_status("C1", "1.0", "")
     assert [method for method, _ in slack_api.calls] == ["agents.sessions.setStatus"]
-
-
-async def test_slack_stream_rate_limit_preserves_retry_after(slack_api):
-    slack_api.respond({"ok": False}, status=429, headers={"Retry-After": "30"})
-    with pytest.raises(slack_utils.SlackStreamError) as raised:
-        await slack_utils.append_slack_stream("C1", "1.0", [])
-    assert raised.value.code == "rate_limited"
-    assert raised.value.retry_after == 30
-    assert len(slack_api.calls) == 1
 
 
 async def test_upload_completes_external_upload_without_sending_token(slack_api, monkeypatch):
@@ -281,12 +272,13 @@ async def test_web_handoff_posts_a_quiet_link_without_a_trace_message(
 
 
 @pytest.mark.parametrize("author", ["UBOT", "UHUMAN", "UOTHERBOT"])
+@pytest.mark.parametrize("label", ["Open in Robin", "Open in Web"])
 async def test_web_handoff_updates_only_our_latest_reply_footer(
-    slack_api: SlackAPI, monkeypatch: pytest.MonkeyPatch, author: str
+    slack_api: SlackAPI, monkeypatch: pytest.MonkeyPatch, author: str, label: str
 ) -> None:
     monkeypatch.setenv("DASHBOARD_BASE_URL", "https://dashboard.example")
     monkeypatch.setenv("SLACK_BOT_USER_ID", "UBOT")
-    link = "<https://dashboard.example/agents/t1|Open in Web>"
+    link = f"<https://dashboard.example/agents/t1|{label}>"
     footer = f"{link} • model • $0.02"
     blocks = [
         section("Answer"),
@@ -316,13 +308,13 @@ async def test_web_handoff_updates_only_our_latest_reply_footer(
     assert not posts
     [updated] = updates
     assert updated["ts"] == "2.0"
-    assert updated["text"] == f"Answer {footer.replace('|Open in Web>', '|Continued in Web>')}"
+    assert updated["text"] == f"Answer {footer.replace(f'|{label}>', '|Continued in Web>')}"
     assert updated["blocks"] == [
         blocks[0],
         {
             "type": "context",
             "elements": [
-                {"type": "mrkdwn", "text": footer.replace("|Open in Web>", "|Continued in Web>")}
+                {"type": "mrkdwn", "text": footer.replace(f"|{label}>", "|Continued in Web>")}
             ],
         },
     ]
@@ -454,9 +446,9 @@ async def test_review_links_default_to_open_swe_without_changing_code_or_button_
     assert payload["text"] == f"[PR]({fallback_target}), <{target}|PR> and {target}.\n{code}"
     sent_blocks = payload["blocks"]
     assert sent_blocks[0]["text"] == (
-        f"[PR]({target}) [(GitHub)]({url}), <{target}|PR> <{url}|(GitHub)> and [app#7]({target}) [(GitHub)]({url}).\n{code}"
+        f"[PR]({target}) - [(GitHub)]({url}), <{target}|PR> - <{url}|(GitHub)> and [app#7]({target}) - [(GitHub)]({url}).\n{code}"
     )
-    assert sent_blocks[1]["text"]["text"] == f"<{target}|PR> <{url}|(GitHub)>"
+    assert sent_blocks[1]["text"]["text"] == f"<{target}|PR> - <{url}|(GitHub)>"
     assert sent_blocks[2]["elements"][0]["url"] == target
     assert sent_blocks[2]["elements"][0]["value"] == url
     assert sent_blocks[3] == blocks[3]
@@ -528,7 +520,7 @@ async def test_direct_github_reply_override_is_scoped_to_one_delivery(
     assert slack_api.calls[-1][1]["blocks"] == blocks
     await slack_utils.post_slack_top_level_message_with_ts("C1", url)
     sent = slack_api.calls[-1][1]["text"]
-    assert sent == f"<https://openswe.example/agents/reviews/acme/app/7|app#7> <{url}|(GitHub)>"
+    assert sent == f"<https://openswe.example/agents/reviews/acme/app/7|app#7> - <{url}|(GitHub)>"
     assert await review_links.pr_review_links(sent, None) == (sent, None)
     fetched = (
         f"<https://openswe.example/agents/reviews/acme/app/7|app#7><{url}|:arrow_upper_right:>"

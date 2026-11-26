@@ -53,7 +53,6 @@ interface RightPanelTabsProps {
   surfaces: ReadonlyArray<RightPanelSurface>
   activeSurfaceId: string | null
   pendingSurfaceIds: ReadonlySet<string>
-  terminalLabelsById: ReadonlyMap<string, string>
   onActivate: (surface: RightPanelSurface) => void
   onCloseSurface: (surface: RightPanelSurface) => void
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void
@@ -468,10 +467,7 @@ function RightPanelEmptyState({
   )
 }
 
-export function surfaceTitle(
-  surface: RightPanelSurface,
-  terminalLabelsById: ReadonlyMap<string, string>
-): string {
+export function surfaceTitle(surface: RightPanelSurface): string {
   switch (surface.kind) {
     case "diff":
       return "Changes"
@@ -482,13 +478,15 @@ export function surfaceTitle(
         surface.relativePath.lastIndexOf("/") + 1
       )
     case "terminal":
-      return terminalLabelsById.get(surface.resourceId) ?? "Terminal"
+      return "Terminal"
     case "agents":
       return "Agents"
     case "preview":
       return "Browser"
     case "background":
       return "Background work"
+    case "artifact":
+      return "Artifact"
     case "app":
       return "App"
   }
@@ -503,6 +501,7 @@ const SURFACE_ICONS = {
   agents: RobotIcon,
   background: PulseIcon,
   app: PuzzlePieceIcon,
+  artifact: FileIcon,
 } as const satisfies Record<RightPanelSurface["kind"], unknown>
 
 function SurfaceIcon({ surface }: { surface: RightPanelSurface }) {
@@ -578,7 +577,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             {props.surfaces.map((surface, index) => {
               const active = surface.id === props.activeSurfaceId
               const pending = props.pendingSurfaceIds.has(surface.id)
-              const title = surfaceTitle(surface, props.terminalLabelsById)
+              const title = surfaceTitle(surface)
               return (
                 <ContextMenu key={surface.id}>
                   <ContextMenuTrigger asChild>
@@ -589,7 +588,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       onAuxClick={(event) => handleTabAuxClick(event, surface)}
                       onContextMenu={(event) => event.stopPropagation()}
                       className={cn(
-                        "group/tab flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-space-2 pl-space-1 text-xs",
+                        "group/tab flex h-6 max-w-36 shrink-0 cursor-pointer items-center gap-0.5 rounded-md pr-space-2 pl-space-1 text-xs select-none [-webkit-touch-callout:none]",
                         active
                           ? "bg-selected text-primary"
                           : "text-secondary hover:bg-surface-level-1-hover hover:text-primary"

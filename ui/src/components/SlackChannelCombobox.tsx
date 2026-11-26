@@ -1,8 +1,10 @@
 import { CheckIcon, GlobeRegularIcon } from "@langchain/macaw-components/icons"
 import { Button } from "@langchain/macaw-components/Button"
-import { SpinnerIcon } from "@langchain/macaw-components/Spinner"
 import { Tooltip } from "@langchain/macaw-components/Tooltip"
-import { Typeahead } from "@langchain/macaw-components/Typeahead"
+import {
+  Typeahead,
+  type TypeaheadSize,
+} from "@langchain/macaw-components/Typeahead"
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ArrowClockwise"
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ClockCounterClockwise"
 import { HashIcon } from "@phosphor-icons/react/dist/ssr/Hash"
@@ -14,7 +16,6 @@ import {
   normalizeSlackChannelId,
   rankSlackChannels,
   rememberSlackChannels,
-  slackChannelMatches,
   useRecentSlackChannels,
   useSlackChannelDirectory,
 } from "@/lib/slack-channels"
@@ -90,7 +91,8 @@ export function RefreshSlackChannels({
       variant="plain"
       size="xs"
       disabled={isRefreshing}
-      leftDecorator={isRefreshing ? SpinnerIcon : ArrowClockwiseIcon}
+      leftDecorator={ArrowClockwiseIcon}
+      loading={isRefreshing}
       onClick={() => refresh()}
     >
       {isRefreshing ? "Refreshing channels…" : "Refresh channels"}
@@ -126,9 +128,11 @@ function useChannelItems(
     return channel ? `#${channel.name}` : id
   }
   const filter = (ids: Array<string>, text: string) =>
-    ids.filter((id) =>
-      slackChannelMatches(byId.get(id) ?? { id, name: id }, text)
-    )
+    rankSlackChannels(
+      ids.map((id) => byId.get(id) ?? { id, name: id }),
+      text,
+      recentIds
+    ).map((channel) => channel.id)
   return {
     items,
     byId,
@@ -155,11 +159,12 @@ interface CommonProps {
   eligible?: (channel: SlackChannelOption) => boolean
   "aria-label"?: string
   className?: string
+  size?: TypeaheadSize
 }
 
 function channelTypeaheadProps(
   channels: ChannelItems,
-  { placeholder, disabled, className, ...props }: CommonProps
+  { placeholder, disabled, className, size = "md", ...props }: CommonProps
 ) {
   return {
     options: channels.items,
@@ -167,7 +172,7 @@ function channelTypeaheadProps(
     disabled,
     className,
     "aria-label": props["aria-label"],
-    size: "md" as const,
+    size,
     emptyText: channels.emptyMessage,
     getOptionLabel: channels.label,
     onInputChange: channels.setQuery,

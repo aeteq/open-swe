@@ -12,14 +12,14 @@ once per head and renders chunks; the backend never reads the diff's lines.
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Self
 
 from deepagents.backends.protocol import SandboxBackendProtocol
 
-from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
+from openswe.dashboard.settings_cache import cached_settings
 from openswe.github.http import GitHubAppUnavailable
 from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest
@@ -27,14 +27,15 @@ from openswe.run_config import RunConfig
 from openswe.sandboxes.lifecycle import ensure_sandbox_for_thread
 from openswe.slack.client import parse_github_pr_url
 from openswe.threads.store import THREADS
-from openswe.walkthrough.checkout import PinnedCheckout
+from openswe.walkthrough.checkout import PinnedCheckout, ReadFile
 from openswe.walkthrough.diff import DiffIndex
-from openswe.walkthrough.lines import LinePoint, LineSet
+from openswe.walkthrough.lines import SIGNS, LinePoint, LineSet
 from openswe.walkthrough.plan import (
     MAX_EXPLANATION_CHARS,
     MAX_TITLE_CHARS,
     FileHunks,
     FileSplits,
+    Hunk,
     Hunks,
     Plan,
     PlanChunk,
@@ -48,6 +49,8 @@ from openswe.walkthrough.record import PlanMovedError, Walkthrough
 logger = logging.getLogger(__name__)
 
 _MAX_UNPLANNED_FILES = 200
+# Under the size at which the agent's harness moves a tool result out to a file.
+READ_BUDGET_CHARS = 60_000
 
 
 class PlannerUnavailableError(RuntimeError):
@@ -120,7 +123,7 @@ class PlanWorkspace:
         """Pin a linked PR in its implementation thread's existing checkout."""
         if not cfg.thread_id:
             raise PlannerUnavailableError("an implementation thread is required")
-        settings = await cached_workspace_settings(cfg.workspace_slug)
+        settings = await cached_settings()
         if settings.get("implementation_walkthrough_enabled") is not True:
             raise PlannerUnavailableError("implementation walkthroughs are disabled")
         ref = parse_github_pr_url(pr_url)
@@ -133,7 +136,7 @@ class PlanWorkspace:
             raise PlannerUnavailableError("the pull request must be linked to this thread first")
         async with PullRequestClient.as_app(ref.owner, ref.repo, ref.number) as pull:
             head_sha = await pull.head_sha()
-        backend = await ensure_sandbox_for_thread(cfg.thread_id, workspace_slug=cfg.workspace_slug)
+        backend = await ensure_sandbox_for_thread(cfg.thread_id)
         checkout = await PinnedCheckout.locate(backend, ref.repo)
         await checkout.pin(
             full_name=f"{ref.owner}/{ref.repo}", pr_number=ref.number, head_sha=head_sha
@@ -302,6 +305,90 @@ class PlanWorkspace:
         return [
             (hunk.path, hunk.name) for (hunk, _), empty in zip(new, wordless, strict=True) if empty
         ]
+
+    def _hunk_status(self, hunk: Hunk) -> str:
+        """Where ``hunk``'s lines are in the plan, such as ``unplanned`` or ``chunk 2``."""
+        lines = hunk.lines
+        found = ["unplanned"] if lines & self.unplanned else []
+        found += [
+            f"chunk {number}"
+            for number, chunk in enumerate(self.plan.chunks, start=1)
+            if lines & chunk.lines
+        ]
+        if lines & self.plan.other:
+            found.append("Other")
+        size = "/".join(f"{sign}{n}" for sign in SIGNS if (n := lines.count(sign)))
+        return f"{hunk.name} ({size}): {' + '.join(found)}"
+
+    async def read(self, paths: Sequence[str] = (), start: str | None = None) -> str:
+        """The diff as planners name it: unplanned hunks of every file, or every hunk of
+        ``paths``, each headed with its name and where it is in the plan."""
+        files = [file for file in self.index.files if not file.textless]
+        if paths:
+            chosen = [file for file in files if any(file.matches(p) for p in paths)]
+            unmatched = [p for p in paths if not any(f.matches(p) for f in files)]
+            folded: list[str] = []
+        else:
+            unplanned = set(self.unplanned.paths)
+            pending = [file for file in files if file.path in unplanned]
+            chosen = [file for file in pending if not file.is_lockfile]
+            unmatched = []
+            folded = self.hunks.spans(
+                self.unplanned.only(file.path for file in pending if file.is_lockfile)
+            )
+        resume: LinePoint | None = None
+        if start:
+            path, _, name = start.strip().rpartition(" ")
+            resume = LinePoint.named(path, name)
+            if resume is None or resume not in self.index.lines:
+                raise RangeError(
+                    f"`{start}` is not where an earlier read stopped; "
+                    "pass `start` exactly as the last read gave it, with the same `paths`"
+                )
+            # A file planned since the last read is no longer chosen: go on with the next one.
+            order = self.index.order[path]
+            at = next(
+                (i for i, f in enumerate(chosen) if self.index.order[f.path] >= order),
+                len(chosen),
+            )
+            if at == len(chosen) or chosen[at].path != path:
+                resume = None
+            chosen = chosen[at:]
+        text, stopped = await self.checkout.read(
+            [
+                ReadFile(
+                    path=file.path,
+                    heading=file.path + (" (deleted)" if file.deleted else ""),
+                    marks=[
+                        (
+                            hunk.segments[0][0],
+                            hunk.segments[0][1],
+                            self._hunk_status(hunk),
+                            bool(paths) or bool(hunk.lines & self.unplanned),
+                        )
+                        for hunk in self.hunks.in_file(file.path)
+                    ],
+                )
+                for file in chosen
+            ],
+            start=resume,
+            budget=READ_BUDGET_CHARS,
+        )
+        notes = [f"No changed file matches `{p}`." for p in unmatched]
+        if folded:
+            notes.append(
+                "Lockfiles not shown (pass a path to read one): " + "; ".join(folded) + "."
+            )
+        if stopped is not None:
+            notes.append(
+                "More follows: call `walkthrough_read` again with "
+                f'`start: "{stopped.path} {stopped.name}"` and the same `paths`.'
+            )
+        elif not text and not paths:
+            notes.append(
+                "Nothing more to read." if start else "Nothing to show: no hunk is unplanned."
+            )
+        return "\n\n".join(part for part in [text.strip("\n"), *notes] if part)
 
     async def settle(self) -> int:
         """Send every line still unplanned to Other, completing the plan; how many there were."""

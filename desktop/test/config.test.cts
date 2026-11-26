@@ -203,6 +203,23 @@ test("carries the loopback port and PKCE challenge into the browser login", () =
     }),
     "https://backend.example/dashboard/api/slack/login?desktop_handoff=abc&desktop_port=51234",
   );
+  const recoveryLogin = new URL(
+    connectLoginUrl(
+      "https://backend.example",
+      "github",
+      {
+        challenge: "abc",
+        port: 51234,
+      },
+      "opaque+token&with=reserved?characters",
+    ),
+  );
+  assert.equal(
+    recoveryLogin.searchParams.get("slack_recovery"),
+    "opaque+token&with=reserved?characters",
+  );
+  assert.equal(recoveryLogin.searchParams.get("desktop_handoff"), "abc");
+  assert.equal(recoveryLogin.pathname, "/dashboard/api/github/login");
   assert.equal(
     connectExchangeUrl("https://backend.example", "github"),
     "https://backend.example/dashboard/api/github/desktop/exchange",
@@ -290,7 +307,7 @@ test("localizes web URLs only from the configured backend", () => {
     "http://openswe.langchain.dev/agents/thread-1",
     "https://openswe.vercel.app/agents/thread-1",
     "https://user:secret@openswe.langchain.dev/agents/thread-1",
-    "open-swe://link/agents/thread-1",
+    "robin://link/agents/thread-1",
     "javascript:alert(1)",
   ])
     assert.equal(desktopDeepLinkUrl(url, backend), null);
@@ -354,8 +371,8 @@ test("adds the app to the frame ancestors a page already allows", () => {
     {
       "Content-Type": ["text/html"],
       "content-security-policy": [
-        "default-src 'none'; frame-ancestors https://dash.example.com open-swe://app; img-src data:",
-        "frame-ancestors 'self' https://dev.smith.langchain.com open-swe://app; object-src 'none'",
+        "default-src 'none'; frame-ancestors https://dash.example.com robin://app; img-src data:",
+        "frame-ancestors 'self' https://dev.smith.langchain.com robin://app; object-src 'none'",
         "default-src 'none'",
       ],
     },
@@ -364,6 +381,6 @@ test("adds the app to the frame ancestors a page already allows", () => {
     headersFramedByApp({
       "Content-Security-Policy": ["frame-ancestors 'none'"],
     }),
-    { "Content-Security-Policy": ["frame-ancestors open-swe://app"] },
+    { "Content-Security-Policy": ["frame-ancestors robin://app"] },
   );
 });

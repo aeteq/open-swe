@@ -14,7 +14,6 @@ from typing import Any, Self
 
 from pydantic import BaseModel
 
-from openswe.baby_sit import aggregate_check_state
 from openswe.github.ci import CommitChecks, RequiredCheck
 from openswe.github.http import or_none
 from openswe.github.org_membership import OPEN_SWE_GITHUB_LOGINS
@@ -114,16 +113,12 @@ class Readiness:
             return None
         mergeable, mergeable_state = _resolve_mergeability(pr, mergeability)
 
-        check_state, failures = aggregate_check_state(checks.runs, checks.statuses)
+        check_state = checks.state
         failing_required_checks = sorted(
             {
                 check.name
                 for check in required
-                if aggregate_check_state(
-                    [run for run in checks.runs if check.reported_by([run], [])],
-                    [status for status in checks.statuses if check.reported_by([], [status])],
-                )[0]
-                in {"failure", "blocked"}
+                if checks.for_required(check).state in {"failure", "blocked"}
             }
         )
         author_login = author if isinstance(author, str) else ""
@@ -138,7 +133,7 @@ class Readiness:
             mergeable_state=mergeable_state,
             check_state=check_state,
             unresolved_threads=len(threads),
-            failing_checks=sorted({str(failure["name"]) for failure in failures}),
+            failing_checks=sorted({failure.name for failure in checks.failures}),
             failing_required_checks=failing_required_checks,
             unreported_required_checks=checks.unreported(required),
             changes_requested_by=sorted(

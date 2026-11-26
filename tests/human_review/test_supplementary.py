@@ -12,14 +12,15 @@ from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest
 from openswe.github.repo_files import RepoSettings, SupplementaryReviewPolicy
 from openswe.human_review import deadlines, standard, supplementary
+from openswe.human_review.coverage import Area, Coverage
 from openswe.human_review.lifecycle import ReviewCard
-from openswe.human_review.picking import Area, Coverage, ReviewerAvailability
 from openswe.human_review.requests import HumanReviewParticipant, HumanReviewRequest
 from openswe.human_review.supplementary import (
     SupplementaryReview,
     SupplementaryReviews,
     SupplementaryState,
 )
+from openswe.slack.availability import ReviewerAvailability
 from openswe.slack.channels import SlackChannel
 from openswe.slack.client import GitHubPrRef
 from openswe.users import User, UserIdentity
@@ -297,7 +298,8 @@ async def test_rejected_screenshot_retries_as_text_without_a_second_ping(
 
 
 @pytest.mark.parametrize(
-    "ineligible", ["", "author", "reviewed", "optedout", "missing", "no-write", "no-slack"]
+    "ineligible",
+    ["", "author", "reviewed", "optedout", "missing", "no-write", "no-slack", "not-recent"],
 )
 async def test_mapped_owner_waits_only_for_temporary_unavailability(
     review: HumanReviewRequest,
@@ -342,6 +344,17 @@ async def test_mapped_owner_waits_only_for_temporary_unavailability(
         return users[login]
 
     with (
+        patch.object(
+            HumanReviewRequest,
+            "recent_channel_posters",
+            AsyncMock(
+                return_value={
+                    user.id
+                    for user in users.values()
+                    if user.id != owner.id or ineligible != "not-recent"
+                }
+            ),
+        ),
         patch.object(supplementary, "team_members", AsyncMock(return_value=list(users))),
         patch.object(User, "for_login", find_user),
         patch.object(supplementary, "latest_review_states", AsyncMock(return_value=reviews)),
@@ -412,6 +425,11 @@ async def test_concurrent_rotation_reserves_different_available_team_members(
         return login != "optedout"
 
     with (
+        patch.object(
+            HumanReviewRequest,
+            "recent_channel_posters",
+            AsyncMock(return_value={user.id for user in people.values()}),
+        ),
         patch.object(supplementary, "team_members", AsyncMock(return_value=list(people))),
         patch.object(User, "for_login", user_for_login),
         patch.object(supplementary, "latest_review_states", AsyncMock(return_value={})),
@@ -515,7 +533,9 @@ async def test_request_reuses_open_review_without_replacing_engineering(
     with (
         patch.object(supplementary.RepoSettings, "cached", AsyncMock(return_value=settings)),
         patch.object(HumanReviewRequest, "active_for", AsyncMock(return_value=review)),
-        patch.object(standard, "_permalink", AsyncMock(return_value="https://slack.example/card")),
+        patch.object(
+            HumanReviewRequest, "permalink", AsyncMock(return_value="https://slack.example/card")
+        ),
         patch.object(standard, "review_blockers", AsyncMock(return_value=[])),
         patch.object(
             ChangedFile,

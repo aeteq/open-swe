@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections import OrderedDict
+from collections.abc import Awaitable, Callable, Iterable
 from threading import Lock
 from typing import TYPE_CHECKING, cast
+
+from managed_deepagents._run_local import current_run_id
 
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import (
@@ -26,6 +29,14 @@ __all__ = [
     "managed_memory_instructions",
 ]
 
+# How many runs' hot memory one middleware instance caches.
+#
+# A cached graph (see ``CachedAgent``) is compiled once and serves many runs,
+# so one instance of this middleware serves all of them. It caches the loaded memory
+# text per run_id, so each run loads memory once and sees its own snapshot. Past
+# this many runs, the oldest run's entry is dropped.
+_RUNS_KEPT = 256
+
 # Replace native memory in its slot after Deep Agents' prompt-cache middleware.
 MEMORY_INSTRUCTIONS_MIDDLEWARE_NAME = "MemoryMiddleware"
 
@@ -40,6 +51,12 @@ def managed_memory_instructions(memory: MemoryLayers) -> str:
   - Save information here only if it is appropriate to share with every caller.
     Do not save private or caller-specific information here.
   - Its hot file is `/memories/agent/AGENTS.md`."""
+            )
+        elif layer["type"] == "assistant":
+            mounts.append(
+                """- `/memories/assistant/` is shared by callers of this assistant only.
+  - Save assistant-specific information here, not private caller information.
+  - Its hot file is `/memories/assistant/AGENTS.md`."""
             )
         else:
             mounts.append(
@@ -78,11 +95,60 @@ it — say what you found instead.
 MANAGED_MEMORY_INSTRUCTIONS = managed_memory_instructions([{"type": "agent"}])
 
 
+# Anthropic rejects a request that carries more.
+_MAX_CACHE_BREAKPOINTS = 4
+
+
+def _cache_breakpoints(blocks: Iterable[object]) -> list[object]:
+    """The ``cache_control`` of each of ``blocks`` that carries one."""
+    return [
+        block["cache_control"]
+        for block in blocks
+        if isinstance(block, dict) and "cache_control" in block
+    ]
+
+
+def _memory_breakpoint(request: ModelRequest[None], system: list[ContentBlock]) -> object | None:
+    """The breakpoint a block appended to ``system`` may end in: the one before it
+    again, or None once the request carries as many as Anthropic accepts."""
+    from langchain_core.tools import BaseTool  # noqa: PLC0415
+
+    before = _cache_breakpoints(
+        [
+            *(
+                (tool.extras or {}) if isinstance(tool, BaseTool) else tool
+                for tool in request.tools
+            ),
+            *system,
+        ]
+    )
+    # The model applies the settings' breakpoint to the conversation's last block.
+    after = _cache_breakpoints(
+        [
+            *(
+                block
+                for message in request.messages
+                if isinstance(message.content, list)
+                for block in message.content
+            ),
+            request.model_settings,
+        ]
+    )
+    if len(before) + len(after) >= _MAX_CACHE_BREAKPOINTS:
+        return None
+    return before[-1] if before else after[0] if after else {"type": "ephemeral"}
+
+
 def append_memory_instructions(
     request: ModelRequest[None],
     instructions: str = MANAGED_MEMORY_INSTRUCTIONS,
 ) -> ModelRequest[None]:
-    """Return ``request`` with the policy appended as its own content block."""
+    """Return ``request`` with the policy appended as its own content block.
+
+    For Anthropic the block ends in a cache breakpoint, as native ``MemoryMiddleware``'s
+    does, while the request has room for one. It repeats the breakpoint before it, so
+    an author's longer TTL is never followed by a shorter one.
+    """
     from langchain_core.messages import SystemMessage  # noqa: PLC0415
 
     existing = request.system_message
@@ -92,9 +158,11 @@ def append_memory_instructions(
     if model is not None:
         from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
 
-        # Match native MemoryMiddleware, including middleware-level model fallback.
+        # The request's model, so the breakpoint follows a middleware-level fallback.
         if isinstance(model, ChatAnthropic):
-            block = cast("ContentBlock", {**block, "cache_control": {"type": "ephemeral"}})
+            cache_control = _memory_breakpoint(request, blocks)
+            if cache_control is not None:
+                block = cast("ContentBlock", {**block, "cache_control": cache_control})
     blocks.append(block)
     return request.override(system_message=SystemMessage(content_blocks=blocks))
 
@@ -103,10 +171,12 @@ def _load_memory_instructions(
     instructions: str,
     load_agent_memory: Callable[[], str | None] | None,
     load_user_memory: Callable[[], str | None] | None,
+    load_assistant_memory: Callable[[], str | None] | None,
 ) -> str:
     contents: list[str] = []
     for path, load in [
         ("/memories/agent/AGENTS.md", load_agent_memory),
+        ("/memories/assistant/AGENTS.md", load_assistant_memory),
         ("/memories/user/AGENTS.md", load_user_memory),
     ]:
         content = load() if load else None
@@ -118,28 +188,38 @@ def _load_memory_instructions(
     return f"{instructions}\n\n<agent_memory>\n{hot}\n</agent_memory>"
 
 
+_current_run_id = current_run_id
+
+
 def create_memory_instructions_middleware(
     memory: MemoryLayers | None = None,
     load_user_memory: Callable[[], str | None] | None = None,
     *,
     load_agent_memory: Callable[[], str | None] | None = None,
+    load_assistant_memory: Callable[[], str | None] | None = None,
 ) -> AgentMiddleware[AgentState[object], None, object]:
     """Load hot memory once for this run and inject it per call, outside thread state."""
     from langchain.agents.middleware.types import AgentMiddleware, AgentState  # noqa: PLC0415
 
     mounted = memory if memory is not None else [{"type": "agent"}]
     instructions = managed_memory_instructions(mounted)
-    cached_instructions: str | None = None
+    # Loaded memory text, keyed by run_id (see ``_RUNS_KEPT`` for why). Calls with no
+    # run_id share the ``None`` entry, so they load memory once per middleware
+    # instance, which is how this middleware behaved before graphs were cached.
+    cached: OrderedDict[str | None, str] = OrderedDict()
     load_lock = Lock()
 
-    def current_instructions() -> str:
-        nonlocal cached_instructions
+    def current_instructions(run_id: str | None) -> str:
         with load_lock:
-            if cached_instructions is None:
-                cached_instructions = _load_memory_instructions(
-                    instructions, load_agent_memory, load_user_memory
+            loaded = cached.get(run_id)
+            if loaded is None:
+                loaded = _load_memory_instructions(
+                    instructions, load_agent_memory, load_user_memory, load_assistant_memory
                 )
-            return cached_instructions
+                cached[run_id] = loaded
+                while len(cached) > _RUNS_KEPT:
+                    cached.popitem(last=False)
+            return loaded
 
     class _MemoryInstructionsMiddleware(AgentMiddleware[AgentState[object], None, object]):
         @property
@@ -153,7 +233,9 @@ def create_memory_instructions_middleware(
         ) -> ModelResponse[object]:
             if not mounted:
                 return handler(request)
-            return handler(append_memory_instructions(request, current_instructions()))
+            return handler(
+                append_memory_instructions(request, current_instructions(_current_run_id()))
+            )
 
         async def awrap_model_call(
             self,
@@ -162,9 +244,10 @@ def create_memory_instructions_middleware(
         ) -> ModelResponse[object]:
             if not mounted:
                 return await handler(request)
-            policy = cached_instructions
+            run_id = _current_run_id()
+            policy = cached.get(run_id)
             if policy is None:
-                policy = await asyncio.to_thread(current_instructions)
+                policy = await asyncio.to_thread(current_instructions, run_id)
             return await handler(append_memory_instructions(request, policy))
 
     return _MemoryInstructionsMiddleware()

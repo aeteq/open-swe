@@ -28,12 +28,18 @@ from openswe.background_tasks import monitor_background_tasks
 from openswe.event_claims import PURGE_JOB as EVENT_CLAIM_PURGE
 from openswe.event_claims import PURGE_SCHEDULE as EVENT_CLAIM_SCHEDULE
 from openswe.github.app import get_github_app_installation_token
+from openswe.github.approval_policy import EVALUATE_JOB as APPROVAL_EVALUATE
+from openswe.github.approval_policy import PullRequestApproval
 from openswe.github.branch_config import REFRESH_JOB as REQUIRED_CHECK_REFRESH
 from openswe.github.branch_config import refresh_required_checks
 from openswe.github.checks import REVIEW_CHECK_TIMEOUT_JOB
 from openswe.github.quota import SAMPLE_JOB as GITHUB_QUOTA_SAMPLE
 from openswe.github.quota import SAMPLE_SCHEDULE as GITHUB_QUOTA_SCHEDULE
 from openswe.github.quota import InstallationQuota
+from openswe.github.sandbox_budget import PURGE_JOB as SANDBOX_GITHUB_CALL_PURGE
+from openswe.github.sandbox_budget import PURGE_SCHEDULE as SANDBOX_GITHUB_CALL_SCHEDULE
+from openswe.github.sandbox_budget import SandboxGitHubCalls
+from openswe.github.webhook import PreviewReady
 from openswe.human_review.deadlines import SCHEDULER_TASK as HUMAN_REVIEW_DEADLINE
 from openswe.human_review.settling import SETTLE_JOB as HUMAN_REVIEW_SETTLE
 from openswe.human_review.settling import SettleTarget
@@ -42,7 +48,12 @@ from openswe.jobs import queue
 from openswe.jobs.cron_import import import_agent_server_crons
 from openswe.jobs.queue import Job
 from openswe.jobs.worker import WORKER, JobWorker
+from openswe.mcp.cards import CONSENT_JOB as MANAGED_TOOLS_CONSENT
+from openswe.mcp.cards import RESUME_JOB as MANAGED_TOOLS_CARD_RESUME
+from openswe.mcp.cards import ConnectCard, ConsentWait
 from openswe.merge_queue.controller import start_queue
+from openswe.merge_queue.diagnosis import JOB as MERGE_QUEUE_RECOVERY
+from openswe.merge_queue.diagnosis import QueueRecovery
 from openswe.merge_queue.runtime import JOB_KIND as MERGE_QUEUE_RECONCILE
 from openswe.merge_queue.runtime import reconcile_queue
 from openswe.monitors.delivery import POLL_JOB_KIND as MONITOR_POLL
@@ -54,8 +65,14 @@ from openswe.plugins.records import (
     ATTACHMENT_SWEEP_SCHEDULE,
     AttachmentObjects,
 )
+from openswe.proactivity.heartbeat import ProactiveHeartbeat
+from openswe.review.approval_withdrawal import ApprovalWithdrawal
+from openswe.routing.channel_rules import JOIN_JOB as CHANNEL_RULE_JOIN
+from openswe.routing.channel_rules import KICKOFF_JOB as CHANNEL_RULE_KICKOFF
+from openswe.routing.channel_rules import RuleChannel
 
 __all__ = ["WORKER"]
+from openswe.execution_images import EXECUTION_IMAGES
 from openswe.reconcile import reconcile_stale_runs
 from openswe.review.findings import get_thread_metadata
 from openswe.review.publish import (
@@ -63,8 +80,7 @@ from openswe.review.publish import (
     TrackedReviewCheck,
     settle_review_check_run,
 )
-from openswe.review_guide.sessions import ARCHIVE_JOB as REVIEW_GUIDE_ARCHIVE
-from openswe.review_guide.sessions import ReviewGuideSession
+from openswe.review_scout.launch import ReviewScoutTarget
 from openswe.sandboxes.retry import (
     SANDBOX_ATTACH_MAX_ELAPSED,
     is_transient_sandbox_error,
@@ -74,18 +90,17 @@ from openswe.schedules.store import AGENT_SCHEDULE_JOB_KIND, launch_scheduled_ag
 from openswe.session_cost import run_session_cost_refresh
 from openswe.slack.channel_options import DIRECTORY_JOB as SLACK_CHANNEL_DIRECTORY
 from openswe.slack.channel_options import ensure_directory_sync, sync_directory
-from openswe.slack.mda_forwarding import RETIRED_SWEEP_JOB as SLACK_LOST_REQUESTS
 from openswe.slack.tools.search import PURGE_JOB as SLACK_SEARCH_GRANT_PURGE
 from openswe.slack.tools.search import PURGE_SCHEDULE as SLACK_SEARCH_GRANT_SCHEDULE
 from openswe.slack.tools.search import SlackSearchGrant
+from openswe.tasks.messages import RETRY_JOB_KIND as TASK_MESSAGE_DELIVERY
+from openswe.tasks.messages import TaskMessage
 from openswe.threads.index_import import import_agent_server_threads
 from openswe.threads.stalls import fail_stalled_runs
 from openswe.threads.status import RECONCILE_JOB as THREAD_STATUS_RECONCILE
 from openswe.threads.status import RECONCILE_SCHEDULE, reconcile_busy_threads
 from openswe.tools.schedule_thread_wakeup import WAKE_THREAD_JOB, run_thread_wakeup
 from openswe.webhooks.event_subscriptions import EventSubscription
-from openswe.workspaces.refresh import REFRESH_TASK as WORKSPACE_REFRESH
-from openswe.workspaces.refresh import run_workspace_refresh_tick
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +112,19 @@ _FIRE_CLAIM_TTL: Final = timedelta(days=2)
 SEGMENT_WORKER: Final = JobWorker(max_in_flight=2)
 SEGMENT_WORKER.register(SEGMENT_JOB)(SegmentDelivery.deliver)
 WORKER.register(MERGE_QUEUE_RECONCILE)(reconcile_queue)
+WORKER.register(MERGE_QUEUE_RECOVERY)(QueueRecovery.run)
 WORKER.register(REQUIRED_CHECK_REFRESH)(refresh_required_checks)
 WORKER.register(GITHUB_QUOTA_SAMPLE)(InstallationQuota.sample)
+WORKER.register(SANDBOX_GITHUB_CALL_PURGE)(SandboxGitHubCalls.purge)
 WORKER.register("event_subscription_timeout")(EventSubscription.wake_on_timeout)
+WORKER.register(ApprovalWithdrawal.JOB)(ApprovalWithdrawal.retry)
+WORKER.register(ReviewScoutTarget.RETRY_JOB)(ReviewScoutTarget.retry)
+WORKER.register(TASK_MESSAGE_DELIVERY)(TaskMessage.retry)
+WORKER.register(ProactiveHeartbeat.JOB)(ProactiveHeartbeat.run)
+WORKER.register(CHANNEL_RULE_JOIN)(RuleChannel.join)
+WORKER.register(CHANNEL_RULE_KICKOFF)(RuleChannel.kickoff)
+WORKER.register(MANAGED_TOOLS_CONSENT)(ConsentWait.run)
+WORKER.register(MANAGED_TOOLS_CARD_RESUME)(ConnectCard.resume_job)
 
 
 def _text(job: Job, key: str) -> str | None:
@@ -159,12 +184,9 @@ async def _baby_sit(job: Job) -> str | None:
     return None if key is None else await evaluate_watch(key)
 
 
-@_sandbox_work(WORKSPACE_REFRESH)
-async def _workspace_refresh(job: Job) -> object:
-    kind = "update" if job.payload.get("refresh_kind") == "update" else "full"
-    # A cron's id outlives each of its runs, so only a one-shot job names one refresh.
-    run_id = None if job.cron else str(job.id)
-    return await run_workspace_refresh_tick(_text(job, "workspace_slug"), kind, run_id=run_id)
+@_sandbox_work(EXECUTION_IMAGES.JOB)
+async def _execution_image_refresh(job: Job) -> object:
+    return await EXECUTION_IMAGES.refresh(job)
 
 
 @WORKER.register(AGENT_SCHEDULE_JOB_KIND)
@@ -205,6 +227,34 @@ async def _human_review_deadline(job: Job) -> object:
     if request_id is None or step is None:
         return None
     return await run_deadline(request_id, step)
+
+
+@WORKER.register(APPROVAL_EVALUATE)
+async def _approval_evaluate(job: Job) -> None:
+    await PullRequestApproval.evaluate_job(job)
+
+
+@WORKER.register(PreviewReady.RECOVER)
+async def _recover_review_apps(job: Job) -> None:
+    await PreviewReady.recover(job)
+
+
+@WORKER.register(PreviewReady.RECONCILE)
+async def _review_apps_preview_reconcile(job: Job) -> None:
+    await PreviewReady.reconcile(job)
+
+
+@WORKER.register(PreviewReady.JOB)
+async def _review_apps_on_preview(job: Job) -> None:
+    try:
+        await PreviewReady.start_job(job)
+    except Exception:
+        await PreviewReady.request_status(
+            job,
+            "failed",
+            "Capture work could not start. Retry capture if the automatic retry does not recover.",
+        )
+        raise
 
 
 @WORKER.register(HUMAN_REVIEW_SETTLE)
@@ -255,16 +305,6 @@ async def _review_check_timeout(job: Job) -> None:
     )
     if (await get_thread_metadata(thread_id)).get("review_check_run_id") == check_run_id:
         raise RuntimeError("Could not settle the timed-out review check")
-
-
-@WORKER.register(REVIEW_GUIDE_ARCHIVE)
-async def _review_guide_archive(job: Job) -> None:
-    thread_id, head_sha = _text(job, "thread_id"), _text(job, "head_sha")
-    if thread_id is None or head_sha is None:
-        return
-    session = await ReviewGuideSession.get(thread_id)
-    if session is not None:
-        await session.archive_finished(head_sha)
 
 
 @WORKER.register(SLACK_CHANNEL_DIRECTORY)
@@ -325,10 +365,8 @@ async def start_jobs() -> None:
         import_agent_server_crons,
         import_agent_server_threads,
         start_queue,
+        lambda: queue.schedule(PreviewReady.RECOVER, cron="17 * * * *", key=PreviewReady.RECOVER),
         ensure_directory_sync,
-        # Retired: MDA's Slack channel builds its turns from the event, and nothing is
-        # remembered for it to miss.
-        lambda: queue.cancel_key(SLACK_LOST_REQUESTS),
         lambda: queue.schedule(
             THREAD_STATUS_RECONCILE, cron=RECONCILE_SCHEDULE, key=THREAD_STATUS_RECONCILE
         ),
@@ -346,7 +384,15 @@ async def start_jobs() -> None:
             GITHUB_QUOTA_SAMPLE, cron=GITHUB_QUOTA_SCHEDULE, key=GITHUB_QUOTA_SAMPLE
         ),
         lambda: queue.schedule(
+            SANDBOX_GITHUB_CALL_PURGE,
+            cron=SANDBOX_GITHUB_CALL_SCHEDULE,
+            key=SANDBOX_GITHUB_CALL_PURGE,
+        ),
+        lambda: queue.schedule(
             ATTACHMENT_SWEEP_JOB, cron=ATTACHMENT_SWEEP_SCHEDULE, key=ATTACHMENT_SWEEP_JOB
+        ),
+        lambda: queue.schedule(
+            ProactiveHeartbeat.JOB, cron=ProactiveHeartbeat.SCHEDULE, key=ProactiveHeartbeat.JOB
         ),
     ]
     for step in steps:

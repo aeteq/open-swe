@@ -1,6 +1,6 @@
 {
   "name": "open-swe-desktop",
-  "version": "0.3.16",
+  "version": "0.3.20",
   "private": true,
   "description": "Experimental Robin desktop client",
   "main": "build/main.cjs",
@@ -26,9 +26,6 @@
       "repo": "open-swe"
     },
     "asar": true,
-    "asarUnpack": [
-      "node_modules/node-pty/**/*"
-    ],
     "npmRebuild": true,
     "icon": "../ui/public/logo-mark.png",
     "directories": {
@@ -37,6 +34,7 @@
     "files": [
       "build/**/*",
       "src/setup.html",
+      "src/approval-panel.html",
       "package.json"
     ],
     "extraResources": [
@@ -58,12 +56,17 @@
       }
     ],
     "mac": {
+      "icon": "../mobile/assets/icon.icon",
       "category": "public.app-category.developer-tools",
       "artifactName": "Robin-${version}-${arch}-mac.${ext}",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
-      "extendInfo": { "NSUserActivityTypes": ["NSUserActivityTypeBrowsingWeb"] },
+      "extendInfo": {
+        "NSUserActivityTypes": [
+          "NSUserActivityTypeBrowsingWeb"
+        ]
+      },
       "entitlementsInherit": "entitlements.mac.inherit.plist",
       "target": [
         "dmg",
@@ -96,7 +99,6 @@
   },
   "dependencies": {
     "electron-updater": "6.8.9",
-    "node-pty": "1.1.0",
     "open-swe-bridge-client": "workspace:*"
   }
 }

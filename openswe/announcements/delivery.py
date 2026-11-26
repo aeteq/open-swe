@@ -9,11 +9,12 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from runtime_api.slack import SlackNotice
+
 from openswe.announcements.models import Announcement, DeliveryStatus
 from openswe.jobs import queue
 from openswe.slack.dm import post_dm
 from openswe.slack.http import SlackRequestError
-from openswe.users import User
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ def announcement_blocks(text: str) -> list[dict[str, Any]]:
         {"type": "section", "text": {"type": "mrkdwn", "text": text}},
         {
             "type": "context",
+            "block_id": SlackNotice(kind="announcement", key=text).block_id,
             "elements": [{"type": "mrkdwn", "text": "An update from the Robin team"}],
         },
     ]
@@ -62,6 +64,8 @@ async def deliver_announcement(announcement_id: str) -> dict[str, object]:
     announcement = await Announcement.get(UUID(announcement_id))
     if announcement is None:
         return {"status": "missing_announcement"}
+    if not await announcement.may_deliver():
+        return {"status": "awaiting_approval"}
     if interrupted := await announcement.abandon_interrupted():
         logger.warning(
             "Announcement deliveries were interrupted",
@@ -85,12 +89,12 @@ async def deliver_announcement(announcement_id: str) -> dict[str, object]:
 
 
 async def _deliver(announcement: Announcement, user_id: UUID) -> tuple[DeliveryStatus, str]:
-    user = await User.get(user_id)
-    if user is None or not user.slack_user_id:
+    slack_user_id = await announcement.slack_recipient(user_id)
+    if not slack_user_id:
         return "failed", "no_slack_identity"
     for attempt in range(1, _RATE_LIMIT_ATTEMPTS + 1):
         try:
-            await send_announcement_dm(user.slack_user_id, announcement.text)
+            await send_announcement_dm(slack_user_id, announcement.text)
         except SlackRequestError as exc:
             delay = _retry_after(exc.code)
             if delay is None or attempt == _RATE_LIMIT_ATTEMPTS:

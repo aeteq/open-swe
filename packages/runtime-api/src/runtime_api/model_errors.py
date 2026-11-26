@@ -17,8 +17,9 @@ _MAX_BODY_CHARS: Final = 2000
 LAST_MODEL_ERROR_KEY: Final = "last_model_error"
 
 # The ``response_metadata`` key marking an answer the runtime wrote for a model call it
-# could not make (``outage`` or ``model_access``). It is final: the loop posts it as it
-# is instead of asking the model again for a reply it cannot give.
+# could not make (``outage`` or ``model_access``) or the provider refused (``refusal``).
+# It is final: the loop posts it as it is instead of asking the model again for a reply
+# it cannot give.
 MODEL_FAILURE_REPLY_KEY: Final = "open_swe_model_failure"
 
 # Exception class names, the only failure signal the run-completion webhook gets:
@@ -33,6 +34,8 @@ _ERROR_TYPE_CODES: Final = {
     "InternalServerError": "provider_unavailable",
     "APITimeoutError": "provider_timeout",
     "ModelCallTimeoutError": "provider_timeout",
+    "ModelRefusalError": "model_refused",
+    "OpenAIRefusalError": "model_refused",
     "GraphRecursionError": "step_limit",
     "RecursionError": "step_limit",
     "SandboxConnectionError": "sandbox_unreachable",
@@ -42,6 +45,15 @@ _ERROR_TYPE_CODES: Final = {
     # Not raised: the stalled-run sweep names it when it fails a run that went silent.
     "RunStalledError": "run_stalled",
 }
+
+# A provider's policy block of the request, raised as an error rather than answered as a
+# refusal: OpenAI fails a flagged request with a 400, or with an error event mid-stream.
+# Its structured code where the provider gives one, else its wording.
+_POLICY_BLOCK_CODES: Final = frozenset({"cyber_policy", "content_policy_violation"})
+_POLICY_BLOCK_MESSAGES: Final = (
+    "flagged for possible cybersecurity risk",
+    "flagged as potentially violating our usage policy",
+)
 
 
 def is_model_failure_reply(message: object) -> bool:
@@ -64,12 +76,19 @@ def classify_exception(exc: BaseException) -> str | None:
     status = getattr(exc, "status_code", None)
     body = getattr(exc, "body", None)
     provider_code = ""
+    codes = [getattr(exc, "code", None)]
     if isinstance(body, dict):
+        codes.append(body.get("code"))
         inner = body.get("error")
         if isinstance(inner, dict):
             provider_code = str(inner.get("type") or inner.get("code") or "")
+            codes.append(inner.get("code"))
     haystack = f"{provider_code} {exc}".lower()
 
+    if any(isinstance(code, str) and code in _POLICY_BLOCK_CODES for code in codes) or any(
+        flag in haystack for flag in _POLICY_BLOCK_MESSAGES
+    ):
+        return "model_refused"
     if status == 429 or "rate_limit" in haystack:
         return "provider_rate_limited"
     if status == 529 or "overloaded" in haystack:

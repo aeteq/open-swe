@@ -1,3 +1,5 @@
+import { useState } from "react"
+import type { ReactNode } from "react"
 import { ClockCounterClockwiseRegularIcon } from "@langchain/macaw-components/icons"
 import { Text } from "@langchain/macaw-components/Text"
 import { Link } from "@tanstack/react-router"
@@ -5,6 +7,7 @@ import { Banner } from "@langchain/macaw-components/Banner"
 import { Button } from "@langchain/macaw-components/Button"
 import { EmptyState } from "@langchain/macaw-components/EmptyState"
 import { Spinner } from "@langchain/macaw-components/Spinner"
+import { Skeleton } from "@/components/Skeleton"
 import { ArrowSquareOutIcon } from "@phosphor-icons/react/dist/ssr/ArrowSquareOut"
 import { SlackLogoIcon } from "@phosphor-icons/react/dist/ssr/SlackLogo"
 
@@ -22,33 +25,49 @@ const STATUS_LABELS: Record<AgentStatus, string> = {
 
 export function AutomationRuns({
   automationId,
-  limit = 100,
+  owned,
+  limit = 25,
 }: {
   automationId?: string
+  /** Only runs of the viewer's own automations, not the public runs of system ones. */
+  owned?: boolean
   limit?: number
 }) {
+  const [offset, setOffset] = useState(0)
   const runsQuery = useThreadsPage({
     limit,
-    offset: 0,
+    offset,
     scope: "automation",
     automationId,
+    owned,
   })
   const runs = runsQuery.data?.items ?? []
   const grouped = groupAutomationRuns(runs)
 
+  let content: ReactNode
   if (runsQuery.isLoading) {
-    return (
+    content = (
       <div
         role="status"
-        className="flex items-center justify-center gap-space-2 rounded-xl border border-dashed border-default px-space-5 py-space-8 text-xs text-secondary"
+        aria-label="Loading automation runs"
+        className="space-y-space-2"
       >
-        <Spinner size="xs" />
-        Loading automation runs…
+        {Array.from({ length: 4 }, (_, index) => (
+          <div
+            key={index}
+            className="flex items-center gap-space-3 rounded-xl border border-default bg-surface-level-1 px-space-4 py-space-3"
+          >
+            <Skeleton className="size-2.5 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-space-2 py-space-1">
+              <Skeleton className="h-3.5 w-64 max-w-full" />
+              <Skeleton className="h-3 w-40 max-w-full" />
+            </div>
+          </div>
+        ))}
       </div>
     )
-  }
-  if (runsQuery.isError) {
-    return (
+  } else if (runsQuery.isError) {
+    content = (
       <Banner
         intent="error"
         action={
@@ -65,42 +84,81 @@ export function AutomationRuns({
         Automation runs could not be loaded.
       </Banner>
     )
-  }
-  if (runs.length === 0) {
-    return (
+  } else if (runs.length === 0) {
+    content = (
       <EmptyState
         icon={ClockCounterClockwiseRegularIcon}
-        title="No automation runs yet."
+        title={
+          offset === 0 ? "No automation runs yet." : "No runs on this page."
+        }
         className="rounded-xl border border-dashed border-default"
       />
     )
+  } else {
+    content = grouped.map((group) => (
+      <section key={group.id}>
+        {!automationId && (
+          <div className="mb-space-2 flex items-center gap-space-2 px-space-1">
+            <Text as="h2" variant="sm" weight="medium" color="primary">
+              {group.name}
+            </Text>
+            <span className="text-xxs text-secondary">{group.runs.length}</span>
+          </div>
+        )}
+        <div className="space-y-space-2">
+          {group.runs.map((run) => (
+            <AutomationRunRow key={run.id} run={run} />
+          ))}
+        </div>
+      </section>
+    ))
   }
 
   return (
-    <div className="space-y-space-5">
-      {grouped.map((group) => (
-        <section key={group.id}>
-          {!automationId && (
-            <div className="mb-space-2 flex items-center gap-space-2 px-space-1">
-              <Text as="h2" variant="sm" weight="medium" color="primary">
-                {group.name}
-              </Text>
-              <span className="text-xxs text-secondary">
-                {group.runs.length}
-              </span>
-            </div>
-          )}
-          <div className="space-y-space-2">
-            {group.runs.map((run) => (
-              <AutomationRunRow key={run.id} run={run} />
-            ))}
+    <div className="space-y-space-5" aria-busy={runsQuery.isFetching}>
+      {!runsQuery.isLoading &&
+        !runsQuery.isError &&
+        runs.some((run) => run.status === "finished") && (
+          <p className="text-xs text-secondary">
+            Finished means the run ended, not that its task succeeded. Open a
+            run to review the outcome.
+          </p>
+        )}
+      {content}
+      {(offset > 0 || runsQuery.data?.hasMore) && (
+        <nav
+          aria-label="Automation run pages"
+          className="flex flex-wrap items-center justify-between gap-space-3 text-xs text-secondary"
+        >
+          <span>
+            {offset === 0
+              ? `Showing the ${limit} most recent runs.`
+              : "Older automation runs."}
+          </span>
+          <div className="flex items-center gap-space-2">
+            <Button
+              color="secondary"
+              variant="outlined"
+              disabled={offset === 0 || runsQuery.isFetching}
+              onClick={() => setOffset(Math.max(0, offset - limit))}
+            >
+              Previous
+            </Button>
+            <span aria-live="polite">Page {offset / limit + 1}</span>
+            <Button
+              color="secondary"
+              variant="outlined"
+              disabled={
+                !runsQuery.data?.hasMore ||
+                runsQuery.isFetching ||
+                runsQuery.isError
+              }
+              onClick={() => setOffset(offset + limit)}
+            >
+              Next
+            </Button>
           </div>
-        </section>
-      ))}
-      {runsQuery.data?.hasMore && (
-        <p className="text-center text-xs text-secondary">
-          Showing the {limit} most recent runs.
-        </p>
+        </nav>
       )}
     </div>
   )
@@ -143,9 +201,7 @@ function AutomationRunRow({ run }: { run: AgentThread }) {
             "size-2.5 shrink-0 rounded-full",
             run.status === "error" || run.status === "interrupted"
               ? "bg-error-strong"
-              : run.status === "finished"
-                ? "bg-success-strong"
-                : "bg-surface-level-4"
+              : "bg-surface-level-4"
           )}
         />
       )}

@@ -10,8 +10,10 @@ import { humanizeToolName } from "./toolNames"
 import type { BaseMessage, ContentBlock } from "@langchain/core/messages"
 import type { AssembledToolCall } from "@langchain/react"
 
+import { dashboardApiUrl } from "@/lib/dashboard-fetch"
+
 import type { StructuredEntity } from "./structuredInputMessages"
-import type { Chunk, ImageChunk, Message, ToolExecutionChunk } from "./types"
+import type { AnyImageChunk, Chunk, Message, ToolExecutionChunk } from "./types"
 
 function senderNote(entity: StructuredEntity | undefined): string | undefined {
   if (entity?.senderType === "bot") return undefined
@@ -41,9 +43,14 @@ export function toolKind(name: string): ToolKind {
   if (lowered.startsWith("mcp_")) return "other"
   if (lowered === "task") return "task"
   if (lowered === "eval") return "code"
+  if (lowered === "background_execute") return "background"
   if (lowered === "read_only_sql") return "sql"
   if (lowered === "slack_reply") return "slack"
-  if (lowered === "connect_managed_tools") return "managed-tools"
+  if (
+    lowered === "connect_managed_tools" ||
+    lowered === "add_managed_tools_server"
+  )
+    return "managed-tools"
   if (lowered === "linear_comment") return "linear"
   if (lowered === "comment_on_notion_task") return "notion"
   if (
@@ -186,23 +193,45 @@ function inlineImage(block: Record<string, unknown>): InlineImage {
   return {}
 }
 
-function imageChunks(content: unknown): Array<ImageChunk> {
+/**
+ * Where the dashboard serves an image the state read links to in place of its
+ * bytes: the transcript's copy, behind the thread's own read check.
+ */
+const STORED_IMAGE_PATH =
+  /^\/dashboard\/api(\/threads\/[^/?#]+\/transcript\/attachments\/[^/?#]+)$/
+
+/**
+ * What a content block shows: its inline bytes, or the stored copy it links to,
+ * which loads with the session when shown, as the transcript view's do.
+ */
+function imageChunk(block: Record<string, unknown>): AnyImageChunk | null {
+  const fileName = block.fileName ?? block.file_name
+  const named = typeof fileName === "string" && fileName ? { fileName } : {}
+  const { base64, mimeType } = inlineImage(block)
+  if (base64 && mimeType) return { kind: "image", base64, mimeType, ...named }
+  const path =
+    block.type === "image" && typeof block.url === "string"
+      ? STORED_IMAGE_PATH.exec(block.url)?.[1]
+      : undefined
+  if (!path) return null
+  const storedType = block.mime_type
+  return {
+    kind: "image",
+    url: dashboardApiUrl(path),
+    credentials: "session",
+    ...(typeof storedType === "string" ? { mimeType: storedType } : {}),
+    ...named,
+  }
+}
+
+function imageChunks(content: unknown): Array<AnyImageChunk> {
   if (!Array.isArray(content)) return []
 
-  const chunks: Array<ImageChunk> = []
+  const chunks: Array<AnyImageChunk> = []
   for (const item of content) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue
-    const block = item as Record<string, unknown>
-    const { base64, mimeType } = inlineImage(block)
-    if (base64 && mimeType) {
-      const fileName = block.fileName ?? block.file_name
-      chunks.push({
-        kind: "image",
-        base64,
-        mimeType,
-        ...(typeof fileName === "string" && fileName ? { fileName } : {}),
-      })
-    }
+    const chunk = imageChunk(item as Record<string, unknown>)
+    if (chunk) chunks.push(chunk)
   }
   return chunks
 }
@@ -233,6 +262,38 @@ function toolOutputText(
   const value = assembled?.output
   if (value != null) {
     if (typeof value === "string") return value.trim() || undefined
+    const content: unknown = toolMessage?.content
+    if (Array.isArray(content)) {
+      const lines = content.flatMap((item: unknown): Array<string> => {
+        if (typeof item === "string") return [item]
+        if (!item || typeof item !== "object") return []
+        const block = item as Record<string, unknown>
+        if (typeof block.text === "string") return [block.text]
+        // imageChunks shows these.
+        if (imageChunk(block)) return []
+        const mimeType = block.mime_type ?? block.mimeType
+        const imageUrl = block.image_url
+        const link =
+          block.url ??
+          (imageUrl && typeof imageUrl === "object"
+            ? (imageUrl as Record<string, unknown>).url
+            : imageUrl)
+        const dataUrl = typeof link === "string" && link.startsWith("data:")
+        const payload =
+          block.base64 ??
+          block.data ??
+          (dataUrl ? link.slice(link.indexOf(",") + 1) : undefined)
+        const size =
+          typeof payload === "string"
+            ? `, ${Math.ceil((payload.length * 3) / 4 / 1024)} KB`
+            : ""
+        const href = typeof link === "string" && !dataUrl ? ` ${link}` : ""
+        return [
+          `[${String(block.type ?? "block")}${typeof mimeType === "string" ? ` ${mimeType}` : ""}${size}]${href}`,
+        ]
+      })
+      return lines.join("\n").trim() || undefined
+    }
     try {
       return JSON.stringify(value)
     } catch {
@@ -325,8 +386,6 @@ export function streamMessagesToUi(
 
     if (HumanMessage.isInstance(raw)) {
       if (raw.additional_kwargs.lc_source === "summarization") return
-      flushAgentTurn()
-      turnKey = typeof raw.id === "string" ? raw.id : undefined
       const content = (raw as unknown as { content?: unknown }).content
       const chunks: Array<Chunk> = imageChunks(content)
       const parsed = parseStructuredInput(raw.text, structuredEntities)
@@ -344,6 +403,8 @@ export function streamMessagesToUi(
       const replies = parsed.type === "message" ? parsed.replies : undefined
       if (text.trim()) chunks.push({ kind: "text", text })
       if (!chunks.length && !taskEvent && !replies) return
+      flushAgentTurn()
+      turnKey = typeof raw.id === "string" ? raw.id : undefined
       uiMessages.push({
         id: msgId,
         ...(taskEvent ? { taskEvent } : {}),

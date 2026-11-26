@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
+import { groupQuietRuns } from "@/features/agents/components/messages/quietRuns"
 import { fetchToolOutput } from "./api"
 import {
   applyEvent,
@@ -220,6 +221,176 @@ describe("transcript snapshot", () => {
     expect(messages[1]?.timestamp).toBe("2026-01-01T00:00:02Z")
   })
 
+  it("keeps a background event arriving between work in the same turn", () => {
+    const messages = toMessages(
+      fromSnapshot(
+        snapshot({
+          turns: [turn("t1", "2026-01-01T00:00:00Z")],
+          messages: [
+            messageRow({
+              message_id: "first",
+              turn_id: "t1",
+              text: "Working",
+              created_at: "2026-01-01T00:00:00Z",
+            }),
+            messageRow({
+              message_id: "event",
+              turn_id: "t1",
+              role: "human",
+              text: '<input-message sender="system:background-task" kind="system">A sandbox background command finished.\nTask: cmd-123\nStatus: completed\nExit code: 0\nDuration: 3s</input-message>',
+              created_at: "2026-01-01T00:00:01Z",
+            }),
+            messageRow({
+              message_id: "second",
+              turn_id: "t1",
+              text: "Done",
+              created_at: "2026-01-01T00:00:02Z",
+            }),
+          ],
+        })
+      )
+    )
+    expect(messages.map((message) => message.id)).toEqual([
+      "first",
+      "event",
+      "second",
+    ])
+  })
+
+  it("counts split work as one quiet run, while still grouping separate runs", () => {
+    const state = fromSnapshot(
+      snapshot({
+        turns: [
+          turn("t1", "2026-01-01T00:00:00Z"),
+          turn("t2", "2026-01-01T00:01:00Z"),
+        ],
+        messages: [
+          messageRow({
+            message_id: "event",
+            turn_id: "t1",
+            role: "human",
+            text: '<input-message sender="system:monitor" kind="system">Monitor `mon-123` (CI) emitted, starting at raw line 1:</input-message>',
+            created_at: "2026-01-01T00:00:02Z",
+          }),
+        ],
+        tool_calls: [
+          toolCall({
+            tool_call_id: "before",
+            turn_id: "t1",
+            name: "check_pr",
+            started_at: "2026-01-01T00:00:01Z",
+          }),
+          toolCall({
+            tool_call_id: "after",
+            turn_id: "t1",
+            name: "check_pr",
+            started_at: "2026-01-01T00:00:03Z",
+          }),
+          toolCall({
+            tool_call_id: "next",
+            turn_id: "t2",
+            name: "check_pr",
+            started_at: "2026-01-01T00:01:01Z",
+          }),
+        ],
+      })
+    )
+    const messages = toMessages(state)
+    expect(messages.map((message) => message.id)).toEqual([
+      "before",
+      "event",
+      "after",
+      "next",
+    ])
+    expect(
+      groupQuietRuns(messages.slice(0, 3)).map((entry) => entry.type)
+    ).toEqual(["message", "message", "message"])
+    const grouped = groupQuietRuns(messages)
+    expect(grouped).toHaveLength(1)
+    expect(grouped[0]).toMatchObject({
+      type: "quiet",
+      stretch: { runCount: 2, actionCount: 3 },
+    })
+  })
+
+  it("preserves completion time from live events and snapshots", () => {
+    const state = fromSnapshot(twoTurnSnapshot())
+    const settled = applyEvent(state, {
+      version: 11,
+      event_type: "turn.completed",
+      occurred_at: "2026-01-01T00:02:00Z",
+      payload: { turn_id: "turn-2" },
+    })
+    expect(toMessages(settled).at(-1)).toMatchObject({
+      runStartedAt: "2026-01-01T00:01:00Z",
+      completedAt: "2026-01-01T00:02:00Z",
+    })
+    const reloaded = fromSnapshot(
+      twoTurnSnapshot({
+        turns: [
+          turn("turn-1", "2026-01-01T00:00:00Z"),
+          {
+            ...turn("turn-2", "2026-01-01T00:01:00Z"),
+            completed_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      })
+    )
+    expect(toMessages(reloaded).at(-1)?.completedAt).toBe(
+      "2026-01-01T00:02:00Z"
+    )
+    const lateCompletion = applyEvent(settled, {
+      version: 12,
+      event_type: "turn.failed",
+      occurred_at: "2026-01-01T00:03:00Z",
+      payload: { turn_id: "turn-2", error: "late failure" },
+    })
+    expect(toMessages(lateCompletion).at(-1)?.completedAt).toBe(
+      "2026-01-01T00:02:00Z"
+    )
+  })
+
+  it("uses the run start only for the first agent message in a turn", () => {
+    const state = fromSnapshot(
+      twoTurnSnapshot({
+        messages: [
+          messageRow({
+            message_id: "human",
+            turn_id: "turn-2",
+            role: "human",
+            text: "Start",
+            created_at: "2026-01-01T00:01:00Z",
+          }),
+          messageRow({
+            message_id: "ai-1",
+            turn_id: "turn-2",
+            text: "Working",
+            created_at: "2026-01-01T00:01:01Z",
+          }),
+          messageRow({
+            message_id: "human-2",
+            turn_id: "turn-2",
+            role: "human",
+            text: "Continue",
+            created_at: "2026-01-01T00:01:30Z",
+          }),
+          messageRow({
+            message_id: "ai-2",
+            turn_id: "turn-2",
+            text: "Continuing",
+            created_at: "2026-01-01T00:01:35Z",
+          }),
+        ],
+        tool_calls: [],
+      })
+    )
+    const messages = toMessages(state).filter(
+      (message) => message.author === "agent"
+    )
+    expect(messages[0]?.runStartedAt).toBe("2026-01-01T00:01:00Z")
+    expect(messages[1]?.runStartedAt).toBeUndefined()
+  })
+
   it("hides the context Claude Code adds to a mirrored prompt", () => {
     const sender = { login: "octocat", kind: "claude_code" }
     const messages = toMessages(
@@ -338,6 +509,280 @@ function completed(
 }
 
 describe("transcript events", () => {
+  it("orders replayed Slack posts across turns in live, reloaded, and paged transcripts", () => {
+    const slack = (timestamp: string, text: string) =>
+      `<input-message sender="slack:U123" channel="slack:C123" surface="slack" kind="human" timestamp="${timestamp}" slack_message_ts="${timestamp}">${text}</input-message>`
+    const firstTurn = turn("turn-1", "2026-01-01T00:00:00Z")
+    const secondTurn = turn("turn-2", "2026-01-01T00:00:30Z")
+    const first = messageRow({
+      message_id: "first",
+      turn_id: "turn-1",
+      role: "human",
+      text: slack("1767225600.000000", "First"),
+      created_at: "2026-01-01T00:00:00Z",
+    })
+    const answer = messageRow({
+      message_id: "answer",
+      turn_id: "turn-1",
+      text: "Answer",
+      created_at: "2026-01-01T00:00:20Z",
+    })
+    const trigger = messageRow({
+      message_id: "trigger",
+      turn_id: "turn-2",
+      role: "human",
+      text: slack("1767225630.000000", "Follow-up"),
+      created_at: "2026-01-01T00:00:30Z",
+    })
+    const replayed = [
+      messageRow({
+        message_id: "replayed-1",
+        turn_id: "turn-2",
+        role: "human",
+        text: slack("1767225610.000001", "Earlier reply"),
+        created_at: "2026-01-01T00:00:31Z",
+      }),
+      messageRow({
+        message_id: "replayed-2",
+        turn_id: "turn-2",
+        role: "human",
+        text: slack("1767225610.000002", "Another reply"),
+        created_at: "2026-01-01T00:00:32Z",
+      }),
+    ]
+    const secondAnswer = messageRow({
+      message_id: "second-answer",
+      turn_id: "turn-2",
+      text: "Continuing",
+      created_at: "2026-01-01T00:00:40Z",
+    })
+    const calls = [
+      toolCall({
+        tool_call_id: "read-z",
+        turn_id: "turn-1",
+        name: "read_file",
+        started_at: "2026-01-01T00:00:05.000001Z",
+      }),
+      toolCall({
+        tool_call_id: "read-a",
+        turn_id: "turn-1",
+        name: "read_file",
+        started_at: "2026-01-01T00:00:05.000002Z",
+      }),
+    ]
+    const initial = snapshot({
+      turns: [firstTurn, secondTurn],
+      messages: [first, answer, trigger, secondAnswer],
+      tool_calls: calls,
+    })
+    const live = replayed.reduce(
+      (state, row, index) =>
+        applyEvent(
+          state,
+          completed(11 + index, {
+            turn_id: row.turn_id,
+            message_id: row.message_id,
+            role: row.role,
+            text: row.text,
+            created_at: row.created_at,
+          })
+        ),
+      fromSnapshot(initial)
+    )
+    const reloaded = fromSnapshot(
+      snapshot({
+        ...initial,
+        version: 12,
+        messages: [...initial.messages, ...replayed],
+      })
+    )
+    const paged = prependTurns(
+      fromSnapshot(
+        snapshot({
+          turns: [secondTurn],
+          messages: [trigger, ...replayed, secondAnswer],
+          older_cursor: "older",
+        })
+      ),
+      {
+        turns: [firstTurn],
+        messages: [first, answer],
+        tool_calls: calls,
+        older_cursor: null,
+      }
+    )
+    const streaming = fromSnapshot(
+      snapshot({
+        turns: [turn("turn-1", "2026-01-01T00:00:00Z", "running"), secondTurn],
+        messages: [first, trigger, ...replayed, secondAnswer],
+        tool_calls: calls,
+      })
+    )
+    expect(toMessages(streaming).map((message) => message.id)).toEqual([
+      "first",
+      "read-z",
+      "replayed-1",
+      "replayed-2",
+      "trigger",
+      "second-answer",
+    ])
+    const queuedFollowUp = fromSnapshot(
+      snapshot({
+        ...initial,
+        messages: [
+          first,
+          answer,
+          { ...trigger, text: slack("1767225610.000000", "Queued follow-up") },
+          secondAnswer,
+        ],
+      })
+    )
+    expect(toMessages(queuedFollowUp).map((message) => message.id)).toEqual([
+      "first",
+      "read-z",
+      "trigger",
+      "second-answer",
+    ])
+    for (const state of [live, reloaded, paged]) {
+      const messages = toMessages(state)
+      expect(messages.map((message) => message.id)).toEqual([
+        "first",
+        "read-z",
+        "replayed-1",
+        "replayed-2",
+        "trigger",
+        "second-answer",
+      ])
+      const agent = messages.find((message) => message.id === "read-z")
+      expect(agent?.turnKey).toBe("first")
+      expect(
+        messages.find((message) => message.id === "second-answer")?.turnKey
+      ).toBe("trigger")
+      expect(agent?.chunks.map((chunk) => chunk.kind)).toEqual([
+        "tool-execution",
+        "tool-execution",
+        "text",
+      ])
+      expect(
+        agent?.chunks.flatMap((chunk) =>
+          chunk.kind === "tool-execution" ? [chunk.toolCallId] : []
+        )
+      ).toEqual(["read-z", "read-a"])
+    }
+  })
+
+  it("places a late Slack post between the activity it interrupted", () => {
+    const initial = snapshot({
+      turns: [turn("turn-2", "2026-01-01T00:00:00Z")],
+      messages: [
+        messageRow({
+          message_id: "trigger",
+          turn_id: "turn-2",
+          role: "human",
+          text: '<input-message sender="slack:U123" channel="slack:C123" surface="slack" kind="human" timestamp="1767225600.000000" slack_message_ts="1767225600.000000">Start</input-message>',
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+        messageRow({
+          message_id: "answer",
+          turn_id: "turn-2",
+          text: "Done",
+          created_at: "2026-01-01T00:00:20Z",
+        }),
+      ],
+      tool_calls: [
+        toolCall({
+          tool_call_id: "before",
+          turn_id: "turn-2",
+          name: "read_file",
+          started_at: "2026-01-01T00:00:05Z",
+        }),
+        toolCall({
+          tool_call_id: "after",
+          turn_id: "turn-2",
+          name: "read_file",
+          started_at: "2026-01-01T00:00:15Z",
+        }),
+      ],
+    })
+    const late = messageRow({
+      message_id: "late",
+      turn_id: "turn-2",
+      role: "human",
+      text: '<input-message sender="slack:U123" channel="slack:C123" surface="slack" kind="human" timestamp="1767225610.000000" slack_message_ts="1767225610.000000">Follow-up</input-message>',
+      created_at: "2026-01-01T00:00:30Z",
+    })
+    const live = applyEvent(
+      fromSnapshot(initial),
+      completed(11, {
+        turn_id: late.turn_id,
+        message_id: late.message_id,
+        role: late.role,
+        text: late.text,
+        created_at: late.created_at,
+      })
+    )
+    const reloaded = fromSnapshot(
+      snapshot({ ...initial, messages: [...initial.messages, late] })
+    )
+    for (const state of [live, reloaded]) {
+      expect(
+        toMessages(state).map((message) => [message.id, message.turnKey])
+      ).toEqual([
+        ["trigger", undefined],
+        ["before", "trigger"],
+        ["late", undefined],
+        ["after", "late"],
+      ])
+    }
+  })
+
+  it("keeps mixed web messages and ambiguous Slack edits in recorded order", () => {
+    const messages = toMessages(
+      fromSnapshot(
+        snapshot({
+          turns: [turn("turn-1", "2026-01-01T00:00:00Z")],
+          messages: [
+            messageRow({
+              message_id: "web",
+              turn_id: "turn-1",
+              role: "human",
+              text: '<input-message sender="github:alice" surface="web" kind="human">Web</input-message>',
+              created_at: "2026-01-01T00:00:00Z",
+            }),
+            messageRow({
+              message_id: "edit",
+              turn_id: "turn-1",
+              role: "human",
+              text: '<input-message sender="slack:U123" channel="slack:C123" surface="slack" kind="human" timestamp="1767225590.000000" slack_message_ts="1767225580.000000">Edit</input-message>',
+              created_at: "2026-01-01T00:00:01Z",
+            }),
+            messageRow({
+              message_id: "missing-time",
+              turn_id: "turn-1",
+              role: "human",
+              text: '<input-message sender="slack:U123" surface="slack" kind="human">Old message</input-message>',
+              created_at: "2026-01-01T00:00:02Z",
+            }),
+            messageRow({
+              message_id: "post",
+              turn_id: "turn-1",
+              role: "human",
+              text: '<input-message sender="slack:U123" channel="slack:C123" surface="slack" kind="human" timestamp="1767225600.500000" slack_message_ts="1767225600.500000">Post</input-message>',
+              created_at: "2026-01-01T00:00:03Z",
+            }),
+          ],
+        })
+      )
+    )
+    expect(messages.map((message) => message.id)).toEqual([
+      "web",
+      "post",
+      "edit",
+      "missing-time",
+    ])
+    expect(messages[2]?.timestamp).toBe("2026-01-01T00:00:01Z")
+  })
+
   it("preserves the original Slack message link in the transcript", () => {
     const messages = toMessages(
       fromSnapshot(
@@ -394,6 +839,94 @@ describe("transcript events", () => {
     const [message] = toMessages(state)
     expect(message?.taskEvent).toEqual(taskEvent)
     expect(message?.chunks).toEqual([{ kind: "text", text: taskEvent.content }])
+  })
+
+  it("places received worker results in the active turn but leaves wakeups standalone", () => {
+    const event = {
+      version: 1,
+      task_id: "d505b040-c025-4b52-a27e-339803281cfb",
+      sender_thread_id: "86186b55-1999-52e2-bf4b-ca3de907043e",
+      sender_role: "worker",
+      sender_label: "Investigation",
+      kind: "completion",
+      status: "success",
+      content: "Found the cause",
+    }
+    const data = JSON.stringify(event)
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+    const eventText = `<input-message sender="system:event-subscription" kind="system" surface="automation" event_match="86186b55-1999-52e2-bf4b-ca3de907043e" task_event="${data}">hidden</input-message>`
+    const messages = toMessages(
+      fromSnapshot(
+        snapshot({
+          turns: [
+            turn("active", "2026-01-01T00:00:00Z"),
+            turn("wake", "2026-01-01T00:01:00Z"),
+          ],
+          messages: [
+            messageRow({
+              message_id: "question",
+              turn_id: "active",
+              role: "human",
+              text: "Go",
+              created_at: "2026-01-01T00:00:00Z",
+            }),
+            messageRow({
+              message_id: "hidden",
+              turn_id: "active",
+              role: "human",
+              text: '<dynamic-context kind="system" id="system:test">\ndisplay_name: Test\n</dynamic-context>',
+              created_at: "2026-01-01T00:00:02Z",
+            }),
+            messageRow({
+              message_id: "result",
+              turn_id: "active",
+              role: "human",
+              text: eventText,
+              created_at: "2026-01-01T00:00:03Z",
+            }),
+            messageRow({
+              message_id: "answer",
+              turn_id: "active",
+              text: "Done",
+              created_at: "2026-01-01T00:00:05Z",
+            }),
+            messageRow({
+              message_id: "idle-result",
+              turn_id: "wake",
+              role: "human",
+              text: eventText,
+              created_at: "2026-01-01T00:01:00Z",
+            }),
+          ],
+          tool_calls: [
+            toolCall({
+              tool_call_id: "before",
+              turn_id: "active",
+              name: "read_file",
+              started_at: "2026-01-01T00:00:01Z",
+            }),
+            toolCall({
+              tool_call_id: "after",
+              turn_id: "active",
+              name: "read_file",
+              started_at: "2026-01-01T00:00:04Z",
+            }),
+          ],
+        })
+      )
+    )
+    expect(messages).toHaveLength(3)
+    expect(messages[1]?.chunks.map((chunk) => chunk.kind)).toEqual([
+      "tool-execution",
+      "task-event",
+      "tool-execution",
+      "text",
+    ])
+    expect(messages[1]?.chunks[1]).toMatchObject({ messageId: "result", event })
+    expect(messages[2]).toMatchObject({ id: "idle-result", taskEvent: event })
   })
 
   it("concatenates fragments and then takes the completed text as canonical", () => {
@@ -691,6 +1224,24 @@ describe("notices", () => {
 
     expect(routedNotice(nextTurn)).toBeNull()
   })
+
+  it.each(["execution_stale", "workspace_stale"] as const)(
+    "updates a reloaded %s notice without duplicating it",
+    (kind) => {
+      const row = {
+        turn_id: "turn-2",
+        kind,
+        data: { captured_at: "2026-01-01T00:00:00Z" },
+      }
+      const reloaded = fromSnapshot(snapshot({ notices: [row] }))
+      const data = { captured_at: "2026-01-01T00:01:00Z" }
+      const updated = applyEvent(reloaded, notice(11, { ...row, data }))
+
+      expect(Object.values(updated.notices)).toEqual([
+        { turnId: "turn-2", kind: "execution_stale", data },
+      ])
+    }
+  )
 
   it("stops reporting offloading once the turn it described settles", () => {
     const started = applyEvent(

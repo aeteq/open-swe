@@ -17,6 +17,7 @@ from openswe.github.repositories import Repository
 from openswe.merge_queue.admission import CheckSource, QueuePolicy
 from openswe.merge_queue.configuration import QueueConfiguration
 from openswe.merge_queue.controller import QueueController
+from openswe.merge_queue.recovery import RecoveryDecision, RecoveryMember, RecoveryProposal
 from openswe.merge_queue.store import MergeQueue
 from openswe.merge_queue.validation_contract import ValidationPolicy
 
@@ -175,13 +176,13 @@ async def test_controller_rejects_changed_trusted_inputs(
         monkeypatch.delenv("MERGE_QUEUE_DISPATCH_SECRET", raising=False)
     repository = Repository(full_name="acme/widgets")
     queue = MergeQueue(
-        workspace_id=uuid7(), repository_id=repository.id, target_branch="main", mode=mode
+        routing_id=uuid7(), repository_id=repository.id, target_branch="main", mode=mode
     )
     workflow = b"reviewed workflow"
     controller = QueueController(
         QueueConfiguration(
             mode=mode,
-            workspace_id=queue.workspace_id,
+            routing_id=queue.bound_routing_id,
             repository="acme/widgets",
             repository_id=42,
             dispatch_url="https://dispatcher.example/queue" if mode == "custom" else None,
@@ -232,3 +233,39 @@ async def test_controller_rejects_changed_trusted_inputs(
     else:
         async with controller.open_repo(queue) as repo:
             assert isinstance(repo, RepoClient) and repo.full_name == "acme/widgets"
+
+
+class TestNativeDeferral:
+    @pytest.mark.parametrize("shared_unmerged", [False, True])
+    @pytest.mark.parametrize("multiple", [False, True])
+    async def test_deferral_refuses_shared_unmerged_ancestry(self, shared_unmerged, multiple):
+        snapshot = NativeQueueSnapshot.model_validate(native_response())
+        assert snapshot.queue is not None
+        members = tuple(
+            RecoveryMember(entry_id=e.id, number=e.pull.number, head_sha=e.pull.head_sha)
+            for e in snapshot.queue.entries.nodes
+        )
+        decision = RecoveryDecision(
+            proposal=RecoveryProposal(
+                request_key=uuid7(),
+                batch_id=uuid7(),
+                attempt_id=uuid7(),
+                candidate_sha=list(snapshot.candidates)[-1],
+                action="defer",
+                member=members[1],
+                additional_members=(members[2],) if multiple else (),
+                reason="PR introduces the regression",
+            ),
+            members=members,
+            thread_id="thread",
+            generation=None,
+            status="pending",
+        )
+        repo = AsyncMock(spec=RepoClient)
+        repo.merge_base.side_effect = ["b" * 40, snapshot.main_sha] if shared_unmerged else None
+        repo.merge_base.return_value = snapshot.main_sha
+        if shared_unmerged:
+            with pytest.raises(ValueError, match="share unmerged"):
+                await decision.check_dependencies(repo, snapshot)
+        else:
+            await decision.check_dependencies(repo, snapshot)

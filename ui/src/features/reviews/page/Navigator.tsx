@@ -8,7 +8,7 @@ import {
 import { IconButton } from "@langchain/macaw-components/IconButton"
 import { Input } from "@langchain/macaw-components/Input"
 import { ProgressBar } from "@langchain/macaw-components/ProgressBar"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Skeleton } from "@/components/Skeleton"
 import { useQuery } from "@tanstack/react-query"
 import {
   memo,
@@ -113,7 +113,13 @@ function buildTree(files: ReadonlyArray<ReviewDiffFile>): Array<TreeNode> {
 }
 
 /** The left rail: the walkthrough's steps and every file with what's been read and what needs attention, behind tabs or stacked. */
-export function Navigator({ pr }: { pr: PullRequestRef }) {
+export function Navigator({
+  pr,
+  orderTabs = true,
+}: {
+  pr: PullRequestRef
+  orderTabs?: boolean
+}) {
   const files = useQuery(reviewQueries.diff(pr)).data?.files
   const walkthrough = useQuery(reviewQueries.detail(pr)).data?.walkthrough
   const order = useReviewPage((state) => state.order)
@@ -126,9 +132,12 @@ export function Navigator({ pr }: { pr: PullRequestRef }) {
   const steps = walkthrough?.steps.length ?? 0
 
   return (
-    <nav aria-label="Files" className="flex h-full min-h-0 flex-col">
+    <nav
+      aria-label="Files & Walkthrough"
+      className="flex h-full min-h-0 flex-col"
+    >
       <div className="flex flex-col gap-space-2 px-space-3 pt-space-3 pb-space-2">
-        {steps > 0 && (
+        {orderTabs && steps > 0 && (
           <div className="flex items-center gap-space-2">
             {stacked ? (
               <span className="flex-1 text-xs text-secondary">
@@ -481,6 +490,7 @@ const TreeRow = memo(function TreeRow({
         variant="plain"
         size="sm"
         aria-label={node.name}
+        title={node.path}
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}

@@ -45,12 +45,55 @@ describe("initializeDatadogRum", () => {
     warn.mockRestore()
   })
 
-  it("does nothing without both public identifiers", () => {
+  it("does nothing without both public identifiers", async () => {
     const { load } = rumLoader()
 
-    void initializeDatadogRum({ VITE_DATADOG_APPLICATION_ID: "app-id" }, load)
+    await initializeDatadogRum({ VITE_DATADOG_APPLICATION_ID: "app-id" }, load)
 
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it("initializes from the connected backend without build-time identifiers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          environment: "production",
+          datadog_rum: {
+            application_id: "runtime-app",
+            client_token: "runtime-token",
+            site: "datadoghq.eu",
+          },
+        })
+      )
+    )
+    const { rum, load } = rumLoader()
+    await initializeDatadogRum({ VITE_DATADOG_APPLICATION_ID: "partial" }, load)
+    expect(rum.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "runtime-app",
+        clientToken: "runtime-token",
+        site: "datadoghq.eu",
+        env: "production",
+        sessionReplaySampleRate: 0,
+      })
+    )
+    const build = rumLoader()
+    await initializeDatadogRum(
+      {
+        VITE_DATADOG_APPLICATION_ID: "build-app",
+        VITE_DATADOG_CLIENT_TOKEN: "build-token",
+        VITE_DATADOG_SITE: "datadoghq.com",
+      },
+      build.load
+    )
+    expect(build.rum.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationId: "build-app",
+        clientToken: "build-token",
+        site: "datadoghq.com",
+      })
+    )
   })
 
   it("initializes RUM from public environment settings", async () => {
@@ -110,9 +153,10 @@ describe("initializeDatadogRum", () => {
         { url: "/agents/thread-id/plan" },
         { url: "/agents/automations/schedule-id" },
         { url: "/review/repositories/langchain-ai" },
-        { url: "/agents/workspaces" },
+        { url: "/admin/integrations" },
         { url: "/agents/instructions" },
         { url: "/agents/sandbox" },
+        { url: "/agents/connections?tab=tools" },
       ],
       urlClasses: [
         { url: "https://github.com/langchain-ai/open-swe/pull/2203?tab=files" },
@@ -145,9 +189,10 @@ describe("initializeDatadogRum", () => {
         { url: "/agents/:threadId/plan" },
         { url: "/agents/automations/:scheduleId" },
         { url: "/review/repositories/:owner" },
-        { url: "/agents/workspaces" },
+        { url: "/admin/integrations" },
         { url: "/agents/instructions" },
         { url: "/agents/sandbox" },
+        { url: "/agents/connections" },
       ],
       urlClasses: [
         { url: "https://github.com/langchain-ai/open-swe/pull/2203" },
@@ -167,7 +212,7 @@ describe("initializeDatadogRum", () => {
   it("uses local storage for sessions on the desktop custom origin", async () => {
     vi.stubGlobal("window", {
       openSweDesktop: {},
-      location: { protocol: "open-swe:" },
+      location: { protocol: "robin:" },
     })
     const { rum, load } = rumLoader()
     await initializeDatadogRum(

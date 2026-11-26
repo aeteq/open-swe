@@ -1,6 +1,9 @@
+import asyncio
+import logging
 import socket
 from collections.abc import Awaitable, Mapping
 
+import anyio
 import pytest
 from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage
@@ -17,17 +20,19 @@ _URL = "https://mcp.example.com/mcp"
 
 
 class _Connections:
-    """Agent Auth answering every lookup with ``error``."""
+    """Agent Auth answering every lookup with ``answer``, raised when it is an error."""
 
-    def __init__(self, error: Exception) -> None:
-        self._error = error
+    def __init__(self, answer: Exception | str) -> None:
+        self._answer = answer
         self.read: list[str] = []
 
     def get(self, slug: str, owner: Mapping[str, object]) -> Awaitable[str]:
         self.read.append(slug)
 
         async def resolve() -> str:
-            raise self._error
+            if isinstance(self._answer, Exception):
+                raise self._answer
+            return self._answer
 
         return resolve()
 
@@ -54,6 +59,44 @@ async def test_a_servers_credential_goes_only_to_its_https_origin_at_a_public_ad
             await client.get(url)
 
 
+async def test_a_server_that_never_accepts_the_connection_is_left_out_without_the_full_wait(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+
+    async def unanswered(*_args: object, **_kwargs: object) -> None:
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(anyio, "connect_tcp", unanswered)
+    monkeypatch.setattr(mcp, "_CONNECT_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(mcp, "connections", _Connections("credential"))
+    server = McpServerSpec(
+        name="notes",
+        url=_URL,
+        transport="streamable_http",
+        tools={"search": "mcp_notes_search"},
+        connection=ConnectionRef(slug="open-swe-mcp-notes", owner="agent"),
+    )
+    with caplog.at_level(logging.WARNING, logger=mcp.__name__):
+        # Well short of the 30 seconds a server that accepted may take to list its tools.
+        async with asyncio.timeout(5):
+            loaded = await McpTools.load([server], OpenSweBackend(), taken=())
+    assert loaded.tools == []
+    [record] = caplog.records
+    assert (record.getMessage(), record.__dict__["mcp_name"], record.__dict__["cause_type"]) == (
+        "Leaving out an MCP server that did not list its tools",
+        "notes",
+        "ConnectTimeout",
+    )
+
+
 async def test_a_run_for_no_one_goes_without_a_personal_server_and_a_person_is_asked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -67,12 +110,12 @@ async def test_a_run_for_no_one_goes_without_a_personal_server_and_a_person_is_a
     )
     no_person = CredentialStoreError("user-owned connections require a person principal")
     monkeypatch.setattr(mcp, "connections", _Connections(no_person))
-    loaded = await McpTools.load([server], OpenSweBackend(), taken=(), cites_evidence=False)
+    loaded = await McpTools.load([server], OpenSweBackend(), taken=())
     assert loaded.tools == []
 
     monkeypatch.setattr(mcp, "connections", _Connections(GraphInterrupt()))
     with pytest.raises(GraphInterrupt):
-        await McpTools.load([server], OpenSweBackend(), taken=(), cites_evidence=False)
+        await McpTools.load([server], OpenSweBackend(), taken=())
 
 
 async def test_a_server_never_gets_a_credential_open_swe_or_a_channel_reads_for_itself(
@@ -89,7 +132,7 @@ async def test_a_server_never_gets_a_credential_open_swe_or_a_channel_reads_for_
     # Agent Auth would answer with the GitHub App's installation token.
     agent_auth = _Connections(AssertionError("read the token"))
     monkeypatch.setattr(mcp, "connections", agent_auth)
-    loaded = await McpTools.load([server], OpenSweBackend(), taken=(), cites_evidence=False)
+    loaded = await McpTools.load([server], OpenSweBackend(), taken=())
     assert (loaded.tools, agent_auth.read) == ([], [])
 
 
@@ -184,7 +227,7 @@ async def test_a_server_tool_gets_the_arguments_langchain_names_for_itself(
         return ToolMessage(content="ok", tool_call_id=tool_call_id)
 
     monkeypatch.setattr(server, "call", call)
-    tool = server.tool(definition, OpenSweBackend(), cites_evidence=False)
+    tool = server.tool(definition, OpenSweBackend())
     runtime = ToolRuntime(
         state={"messages": []},
         context=None,

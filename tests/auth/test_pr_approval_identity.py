@@ -1,12 +1,10 @@
 import importlib
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
-
-import langgraph_sdk
 
 from openswe.dashboard import profiles
 from openswe.run_config import RunConfig
 from openswe.threads import plan_api, workflow_approval_api
+from tests.conftest import serve_threads_from
 
 
 async def test_approval_run_uses_authenticated_actor(monkeypatch):
@@ -18,10 +16,7 @@ async def test_approval_run_uses_authenticated_actor(monkeypatch):
         "triggering_user_email": "alice@example.com",
         "source": "dashboard",
     }
-    client = SimpleNamespace(
-        threads=SimpleNamespace(get=AsyncMock(return_value={"metadata": metadata}))
-    )
-    monkeypatch.setattr(langgraph_sdk, "get_client", lambda: client)
+    serve_threads_from(monkeypatch, AsyncMock(return_value={"metadata": metadata}))
     monkeypatch.setattr(plan_api, "fetch_thread_metadata", AsyncMock(return_value=metadata))
     monkeypatch.setattr(
         workflow_approval_api, "fetch_thread_metadata", AsyncMock(return_value=metadata)
@@ -35,6 +30,8 @@ async def test_approval_run_uses_authenticated_actor(monkeypatch):
     await workflow_approval_api.approve_workflow_push("thread-1", "fp", session=session)
 
     assert dispatch.await_args is not None
+    # The click resumes the run; the person did not write to Robin.
+    assert dispatch.await_args.kwargs["context"]["kind"] == "system"
     config = {"configurable": dispatch.await_args.args[2]}
     monkeypatch.setattr("openswe.run_config.get_config", lambda: config)
     monkeypatch.setattr(
@@ -43,7 +40,7 @@ async def test_approval_run_uses_authenticated_actor(monkeypatch):
         AsyncMock(side_effect={"alice": "alice-token", "Bob": "bob-token"}.get),
     )
     opr = importlib.import_module("openswe.tools.open_pull_request")
-    assert await opr._resolve_pr_author_token() == ("bob-token", "user")
+    assert await opr._resolve_pr_author_token() == ("alice-token", "user")
     cfg = RunConfig.from_runtime()
     assert cfg.user_email == "bob@example.com"
     assert metadata["owner_login"] == "alice"

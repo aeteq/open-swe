@@ -1,17 +1,16 @@
 from collections.abc import Callable
 from copy import deepcopy
 from importlib import import_module
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-import langgraph_sdk
 import pytest
 
 from openswe.dashboard.personal_settings import SettingValue, patch_personal_settings
 from openswe.dashboard.user_preferences import USER_PREFERENCES
 from openswe.tools.read_user_settings import read_user_settings
 from openswe.tools.save_user_settings import save_user_settings
-from tests.conftest import FakeUserRecords
+from openswe.users import User
+from tests.conftest import FakeUserRecords, serve_threads_from
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
@@ -42,13 +41,7 @@ def saved_scope(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         "owner_login": "alice",
         "participant_logins": ["alice", "bob"],
     }
-    monkeypatch.setattr(
-        langgraph_sdk,
-        "get_client",
-        lambda: SimpleNamespace(
-            threads=SimpleNamespace(get=AsyncMock(side_effect=lambda _id: {"metadata": metadata}))
-        ),
-    )
+    serve_threads_from(monkeypatch, AsyncMock(side_effect=lambda _id: {"metadata": metadata}))
     return metadata
 
 
@@ -78,7 +71,7 @@ async def test_private_requester_partial_update_preserves_other_settings_and_use
     }
     prefs = {
         "default_visibility": "public",
-        "default_workspace": "keep-workspace",
+        "follow_up_behavior": "steer",
     }
     user_records.seed("profile", "Alice", {**profile, **legacy_model_settings})
     user_records.seed("profile", "bob", {"draft_prs": True})
@@ -88,7 +81,7 @@ async def test_private_requester_partial_update_preserves_other_settings_and_use
         {
             "auto_fix_ci": False,
             "auto_human_review_enabled": False,
-            "default_workspace": "  NEW  ",
+            "follow_up_behavior": "queue",
         }
     )
     assert result == {
@@ -97,7 +90,7 @@ async def test_private_requester_partial_update_preserves_other_settings_and_use
         "updated": {
             "auto_fix_ci": False,
             "auto_human_review_enabled": False,
-            "default_workspace": "new",
+            "follow_up_behavior": "queue",
         },
     }
     saved = user_records.get("profile", "Alice")
@@ -109,23 +102,7 @@ async def test_private_requester_partial_update_preserves_other_settings_and_use
     assert user_records.get("profile", "bob") == {"draft_prs": True}
     assert user_records.get("github_oauth_token", "Alice") == {"encrypted_gh_token": "secret"}
     saved_prefs = user_records.get("dashboard_preferences", "Alice")
-    assert {key: saved_prefs[key] for key in prefs} == {**prefs, "default_workspace": "new"}
-
-
-async def test_workspace_repo_patch_preserves_global_and_rejects_invalid_maps(
-    user_records: FakeUserRecords,
-    requester: dict[str, object],
-    saved_scope: dict[str, object],
-) -> None:
-    user_records.seed("profile", "Alice", {"default_repo": "org/global"})
-    result = await save_user_settings({"workspace_default_repos": {"selected": "org/scoped"}})
-    assert result["ok"] is True
-    assert user_records.get("profile", "Alice")["default_repo"] == "org/global"
-    before = deepcopy(user_records.items)
-    result = await save_user_settings({"workspace_default_repos": {"selected": "invalid"}})
-    assert result["ok"] is False
-    assert user_records.items == before
-    assert (await save_user_settings({"workspace_default_repos": {}}))["ok"] is True
+    assert {key: saved_prefs[key] for key in prefs} == {**prefs, "follow_up_behavior": "queue"}
 
 
 @pytest.mark.parametrize(
@@ -165,11 +142,7 @@ async def test_unauthorized_calls_never_read_or_write_settings(
 async def test_unavailable_thread_scope_fails_closed(
     monkeypatch: pytest.MonkeyPatch, requester: dict[str, object]
 ) -> None:
-    monkeypatch.setattr(
-        langgraph_sdk,
-        "get_client",
-        lambda: SimpleNamespace(threads=SimpleNamespace(get=AsyncMock(side_effect=TimeoutError))),
-    )
+    serve_threads_from(monkeypatch, AsyncMock(side_effect=TimeoutError))
     with patch(
         "openswe.tools.save_user_settings.patch_personal_settings", new_callable=AsyncMock
     ) as save:
@@ -192,10 +165,9 @@ async def test_unavailable_thread_scope_fails_closed(
         {"recent_thread_context_enabled": False, "auto_fix_ci": False},
         {"default_model": "unknown-model"},
         {"default_model": "openai:gpt-5.5"},
-        {"default_model": "anthropic:claude-fable-5-1"},
+        {"default_model": "anthropic:claude-fable-5-2"},
         {"default_subagent_model": None, "subagent_reasoning_effort": "high"},
         {"branch_prefix": "new/", "default_visibility": "invalid"},
-        {"experimental_classify": None, "auto_fix_ci": False},
     ],
 )
 async def test_invalid_patch_rejects_all_changes(
@@ -222,42 +194,15 @@ async def test_agent_cannot_change_concierge_mode_even_in_mixed_patch(
     mixed: bool,
 ) -> None:
     user_records.seed("profile", "Alice", {"auto_fix_ci": True})
-    user_records.seed("dashboard_preferences", "Alice", {"default_workspace": "keep"})
+    user_records.seed("dashboard_preferences", "Alice", {"default_visibility": "private"})
     settings: dict[str, SettingValue] = {"concierge_mode": value}
     if mixed:
-        settings = {"auto_fix_ci": False, "default_workspace": "new", **settings}
+        settings = {"auto_fix_ci": False, "default_visibility": "public", **settings}
     before = deepcopy(user_records.items)
     result = await save_user_settings(settings)
     assert result["ok"] is False
     assert "dashboard" in str(result["error"])
     assert user_records.items == before
-
-
-async def test_feature_flag_requires_user_and_validates_before_writing(
-    user_records: FakeUserRecords, requester: dict[str, object], saved_scope: dict[str, object]
-) -> None:
-    from openswe.users import User, UserPreferences
-
-    with patch.object(
-        User, "update_preferences", new_callable=AsyncMock, return_value=None
-    ) as save:
-        assert (await save_user_settings({"experimental_classify": True, "auto_fix_ci": False}))[
-            "ok"
-        ] is False
-        save.assert_awaited_once()
-    assert not user_records.items
-    with patch.object(
-        User,
-        "update_preferences",
-        new_callable=AsyncMock,
-        return_value=UserPreferences(experimental_classify=True),
-    ) as save:
-        assert (await save_user_settings({"experimental_classify": True, "auto_fix_ci": False}))[
-            "updated"
-        ] == {"experimental_classify": True, "auto_fix_ci": False}
-        assert save.await_args.args[0] == "Alice"
-        assert save.await_args.args[1].experimental_classify is True
-    assert user_records.get("profile", "Alice")["auto_fix_ci"] is False
 
 
 async def test_first_setting_does_not_pin_inherited_model_defaults(
@@ -268,10 +213,10 @@ async def test_first_setting_does_not_pin_inherited_model_defaults(
     assert profile["auto_fix_ci"] is False
     assert "default_model" not in profile
     assert "reasoning_effort" not in profile
-    await patch_personal_settings("alice", {"default_workspace": "  Project  "})
+    await patch_personal_settings("alice", {"follow_up_behavior": "queue"})
     prefs = user_records.get("dashboard_preferences", "alice")
     assert prefs["default_visibility"] == "private"
-    assert prefs["default_workspace"] == "project"
+    assert prefs["follow_up_behavior"] == "queue"
 
 
 async def test_preference_read_failure_does_not_overwrite_saved_defaults(
@@ -279,7 +224,9 @@ async def test_preference_read_failure_does_not_overwrite_saved_defaults(
 ) -> None:
     with patch.object(USER_PREFERENCES, "get", side_effect=TimeoutError):
         with pytest.raises(TimeoutError):
-            await patch_personal_settings("alice", {"draft_prs": False, "default_workspace": "new"})
+            await patch_personal_settings(
+                "alice", {"draft_prs": False, "follow_up_behavior": "queue"}
+            )
     assert not user_records.items
 
 
@@ -288,7 +235,6 @@ async def test_private_read_exposes_all_ordinary_settings_only_for_requester(
 ) -> None:
     ordinary = {
         "default_repo": "org/private",
-        "workspace_default_repos": {"mine": "org/scoped"},
         "base_branch": "develop",
         "branch_prefix": "alice/",
     }
@@ -301,27 +247,33 @@ async def test_private_read_exposes_all_ordinary_settings_only_for_requester(
         "dashboard_preferences",
         "Alice",
         {
-            "default_workspace": "mine",
+            "follow_up_behavior": "queue",
             "default_visibility": "private",
         },
     )
     user_records.seed("profile", "bob", {"default_repo": "org/bob"})
-    result = await read_user_settings()
+    person = User(preferences={})
+    with patch.object(
+        User,
+        "preferences_for_login",
+        new_callable=AsyncMock,
+        return_value=person.typed_preferences,
+    ):
+        result = await read_user_settings()
     assert result["participants"] == [
         {
             "login": "Alice",
             "profile": {
                 **ordinary,
                 "auto_human_review_enabled": True,
+                "review_request_dms_enabled": True,
                 "concierge_mode": False,
-                "personal_kitchen_channel_id": "",
-                "experimental_classify": False,
-                "experimental_conditional_approval": False,
+                "thread_title_instructions": "",
+                "experimental_proactivity": False,
             },
             "preferences": {
-                "default_workspace": "mine",
                 "default_visibility": "private",
-                "follow_up_behavior": "steer",
+                "follow_up_behavior": "queue",
                 "auto_show_changes": True,
             },
             "instructions": "",

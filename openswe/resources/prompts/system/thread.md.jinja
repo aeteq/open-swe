@@ -2,7 +2,10 @@
 
 ### This Thread
 
-Publish HTML plans, reports, or long responses with `publish_artifact` and share this conversation’s artifact link: `{{ artifact_url }}`.
+In the dashboard, default to plain text or Markdown in the conversation for answers, drafts, plans, reports, and PR analysis; length alone does not call for an HTML artifact.
+In Slack, keep replies very concise and put longer supporting detail in a linked artifact; keep the short summary, essential blockers, failures, and required decisions or actions visible in Slack.
+Also use `publish_artifact` when the user asks for an artifact or HTML, or when interactive or visual content materially benefits from it; honor requests for in-thread text.
+When publishing an artifact, share this conversation’s artifact link: `{{ artifact_url }}`.
 Artifacts are ordinary shared content, not implementation approval gates.
 {% if default_repo %}
 
@@ -17,10 +20,10 @@ When a repository is not explicitly mentioned, use `{{ default_repo }}`.
 {{ repo_instructions_section }}
 
 {% endif %}
-{% if admin_workspaces %}
-{% include "system/admin-workspace.md" +%}
+{% if admin %}
+{% include "system/admin.md" +%}
 {% else %}
-{% include "system/workspace-admin-required.md" +%}
+{% include "system/admin-required.md" +%}
 {% endif %}
 {% if sole_writer %}
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useChannelEffect, useStream } from "@langchain/react"
 import { useQueryClient } from "@tanstack/react-query"
 
@@ -8,8 +8,11 @@ import {
   agentThreadKeys,
   invalidateAgentThreadLists,
 } from "@/features/agents/lib/queries"
+import { earlyJoins } from "@/lib/earlyJoins"
+import { earlyReads } from "@/lib/earlyReads"
 import { createDashboardClient, dashboardFetch } from "@/lib/langgraph-client"
 import { RunTracker } from "@/lib/perf/streaming"
+import { ThreadJoin } from "@/lib/perf/threadLoad"
 import { MAX_RECONNECT_ATTEMPTS, reconnectDelayMs } from "./connection"
 import { useReconnectNotice } from "./useReconnectNotice"
 import { createRunAcceptanceTracker } from "./runAcceptance"
@@ -29,26 +32,40 @@ export interface AgentThreadStream {
 }
 
 /**
- * The SDK stream serving one thread page. Unmounting only detaches this
- * client — the run keeps going server-side and is picked up again from the
- * thread's history on the next visit — so nothing needs to outlive the page.
+ * The SDK stream serving one thread page, which must already exist: the thread's
+ * first message, which creates it, goes through `/commands`. Unmounting only
+ * detaches this client — the run keeps going server-side and is joined again on
+ * the next visit — so nothing needs to outlive the page.
  */
 export function useAgentThreadStream(threadId: string): AgentThreadStream {
   const queryClient = useQueryClient()
   const [runAcceptance] = useState(() =>
-    createRunAcceptanceTracker(dashboardFetch)
+    createRunAcceptanceTracker(
+      earlyJoins.newReader(
+        earlyReads.newReader(dashboardFetch),
+        (observation) =>
+          ThreadJoin.of(observation.threadId)?.joined(observation)
+      )
+    )
   )
-  const client = useMemo(
-    () =>
-      createDashboardClient(
-        agentsApi.langGraphApiUrl,
-        orderRunStarts(runAcceptance.fetch)
-      ),
-    [runAcceptance]
+  // Every request of the hook, run starts included, goes through the client's fetch.
+  const [client] = useState(() =>
+    createDashboardClient(
+      agentsApi.langGraphApiUrl,
+      orderRunStarts(runAcceptance.fetch)
+    )
   )
   const { connection, onReconnect, onConnected } = useReconnectNotice()
-  const [runTracker] = useState(() => new RunTracker({ threadId }))
-  useEffect(() => () => runTracker.dispose(), [runTracker])
+  const [runTracker] = useState(
+    () => new RunTracker({ threadId, threadSource: "stream" })
+  )
+  useEffect(
+    () => () => {
+      runTracker.dispose()
+      ThreadJoin.of(threadId)?.abandon("unmounted")
+    },
+    [runTracker, threadId]
+  )
   const [isOffloading, setIsOffloading] = useState(false)
   const [routed, setRouted] = useState<RoutedModel | null>(null)
 
@@ -56,10 +73,10 @@ export function useAgentThreadStream(threadId: string): AgentThreadStream {
     client,
     assistantId: AGENT_ASSISTANT_ID,
     threadId,
-    fetch: runAcceptance.fetch,
-    // Only affects "stream"-kind threads; transcript threads never call
-    // useStream() at all.
+    // A message sent during a run waits in the server's queue as a run of its own.
     queue: "server",
+    // The view reads only messages, so opening a thread skips the agent's large state keys.
+    stateKeys: [],
     maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
     reconnectDelayMs,
     onReconnect,
@@ -71,6 +88,7 @@ export function useAgentThreadStream(threadId: string): AgentThreadStream {
     },
     onCompleted: (info) => {
       runTracker.completed(info.reason)
+      ThreadJoin.of(threadId)?.abandon("completed_without_event")
       setIsOffloading(false)
       void queryClient.invalidateQueries({
         queryKey: agentThreadKeys.detail(threadId),
@@ -79,14 +97,39 @@ export function useAgentThreadStream(threadId: string): AgentThreadStream {
     },
   })
 
+  const isLoadingRef = useRef(stream.isLoading)
+  useEffect(() => {
+    isLoadingRef.current = stream.isLoading
+  }, [stream.isLoading])
+
+  useEffect(() => {
+    const hydration = stream.hydrationPromise
+    if (!hydration) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onSettled = () => {
+      timer = setTimeout(() => {
+        if (!cancelled && !isLoadingRef.current)
+          ThreadJoin.of(threadId)?.disqualify()
+      }, 0)
+    }
+    hydration.then(onSettled, onSettled)
+    return () => {
+      cancelled = true
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [stream.hydrationPromise, threadId])
+
   useChannelEffect(stream, ["custom"], {
     onEvent: (event) => {
+      ThreadJoin.of(threadId)?.firstEvent(event.method)
       if (event.method !== "custom" || event.params.namespace.length) return
       const payload = event.params.data.payload
-      if (payload?.type === "conversation_offloading") {
+      if (!isRecord(payload)) return
+      if (payload.type === "conversation_offloading") {
         setIsOffloading(payload.status === "started")
       }
-      if (payload?.type === "model_routed") {
+      if (payload.type === "model_routed") {
         setRouted({
           route: typeof payload.route === "string" ? payload.route : undefined,
           modelId:
@@ -97,16 +140,21 @@ export function useAgentThreadStream(threadId: string): AgentThreadStream {
     onError: () => setIsOffloading(false),
   })
 
-  useChannelEffect(stream, ["lifecycle", "messages"], {
-    onEvent: (event) => runTracker.event(event),
+  useChannelEffect(stream, ["lifecycle", "messages", "updates", "values"], {
+    onEvent: (event) => {
+      ThreadJoin.of(threadId)?.firstEvent(event.method)
+      if (event.method === "lifecycle" || event.method === "messages")
+        runTracker.event(event)
+    },
   })
 
   const submit = useCallback<AgentStream["submit"]>(
     (...args) => {
+      ThreadJoin.of(threadId)?.disqualify()
       runTracker.submitted()
       return stream.submit(...args)
     },
-    [runTracker, stream]
+    [runTracker, stream, threadId]
   )
 
   const isLoading = stream.isLoading
@@ -114,11 +162,11 @@ export function useAgentThreadStream(threadId: string): AgentThreadStream {
     if (!isLoading) onConnected()
   }, [isLoading, onConnected])
 
+  // A stream that gives up reconnecting fails with an error; there is nothing left to wait for.
+  const failed = stream.error != null
   useEffect(() => {
-    const thread = stream.getThread()
-    if (!thread) return
-    return thread.onError(onConnected)
-  }, [onConnected, stream])
+    if (failed) onConnected()
+  }, [failed, onConnected])
 
   return useMemo(
     () => ({
@@ -128,4 +176,8 @@ export function useAgentThreadStream(threadId: string): AgentThreadStream {
     }),
     [connection, isOffloading, routed, runAcceptance, stream, submit]
   )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }

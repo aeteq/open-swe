@@ -18,6 +18,7 @@ export interface SidebarThreadItem {
   repoLabel: string | null
   model: string
   source?: AgentSource
+  ownerId?: string | null
   threadCategory?: string
   status: AgentStatus
   viewed: boolean
@@ -43,21 +44,6 @@ export interface SidebarRepoOption {
 
 export interface SidebarRepoGroup extends SidebarRepoOption {
   threads: Array<SidebarThreadItem>
-}
-
-/** A repo option annotated with the workspace slug that owns its repository. */
-export type SidebarWorkspacedRepoOption = SidebarRepoOption & {
-  workspace?: string
-}
-
-export const DEFAULT_SIDEBAR_WORKSPACE_SLUG = "default"
-
-export interface SidebarWorkspaceGroup<
-  TRepo extends SidebarRepoOption = SidebarRepoGroup,
-> {
-  slug: string
-  name: string
-  repos: Array<TRepo>
 }
 
 /**
@@ -93,6 +79,7 @@ export function cloudSidebarThread(thread: AgentThread): SidebarThreadItem {
     repoLabel,
     model: thread.model,
     source: thread.source,
+    ownerId: thread.ownerId,
     threadCategory: thread.threadCategory,
     status: thread.status,
     viewed: thread.viewed,
@@ -114,48 +101,6 @@ export function cloudSidebarThread(thread: AgentThread): SidebarThreadItem {
     waitingForDelegatedWork: thread.waitingForDelegatedWork,
     thread,
   }
-}
-
-/**
- * Buckets already-built repo groups by the workspace that owns them, using
- * each entry's `workspace` field from `repos` — falling back to
- * {@link DEFAULT_SIDEBAR_WORKSPACE_SLUG} for a repo with no workspace
- * (a repository is preferred by at most one workspace, and one no workspace
- * prefers is annotated `default`, so this only fires for a repo the caller
- * didn't annotate). A workspace absent from `workspaces`
- * displays its slug as its own name.
- *
- * Generic over the repo-group shape so callers with richer, hydrated
- * groups (live thread counts, active-thread hints) can bucket those directly
- * instead of rebuilding them from raw threads.
- */
-export function groupRepoGroupsByWorkspace<TRepo extends SidebarRepoOption>(
-  groups: ReadonlyArray<TRepo>,
-  repos: ReadonlyArray<SidebarWorkspacedRepoOption>,
-  workspaces: ReadonlyArray<{ slug: string; name: string }>
-): Array<SidebarWorkspaceGroup<TRepo>> {
-  const workspaceByRepoKey = new Map(
-    repos.map((repo) => [
-      repo.key,
-      repo.workspace ?? DEFAULT_SIDEBAR_WORKSPACE_SLUG,
-    ])
-  )
-  const names = new Map(
-    workspaces.map((workspace) => [workspace.slug, workspace.name])
-  )
-  const buckets = new Map<string, SidebarWorkspaceGroup<TRepo>>()
-  for (const group of groups) {
-    const slug =
-      workspaceByRepoKey.get(group.key) ?? DEFAULT_SIDEBAR_WORKSPACE_SLUG
-    const bucket = buckets.get(slug) ?? {
-      slug,
-      name: names.get(slug) ?? slug,
-      repos: [],
-    }
-    bucket.repos.push(group)
-    buckets.set(slug, bucket)
-  }
-  return [...buckets.values()]
 }
 
 export type SidebarSort = "created" | "updated" | "manual"
@@ -186,53 +131,118 @@ export function sortSidebarThreads(
   return [...threads].sort(mode === "created" ? byCreation : byRecency)
 }
 
-export interface SidebarDayGroup {
+export interface SidebarThreadGroup {
   key: string
   label: string
   threads: Array<SidebarThreadItem>
+  mergable?: boolean
 }
 
-/** Buckets threads by their local creation day, newest first, each day ordered by creation. */
-export function groupSidebarThreadsByDay(
+/** The past seven calendar days stay separate; older activity uses broader ranges. */
+export function groupSidebarThreadsByRecency(
   threads: ReadonlyArray<SidebarThreadItem>,
   now: Date = new Date()
-): Array<SidebarDayGroup> {
-  const today = new Date(now).setHours(0, 0, 0, 0)
-  const yesterday = new Date(today).setDate(new Date(today).getDate() - 1)
-  const days = new Map<number, Array<SidebarThreadItem>>()
-  for (const thread of threads) {
-    const day = new Date(thread.createdAt).setHours(0, 0, 0, 0)
-    const items = days.get(day) ?? []
-    items.push(thread)
-    days.set(day, items)
+): Array<SidebarThreadGroup> {
+  let remaining = sortSidebarThreads(threads)
+
+  type Range = {
+    key: string
+    label: string
+    cutoff: number
+    mergable?: boolean
   }
-  return [...days.entries()]
-    .sort(([left], [right]) => right - left)
-    .map(([day, items]) => ({
-      // Collapsed sections are saved by key, so Today and Yesterday keep theirs
-      // as the days roll over, and an older day keeps its date.
-      key:
-        day === today
-          ? "today"
-          : day === yesterday
-            ? "yesterday"
-            : new Date(day).toLocaleDateString("en-CA"),
-      label:
-        day === today
-          ? "Today"
-          : day === yesterday
-            ? "Yesterday"
-            : new Date(day).toLocaleDateString([], {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                year:
-                  new Date(day).getFullYear() === now.getFullYear()
-                    ? undefined
-                    : "numeric",
-              }),
-      threads: items.sort(byCreation),
-    }))
+  const ranges: Range[] = []
+
+  const today = new Date(now).setHours(0, 0, 0, 0)
+  const last12Hours = now.getTime() - 12 * 60 * 60 * 1000
+
+  if (
+    last12Hours > today &&
+    remaining.some((thread) => thread.updatedAt >= last12Hours) &&
+    remaining.some(
+      (thread) => thread.updatedAt >= today && thread.updatedAt < last12Hours
+    )
+  ) {
+    ranges.push({
+      key: "last-12-hours",
+      label: "Last 12 hours",
+      cutoff: last12Hours,
+    })
+  }
+
+  ranges.push(
+    { key: "today", label: "Today", cutoff: today },
+    {
+      key: "yesterday",
+      label: "Yesterday",
+      cutoff: new Date(today).setDate(now.getDate() - 1),
+    }
+  )
+
+  const weekDay = (now.getDay() + 6) % 7
+
+  for (let offset = 2; offset <= 6; offset++) {
+    const day = new Date(today)
+    day.setDate(day.getDate() - offset)
+    ranges.push({
+      key: `day:${day.getFullYear()}-${day.getMonth() + 1}-${day.getDate()}`,
+      label: day.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: day.getFullYear() === now.getFullYear() ? undefined : "numeric",
+      }),
+      cutoff: day.getTime(),
+    })
+  }
+
+  const weekStart = new Date(today)
+  weekStart.setDate(weekStart.getDate() - weekDay)
+
+  ranges.push(
+    {
+      key: "last-week",
+      label: "Last week",
+      cutoff: new Date(weekStart).setDate(weekStart.getDate() - 7),
+      mergable: true,
+    },
+    {
+      key: "last-14-days",
+      label: "Last 14 days",
+      cutoff: new Date(today).setDate(now.getDate() - 13),
+      mergable: true,
+    },
+    { key: "older", label: "Older", cutoff: -Infinity, mergable: true }
+  )
+
+  const groups: SidebarThreadGroup[] = []
+  for (const range of ranges) {
+    const cutoff = range.cutoff
+    const items = remaining.filter((thread) => thread.updatedAt >= cutoff)
+    if (!items.length) continue
+
+    if (range.mergable) {
+      // Only older ranges are adaptive; calendar days keep their own sections.
+      if (items.length < 3 && items.length < remaining.length) continue
+
+      const previous = groups.at(-1)
+
+      if (items.length < 3 && previous?.mergable) {
+        groups.pop()
+        items.unshift(...previous.threads)
+      }
+    }
+
+    groups.push({ ...range, threads: items })
+
+    remaining = remaining.filter((thread) => thread.updatedAt < cutoff)
+    if (!remaining.length) break
+  }
+
+  const onlyDateGroup = groups.length === 1 ? groups[0] : undefined
+  if (onlyDateGroup?.key === "older") onlyDateGroup.label = "Recents"
+
+  return groups
 }
 
 export function threadFamily(thread: AgentThread): Array<AgentThread> {

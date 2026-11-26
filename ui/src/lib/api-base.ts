@@ -2,14 +2,15 @@
  * Prefix for `/dashboard/api/*` requests: an explicit backend origin when the
  * frontend is served elsewhere, otherwise the path the app itself is served
  * under (Vite's `base`), which is "" for a root deployment and the mount prefix
- * when the backend serves the build under one.
+ * when the backend serves the build under one. The inline API warmup script
+ * runs it too, so it may use nothing but its parameters.
  */
 export function resolveDashboardApiBase(
   configured: string | undefined,
   protocol: string,
   basePath = "/"
 ): string {
-  if (protocol === "open-swe:") return ""
+  if (protocol === "robin:" || protocol === "open-swe:") return ""
   return (configured || basePath).replace(/\/$/, "")
 }
 

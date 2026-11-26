@@ -10,7 +10,7 @@ import { SubmitShortcut } from "@/components/SubmitShortcut"
 import { api, reviewImageProxyUrl, type ReviewUserRef } from "@/lib/api"
 import { cn, INHERITED_LINK } from "@/lib/utils"
 import { Markdown } from "@/features/agents/components/chat/Markdown"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Skeleton } from "@/components/Skeleton"
 import { HumanInputText } from "@/features/reviews/components/HumanInputCard"
 import { PullRequestLabels } from "@/features/reviews/components/PullRequestLabels"
 import { githubUrls } from "@/features/reviews/lib/githubUrls"
@@ -198,7 +198,7 @@ function Description({
       update.mutate(draft)
   }
   const { owner, repo, number } = pr
-  const proxyImage = useCallback(
+  const proxyMedia = useCallback(
     (src: string) => reviewImageProxyUrl(owner, repo, number, src),
     [owner, repo, number]
   )
@@ -304,7 +304,7 @@ function Description({
         {body.trim() ? (
           <Markdown
             content={linkGithubRefs(body, pr, pullRequests)}
-            transformImageUrl={proxyImage}
+            transformMediaUrl={proxyMedia}
             enlargeImages
           />
         ) : (

@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/Skeleton"
 import { cn } from "@/lib/utils"
 import { Button } from "@langchain/macaw-components/Button"
 import { XIcon } from "@langchain/macaw-components/icons"
@@ -9,7 +10,6 @@ import { ColumnsIcon } from "@phosphor-icons/react/dist/ssr/Columns"
 import { RowsIcon } from "@phosphor-icons/react/dist/ssr/Rows"
 import { useQuery } from "@tanstack/react-query"
 
-import { useMediaQuery } from "@/lib/useIsMobile"
 import { DiffWrapToggle } from "@/features/agents/components/DiffWrapToggle"
 import { githubUrls } from "@/features/reviews/lib/githubUrls"
 import { subtleLink } from "@/features/reviews/lib/styles"
@@ -17,7 +17,7 @@ import { matchesFileFilter } from "./diffEntries"
 import { isLive } from "./pullRequestStanding"
 import { reviewQueries, type PullRequestRef } from "./queries"
 import { ReadingOrderTabs } from "./ReadingOrderTabs"
-import { NAVIGATOR_INLINE_QUERY, useReviewPage } from "./store"
+import { useReviewPage } from "./store"
 import { plural } from "./text"
 import { WalkthroughCallout } from "./WalkthroughCallout"
 
@@ -35,14 +35,6 @@ export function ChangesToolbar({ pr }: { pr: PullRequestRef }) {
     .reduce((total, file) => total + file.additions + file.deletions, 0)
   const viewedCount = files.filter((file) => viewed.has(file.path)).length
   const steps = detail?.walkthrough?.steps.length ?? 0
-  // The tabbed file list beside the diff carries the same switch; only one is shown.
-  const navigatorOpen = useReviewPage((state) => state.navigatorOpen)
-  const roomForNavigator = useMediaQuery(NAVIGATOR_INLINE_QUERY)
-  const navigatorStacked = useReviewPage(
-    (state) => state.navigatorLayout === "stacked"
-  )
-  const navigatorHasTabs =
-    navigatorOpen && roomForNavigator && !navigatorStacked
   const open = detail !== undefined && isLive(detail)
   const fileFilter = useReviewPage((state) => state.fileFilter)
   const setFileFilter = useReviewPage((state) => state.setFileFilter)
@@ -82,10 +74,10 @@ export function ChangesToolbar({ pr }: { pr: PullRequestRef }) {
             )}
             {viewedCount > 0 && ` · ${viewedCount} viewed`}
           </span>
+        ) : diff.isError ? (
+          <span className="text-xs text-secondary">Unavailable</span>
         ) : (
-          <span className="text-xs text-secondary">
-            {diff.isError ? "Unavailable" : "Loading…"}
-          </span>
+          <Skeleton className="h-3 w-32" />
         )}
         {diff.data && fileFilter.trim() && (
           <span className="flex items-center gap-space-1 rounded-md bg-brand-subtle py-0.5 pr-0.5 pl-space-1 text-xs text-brand-primary tabular-nums">
@@ -102,9 +94,7 @@ export function ChangesToolbar({ pr }: { pr: PullRequestRef }) {
           </span>
         )}
         <span className="flex-1" />
-        {steps > 0 && !navigatorHasTabs && (
-          <ReadingOrderTabs steps={steps} files={files.length} />
-        )}
+        {steps > 0 && <ReadingOrderTabs steps={steps} files={files.length} />}
         <GroupedTabs
           size="xs"
           value={diffStyle}

@@ -23,7 +23,7 @@ All agent code runs for real.
 | The LLM                                                          | **fake** — a scripted model (`fake_llm.py`) emitting a fixed tool sequence |
 | `api.github.com` REST (PR create) + dashboard GitHub OAuth login | **fake** (`/fake-gh/...`), state rendered at `/mock/github`                |
 | `slack.com/api` (post message, etc.)                             | **fake** (`/fake-slack/...`), thread rendered at `/mock/slack`             |
-| Workspace tools, store records, snapshot naming + status       | **real**                                                                   |
+| Global execution tools, store records, snapshot naming + status       | **real**                                                                   |
 | Electron UI, main process, IPC, git diff                         | **real**                                                                   |
 | Pinned uv `dcode --acp`, tools, and local project                | **real**; only its model class points at `fake_llm.py`                      |
 | LangSmith snapshot service (capture/delete)                      | **fake** (`patches.py`) — the stand-in sandbox has nothing to snapshot      |
@@ -36,6 +36,10 @@ All agent code runs for real.
 | `users` rows + provider identities for the named test users      | **real** (seeded through `User.sign_in` / `link`)                          |
 
 The fake GitHub/Slack stores are the single source of truth the mock UIs render, so what Playwright asserts on is exactly what the real agent produced.
+
+The browser suite sets `MDA_AGENT_AUTH_PRINCIPAL_ID` to a synthetic local caller, using MDA's local-dev memory support.
+The memory case writes a random number through the real file tool and recalls it from the model's hot-memory context in a different thread.
+It does not verify deployed identity resolution, Slack DM authorization, or isolation between users: local-dev runs share that synthetic caller.
 
 ## Files
 

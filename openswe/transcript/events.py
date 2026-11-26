@@ -8,7 +8,7 @@ holds bytes — an attachment rides as its metadata only, never as base64.
 """
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -18,9 +18,11 @@ from pydantic import (
     JsonValue,
     SerializerFunctionWrapHandler,
     TypeAdapter,
+    field_validator,
     model_serializer,
     model_validator,
 )
+from runtime_api.provenance import Provenance
 
 SCHEMA_VERSION = 1
 """``thread_event.schema_version`` written by this release."""
@@ -29,7 +31,7 @@ type ActorKind = Literal["user", "agent", "system"]
 type ThreadStatus = Literal["idle", "running", "error"]
 type MessageRole = Literal["human", "ai"]
 type ToolOutcome = Literal["completed", "error"]
-type NoticeKind = Literal["model_routed", "conversation_offloading", "workspace_stale"]
+type NoticeKind = Literal["model_routed", "conversation_offloading", "execution_stale"]
 type CheckpointStatus = Literal["ready", "missing", "error"]
 type FileChangeKind = Literal["added", "removed", "modified"]
 type JsonObject = dict[str, JsonValue]
@@ -52,6 +54,20 @@ class MessageSender(BaseModel):
     login: str
     kind: str
     display_name: str | None = None
+
+    @classmethod
+    def from_provenance(
+        cls, provenance: Provenance | None, fallback_login: str = "unknown"
+    ) -> Self:
+        if provenance is None:
+            return cls(login=fallback_login, kind="unknown")
+        surface = provenance.surface or "unknown"
+        return cls(
+            login=provenance.sender,
+            kind=("dashboard" if surface in {"web", "app", "dashboard"} else surface)
+            if provenance.human
+            else provenance.kind,
+        )
 
 
 class MessageAttachment(BaseModel):
@@ -310,6 +326,11 @@ class RunNotice(_Body):
     turn_id: UUID
     kind: NoticeKind
     data: JsonObject = Field(default_factory=dict)
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _legacy_kind(cls, kind: object) -> object:
+        return "execution_stale" if kind == "workspace_stale" else kind
 
 
 type TranscriptEvent = Annotated[

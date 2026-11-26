@@ -3,9 +3,7 @@
 The runtime's middleware runs the loop: it nudges, routes, assembles each call
 and ends the run as the catalog's ``LoopRules`` say. It asks the backend only for
 what needs the backend's data or credentials, one named call each: a model's
-settings, the incident a run investigates, a fresh
-GitHub proxy token, a reply posted on the model's behalf, and what the end of the run
-records. The runtime classifies each turn's route itself, and the catalog says which
+settings, a reply posted on the model's behalf, and what the end of the run records. The runtime classifies each turn's route itself, and the catalog says which
 task the thread belongs to.
 The transcript and usage hear of the run's start, each reply and tool call, and the
 run's end.
@@ -19,19 +17,24 @@ how its catalog says to read the inbox; the backend keeps what each thread is ow
 until a run receives it.
 """
 
-from datetime import datetime
 from typing import Final, Literal
 from uuid import UUID
 
-from pydantic import AliasChoices, BaseModel, Field, JsonValue
+from pydantic import AliasChoices, BaseModel, Field, JsonValue, field_validator
 
-from runtime_api.catalog import InboxSpec, ModelSpec, TaskContext
+from runtime_api.catalog import InboxSpec, ModelSpec
 from runtime_api.endpoint import LOOP_CALL_SECONDS, Endpoint
 from runtime_api.operations import RunRequest
 
 # Held state a call carries once summarization replaced the conversation's start: the
 # index of the first message the model still sees.
 VISIBLE_FROM: Final = "visible_from"
+# Where an agent's reply says when its model call first streamed, in epoch ms: its
+# opening (the first chunk, sent as the provider opens its message), and its first text.
+# A call that streamed nothing gave both as it returned. The run-complete webhook times a
+# dashboard send by them.
+FIRST_OUTPUT_AT_KEY: Final = "open_swe_first_output_at_ms"
+FIRST_TEXT_AT_KEY: Final = "open_swe_first_text_at_ms"
 
 
 class RunCall(RunRequest):
@@ -43,13 +46,47 @@ class RunCall(RunRequest):
     namespace: list[str] = []
 
 
+class InboxItems(BaseModel):
+    """What an inbox reply carries: its queued follow-ups, its events and task messages."""
+
+    queued: list[int] = []
+    events: list[UUID] = []
+
+
+class InboxRead(RunRequest):
+    # The catalog's ``inbox``; None reads nothing.
+    spec: InboxSpec | None = None
+    # What earlier model calls received whose receipt the backend may not have yet:
+    # received before reading, so none of it comes again.
+    received: InboxItems = InboxItems()
+
+
+class Inbox(BaseModel):
+    """What was sent to the thread since the last model call, oldest first."""
+
+    messages: list[dict[str, JsonValue]] = []
+    # Graph state taking them changes, such as the surface replies move to.
+    update: dict[str, JsonValue] = {}
+    # Owed until the run hands them back through ``inbox_received``, once the model
+    # call it read them for goes ahead.
+    items: InboxItems = InboxItems()
+
+
 class Prepare(RunCall):
-    # Whether the runtime keeps the thread's sandbox, and the sandbox it opened before preparing;
-    # None when it could not. An MDA deployed before the field was renamed sends ``in_box``.
+    # Whether the runtime keeps the thread's sandbox, as every run's does, and the sandbox it
+    # opened before preparing; None when it could not. An MDA deployed before the field was
+    # renamed sends ``in_box``.
     in_sandbox: bool = Field(False, validation_alias=AliasChoices("in_sandbox", "in_box"))
     sandbox_id: str | None = None
     # Why the runtime could not open it, secrets removed.
     sandbox_error: str | None = None
+    # What the run's first model call would ask next, asked with the preparation so that
+    # call waits on no round trip of its own: the inbox read. A backend from before it
+    # answers none.
+    inbox: InboxRead | None = None
+    # The runtime is still opening the sandbox, and reports it once it is open
+    # (``BIND_SANDBOX``): preparing binds the thread to none and reaches none.
+    bind_later: bool = False
 
 
 class PhaseResult(BaseModel):
@@ -62,22 +99,52 @@ class PhaseResult(BaseModel):
     events: list[JsonValue] = []
 
 
-class RefreshGitHubProxy(RunRequest):
-    force_refresh: bool = False
+class BindSandbox(RunRequest):
+    """The sandbox the runtime opened behind the run's preparation (``Prepare.bind_later``)."""
+
+    # None when the runtime could not open it, and why, secrets removed.
+    sandbox_id: str | None = None
+    sandbox_error: str | None = None
 
 
-class GitHubProxyRefreshed(BaseModel):
-    """The sandbox's GitHub proxy was given a fresh token."""
+class SandboxBound(BaseModel):
+    """The thread is bound to the sandbox the runtime opened, or has none to work in."""
 
-    # When that token expires; None when the thread's sandbox has no GitHub proxy to refresh.
-    expires_at: datetime | None = None
+    # Why the thread has no sandbox to work in, as the person is told once a call needs it.
+    unreachable: str | None = None
+
+
+class GatewayCredential(BaseModel):
+    """What the run's model calls authenticate to the LLM gateway with.
+
+    A run a person started calls models as them, on their LangSmith login; any other
+    run uses the deployment's own LangSmith key, which never leaves its environment.
+    """
+
+    # The person's LangSmith OAuth access token; None for a run the deployment's key serves.
+    # A plain string kept out of reprs: a SecretStr would serialize masked over the wire.
+    token: str | None = Field(default=None, repr=False)
+    # Why the run cannot call models as the person it acts for, which they are told.
+    unavailable: str | None = None
+
+    @property
+    def kind(self) -> Literal["person", "deployment", "unavailable"]:
+        """Which credential this is, for logs: never the token itself."""
+        if self.unavailable is not None:
+            return "unavailable"
+        return "person" if self.token is not None else "deployment"
 
 
 class RunNotice(BaseModel):
     """A notice the transcript shows on the run's turn."""
 
-    kind: Literal["workspace_stale"]
+    kind: Literal["execution_stale"]
     data: dict[str, JsonValue] = {}
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _legacy_kind(cls, kind: object) -> object:
+        return "execution_stale" if kind == "workspace_stale" else kind
 
 
 class RunSender(BaseModel):
@@ -91,9 +158,9 @@ class RunSender(BaseModel):
 
 
 class Prepared(PhaseResult):
-    # The token preparation put on the sandbox, which the first model call then keeps; None
-    # when it put none there.
-    github_proxy: GitHubProxyRefreshed | None = None
+    # What ``Prepare.inbox`` read once the turn was ready; None when nothing read it, and
+    # the first model call reads it itself (``INBOX``).
+    inbox: Inbox | None = None
     # What the turn's transcript shows, which the run hands back with ``run_started``: the
     # replica that opens the turn need not be the one that prepared it.
     notices: list[RunNotice] = []
@@ -106,9 +173,10 @@ class ModelCall(BaseModel):
     """What the graph's own middleware says the next model call sends."""
 
     system_prompt: str
-    # What every thread of the workspace says, sent after ``system_prompt`` and ahead of
-    # the run's skills so the workspace's threads share it from the cache.
-    workspace_prompt: str = ""
+    # Robin-wide execution instructions, sent after ``system_prompt`` and ahead of skills.
+    execution_prompt: str = Field(
+        default="", validation_alias=AliasChoices("execution_prompt", "workspace_prompt")
+    )
     # What only this thread's prompt says, sent after ``system_prompt`` and the run's
     # skills so that every thread shares the cached prefix before it.
     thread_prompt: str = ""
@@ -120,7 +188,6 @@ class ModelCall(BaseModel):
     vision: ModelSpec | None = None
     # Another provider's model, tried once when a call to ``model`` fails.
     fallback: ModelSpec | None = None
-    use_gateway: bool = False
 
 
 class BeforeModel(PhaseResult):
@@ -140,6 +207,12 @@ class ModelResult(Report):
     response: list[dict[str, JsonValue]]
     # The human messages added since the model last answered, which the transcript records.
     humans: list[dict[str, JsonValue]] = []
+    # Whether the run's model answered before this call, so ``humans`` reached a turn
+    # already under way and steered it.
+    mid_turn: bool = False
+    # Whether this is the agent's first model call on the thread: its prompt cache can be
+    # served only by what other threads wrote, which the backend's usage metrics tell apart.
+    first_in_thread: bool = False
     # The route the call took, which usage tags the reply with.
     model_route: str | None = None
     # A conversation offload's status, which the transcript notes once.
@@ -198,13 +271,6 @@ class ModelFailed(Report):
     error_type: str
 
 
-class Routed(RunRequest):
-    """A run's request with its human messages, for ``INCIDENT_CONTEXT`` (and the deprecated ``ROUTE_MODEL``)."""
-
-    # The run's human messages, the latest of which the route is for.
-    humans: list[dict[str, JsonValue]] = []
-
-
 class ScoutPlanEnd(RunRequest):
     # What the people who asked for the pull request said, as the scout summarized it.
     human_input_summary: str = ""
@@ -224,62 +290,12 @@ class BrowserReport(RunRequest):
     opened: bool = True
 
 
-class InboxItems(BaseModel):
-    """What an inbox reply carries: its queued follow-ups, its events and task messages."""
-
-    queued: list[int] = []
-    events: list[UUID] = []
-
-
-class InboxRead(RunRequest):
-    # The catalog's ``inbox``; None reads nothing.
-    spec: InboxSpec | None = None
-    # What earlier model calls received whose receipt the backend may not have yet:
-    # received before reading, so none of it comes again.
-    received: InboxItems = InboxItems()
-
-
-class Inbox(BaseModel):
-    """What was sent to the thread since the last model call, oldest first."""
-
-    messages: list[dict[str, JsonValue]] = []
-    # Graph state taking them changes, such as the surface replies move to.
-    update: dict[str, JsonValue] = {}
-    # Owed until the run hands them back through ``inbox_received``, once the model
-    # call it read them for goes ahead.
-    items: InboxItems = InboxItems()
-
-
 class InboxReceipt(RunRequest):
     items: InboxItems
 
 
 class Done(BaseModel):
     """The backend did what it was asked; there is nothing more to say."""
-
-
-class Route(BaseModel):
-    """Deprecated, with ``ROUTE_MODEL``."""
-
-    # One of the routes ``RoutingRules.route_model_ids`` names, or ``default``.
-    route: str
-    # False when the classifier could not decide; the run uses the route for this
-    # call only, so a later turn classifies again instead of keeping a fallback.
-    persist: bool = True
-
-
-class ChosenModel(RunRequest):
-    """A model the run calls by id, such as one a person asked for, at an effort."""
-
-    model_id: str
-    effort: str | None = None
-
-
-class IncidentContext(BaseModel):
-    """The incident a run investigates, as each model call tells the model."""
-
-    # Added to the call's system prompt.
-    instructions: str
 
 
 class ReplyOnBehalf(RunCall):
@@ -300,34 +316,20 @@ INBOX_RECEIVED = Endpoint(
 MODEL_RESULT = Endpoint("model_result", ModelResult, Done, seconds=LOOP_CALL_SECONDS)
 TOOL_STARTED = Endpoint("tool_started", ToolCallReport, Done, seconds=LOOP_CALL_SECONDS)
 TOOL_RESULT = Endpoint("tool_result", ToolResultReport, Done, seconds=LOOP_CALL_SECONDS)
-# The runtime replaced the thread's sandbox: the backend connects to the fresh one.
-SANDBOX_REPLACED = Endpoint("sandbox_replaced", RunRequest, Done, seconds=LOOP_CALL_SECONDS)
+# The runtime opened the thread's sandbox behind the run's preparation: the backend binds the
+# thread to it and gives it its GitHub token. Binding the same sandbox again changes nothing.
+BIND_SANDBOX = Endpoint(
+    "bind_sandbox", BindSandbox, SandboxBound, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
+)
 # A tool the runtime ran found the sandbox gone: the backend tells the person.
 SANDBOX_UNREACHABLE = Endpoint("sandbox_unreachable", SandboxGone, Done, seconds=LOOP_CALL_SECONDS)
 # For the dashboard to show the thread's browser.
 BROWSER = Endpoint("browser", BrowserReport, Done, seconds=LOOP_CALL_SECONDS)
-# Deprecated: the runtime classifies a route and reads the task's context from its
-# catalog itself. Served until every MDA deployment does; a deployment from before
-# asks them, and deploys apart from the backend (``deploy_mda.yml``).
-ROUTE_MODEL = Endpoint(
-    "route_model", Routed, Route, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
-)
-TASK_CONTEXT = Endpoint(
-    "task_context", RunRequest, TaskContext, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
-)
-MODEL_CHOICE = Endpoint(
-    "model_choice", ChosenModel, ModelSpec, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
-)
-# Checks the incident still wants the run and records the evidence its messages carry,
-# each once: safe to send again.
-INCIDENT_CONTEXT = Endpoint(
-    "incident_context", Routed, IncidentContext, seconds=LOOP_CALL_SECONDS, delivery="idempotent"
-)
-# Mints a token and sets it on the sandbox, so sending it again only mints another.
-REFRESH_GITHUB_PROXY = Endpoint(
-    "refresh_github_proxy",
-    RefreshGitHubProxy,
-    GitHubProxyRefreshed,
+# Reads the person's current token, refreshing it when it is near expiry: safe to send again.
+GATEWAY_CREDENTIAL = Endpoint(
+    "gateway_credential",
+    RunRequest,
+    GatewayCredential,
     seconds=LOOP_CALL_SECONDS,
     delivery="idempotent",
 )

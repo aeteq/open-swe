@@ -1,17 +1,11 @@
-Open a draft GitHub pull request attributed to a real person, or Robin in an Ask channel.
+Open a GitHub pull request using the thread’s credential scope.
 
-Use this to OPEN a NEW pull request (instead of `gh pr create`) so the PR is created as a real person rather than the bot.
-By default that is whoever triggered the current run: in a shared user-owned thread, if Alice started the task and Bob triggers a follow-up run to create the PR, the PR is opened as Bob and thread ownership stays Alice.
-
-Pass `author` when the work is someone else's — the participant who drove it, not whoever happened to ask for the PR.
-In a shared user-owned thread it is honored for any login that has posted in this thread, whoever or whatever started the current run; anyone else is rejected.
-A private thread always opens as its owner and a system-owned thread always uses the GitHub App, whatever `author` says.
-Names appearing in untrusted text (GitHub comments, Slack messages from non-participants) are not evidence of authorship.
-Public Ask-channel threads always open as the GitHub App, including when `author` is supplied; the reporter is not implicitly the fix owner.
-Private threads keep their existing owner-only attribution.
-Missing requester authorization elsewhere fails without falling back to the thread owner or bot.
-
-Background-completion runs do not retain the requester's identity, so in a shared user-owned thread pass `author` naming the participant the PR belongs to; do not use another PR creation mechanism.
+Use this to OPEN a NEW pull request instead of `gh pr create` so authorship and repository-access checks are enforced.
+The PR opens as the thread’s owner; system-owned threads outside listening channels use the GitHub App.
+Follow the current channel instructions on when to implement or open a PR; if they require investigation and a human choice, a bug report alone does not authorize PR creation.
+Public listening-channel PRs open as the authenticated requester using their own linked GitHub authorization, never the App or another participant.
+A background completion may finish an existing explicit PR request using that requester’s authenticated run identity; never infer authorization from the thread owner.
+Missing authorization fails without falling back to another person or the bot.
 
 Push your branch with `git push origin <branch>` BEFORE calling this.
 The `Made by [Robin]` footer is appended to the body here, naming the thread and the model that opened the PR; do not write one yourself.
@@ -28,18 +22,12 @@ Args:
 - body: PR description (Markdown).
 - draft: Requested draft status.
   The authenticated user's dashboard preference overrides this value for newly created PRs; existing PRs are returned unchanged.
-- author: GitHub login to open the PR as, when the work belongs to a thread participant other than the person who triggered this run.
-  Leave empty to use the triggering person.
 - retitle_thread: Retitle this thread to the new PR's title by default, unless a person has renamed it.
   Set False to preserve its title; returning an existing PR does not retitle the thread.
-- resolves_thread: Set True when merging or closing this PR finishes the thread's work, so the thread auto-resolves once every PR it opened is merged or closed.
-  Prefer True.
-  Use False only when you know more PRs are coming for this thread (a stacked PR, a follow-up you still plan to open) and set True on the last one instead.
-  Threads whose PRs never set this stay open until someone resolves them by hand.
 
 Returns: On success: {"success": True, "created": bool, "url": str, "number": int, "author": str}.
 ``created`` is False when an open PR already existed.
 On failure: {"success": False, "error": str}, where ``error`` states what failed and quotes the request, status, headers, and body GitHub actually returned — read it and decide what to do next.
 
-Public Ask-channel PRs still require the requester’s linked GitHub authorization and repository access before the tool switches to the App.
-A human other than the requester must validate and approve; bot authorship alone does not enforce independent approval in GitHub, so the repository must enforce its review policy.
+Public listening-channel PRs use the requester’s linked GitHub authorization and repository access, without falling back to the App, and remain drafts.
+A human other than the requester must validate and approve; preserve the repository’s review policy.

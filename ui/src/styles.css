@@ -18,6 +18,40 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@property --scroll-mask-t-from {
+    syntax: "<length-percentage>";
+    inherits: false;
+    initial-value: 100%;
+}
+
+@property --scroll-mask-b-from {
+    syntax: "<length-percentage>";
+    inherits: false;
+    initial-value: 100%;
+}
+
+@keyframes scroll-mask-y-scroll {
+    0% { --scroll-mask-t-from: 100%; }
+    10%, 100% { --scroll-mask-t-from: var(--scroll-mask-fade-from-t, 100%); }
+    0%, 90% { --scroll-mask-b-from: var(--scroll-mask-fade-from-b, 100%); }
+    100% { --scroll-mask-b-from: 100%; }
+}
+
+@supports (animation-timeline: scroll()) {
+    :where(.scroll-mask-t, .scroll-mask-b) {
+        mask-image:
+            linear-gradient(to top, black, black var(--scroll-mask-t-from), transparent),
+            linear-gradient(to bottom, black, black var(--scroll-mask-b-from), transparent);
+        mask-composite: intersect;
+        -webkit-mask-composite: source-in;
+        animation: scroll-mask-y-scroll linear;
+        animation-timeline: scroll(self block);
+    }
+}
+
+.scroll-mask-t { --scroll-mask-fade-from-t: calc(100% - 0.5rem); }
+.scroll-mask-b { --scroll-mask-fade-from-b: calc(100% - 0.5rem); }
+
 /* A passage being replied to keeps its selection look after focus moves to the
    reply field (SelectionReply). */
 ::highlight(selection-reply) {
@@ -110,10 +144,20 @@ html.dark,
     --bg-user-message: var(--neutral-200);
     --border-default: var(--neutral-300);
     --border-subtle: var(--neutral-200);
+    --skeleton-highlight: var(--bg-surface-level-4);
+}
+
+.dark .context-window-meter,
+.dark [role="dialog"][aria-label="Context window"] {
+    --bg-warning-strong: var(--bg-error-strong);
+    --text-warning-primary: var(--text-error-secondary);
+    --text-warning-secondary: var(--text-error-secondary);
 }
 
 :root {
     --bg-user-message: var(--bg-surface-level-2);
+    /* The shimmer swept over skeletons: a step lighter than their fill. */
+    --skeleton-highlight: var(--bg-surface-level-1);
     /* Compact control geometry — keep semantic so chat controls, menus, and
        tooltips cannot quietly drift apart. */
     --control-radius: var(--radius-md);
@@ -136,6 +180,13 @@ html.dark,
     background: var(--dropdown-glass-background, var(--bg-elevated));
     border: 1px solid var(--border-subtle);
     box-shadow: var(--shadow-md);
+  }
+
+  /* Macaw's plain secondary button sets dark:hover:bg-elevated-hover/40, which
+     bleeds through hover:bg-transparent in components like ChatToolCallAccordion
+     that omit dark:hover:bg-transparent. */
+  .dark .lc-button.hover\:bg-transparent:hover {
+    background-color: transparent;
   }
 }
 

@@ -22,33 +22,22 @@ def test_require_raises_for_unset(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_typed_getters(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEBUG_TRACEMALLOC_FRAMES", "40")
-    monkeypatch.setenv("LANGSMITH_GATEWAY_ENABLED", "yes")
+    monkeypatch.setenv("LANGSMITH_TRACING", "yes")
     monkeypatch.setenv("ALLOWED_GITHUB_ORGS", " acme, ,widgets ,")
     monkeypatch.setenv("ALLOWED_GITHUB_USERS", " alice, ,bob ,")
 
     assert ENV.DEBUG_TRACEMALLOC_FRAMES.get_int(25) == 40
-    assert ENV.LANGSMITH_GATEWAY_ENABLED.get_bool() is True
+    assert ENV.LANGSMITH_TRACING.get_bool() is True
     assert ENV.ALLOWED_GITHUB_ORGS.get_list() == ["acme", "widgets"]
     assert ENV.ALLOWED_GITHUB_USERS.get_list() == ["alice", "bob"]
 
-    monkeypatch.setenv("LANGSMITH_GATEWAY_ENABLED", "off")
-    assert ENV.LANGSMITH_GATEWAY_ENABLED.get_bool(default=True) is False
-    monkeypatch.setenv("LANGSMITH_GATEWAY_ENABLED", "maybe")
-    assert ENV.LANGSMITH_GATEWAY_ENABLED.get_bool(default=True) is True
+    monkeypatch.setenv("LANGSMITH_TRACING", "off")
+    assert ENV.LANGSMITH_TRACING.get_bool(default=True) is False
+    monkeypatch.setenv("LANGSMITH_TRACING", "maybe")
+    assert ENV.LANGSMITH_TRACING.get_bool(default=True) is True
     monkeypatch.setenv("DEBUG_TRACEMALLOC_FRAMES", "lots")
     with pytest.raises(ValueError, match="DEBUG_TRACEMALLOC_FRAMES"):
         ENV.DEBUG_TRACEMALLOC_FRAMES.get_int(25)
-
-
-def test_deprecated_in_use_lists_aliases_and_obsolete_names() -> None:
-    env = {"LANGCHAIN_PROJECT": "k", "LANGSMITH_ENDPOINT": "e"}
-
-    found = dict(ENV.deprecated_in_use(env))
-
-    assert found["LANGCHAIN_PROJECT"] == "use LANGSMITH_PROJECT instead."
-    assert "LANGSMITH_ENDPOINT" not in found
-    # A legacy name on its own, with no current key configured at all, is reported.
-    assert "LANGCHAIN_API_KEY" in dict(ENV.deprecated_in_use({"LANGCHAIN_API_KEY": "k"}))
 
 
 def test_undeclared_variables_are_errors() -> None:

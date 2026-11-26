@@ -2,15 +2,12 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
-import httpx2
 import pytest
 
-from openswe.github import channel as github_channel
 from openswe.github import pull_request_dashboard_routes, pull_requests
 from openswe.github.pull_requests import PullRequest, PullRequestEvent
 from openswe.github.repositories import Repository
 from openswe.webhooks import common
-from scripts import sync_pull_request_descriptions
 from tests.github_channel import deliver_github_event
 
 pytestmark = pytest.mark.usefixtures("registry_db")
@@ -59,19 +56,13 @@ async def test_linking_never_overwrites_what_save_wrote() -> None:
     )
 
 
-async def test_save_from_a_later_event_updates_github_fields_but_keeps_resolves_thread() -> None:
-    await PullRequest(
-        owner="lc", repo="repo", number=7, title="Add widget", resolves_thread=True
-    ).save()
+async def test_save_from_a_later_event_updates_github_fields() -> None:
+    await PullRequest(owner="lc", repo="repo", number=7, title="Add widget").save()
     saved = await PullRequest(
         owner="lc", repo="repo", number=7, state="merged", title="Add widget (final)"
     ).save()
 
-    assert (saved.state, saved.title, saved.resolves_thread) == (
-        "merged",
-        "Add widget (final)",
-        True,
-    )
+    assert (saved.state, saved.title) == ("merged", "Add widget (final)")
     assert saved.created_at is not None and saved.updated_at is not None
 
 
@@ -267,7 +258,6 @@ async def test_webhooks_sync_descriptions_without_auto_review(
 ) -> None:
     await PullRequest(owner="lc", repo="repo", number=7, body="Old description").save()
     monkeypatch.setattr(common, "get_client", lambda **kwargs: _client_returning())
-    monkeypatch.setattr(github_channel, "repo_is_routable", AsyncMock(return_value=True))
     monkeypatch.setattr(common, "is_repo_auto_review_enabled", AsyncMock(return_value=False))
     monkeypatch.setattr(common, "update_agent_pr_usage_from_webhook", AsyncMock())
     payload = {
@@ -288,43 +278,3 @@ async def test_webhooks_sync_descriptions_without_auto_review(
     cleared = event.to_pull_request()
     assert cleared is not None
     assert (await cleared.save()).body == ""
-
-
-async def test_description_backfill_preserves_lifecycle_and_concurrent_edits(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    await PullRequest(owner="lc", repo="repo", number=7, state="merged").save()
-    await PullRequest(owner="lc", repo="repo", number=8).save()
-    monkeypatch.setattr(
-        sync_pull_request_descriptions,
-        "get_github_app_installation_id_for_repo",
-        AsyncMock(return_value=123),
-    )
-    monkeypatch.setattr(
-        sync_pull_request_descriptions,
-        "get_github_app_installation_token",
-        AsyncMock(return_value="token"),
-    )
-    monkeypatch.setattr(sync_pull_request_descriptions.postgres, "close", AsyncMock())
-
-    async def github_response(client: object, method: str, url: str) -> httpx2.Response:
-        number = int(url.rsplit("/", 1)[-1])
-        if number == 8:
-            await PullRequest(owner="lc", repo="repo", number=8, body="Webhook edit").save()
-        return httpx2.Response(
-            200,
-            json={"number": number, "title": "Searchable widgets", "body": "Render widgets"},
-            request=httpx2.Request(method, url),
-        )
-
-    monkeypatch.setattr(sync_pull_request_descriptions, "github_request", github_response)
-    assert await sync_pull_request_descriptions.sync() == 0
-    saved = await PullRequest.get("lc", "repo", 7)
-    assert saved is not None
-    assert (saved.title, saved.body, saved.state) == (
-        "Searchable widgets",
-        "Render widgets",
-        "merged",
-    )
-    newer = await PullRequest.get("lc", "repo", 8)
-    assert newer is not None and newer.body == "Webhook edit"

@@ -21,13 +21,54 @@ thread went (``slack_moved``). Both act on the run's own thread, from its token.
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Annotated, ClassVar, Final, Literal
+from typing import Annotated, ClassVar, Final, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from runtime_api.endpoint import CHANNEL_API_PREFIX, Endpoint
 from runtime_api.operations import RunRequest
+
+# The run metadata naming the LangSmith trace of the Slack message that started the run.
+# The channel's handler opens the trace as the message arrives, and the run's completion
+# webhook adds the run's stages to it and closes it.
+SEND_TRACE_ID_KEY: Final = "slack_send_trace_id"
+SEND_DOTTED_ORDER_KEY: Final = "slack_send_dotted_order"
+# The project the channel traced it in, which may not be the one the backend traces runs in.
+SEND_PROJECT_KEY: Final = "slack_send_project"
+
+
+class SlackMessageOrigin(BaseModel):
+    """The verified Slack message a person's run input was built from.
+
+    Whoever builds the input from Slack's verified event records it on the person's
+    message, beside its provenance: the backend's ``/webhooks/slack`` and MDA's Slack
+    channel. ``thread_ts`` is the conversation's key, as the run's ``slack_thread`` names
+    it. Clients never set it: their messages are rebuilt before a run receives them.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    KEY: ClassVar[str] = "slack_message_origin"
+
+    channel_id: str = Field(min_length=1)
+    thread_ts: str = Field(min_length=1)
+    message_ts: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    # The message's actual Slack thread, even when thread_ts is the concierge key.
+    reply_thread_ts: str = ""
+
+    def stamp(self, additional_kwargs: Mapping[str, object] | None = None) -> dict[str, object]:
+        """``additional_kwargs`` recording this origin, keeping what they already record."""
+        return {
+            **(additional_kwargs or {}),
+            self.KEY: self.model_dump(mode="json", exclude_defaults=True),
+        }
+
+    @classmethod
+    def of(cls, additional_kwargs: Mapping[str, object]) -> Self | None:
+        """The origin a person's message records; ``None`` when it records none."""
+        raw = additional_kwargs.get(cls.KEY)
+        return None if raw is None else cls.model_validate(raw)
 
 
 class SlackMessage(BaseModel):
@@ -63,8 +104,7 @@ class SlackMessage(BaseModel):
 
 
 class SlackMessageFactsRequest(SlackMessage):
-    # A ``/workspace:<name>`` tag the message carries, to check it names a workspace.
-    workspace_tag: str = Field(default="", max_length=128)
+    pass
 
 
 class SlackMessageFacts(BaseModel):
@@ -75,19 +115,18 @@ class SlackMessageFacts(BaseModel):
     channel: Literal["ok", "external", "unverified"] = "ok"
     # A direct message with the app.
     dm: bool = False
-    code_channel: bool = False
-    kitchen_channel: bool = False
+    listening_channel: bool = False
+    automation_channel: bool = False
     # The sender turned concierge mode on: their DM is one conversation.
     concierge: bool = False
     # A bot's message: whether the bot is on Open SWE's allow-list, and its name there.
+    bot_trigger_mode: Literal["mentions", "true", "false"] = "mentions"
     allowed_bot: bool = False
     bot_name: str = ""
     # An untagged reply the agent answers anyway, in a thread only one person talks in.
     solo_followup: bool = False
     # Who holds the Slack thread's conversation: MDA's channel, the backend, or nobody yet.
     conversation: Literal["mda", "backend", "new"] = "new"
-    # Whether ``workspace_tag`` names a workspace.
-    workspace_known: bool = False
 
 
 class StartSlackTurn(SlackMessage):
@@ -100,15 +139,14 @@ class StartSlackTurn(SlackMessage):
     kind: Literal["turn", "by_the_way", "breakout", "web", "move", "edit"] = "turn"
     # From ``slack_message_facts``, as the handler decided with them.
     concierge: bool = False
-    kitchen_channel: bool = False
-    # A DM, a kitchen channel or a solo follow-up: every message counts as a request.
+    listening_channel: bool = False
+    # A DM, a listening channel or a solo follow-up: every message counts as a request.
     treat_all_messages_as_mentions: bool = False
     # A ``/model:perf`` command, which redirects the work in progress.
     performance_command: bool = False
-    # The request's text with the mention, a known workspace tag and the model command
+    # The request's text with the mention and the model command
     # taken out, which titles a new thread.
     clean_text: str = Field(default="", max_length=40_000)
-    workspace_tag: str = Field(default="", max_length=128)
     # Whether the prompt carries images, which may need a model that reads them.
     has_images: bool = False
     # The people whose messages the prompt may quote, and who spoke in the Slack thread.
@@ -138,9 +176,7 @@ class SlackTurnPrompt(BaseModel):
     # Sections from Open SWE's records this turn adds, such as the pull request a
     # review card asks about.
     turn_sections: list[str] = Field(default_factory=list)
-    # A review guide's thread: its constant guidance is the guide's own.
-    review_guide: bool = False
-    ask_channel: bool = False
+    channel_prompt: str | None = Field(default=None, max_length=32_000)
 
 
 class SlackTurnRun(BaseModel):
@@ -209,6 +245,7 @@ class RetryClick(BaseModel):
     """Send a failed request again: the message that failed, in its Slack thread."""
 
     kind: Literal["retry"] = "retry"
+    original_user_id: str = Field(default="", max_length=64)
     thread_ts: str = Field(min_length=1, max_length=64)
     message_ts: str = Field(default="", max_length=64)
     reply_thread_ts: str = Field(default="", max_length=64)
@@ -263,10 +300,7 @@ class SlackClickActed(BaseModel):
 
 
 class ActOnSlackMessage(BaseModel):
-    """A message MDA's Slack channel hands back to the backend, which answers it as
-    ``/webhooks/slack`` always has: one in a conversation the backend holds, or in a
-    code channel. Slack's Events URL points at Trigger Server, so the backend hears
-    these only this way."""
+    """A message in a backend-held conversation handed back by MDA's Slack channel."""
 
     # The Slack workspace and app the event came through, as Trigger Server keyed it.
     team_id: str = Field(min_length=1, max_length=64)
@@ -275,6 +309,7 @@ class ActOnSlackMessage(BaseModel):
     delivery_id: str = Field(min_length=1, max_length=128)
     # Slack's event, as the Events API sent it.
     event: dict[str, JsonValue]
+    automation_only: bool = False
 
 
 class SlackMessageActed(BaseModel):

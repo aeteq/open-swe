@@ -29,9 +29,10 @@ PURGE_JOB: Final = "slack_search_grant_purge"
 PURGE_SCHEDULE: Final = "17 * * * *"
 
 _NO_ACTION_TOKEN = (
-    "Slack attached no search grant to the message that started this run. Slack grants "
-    "search only for a message that @mentions Robin or is sent to it in a DM. Ask the "
-    "person to @mention Robin in a new message to search."
+    "This run has no Slack permission for workspace-wide search, so it was not run. "
+    "Slack grants it only to the turn started by a recent message that @mentions Robin "
+    "or is a DM. You can still read specific channels and threads with "
+    "slack_read_channel_messages and slack_read_thread_messages."
 )
 _SHARED_CHANNEL = (
     "Search is unavailable in a channel shared with another organization, because its "
@@ -42,8 +43,9 @@ _BUDGET_SPENT = (
     "already found."
 )
 _ERRORS = {
-    "invalid_action_token": "Slack no longer accepts this message's search grant. Ask the "
-    "person to @mention Open SWE again to search.",
+    "invalid_action_token": "Slack no longer allows workspace-wide search for this "
+    "message, usually because its permission expired. You can still read specific "
+    "channels and threads with slack_read_channel_messages and slack_read_thread_messages.",
     "missing_scope": "The Slack app is missing the search:read.public scope. A workspace "
     "admin needs to add it and reinstall the app.",
     "feature_not_enabled": "Slack search is not enabled for this workspace or app.",
@@ -84,11 +86,7 @@ class SlackSearchRefused(Exception):
 
 
 class SlackSearchGrant(Base):
-    """The search grant Slack attached to one message, kept for the run that message starts.
-
-    Slack sends a channel mention as both ``message`` and ``app_mention``, only the
-    ``app_mention`` carries the grant, and whichever arrives first starts the run.
-    """
+    """The search grant attached to a message, kept across its duplicate events."""
 
     __tablename__ = "slack_search_grant"
 
@@ -111,7 +109,7 @@ class SlackSearchGrant(Base):
         """Keep the grant a message's event carried; the first one kept stands."""
         async with postgres.session() as session:
             await SlackChannel.ensure(session, channel_id)
-            await session.execute(
+            inserted = await session.scalar(
                 insert(cls)
                 .values(
                     id=uuid7(),
@@ -120,7 +118,16 @@ class SlackSearchGrant(Base):
                     action_token=encrypt_token(action_token),
                 )
                 .on_conflict_do_nothing(index_elements=[cls.channel_id, cls.message_ts])
+                .returning(cls.id)
             )
+        logger.info(
+            "Slack search grant stored",
+            extra={
+                "slack_channel_id": channel_id,
+                "slack_message_ts": message_ts,
+                "grant_store_outcome": "inserted" if inserted is not None else "conflict",
+            },
+        )
 
     @classmethod
     async def find(cls, channel_id: str, message_ts: str) -> str:
@@ -133,7 +140,16 @@ class SlackSearchGrant(Base):
                     cls.created_at > func.now() - _GRANT_WINDOW,
                 )
             )
-        return decrypt_token(sealed) if sealed else ""
+        action_token = decrypt_token(sealed) if sealed else ""
+        logger.info(
+            "Slack search grant lookup",
+            extra={
+                "slack_channel_id": channel_id,
+                "slack_message_ts": message_ts,
+                "grant_found": bool(action_token),
+            },
+        )
+        return action_token
 
     @classmethod
     async def purge(cls) -> int:
@@ -155,6 +171,19 @@ class SlackSearch:
     @classmethod
     async def for_run(cls, cfg: RunConfig) -> SlackSearch:
         slack = cfg.slack_thread
+        fields = {
+            "agent_thread_id": cfg.thread_id,
+            "slack_channel_id": slack.channel_id if slack is not None else None,
+            "slack_message_ts": cfg.slack_search_message_ts,
+            "slack_thread_present": slack is not None,
+            "slack_operations_allowed": bool(
+                slack is not None
+                and slack.channel_context
+                and slack.channel_context.allows_operations
+            ),
+            "action_token_present": bool(cfg.slack_action_token),
+        }
+        logger.info("Slack search grant requested", extra=fields)
         if slack is None:
             raise SlackSearchRefused(_NO_ACTION_TOKEN)
         if slack.channel_context is None or not slack.channel_context.allows_operations:
@@ -164,6 +193,18 @@ class SlackSearch:
             action_token = await SlackSearchGrant.find(
                 slack.channel_id, cfg.slack_search_message_ts
             )
+        logger.info(
+            "Slack search grant resolved",
+            extra={
+                **fields,
+                "grant_lookup_attempted": bool(
+                    not cfg.slack_action_token and slack.channel_id and cfg.slack_search_message_ts
+                ),
+                "grant_source": (
+                    "config" if cfg.slack_action_token else "store" if action_token else "none"
+                ),
+            },
+        )
         if not action_token:
             raise SlackSearchRefused(_NO_ACTION_TOKEN)
         return cls(action_token, slack.channel_id)

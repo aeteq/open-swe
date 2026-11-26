@@ -22,7 +22,7 @@ _GITHUB_PULLS_ENDPOINT = re.compile(r"(?:^|/)repos/[^/\s]+/[^/\s]+/pulls/?$")
 _GITHUB_PULLS_URL = re.compile(r"https://api\.github\.com/repos/[^/\s]+/[^/\s]+/pulls/?")
 _BLOCK_ERROR = (
     "New pull requests must be opened with the open_pull_request tool so the PR is "
-    "attributed to the triggering user. If open_pull_request failed, surface that "
+    "attributed to the thread's owner. If open_pull_request failed, surface that "
     "failure instead of falling back to gh pr create, gh api /pulls, curl, or another "
     "direct PR creation path."
 )
@@ -276,28 +276,12 @@ class PullRequestCreationGuardMiddleware(OpenSWEMiddleware):
 
     state_schema = AgentState
 
-    def _blocked_message_for_request(self, request: ToolCallRequest) -> ToolMessage | None:
-        for command in shell_commands(request):
-            if is_pr_creation_fallback_command(command):
-                return _blocked_tool_message(request, command)
-        return None
-
-    def wrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage | Command],
-    ) -> ToolMessage | Command:
-        blocked = self._blocked_message_for_request(request)
-        if blocked is not None:
-            return blocked
-        return handler(request)
-
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
     ) -> ToolMessage | Command:
-        blocked = self._blocked_message_for_request(request)
-        if blocked is not None:
-            return blocked
+        for command in shell_commands(request):
+            if is_pr_creation_fallback_command(command):
+                return _blocked_tool_message(request, command)
         return await handler(request)

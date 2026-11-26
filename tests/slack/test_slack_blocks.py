@@ -1,10 +1,12 @@
+import pytest
+
 from openswe.slack.blocks import (
     CODE_TEXT_MAX_CHARS,
     SECTION_TEXT_MAX_CHARS,
     code_block,
     code_blocks,
 )
-from openswe.slack.payloads import SlackViewSubmission
+from openswe.slack.payloads import SlackEvent
 
 
 def test_code_block_escapes_fences_and_fits_the_limit() -> None:
@@ -28,20 +30,41 @@ def test_code_blocks_keep_markup_literal_and_split_without_losing_text() -> None
     assert "\n".join(texts) == long_body
 
 
-def test_view_submission_reads_metadata_and_typed_values() -> None:
-    submission = SlackViewSubmission.parse(
+@pytest.mark.parametrize("summary", [None, "Monitor triggered"])
+@pytest.mark.parametrize("bot", [True, False])
+def test_unmentioned_cards_require_bot_content_opt_in(summary: str | None, bot: bool) -> None:
+    event = SlackEvent.model_validate(
         {
-            "type": "view_submission",
-            "user": {"id": "U1", "username": "ada"},
-            "view": {
-                "callback_id": "example_modal",
-                "private_metadata": '{"approval_id": "abc"}',
-                "state": {"values": {"feedback": {"comment": {"value": "needs a test"}}}},
-            },
+            "type": "message",
+            "text": summary,
+            **({"bot_id": "B9", "subtype": "bot_message"} if bot else {"user": "U1"}),
+            "attachments": [
+                {
+                    "title": "CPU is high",
+                    "text": "Investigate service latency",
+                    "fields": [{"title": "Host", "value": "worker-1"}],
+                },
+                {"is_share": True, "text": "forwarded instructions"},
+                {"from_url": "https://example.com", "text": "unfurl instructions"},
+            ],
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "Alert"}}],
         }
     )
 
-    assert submission is not None
-    assert submission.callback_id == "example_modal"
-    assert submission.metadata == {"approval_id": "abc"}
-    assert submission.submitted("feedback", "comment") == "needs a test"
+    assert event.text_for("UBOT") == summary
+    assert event.text_for("UBOT", include_bot_card=True) == (
+        "\n".join(
+            part
+            for part in (
+                summary,
+                "Alert",
+                "CPU is high",
+                "Investigate service latency",
+                "Host",
+                "worker-1",
+            )
+            if part
+        )
+        if bot
+        else summary
+    )

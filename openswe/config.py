@@ -128,19 +128,6 @@ class Registry:
     def variables(self) -> Iterator[EnvVar]:
         return iter(self._vars.values())
 
-    def deprecated_in_use(self, environ: Mapping[str, str] | None = None) -> list[tuple[str, str]]:
-        """``(variable, hint)`` for every deprecated name present in ``environ``."""
-        found: list[tuple[str, str]] = []
-        for var in self._vars.values():
-            if var.deprecated and var.is_set(environ):
-                if var.replaced_by and self._vars[var.replaced_by].is_set(environ):
-                    continue
-                found.append((var.name, var.deprecated))
-            source = var.source(environ)
-            if source is not None and source != var.name:
-                found.append((source, f"use {var.name} instead."))
-        return found
-
 
 ENV = Registry()
 
@@ -180,21 +167,10 @@ ENV.var(
     default="https://gateway.smith.langchain.com",
 )
 ENV.var(
-    "LANGSMITH_GATEWAY_ENABLED",
-    "Route provider calls through the LangSmith LLM Gateway; defaults to on when "
-    "LANGSMITH_GATEWAY_API_KEY is set and off otherwise.",
-)
-ENV.var(
-    "LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES",
-    "Keep the OpenAI Responses API when routed through the gateway.",
-    default="true",
-)
-ENV.var(
     "REVIEWER_OUTCOMES_DATASET",
     "LangSmith dataset for reviewer finding outcomes.",
     default="openswe-reviewer-outcomes",
 )
-ENV.var("EVAL_LANGSMITH_PROJECT", "LangSmith project reviewer evals trace into.")
 ENV.var(
     "LANGGRAPH_URL",
     "URL of the LangGraph server the FastAPI side calls to create and stream runs.",
@@ -217,6 +193,13 @@ ENV.var(
     "in; defaults to this backend's own workspace.",
 )
 ENV.var(
+    "MDA_DEPLOYMENT_ID",
+    "LangSmith deployment id of the deployment at MDA_RUNTIME_URL (its "
+    "LANGSMITH_HOST_PROJECT_ID, `host.project_id` of its /info). Set: the backend reads the "
+    "Slack bot token MDA's Slack channel keeps in Agent Auth (mda/slack-bot-token) in "
+    "MDA_WORKSPACE_ID, with MDA_RUNTIME_API_KEY. Unset: it reads SLACK_BOT_TOKEN.",
+)
+ENV.var(
     "MDA_LANGSMITH_PROJECT",
     "LangSmith project the deployment at MDA_RUNTIME_URL traces its runs into (its "
     "LANGSMITH_PROJECT, which LangGraph Platform sets to the deployment name); trace links, "
@@ -231,17 +214,11 @@ ENV.var(
     secret=True,
 )
 ENV.var(
-    "MDA_GITHUB_PROXY_CONNECTION",
-    "MDA connection (mda/github-token, the GitHub channel's App token) whose token MDA puts "
-    "in the GitHub proxy of the sandboxes it owns whose thread reaches the whole App "
-    "installation; MDA then writes those sandboxes' proxy config, not the backend. Set it only "
-    "once the MDA deployment runs a build that writes it: an older one leaves those sandboxes "
-    "without one. Unset: the backend writes every sandbox's proxy config with a token it mints.",
-)
-ENV.var(
-    "MDA_EXA_CONNECTION",
-    "Slug of the MDA deployment's agent connection holding the Exa API key, e.g. "
-    "open-swe-exa: runs' web_search reads its key there. Unset: EXA_API_KEY.",
+    "MDA_BIND_SANDBOX_AFTER_PREPARE",
+    "Whether a run on MDA may prepare, and make its first model call, while its sandbox is "
+    "still being opened, bound to its thread and given its proxy config; its first tool call "
+    "waits for those. Defaults to true; false has every run open its sandbox before it prepares.",
+    default="true",
 )
 ENV.var(
     "MDA_GITHUB_USER_CONNECTION",
@@ -295,13 +272,14 @@ ENV.var(
 )
 ENV.var("GITHUB_APP_INSTALLATION_ID", "GitHub App installation used when a run names none.")
 ENV.var(
+    "DISABLE_ROBIN_APPROVES",
+    "Disable publishing Robin Approves checks and notes in non-production deployments.",
+    default="false",
+)
+ENV.var(
     "MERGE_QUEUE_DISPATCH_SECRET",
     "Backend-only signing secret for the queue dispatch gateway; never used by agents.",
     secret=True,
-)
-ENV.var(
-    "GITHUB_OIDC_AUDIENCE",
-    "Audience a federated GitHub Actions token must carry; defaults to the dashboard URL.",
 )
 ENV.var("OPEN_SWE_MENTION_TAGS", "Comma-separated handles this deployment answers to.")
 ENV.var(
@@ -325,12 +303,22 @@ ENV.var("SLACK_REPO_OWNER", "Slack-specific default repository owner.")
 ENV.var("SLACK_REPO_NAME", "Slack-specific default repository name.")
 
 # --- Slack and Linear ----------------------------------------------------------------------
-ENV.var("SLACK_BOT_TOKEN", "Slack bot user OAuth token (xoxb-...).", secret=True)
+ENV.var(
+    "SLACK_BOT_TOKEN",
+    "Slack bot user OAuth token (xoxb-...); required unless MDA_DEPLOYMENT_ID is set, which "
+    "reads it from Agent Auth.",
+    secret=True,
+)
 ENV.var(
     "SLACK_ALERTS_CHANNEL_ID",
     "Slack channel for rate-limited operational alerts; unset disables Slack delivery, not local logging.",
 )
-ENV.var("SLACK_SIGNING_SECRET", "HMAC secret for Slack webhook deliveries.", secret=True)
+ENV.var(
+    "SLACK_SIGNING_SECRET",
+    "HMAC secret for Slack webhook deliveries; needed only where the Slack app's URLs point "
+    "at this backend's /webhooks/slack, which rejects every request without it.",
+    secret=True,
+)
 ENV.var("SLACK_BOT_USER_ID", "Slack user id of the bot, for mention detection.")
 ENV.var("SLACK_BOT_USERNAME", "Slack handle of the bot, for readable conversation context.")
 ENV.var("SLACK_CLIENT_ID", "Slack app client id for Sign in with Slack.")
@@ -341,7 +329,7 @@ ENV.var(
     "Public URL for Slack webhooks and the Sign in with Slack callback; defaults to "
     "DASHBOARD_API_BASE_URL. Use the ngrok URL when the dashboard runs on localhost.",
 )
-ENV.var("SLACK_APP_ID", "Slack app id (A...) whose event deliveries Incidents accepts.")
+ENV.var("SLACK_APP_ID", "Slack app id (A...) of the Robin Slack app.")
 
 # --- Notion tasks ----------------------------------------------------------------------------
 ENV.var("NOTION_API_KEY", "Notion internal integration token for task webhooks.", secret=True)
@@ -420,6 +408,12 @@ ENV.var(
     "the dashboard (bundled build or DASHBOARD_DEV_SERVER_URL).",
 )
 ENV.var(
+    "SANDBOX_PUBLIC_BASE_URL",
+    "Public HTTPS URL sandboxes reach the backend through, for its proxy callback and tool "
+    "channel; defaults to DASHBOARD_API_BASE_URL. Use the ngrok URL when the backend runs on "
+    "localhost.",
+)
+ENV.var(
     "DASHBOARD_API_BASE_URL",
     "Public URL browsers use for /dashboard/api/* and OAuth callbacks; defaults to LANGGRAPH_URL.",
 )
@@ -472,6 +466,23 @@ ENV.var(
     secret=True,
 )
 ENV.var(
+    "LMT_KIT_ID",
+    "LangSmith Managed Tools kit a private thread loads as the MCP connection lmt, called with "
+    "its owner's LangSmith sign-in, alongside each MCP server the owner added for themselves. "
+    "Unset loads the owner's me kit, every server they can use.",
+)
+ENV.var(
+    "LMT_BOT_KIT_ID",
+    "LangSmith Managed Tools kit every other run loads as the MCP connection lmt, called as "
+    "LMT_BOT_PROFILE_ID. Unset leaves managed tools out of those runs.",
+)
+ENV.var(
+    "LMT_BOT_PROFILE_ID",
+    "LangSmith Managed Tools profile whose credentials LMT_BOT_KIT_ID runs with, called with "
+    "LANGSMITH_API_KEY (needs workspaces:credentials:use). Unset leaves managed tools out of "
+    "runs outside private threads.",
+)
+ENV.var(
     "LMT_TENANT_ID",
     "Optional LangSmith workspace to pin Managed Tools to. Unset uses the workspace each "
     "person chose when connecting LangSmith.",
@@ -516,6 +527,9 @@ ENV.var(
     default="",
 )
 ENV.var("DD_ENV", "Shared Datadog and analytics environment.", default="production")
+ENV.var("DD_RUM_APPLICATION_ID", "Public Datadog RUM application ID for the dashboard.")
+ENV.var("DD_RUM_CLIENT_TOKEN", "Public Datadog RUM browser client token for the dashboard.")
+ENV.var("DD_RUM_SITE", "Datadog RUM site for the dashboard.", default="us5.datadoghq.com")
 ENV.var("ANALYTICS_SUMMARY_VERSION", "Active metric semantics version.", default="1")
 ENV.var("ANALYTICS_PR_MATURITY_DAYS", "PR cohort maturity period.", default="14")
 ENV.var("ANALYTICS_MIN_COHORT_SIZE", "Minimum aggregate cohort size.", default="5")
@@ -538,25 +552,16 @@ ENV.var("ANALYTICS_ACK_OUTBOX_DAYS", "Acknowledged outbox retention.", default="
 ENV.var("ANALYTICS_RECEIPT_DAYS", "Ingestion-receipt retention.", default="90")
 
 # --- Models and tools ------------------------------------------------------------------------
-ENV.var("ANTHROPIC_API_KEY", "Anthropic API key.", secret=True)
-ENV.var("OPENAI_API_KEY", "OpenAI API key.", secret=True)
-ENV.var("OPENAI_BASE_URL", "OpenAI-compatible API base URL.", aliases=("OPENAI_API_BASE",))
-ENV.var("GOOGLE_API_KEY", "Google AI API key.", secret=True)
-ENV.var("GROQ_API_KEY", "Groq API key.", secret=True)
-ENV.var("FIREWORKS_API_KEY", "Fireworks API key.", secret=True)
-ENV.var("BASETEN_API_KEY", "Baseten API key.", secret=True)
 ENV.var("LLM_MODEL_ID", "Default model in provider:model form.")
 ENV.var(
     "LLM_REASONING_EFFORT",
-    "Reasoning effort for the default model (low, medium, high, max) when no workspace or profile setting applies.",
+    "Reasoning effort for the default model (low, medium, high, max) when no global or profile setting applies.",
 )
 ENV.var("LLM_FALLBACK_MODEL_ID", "Fallback model in provider:model form.")
-ENV.var("EXA_API_KEY", "Exa API key enabling web search.", secret=True)
 ENV.var(
     "API_STANDARDS_SKILL_HANDLE", "Hub handle of the API standards skill.", default="api-standards"
 )
 ENV.var("DEFAULT_PROMPT_PATH", "Path to a default prompt file.")
-ENV.var("OPEN_SWE_MODEL_CALL_TIMEOUT_SECONDS", "Cap on a single model call.")
 
 # --- Sandboxes ---------------------------------------------------------------------------------
 ENV.var("DEFAULT_SANDBOX_SNAPSHOT_FS_CAPACITY_BYTES", "Root filesystem size for new sandboxes.")
@@ -567,40 +572,45 @@ ENV.var(
     "DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS", "Seconds after stop before deletion; 0 disables."
 )
 ENV.var("SANDBOX_EXECUTE_CLIENT_GRACE_SECONDS", "Client-side grace past a command's own timeout.")
-ENV.var("SANDBOX_CREATE_EXTRA_JSON", "JSON object merged into the sandbox create body.")
 ENV.var(
-    "WORKSPACE_SNAPSHOT_PREFIX",
-    "Prefix for workspace snapshot names.",
+    "EXECUTION_SNAPSHOT_PREFIX",
+    "Prefix for execution image snapshot names.",
     default="openswe",
-    aliases=("ENVIRONMENT_SNAPSHOT_PREFIX",),
-)
-ENV.var(
-    "OPEN_SWE_UNASSIGNED_REPO_WORKSPACE",
-    "Where GitHub events for a repository no workspace owns go: 'default' routes them to the "
-    "default workspace, 'ignore' drops them.",
-    default="default",
+    aliases=(
+        "WORKSPACE_SNAPSHOT_PREFIX",
+        "ENVIRONMENT_SNAPSHOT_PREFIX",
+    ),
 )
 ENV.var(
     "OPENSWE_SCRIPT_ROOT",
-    "Where a workspace's setup/update scripts and their logs live inside a sandbox. "
+    "Where setup/update scripts and their logs live inside a sandbox. "
     "The default assumes a sandbox where the agent is root; the E2E's stand-in sandboxes "
     "run on a developer's own machine, whose filesystem root is not writable.",
     default="/open-swe/environment",
 )
 ENV.var(
-    "WORKSPACE_REFRESH_TIMEOUT_SECONDS",
-    "Deadline for a workspace's setup script on a builder sandbox.",
-    aliases=("ENVIRONMENT_REFRESH_TIMEOUT_SECONDS",),
+    "EXECUTION_REFRESH_TIMEOUT_SECONDS",
+    "Deadline for the setup script on a builder sandbox.",
+    aliases=(
+        "WORKSPACE_REFRESH_TIMEOUT_SECONDS",
+        "ENVIRONMENT_REFRESH_TIMEOUT_SECONDS",
+    ),
 )
 ENV.var(
-    "WORKSPACE_UPDATE_TIMEOUT_SECONDS",
-    "Deadline for a workspace's update script on a builder sandbox.",
-    aliases=("ENVIRONMENT_UPDATE_TIMEOUT_SECONDS",),
+    "EXECUTION_UPDATE_TIMEOUT_SECONDS",
+    "Deadline for the update script on a builder sandbox.",
+    aliases=(
+        "WORKSPACE_UPDATE_TIMEOUT_SECONDS",
+        "ENVIRONMENT_UPDATE_TIMEOUT_SECONDS",
+    ),
 )
 ENV.var(
-    "WORKSPACE_CAPTURE_TIMEOUT_SECONDS",
-    "Deadline for capturing a builder sandbox as a workspace's snapshot.",
-    aliases=("ENVIRONMENT_CAPTURE_TIMEOUT_SECONDS",),
+    "EXECUTION_CAPTURE_TIMEOUT_SECONDS",
+    "Deadline for capturing a builder sandbox as an execution image.",
+    aliases=(
+        "WORKSPACE_CAPTURE_TIMEOUT_SECONDS",
+        "ENVIRONMENT_CAPTURE_TIMEOUT_SECONDS",
+    ),
 )
 
 # --- Object storage ----------------------------------------------------------------------------
@@ -633,6 +643,17 @@ ENV.var(
     "EVENT_LOOP_STALL_MS",
     "Log the stack whenever the event loop goes unresponsive this many milliseconds; 0 disables.",
     default="500",
+)
+ENV.var(
+    "GC_PAUSE_LOG_MS",
+    "Log every garbage collection that holds the process this many milliseconds; 0 disables.",
+    default="200",
+)
+ENV.var(
+    "GC_FULL_COLLECTION_EVERY",
+    "Middle-generation collections between full garbage collections (Python's own is 10); "
+    "0 keeps Python's.",
+    default="100",
 )
 ENV.var("DEBUG_TRACEMALLOC", "Start tracemalloc to attribute unclosed-session warnings.")
 ENV.var("DEBUG_TRACEMALLOC_FRAMES", "Frames tracemalloc records per allocation.", default="25")

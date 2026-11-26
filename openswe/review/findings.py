@@ -39,6 +39,7 @@ from openswe.database.orm import NOW, Base
 from openswe.github.pull_request_key import PullRequestKey
 from openswe.run_config import RunConfig
 from openswe.thread_ids import mda_successor_thread_id
+from openswe.threads import index as thread_index
 from openswe.ui_invalidations import Topic
 from openswe.users.models import UserIdentity
 
@@ -709,7 +710,10 @@ async def _ensure_finding_state(thread_id: str, metadata: Mapping[str, Any] | No
                 )
             )
             # A successor carries on its predecessor's review, findings included.
-            if holder is None or mda_successor_thread_id(holder) != thread_id:
+            if holder is None or (
+                mda_successor_thread_id(holder) != thread_id
+                and await thread_index.current_thread_id(holder) != thread_id
+            ):
                 raise RuntimeError(
                     f"Pull request {pull_request.url} already stores findings from another reviewer thread"
                 )
@@ -1137,13 +1141,6 @@ async def set_reviewer_thread_metadata(
 def get_thread_last_reviewed_sha(metadata: dict[str, Any]) -> str | None:
     value = metadata.get("last_reviewed_sha")
     return value if isinstance(value, str) and value else None
-
-
-def get_thread_pr_meta(metadata: dict[str, Any]) -> ReviewerPRMeta | None:
-    pr = metadata.get("pr")
-    if not isinstance(pr, dict):
-        return None
-    return cast(ReviewerPRMeta, pr)
 
 
 def reviewer_thread_title(pr: ReviewerPRMeta) -> str:

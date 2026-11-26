@@ -55,7 +55,7 @@ Past it, requests fail with status 429.
   Where it was built, such as a repository and commit or a thread, is kept only to show.
   Open SWE keeps every version someone runs, the newest five releases besides, and each thread's newest preview.
 - **An install** is one person adding an app to their sidebar, pinned to a version.
-  It moves only when they press **Update**, and a version asking for more permissions waits for them to approve them.
+  It moves when they press **Update**, or when an admin presses **Upgrade everyone** under **Defaults → Apps for everyone** (or calls `upgrade_app_installs`), which moves every install of the app people added or changed themselves to its newest release, or a numbered one, never moving an install back from a newer release; a version asking for more permissions than an install's release waits for its person to approve them, and an install Robin added for a featured app follows the featured release instead.
   An instance admin can add a listed app to everyone's sidebar instead, under **Defaults → Apps for everyone**, approving its permissions for them and naming repositories it reads for each person who can read them on GitHub.
   Such an install follows the release the admin approves until the person updates it themselves, and they can't remove it while it stays featured.
   Every install of a featured app, one a person added themselves included, reads the repositories the admin names, and nobody stops sharing those while it's featured.
@@ -102,10 +102,10 @@ The manifest is a JSON script inside the bundle, read when a version is publishe
 | `version` | Free text, at most 32 characters. It is shown to people, not compared. |
 | `description` | Optional, at most 280 characters. |
 | `sidebar.label` | At most 24 characters. |
-| `sidebar.icon` | One of `puzzle-piece`, `notebook`, `file-text`, `book-open`, `kanban`, `chart-bar`, `chat-circle`, `calendar`, `lightbulb`. |
+| `sidebar.icon` | One of `puzzle-piece`, `notebook`, `file-text`, `book-open`, `kanban`, `chart-bar`, `chat-circle`, `calendar`, `lightbulb`, `images`, `siren`, `robot`. |
 | `permissions` | What the plugin may ask for; see below. |
 | `collections` | Optional rules for storage collections, by name: `{ "captures": { "write": "app" } }`; see [Who writes a collection](#who-writes-a-collection). |
-| `review` | Optional work pull request reviews do for the app: `{ "instructions": "…", "writes": ["captures"], "browser": true }`; see [Review steps](#review-steps). |
+| `review` | Optional work pull request reviews do for the app: `{ "instructions": "…", "writes": ["captures"], "browser": true, "paths": ["**/*.tsx"] }`; see [Review steps](#review-steps). |
 
 ### Permissions
 
@@ -114,9 +114,10 @@ The manifest is a JSON script inside the bundle, read when a version is publishe
 | *(none needed)* | navigate, show toasts, open links, look up people, and list or pick repositories |
 | `storage` | keep JSON documents and files attached to them, private to the person or shared per repository |
 | `realtime` | join live rooms: an ordered update log plus presence, for editing together |
-| `github:read` | read repository info, refs, trees, files, history and pull requests, and search pull requests |
+| `github:read` | read repository info, refs, trees, files, history and pull requests, search pull requests, and search the people Robin knows |
 | `github:write` | create branches, commit files and open pull requests (also allows reads) |
 | `agent` | an agent the person chats with in a dock beside the plugin, with tools the plugin provides |
+| `threads:read` | list and read the agent threads the person may read, including Robin's incident investigations: status, messages and published artifacts |
 
 The person approves these permissions when they add the app.
 If a newer version asks for more, the install stays where it is until they approve them.
@@ -209,11 +210,18 @@ Other navigation:
 
 - `host.nav.openThread(threadId)` opens an agent thread in the web UI.
 - `host.nav.openExternal(url)` opens a web link in a new tab. github.com links open directly; anything else opens only after the person confirms it.
+- `host.nav.openReview(repository, number)` opens Robin's review page of a pull request in a repository the person shared, in a new tab, or in the desktop app's window.
+- `host.analytics.track(action)` counts that the person did `action` (lowercase letters, digits and `_`, at most 40) in Robin's product analytics, beside your plugin's name; nothing else about it is sent.
+  The web UI also counts each time your plugin's page comes on screen.
 - `host.ui.toast({ title, description, intent })` shows a web UI toast (`intent` is `success`, `error` or `info`), its title led by your plugin's name.
 - `host.ui.setTitle(title)` shows `title` beside the plugin's name in the bar above it, and names the browser tab "title · Open SWE".
   Up to 120 characters; `null` clears it, and the tab goes back to the plugin's name.
 
-The web UI asks the person in dialogs it draws over the plugin: the repository picker and link confirmations.
+- `host.app.newerRelease()` resolves to the app's newest release (`{ number, version, newPermissions }`) when the person runs an older one, or `null`; `host.context.plugin.release` is the number of the one running.
+  `host.app.update()` asks the person to update to it, approving any `newPermissions`, and resolves whether they did; when they do, the frame reloads on the new release.
+  Use them for an "update available" notice, since people rarely visit Settings → Apps to update.
+
+The web UI asks the person in dialogs it draws over the plugin: the repository picker, link confirmations and updates.
 The plugin can neither cover nor imitate them, and their approve buttons work only after a moment on screen.
 
 A plugin behaves like a tab.
@@ -229,6 +237,13 @@ const src = ada.avatar ? URL.createObjectURL(ada.avatar) : undefined
 
 The frame can't load remote images, so the web UI fetches each picture and hands it over as a Blob.
 Results come back in the order you asked, logins with no profile are left out, and the client caches profiles for the frame's lifetime.
+
+To let the person pick someone, search the people Robin knows with a GitHub login by name or login, closest first; an empty query lists them by name.
+This needs `github:read` or `github:write`:
+
+```ts
+const found = await host.people.search("ada", { limit: 10 }) // at most 50, 20 by default
+```
 
 ### Storage
 
@@ -340,11 +355,12 @@ An app can have pull request reviews do work for it, such as screenshotting a fr
 "review": {
   "instructions": "Screenshot the routes the diff changes on the preview and on the base…",
   "writes": ["captures"],
-  "browser": true
+  "browser": true,
+  "paths": ["**/*.tsx", "**/*.css", "!**/*.test.*"]
 }
 ```
 
-- `instructions`, at most 8,000 characters, are what the review does for the app, after reviewing the code.
+- `instructions`, at most 16,000 characters, are what the review does for the app, after reviewing the code.
   Reviews read them inside the app's own block; they can't change the review's rules, add tools, or widen where it writes.
 - `writes` names collections the manifest marks `"write": "app"`, so what a review saves can't be forged or deleted by people.
   The review saves with `save_app_document`: a document and files from its sandbox as attachments, in the reviewed repository's scope, only under keys starting `pulls/<number>/` of that pull request.
@@ -352,11 +368,33 @@ An app can have pull request reviews do work for it, such as screenshotting a fr
   A save keeps its document only once every file is attached.
   A PNG is kept as a lossless WebP, under the name the review gave it, whenever that is smaller and changes no pixel, so take a file's type from its Blob, not its name.
   When the pull request closes, merged or not, Robin deletes what reviews saved under its `pulls/<number>/` in these collections, with the files; a document a person created or changed stays, as does anything in the app's other collections.
+- `path`, optional, identifies an authenticated result page in this app, for example `"/{repository}/{number}"`.
+  It must start with `/`; only `{repository}` (owner/repo) and `{number}` substitutions are supported.
+  External URLs, protocol-relative paths, queries, fragments, percent encoding, backslashes, control characters and dot traversal are rejected.
+  After a successful `save_app_document`, the host returns its configured dashboard app URL, never an attachment bearer link.
+  The existing review publisher can include that page after the current run explicitly records a complete outcome for its saved document at the current head.
+  It does not publish a link for pending, failed, missing or stale results; repeat publication checks existing review receipts before posting.
+  The page still requires an installation, repository sharing and GitHub access.
 - `browser` gives the review the thread's LangSmith browser.
   The browser never reaches the review's sandbox, and signs in only to the domains an instance admin lists under **Defaults → Review browser**, with the one MCP tool named there; sessions install only on LangSmith sites.
+- `paths`, optional, at most 64 glob patterns, limits the step to pull requests that change a matching file: `**` spans folders, and a pattern starting with `!` excludes what it matches, whatever else matches it.
+  A review of any other pull request leaves the app out, records its outcome as `skipped` without running its instructions, and starts no run for its preview.
+  Robin reads the changed files as the GitHub App and judges the first 3,000, all GitHub lists.
+  When GitHub won't answer even after retrying, the app is left out too, with its outcome recorded as `failed` so a person can retry it.
 
-A workspace admin adds apps to reviews in **Settings → Review → Apps in reviews**, or with `manage_review_apps`.
+An admin adds apps to reviews in **Defaults → Apps in reviews**, or with `manage_review_apps`.
 Reviews follow the release that was newest when the admin added the app, so a later release changes no review until an admin updates it, and only on private repositories, whose previews run only code the organization's members pushed.
+
+A review usually finishes before its pull request's preview is up.
+Under **Preview checks** there, or with `manage_review_apps`, the admin names the checks whose success means a pull request's preview serves its head commit, such as a deploy workflow's last job.
+Name a check that is skipped when no preview is built, so pull requests without one start nothing.
+When one of them passes for an open pull request whose head is still that commit, in a private repository Robin reviews automatically, and the review works for an app whose step browses, Robin runs its review again to do only the apps' review steps against the preview.
+A preview can deploy before Robin has reviewed the pull request, or while it's a draft, so Robin looks again every five minutes for an hour.
+An explicitly blocked temporary prerequisite can request `retryable: true` when recording its outcome; it uses this existing three-run budget, without another webhook.
+Missing access, failed deployments and unsupported previews should remain terminal blocked outcomes.
+Each named check starts one such run per commit, so a pull request with several previews gets a run once each is up; when another reviewer run on the pull request cancels one, Robin starts it again, up to three times, and closing the pull request cancels it.
+That run reviews no code and can't edit the code review's existing findings.
+A problem its apps' work turns up that it can point at in the diff, such as a visual bug, it records and publishes as a comment of those findings, optionally alongside verified links to completed saved app results; a clean capture can publish its result link without inventing a finding; the code review's verdict, Robin's approval and the Robin Review check stay as the review left them.
 
 ### GitHub
 
@@ -393,6 +431,17 @@ const pr = await repo.pull(12)
 
 `requestedTeams` are `org/slug`; GitHub drops a request once it is answered with a review.
 
+Read the files it changes, with their diffs:
+
+```ts
+const { files, truncated } = await repo.pullFiles(12)
+// files: [{ path, previousPath, status, additions, deletions, patch }]
+```
+
+`patch` holds the file's unified-diff hunks, or `null` for a binary file or a diff too large for GitHub to show.
+`previousPath` is set for a renamed or copied file.
+GitHub lists at most 3000 files; `truncated` says the pull request changes more.
+
 Search the open pull requests of every repository the person shared and can still read, by their part in them:
 
 ```ts
@@ -401,11 +450,52 @@ const { pulls, incomplete } = await host.pulls.search({ role: "review-requested"
 ```
 
 `review-requested` includes requests to the person's teams.
-`incomplete` says GitHub left some out: past its first page of results, or because its search timed out.
+With `author`, `role` must be `"author"`: `host.pulls.search({ role: "author", author: "ada" })` lists that login's pull requests in the same repositories.
+`incomplete` says some are missing because GitHub's search timed out or a later page failed; its search lists at most 1000.
+Reading every page can take a few seconds per hundred pull requests, so to show the first ones sooner, ask for one `page` (1 to 10) at a time and follow `nextPage` until it is `null`:
+
+```ts
+const first = await host.pulls.search({ role: "author", page: 1 })
+// first.nextPage: 2 while GitHub has more, else null
+```
 
 A commit carries at most 100 files and 100 deletions.
 `openPull` also takes `body` and `draft`.
 File paths and branch names have no empty, `.` or `..` segment and no backslash, or the call fails with status 400.
+
+### Agent threads
+
+With `threads:read`, a plugin lists and reads agent threads as the person using it would: never one they can't open themselves.
+
+```ts
+const { threads, nextOffset } = await host.threads.list({ source: "incidents_agent", limit: 25 })
+// threads: [{ threadId, title, source, status, visibility, createdAt, updatedAt, url,
+//   slack: { channelId, threadTs, channelName, permalink } | null, hasArtifact, bot: { key, name } | null }]
+const more = nextOffset === null ? null : await host.threads.list({ source: "incidents_agent", offset: nextOffset })
+
+const thread = await host.threads.get(threadId) // null when the person can't read it
+// null for a thread from before the transcript log: link to it in Slack instead.
+const read = await host.threads.messages(threadId, { limit: 100 })
+// messages: [{ id, role: "user" | "assistant", text, truncated, senderId, senderName, timestamp }], oldest first
+const artifact = await host.threads.artifact(threadId) // { status, format: "html" | "markdown", content } | null
+```
+
+Threads Slack bots on the allowlist started are `slack` threads with a `bot`; list one bot's, or every bot's with `"*"`:
+
+```ts
+const bots = await host.threads.bots() // [{ key: "T…:B…", name }]
+const { threads } = await host.threads.list({ source: "slack", bot: bots[0].key })
+```
+
+A list names one `source`: `dashboard`, `web`, `github`, `slack`, `linear`, `schedule`, `api`, `claude_code`, or `incidents_agent`, the investigations Robin starts in new incident channels.
+Threads come most recently updated first, 1 to 50 a page.
+A page leaves out threads the person can't read, so it may hold fewer than asked for; keep paging until `nextOffset` is `null`.
+Plugin chats, review chats and other threads kept out of the dashboard's lists stay out of these too.
+Messages are what people and the agent wrote, without tool calls or subagents, from the thread's recent turns: at most 200 per read and 20,000 characters each.
+
+Incident threads are the one place a plugin reads more than the dashboard shows.
+The dashboard opens none of them, so its lists stay free of them, but Robin starts them only in public, internal Slack channels, where everyone in the workspace reads them.
+So a plugin may list and read public incident threads for anyone using it; their `url` is `null`, so link to `slack.permalink` or the channel instead.
 
 ### Live rooms
 
@@ -553,3 +643,24 @@ Elsewhere, upload each build in **Settings → Apps** and press **Update** on yo
 A local web UI works the same way; [local development](DEVELOPMENT.md) covers running one.
 
 Bump `version` with each release so people can tell what they run.
+
+## Review outcomes and retries
+
+For apps with an administrator-approved browser review step, `host.github(repository).requestReview(number)` queues a retry on an open private PR.
+It requires the installed app's `agent` and `github:read` (or `github:write`) grants and the person's current repository access.
+Shared automatic-review and preview-check gates still apply.
+Duplicate queued work is reused; requests are limited to three per app and PR per hour.
+The call returns a `ReviewOutcome`, including an actionable blocked reason when preview reviews are not configured.
+
+Apps with storage access may read the reserved `review_outcomes` collection in their repository scope.
+Keys are `pulls/<number>/<run-or-request-id>`; documents contain `id`, `head_sha`, `created_at`, `status` (`queued`, `complete`, `blocked`, `failed`, `skipped`) and `reason`.
+Only the host writes this collection.
+Order by `created_at` when selecting the latest attempt: runtime run IDs are not necessarily time ordered.
+
+Reviewers must call `record_app_review_outcome` for each approved app.
+Completion requires a successfully saved app document when the app declares write collections; a read-only app instead records a summary of its completed work.
+Other terminal statuses require a reason.
+Preview follow-ups check that the referenced result still exists before marking the work done.
+The host bounds retries for missing outcomes and gives existing open, reviewed PRs one recovery window.
+Automatic recovery starts at most five app reviews per repository per hour; a manual retry can proceed independently.
+Regular reviews also settle unfinished outcomes when their run ends, including failure and cancellation.

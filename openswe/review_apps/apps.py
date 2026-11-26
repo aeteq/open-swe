@@ -2,25 +2,33 @@
 
 An app's manifest can declare a review step (``ReviewStep``): instructions, the
 app-written collections the review may write, and whether it needs a browser. A
-workspace adds apps to its reviews (``review_apps``). A review of a private repository,
+Robin admin adds apps to its reviews (``review_apps``). A review of a private repository,
 whose preview runs only code its organization's members could push, then follows each
 app's instructions, and writes only that app's declared collections, in the reviewed
 repository's scope, under ``pulls/<number>/``: never another pull request's data.
+An app whose step names ``paths`` is left out of a review whose pull request changes
+none of them, so a docs change never starts a frontend capture.
 """
 
 import asyncio
+import hashlib
 import json
+import logging
 import posixpath
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from html import escape
 from io import BytesIO
 from typing import ClassVar, Self
 from uuid import UUID, uuid7
 
+import httpx2
 from PIL import Image
 from pydantic import TypeAdapter
 
-from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
+from openswe.dashboard.settings_cache import cached_settings
+from openswe.github.http import GitHubAppUnavailable
+from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest
 from openswe.github.repo_names import normalize_repo_full_name
 from openswe.github.repositories import Repository
@@ -38,15 +46,25 @@ from openswe.plugins.records import (
 )
 from openswe.run_config import RunConfig
 from openswe.sandboxes.state import get_sandbox_backend
+from openswe.utils.dashboard_links import dashboard_base_url
 from openswe.utils.json_types import JsonObject
 
 # Where a review's browser saves the screenshots run code takes, in the run's sandbox.
 WORKSPACE = "/workspace/"
-MAX_FILES = 40
+MAX_FILES = 72
 # Past this, decoding a PNG to re-encode it costs more memory than the space is worth.
 MAX_RECODED_PIXELS = 16_000_000
+# GitHub lists at most 3,000 of a pull request's files, 100 a page; triage judges those.
+_FILE_PAGES = 30
 _KEY = TypeAdapter(DocumentKey)
 _NAME = TypeAdapter(AttachmentName)
+
+logger = logging.getLogger(__name__)
+
+
+class ChangedFilesUnavailable(Exception):
+    """GitHub wouldn't list a pull request's files, so whether an app's ``paths`` cover it
+    is unknown; work that would start the app tries again rather than give up."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,7 +157,7 @@ class SandboxFile:
 
 @dataclass(frozen=True, slots=True)
 class ReviewApp:
-    """An app a workspace added to its reviews, as the release an admin approved describes it."""
+    """An app enabled for reviews, as the release an admin approved describes it."""
 
     id: UUID
     release: UUID
@@ -155,6 +173,15 @@ class ReviewApp:
             return None
         manifest = release.manifest
         return cls(release.app, release.id, manifest.name, manifest.display_name, step)
+
+    def result_url(self, repository: str, number: int) -> str | None:
+        base = dashboard_base_url()
+        if not base or self.step.path is None:
+            return None
+        repository = normalize_repo_full_name(repository).lower()
+        path = self.step.path.replace("{repository}", repository).replace("{number}", str(number))
+        ReviewStep.checked_result_path(path)
+        return f"{base}/agents/plugins/{self.name}{path}"
 
     @staticmethod
     async def describe(pinned: Mapping[UUID, UUID]) -> list[JsonObject]:
@@ -189,21 +216,53 @@ class ReviewApp:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewAppResult:
+    app: ReviewApp
+    repository: str
+    number: int
+    head_sha: str
+    collection: str
+    key: str
+
+    @property
+    def url(self) -> str | None:
+        return self.app.result_url(self.repository, self.number)
+
+    @property
+    def marker(self) -> str:
+        identity = f"{self.app.id}:{self.repository}:{self.collection}:{self.key}:{self.head_sha}"
+        return f"<!-- robin-app-result:{hashlib.sha256(identity.encode()).hexdigest()} -->"
+
+    def render(self) -> str:
+        return f'<a href="{escape(self.url or "", quote=True)}">{escape(self.app.display_name)}</a>\n{self.marker}'
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewApps:
     """The apps one review does work for, and the pull request it reviews."""
 
     apps: tuple[ReviewApp, ...]
     repository: str
     number: int
+    # Other configured apps, left out because the pull request changes none of their
+    # paths, or because GitHub wouldn't list its files when ``files_read`` is False.
+    passed: tuple[ReviewApp, ...] = ()
+    files_read: bool = True
     # Saves still running, held so a cancelled call's save is not collected mid-write.
     _saving: ClassVar[set[asyncio.Task[str]]] = set()
 
     @classmethod
     async def of(cls, cfg: RunConfig) -> Self | None:
         """The apps this review works for; None when it works for none."""
+        found = await cls.triaged(cfg)
+        return found if found is not None and found.apps else None
+
+    @classmethod
+    async def triaged(cls, cfg: RunConfig) -> Self | None:
+        """The global review apps split by changed paths; None when none are configured."""
         if cfg.is_eval or cfg.repo is None or cfg.pr_number is None or not cfg.head_sha:
             return None
-        pinned = (await cached_workspace_settings(cfg.workspace_slug)).review_app_releases
+        pinned = (await cached_settings()).review_app_releases
         if not pinned:
             return None
         name = f"{cfg.repo.owner}/{cfg.repo.name}"
@@ -217,11 +276,86 @@ class ReviewApps:
         )
         if not apps:
             return None
-        return cls(apps, normalize_repo_full_name(name).lower(), cfg.pr_number)
+        triaging = any(app.step.paths for app in apps)
+        files = (
+            await cls.changed_files(cfg.repo.owner, cfg.repo.name, cfg.pr_number)
+            if triaging
+            else []
+        )
+        working = tuple(
+            app
+            for app in apps
+            if not app.step.paths or (files is not None and app.step.covers(files))
+        )
+        passed = tuple(app for app in apps if app not in working)
+        return cls(
+            working,
+            normalize_repo_full_name(name).lower(),
+            cfg.pr_number,
+            passed,
+            files_read=files is not None,
+        )
+
+    @staticmethod
+    async def changed_files(owner: str, repo: str, number: int) -> list[str] | None:
+        """The pull request's changed paths as GitHub lists them, at most 3,000, a rename's
+        old path included; None when GitHub won't answer even after retrying."""
+        try:
+            async with PullRequestClient.as_app(owner, repo, number) as pull:
+                files = await pull.files(max_pages=_FILE_PAGES)
+        except GitHubAppUnavailable, httpx2.HTTPError, ValueError:
+            logger.warning(
+                "Could not list a pull request's files for its review apps",
+                extra={"pr_repo_full_name": f"{owner}/{repo}", "pr_number": number},
+                exc_info=True,
+            )
+            return None
+        return [
+            path
+            for file in files
+            for key in ("filename", "previous_filename")
+            if isinstance(path := file.get(key), str) and path
+        ]
+
+    async def results(self, run_id: str, head_sha: str) -> tuple[ReviewAppResult, ...]:
+        from openswe.review_apps.outcomes import ReviewOutcomes
+
+        results: list[ReviewAppResult] = []
+        for app in self.apps:
+            if app.result_url(self.repository, self.number) is None:
+                continue
+            outcomes = ReviewOutcomes(app.id, self.repository, self.number)
+            outcome = await outcomes.get(run_id)
+            if (
+                outcome is not None
+                and outcome.head_sha == head_sha
+                and outcome.status == "complete"
+                and outcome.collection is not None
+                and outcome.collection in app.step.writes
+                and outcome.document_key is not None
+                and outcome.document_key.startswith(f"pulls/{self.number}/")
+                and await outcomes.has_result(outcome)
+            ):
+                results.append(
+                    ReviewAppResult(
+                        app,
+                        self.repository,
+                        self.number,
+                        head_sha,
+                        outcome.collection,
+                        outcome.document_key,
+                    )
+                )
+        return tuple(results)
 
     @property
     def browses(self) -> bool:
         return any(app.step.browser for app in self.apps)
+
+    @property
+    def may_browse(self) -> bool:
+        """Whether an app left out only because the files couldn't be read browses."""
+        return not self.files_read and any(app.step.browser for app in self.passed)
 
     @property
     def writes(self) -> bool:
@@ -257,6 +391,8 @@ class ReviewApps:
         for a reason the review could not see.
         """
         app = self.app(app_id)
+        if collection == "review_outcomes":
+            raise ValueError("Review outcomes are recorded by the review, not written as documents")
         if collection not in app.step.writes:
             raise ValueError(f"{app.name} has reviews write only {', '.join(app.step.writes)}")
         stored_key = self.key(key)

@@ -9,6 +9,7 @@ import {
   openRunningThreadViaSlackLink,
   optIntoQueue,
   openThreadViaSlackLink,
+  readyComposerEditor,
   threadIdFromUrl,
   threadState,
   typeIntoComposer,
@@ -16,9 +17,38 @@ import {
   waitForThreadIdle,
 } from "./helpers/dashboard";
 
+// A route handler still reading a response when the test ends must not fail it.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 // Drives the REAL built ui/ app (served same-origin from the harness) for the
 // Slack → web handoff. Only the LLM/GitHub/Slack/token boundaries are faked.
 test.describe("Slack → web handoff (real dashboard UI)", () => {
+  test("prefills an editable handoff without sending it", async ({ page }) => {
+    await loginAs(page, SAME_USER);
+    const editor = page.getByTestId("composer-editor");
+    const prompt =
+      'Fix retries & preserve tool arguments.\n\n<!-- langsmith-issue {"id":"issue-1"} -->';
+    await page.goto(`/agents?prompt=${encodeURIComponent(prompt)}`);
+    await dismissOnboardingIfShown(page);
+    await expect(editor).toContainText(
+      "Fix retries & preserve tool arguments.",
+    );
+    await expect(editor).toContainText(
+      '<!-- langsmith-issue {"id":"issue-1"} -->',
+    );
+    await expect(page).toHaveURL(/\/agents\/?$/);
+    await expect(editor).toHaveAttribute("data-lexical-editor", "true");
+    await editor.press("End");
+    await editor.pressSequentially(" Please investigate first.");
+    const edited = await editor.innerText();
+    await page.getByRole("link", { name: "Automations", exact: true }).click();
+    await expect(page).toHaveURL(/\/agents\/automations/);
+    await page.goBack();
+    await expect(editor).toHaveText(edited, { useInnerText: true });
+  });
+
   test("opens the composer without saving a personal model for a fresh user", async ({
     page,
   }) => {
@@ -99,7 +129,9 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     await expect(composer.editor).toBeVisible();
     await expect(composer.prompt).toBeVisible();
     // Continue from the web — a new agent reply streams into the same thread.
-    await typeIntoComposer(page, "Looks good — can you also add a docstring?");
+    await expect(composer.editor).toBeFocused();
+    await page.keyboard.type("Looks good — can you also add a docstring?");
+    await page.keyboard.press("Enter");
     await expect(
       page.getByText(/anything else you'd like changed/),
     ).toBeVisible();
@@ -125,6 +157,25 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
         page.getByTestId("pr-hover-card-fakeorg/demo-1"),
       ).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 20_000 });
+
+    const threadUrl = page.url();
+    const transcript = page.locator("[data-transcript-scroll]");
+    await pullRequestLink.evaluate((link) => {
+      link.scrollIntoView({ block: "center", behavior: "instant" });
+    });
+    const scrollTop = await transcript.evaluate((element) => element.scrollTop);
+    expect(scrollTop).toBeGreaterThan(0);
+    await pullRequestLink.click();
+    await expect(
+      page.getByRole("heading", { name: "Pull Requests" }),
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Back to thread", exact: true })
+      .click();
+    await expect(page).toHaveURL(threadUrl);
+    await expect
+      .poll(() => transcript.evaluate((element) => element.scrollTop))
+      .toBeCloseTo(scrollTop, 0);
   });
 
   test("shows an optimistic message while the send is in flight", async ({
@@ -184,6 +235,752 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
       "data-message-id",
       optimisticId!,
     );
+  });
+
+  test("keeps a starting chat reachable after leaving the new-chat page", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    await openThreadViaSlackLink(page);
+    const existingThreadId = threadIdFromUrl(page);
+    await page.goto(`/agents/${existingThreadId}`);
+    const existingChat = page
+      .getByRole("complementary")
+      .locator(`a[href="/agents/${existingThreadId}"]`);
+    await expect(existingChat).toBeVisible();
+    const sidebar = page.getByRole("complementary");
+    await sidebar
+      .getByRole("button", { name: /^(Projects|Recents) options$/ })
+      .first()
+      .click();
+    await page
+      .getByRole("menuitemradio", { name: "Date", exact: true })
+      .click();
+    await page.keyboard.press("Escape");
+    await sidebar.getByRole("button", { name: "Today", exact: true }).click();
+    await page.getByRole("link", { name: "New", exact: true }).click();
+    await dismissOnboardingIfShown(page);
+
+    let releaseStart: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    let threadId = "";
+    const listedBeforeAcceptance = page.waitForResponse(async (response) => {
+      if (
+        !threadId ||
+        !new URL(response.url()).pathname.endsWith("/threads/page")
+      )
+        return false;
+      const body = (await response.json()) as { items?: Array<{ id: string }> };
+      return body.items?.some((thread) => thread.id === threadId) ?? false;
+    });
+    const prematureRequests: string[] = [];
+    const recordRequest = (request: import("@playwright/test").Request) => {
+      if (
+        threadId &&
+        request.method() === "GET" &&
+        new URL(request.url()).pathname.includes(`/threads/${threadId}`)
+      )
+        prematureRequests.push(request.url());
+    };
+    page.on("request", recordRequest);
+    await page.route("**/dashboard/api/threads/*/**", async (route) => {
+      const url = new URL(route.request().url());
+      const match = url.pathname.match(/\/threads\/([^/]+)\/commands$/);
+      if (match && route.request().method() === "POST") {
+        threadId = match[1]!;
+        const response = await route.fetch();
+        await released;
+        await route.fulfill({ response });
+        return;
+      }
+      await route.continue();
+    });
+
+    let releaseSidebar: () => void = () => {};
+    const sidebarReleased = new Promise<void>((resolve) => {
+      releaseSidebar = resolve;
+    });
+    let heldSidebarRequests = 0;
+    const prompt = "Keep this new chat reachable during startup.";
+    try {
+      await typeIntoComposer(page, prompt);
+      await expect.poll(() => threadId).not.toBe("");
+      const pendingChat = sidebar.locator(`a[href="/agents/${threadId}"]`);
+      const recentSection = sidebar.locator("section").filter({
+        has: page.getByRole("button", { name: "Today", exact: true }),
+      });
+      await expect(
+        recentSection.locator(`a[href="/agents/${threadId}"]`),
+      ).toBeVisible();
+      await existingChat.click();
+      await expect(page).toHaveURL(new RegExp(`/agents/${existingThreadId}$`));
+      await expect(pendingChat).toHaveCount(1);
+      await expect(
+        pendingChat.getByRole("img", { name: "Starting chat" }),
+      ).toBeVisible();
+      await expect(sidebar.getByText("Starting", { exact: true })).toHaveCount(
+        0,
+      );
+      await expect(
+        recentSection.locator(`a[href="/agents/${threadId}"]`),
+      ).toBeVisible();
+      await sidebar.getByRole("button", { name: "Today", exact: true }).click();
+      await expect(pendingChat).toHaveCount(0);
+      await sidebar.getByRole("button", { name: "Today", exact: true }).click();
+      for (const [menu, grouping] of [
+        ["Recents options", "Project"],
+        ["Projects options", "Date"],
+      ]) {
+        await sidebar.getByRole("button", { name: menu, exact: true }).click();
+        await page
+          .getByRole("menuitemradio", { name: grouping, exact: true })
+          .click();
+        await page.keyboard.press("Escape");
+        await expect(pendingChat).toHaveCount(1);
+        await expect(pendingChat).toBeVisible();
+      }
+      await expect(
+        recentSection.locator(`a[href="/agents/${threadId}"]`),
+      ).toBeVisible();
+      await listedBeforeAcceptance;
+      await expect(
+        pendingChat.getByRole("img", { name: "Starting chat" }),
+      ).toBeVisible();
+      await pendingChat.click();
+      await expect(page).toHaveURL(new RegExp(`/agents/${threadId}$`));
+      await expect(
+        page.getByRole("main").getByText(prompt, { exact: true }).last(),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Stop run" }),
+      ).toBeVisible();
+      const pendingRow = pendingChat.locator("..");
+      await expect(pendingRow.getByRole("button")).toHaveCount(0);
+      await expect(pendingChat).not.toHaveAttribute("data-selectable-thread");
+      await expect(pendingChat).toHaveAttribute("draggable", "false");
+      await expect(pendingRow.locator("xpath=..")).not.toHaveAttribute(
+        "draggable",
+        "true",
+      );
+      expect(prematureRequests).toEqual([]);
+      page.off("request", recordRequest);
+      await page.route(
+        /\/dashboard\/api\/threads\/(page|pinned|repos)(\?|$)/,
+        async (route) => {
+          heldSidebarRequests++;
+          await sidebarReleased;
+          await route.continue();
+        },
+      );
+      await page.getByRole("link", { name: "New", exact: true }).click();
+      releaseStart();
+      await expect.poll(() => heldSidebarRequests).toBeGreaterThan(0);
+      await expect(page).toHaveURL(/\/agents\/?$/);
+      await pendingChat.click();
+      await expect(
+        pendingChat.getByRole("img", { name: "Starting chat" }),
+      ).toHaveCount(0);
+      await expect(pendingChat).toHaveCount(1);
+      await expect(
+        page.getByTestId("user-message").filter({ hasText: prompt }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Add attachments" }),
+      ).toBeVisible();
+      await waitForStateToContain(page, threadId, prompt);
+      await existingChat.click();
+      await expect(pendingChat).toHaveCount(1);
+      await pendingChat.click();
+      await expect(page.getByTestId("composer-editor")).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+      const listed = page.waitForResponse(async (response) => {
+        if (!new URL(response.url()).pathname.endsWith("/threads/page"))
+          return false;
+        const body = (await response.json()) as {
+          items?: Array<{ id: string }>;
+        };
+        return body.items?.some((thread) => thread.id === threadId) ?? false;
+      });
+      releaseSidebar();
+      await listed;
+      await expect(pendingChat).toHaveCount(1);
+      await expect(page.getByText("Unable to load thread")).toHaveCount(0);
+      await expect(page.getByText("Unable to display thread")).toHaveCount(0);
+    } finally {
+      page.off("request", recordRequest);
+      releaseStart();
+      releaseSidebar();
+      await page.removeAllListeners("response", { behavior: "wait" });
+    }
+  });
+
+  test("opens an accepted chat and stops it without waiting for sidebar refreshes", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await loginAs(page, SAME_USER);
+    await page.goto("/agents");
+    await dismissOnboardingIfShown(page);
+    let releaseSidebar: () => void = () => {};
+    const sidebarReleased = new Promise<void>((resolve) => {
+      releaseSidebar = resolve;
+    });
+    let heldSidebarRequests = 0;
+    await page.route(
+      /\/dashboard\/api\/threads\/(page|pinned|repos)(\?|$)/,
+      async (route) => {
+        heldSidebarRequests++;
+        await sidebarReleased;
+        await route.continue();
+      },
+    );
+    try {
+      const prompt = "E2E_BUSY_HOLD:30 keep this accepted chat usable.";
+      await typeIntoComposer(page, prompt);
+      await expect.poll(() => heldSidebarRequests).toBeGreaterThan(0);
+      await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/);
+      const threadId = threadIdFromUrl(page);
+      const row = page
+        .getByRole("complementary")
+        .locator(`a[href="/agents/${threadId}"]`);
+      await expect(row).toHaveCount(1);
+      await expect(row.getByRole("img", { name: "Starting chat" })).toHaveCount(
+        0,
+      );
+      await expect(
+        page.getByTestId("user-message").filter({ hasText: prompt }),
+      ).toBeVisible();
+      await expect(page.getByTestId("composer-editor")).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+      await expect(page.getByText("On it!", { exact: true })).toBeVisible();
+      await test.info().attach("accepted-with-sidebar-held", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+      await page.getByRole("button", { name: "Stop run" }).click();
+      await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(
+        0,
+      );
+      await waitForThreadIdle(page, threadId);
+      await expect(
+        row.getByRole("img", { name: "Thread running" }),
+      ).toHaveCount(0);
+      await row.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Delete thread" })
+        .getByRole("button", { name: "Delete", exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/agents\/?$/);
+      await expect(row).toHaveCount(0);
+      releaseSidebar();
+    } finally {
+      releaseSidebar();
+    }
+  });
+
+  test("honors Stop before acceptance while sidebar refreshes are held", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await loginAs(page, SAME_USER);
+    let releaseStart: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    let threadId = "";
+    await page.route("**/dashboard/api/threads/*/commands", async (route) => {
+      threadId = new URL(route.request().url()).pathname.split("/").at(-2)!;
+      await started;
+      await route.continue();
+    });
+    let releaseSidebar: () => void = () => {};
+    const sidebarReleased = new Promise<void>((resolve) => {
+      releaseSidebar = resolve;
+    });
+    await page.route(
+      /\/dashboard\/api\/threads\/(page|pinned|repos)(\?|$)/,
+      async (route) => {
+        await sidebarReleased;
+        await route.continue();
+      },
+    );
+    try {
+      await page.goto("/agents");
+      await dismissOnboardingIfShown(page);
+      await expect(
+        page.getByRole("status", { name: "Loading pinned threads" }),
+      ).toBeVisible();
+      await typeIntoComposer(
+        page,
+        "E2E_BUSY_HOLD:30 stop this chat during startup.",
+      );
+      await expect.poll(() => threadId).not.toBe("");
+      const sidebar = page.getByRole("complementary");
+      const row = sidebar.locator(`a[href="/agents/${threadId}"]`);
+      await expect(row).toBeVisible();
+      await sidebar.getByRole("button", { name: "Projects options" }).click();
+      await page
+        .getByRole("menuitemradio", { name: "Date", exact: true })
+        .click();
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(row).toBeVisible();
+      await test.info().attach("starting-with-cold-sidebar", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+      await page.getByRole("button", { name: "Stop run" }).click();
+      await expect(page.getByTestId("composer-editor")).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+      const cancelled = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+          `/dashboard/api/threads/${threadId}/cancel`,
+      );
+      releaseStart();
+      expect((await cancelled).ok()).toBeTruthy();
+      await expect(page).toHaveURL(/\/agents\/?$/);
+      await page
+        .getByRole("complementary")
+        .locator(`a[href="/agents/${threadId}"]`)
+        .click();
+      await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(
+        0,
+      );
+      await expect(page.getByTestId("composer-editor")).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+    } finally {
+      releaseStart();
+      releaseSidebar();
+    }
+  });
+
+  test("recovers from startup failures on Home and on the pending chat route", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await loginAs(page, SAME_USER);
+    await page.goto("/agents");
+    await dismissOnboardingIfShown(page);
+    let releaseFailure: () => void = () => {};
+    const failureReleased = new Promise<void>((resolve) => {
+      releaseFailure = resolve;
+    });
+    let attempt = 0;
+    let failedThreadId = "";
+    const prematureReads: string[] = [];
+    page.on("request", (request) => {
+      if (
+        failedThreadId &&
+        request.method() === "GET" &&
+        new URL(request.url()).pathname.includes(
+          `/dashboard/api/threads/${failedThreadId}`,
+        )
+      )
+        prematureReads.push(request.url());
+    });
+    await page.route("**/dashboard/api/threads/*/commands", async (route) => {
+      attempt++;
+      if (attempt > 2) {
+        await route.continue();
+        return;
+      }
+      failedThreadId =
+        new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+      if (attempt === 2) await failureReleased;
+      await route.fulfill({
+        status: 503,
+        json: { detail: "Startup temporarily unavailable" },
+      });
+    });
+    try {
+      await typeIntoComposer(page, "Recover from a rejected startup.");
+      await expect(
+        page.getByText("Startup temporarily unavailable", { exact: true }),
+      ).toBeVisible();
+      const sidebar = page.getByRole("complementary");
+      await expect(
+        sidebar.locator(`a[href="/agents/${failedThreadId}"]`),
+      ).toHaveCount(0);
+      await expect(page.getByTestId("composer-editor")).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+      await typeIntoComposer(page, "Recover after opening the starting chat.");
+      await expect.poll(() => attempt).toBe(2);
+      const pendingChat = sidebar.locator(
+        `a[href="/agents/${failedThreadId}"]`,
+      );
+      await pendingChat.click();
+      await expect(page).toHaveURL(new RegExp(`/agents/${failedThreadId}$`));
+      await expect(
+        page.getByRole("button", { name: "Stop run" }),
+      ).toBeVisible();
+      releaseFailure();
+      await expect(page).toHaveURL(/\/agents\/?$/);
+      await expect(
+        page.getByText("Could not start the Robin agent", { exact: true }),
+      ).toBeVisible();
+      await expect(pendingChat).toHaveCount(0);
+      await expect(page.getByText("Unable to load thread")).toHaveCount(0);
+      await expect(page.getByText("Unable to display thread")).toHaveCount(0);
+      expect(prematureReads).toEqual([]);
+      await test.info().attach("startup-failure-recovered", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+      await typeIntoComposer(page, "This retry should start normally.");
+      await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/);
+      await expect(
+        page
+          .getByTestId("user-message")
+          .filter({ hasText: "This retry should start normally." }),
+      ).toBeVisible();
+    } finally {
+      releaseFailure();
+    }
+  });
+
+  test("reports a failed startup without leaving the page navigated to", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    await page.goto("/agents");
+    await dismissOnboardingIfShown(page);
+    let releaseFailure: () => void = () => {};
+    const failureReleased = new Promise<void>((resolve) => {
+      releaseFailure = resolve;
+    });
+    let releaseAutomations: () => void = () => {};
+    const automationsReleased = new Promise<void>((resolve) => {
+      releaseAutomations = resolve;
+    });
+    let threadId = "";
+    await page.route("**/dashboard/api/threads/*/commands", async (route) => {
+      threadId =
+        new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+      await failureReleased;
+      await route.fulfill({
+        status: 503,
+        json: { detail: "Startup failed after navigation" },
+      });
+    });
+    // While the next route's code loads, the URL has moved but Home is still
+    // mounted; holding that code makes the failure land in that window.
+    let automationsHeld = false;
+    await page.route("**/assets/automations-*.js", async (route) => {
+      automationsHeld = true;
+      await automationsReleased;
+      await route.continue();
+    });
+    try {
+      await typeIntoComposer(page, "Do not take me away if startup fails.");
+      await expect.poll(() => threadId).not.toBe("");
+      const row = page
+        .getByRole("complementary")
+        .locator(`a[href="/agents/${threadId}"]`);
+      await expect(row).toBeVisible();
+      await page
+        .getByRole("link", { name: "Automations", exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/agents\/automations/);
+      await expect.poll(() => automationsHeld).toBe(true);
+      releaseFailure();
+      await expect(row).toHaveCount(0);
+      releaseAutomations();
+      await expect(
+        page.getByRole("heading", { name: "Automations", level: 1 }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Could not start the Robin agent", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("Startup failed after navigation", { exact: true }),
+      ).toBeVisible();
+      await expect(page).toHaveURL(/\/agents\/automations/);
+    } finally {
+      releaseFailure();
+      releaseAutomations();
+    }
+  });
+
+  test("keeps the newer chat open when an older startup finishes last", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    await page.goto("/agents");
+    await dismissOnboardingIfShown(page);
+    let releaseOlder: () => void = () => {};
+    const olderReleased = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    let olderId = "";
+    await page.route("**/dashboard/api/threads/*/commands", async (route) => {
+      if (!olderId) {
+        olderId =
+          new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+        await olderReleased;
+      }
+      await route.continue();
+    });
+    try {
+      await typeIntoComposer(
+        page,
+        "The older startup must not steal navigation.",
+      );
+      await expect.poll(() => olderId).not.toBe("");
+      const olderRow = page
+        .getByRole("complementary")
+        .locator(`a[href="/agents/${olderId}"]`);
+      await olderRow.click();
+      await page.getByRole("link", { name: "New", exact: true }).click();
+      await typeIntoComposer(page, "Keep the newer chat open.");
+      await expect(page).toHaveURL(/\/agents\/[0-9a-f-]{36}$/);
+      const newerId = threadIdFromUrl(page);
+      expect(newerId).not.toBe(olderId);
+      await expect(
+        page
+          .getByTestId("user-message")
+          .filter({ hasText: "Keep the newer chat open." }),
+      ).toBeVisible();
+      releaseOlder();
+      await expect(
+        olderRow.getByRole("img", { name: "Starting chat" }),
+      ).toHaveCount(0);
+      await expect(olderRow).toHaveCount(1);
+      await expect(page).toHaveURL(new RegExp(`/agents/${newerId}$`));
+      await olderRow.click();
+      await expect(
+        page
+          .getByTestId("user-message")
+          .filter({ hasText: "The older startup must not steal navigation." }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("complementary").locator(`a[href="/agents/${newerId}"]`),
+      ).toHaveCount(1);
+    } finally {
+      releaseOlder();
+    }
+  });
+
+  test("recovers when deferred Stop fails and retries from the accepted chat", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await loginAs(page, SAME_USER);
+    await page.goto("/agents");
+    await dismissOnboardingIfShown(page);
+    let releaseStart: () => void = () => {};
+    const startReleased = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    let releaseSidebar: () => void = () => {};
+    const sidebarReleased = new Promise<void>((resolve) => {
+      releaseSidebar = resolve;
+    });
+    let threadId = "";
+    let cancellations = 0;
+    await page.route("**/dashboard/api/threads/*/commands", async (route) => {
+      threadId =
+        new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+      await startReleased;
+      await route.continue();
+    });
+    await page.route("**/dashboard/api/threads/*/cancel", async (route) => {
+      cancellations++;
+      if (cancellations === 1)
+        await route.fulfill({
+          status: 503,
+          json: { detail: "Stop temporarily unavailable" },
+        });
+      else await route.continue();
+    });
+    await page.route(
+      /\/dashboard\/api\/threads\/(page|pinned|repos)(\?|$)/,
+      async (route) => {
+        await sidebarReleased;
+        await route.continue();
+      },
+    );
+    try {
+      const prompt = "E2E_BUSY_HOLD:30 retry Stop after startup.";
+      await typeIntoComposer(page, prompt);
+      await expect.poll(() => threadId).not.toBe("");
+      const row = page
+        .getByRole("complementary")
+        .locator(`a[href="/agents/${threadId}"]`);
+      await row.click();
+      await page.getByRole("button", { name: "Stop run" }).click();
+      await expect(
+        page.getByText("Stopping after startup…", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        row.getByRole("img", { name: "Stopping after startup" }),
+      ).toBeVisible();
+      expect(cancellations).toBe(0);
+      await test.info().attach("stopping-before-acceptance", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+      releaseStart();
+      await expect(
+        page.getByText("Could not stop the new chat", { exact: true }),
+      ).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/agents/${threadId}$`));
+      await expect(
+        row.getByRole("img", { name: "Stopping after startup" }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByTestId("user-message").filter({ hasText: prompt }),
+      ).toBeVisible();
+      await expect(page.getByTestId("composer-editor")).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+      await expect(
+        page.getByRole("button", { name: "Stop run" }),
+      ).toBeVisible();
+      await test.info().attach("accepted-after-stop-failure", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+      await page
+        .getByRole("button", { name: "Close toast", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Stop run" }).click();
+      await expect.poll(() => cancellations).toBe(2);
+      await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(
+        0,
+      );
+      await waitForThreadIdle(page, threadId);
+      await expect(row).toHaveCount(1);
+      await expect(
+        row.getByRole("img", { name: "Thread running" }),
+      ).toHaveCount(0);
+    } finally {
+      releaseStart();
+      releaseSidebar();
+    }
+  });
+
+  test("keeps an early-listed pinned startup navigation-only until acceptance", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await loginAs(page, SAME_USER);
+    await openThreadViaSlackLink(page);
+    const existingId = threadIdFromUrl(page);
+    const sidebar = page.getByRole("complementary");
+    const existingRow = sidebar.locator(`a[href="/agents/${existingId}"]`);
+    await existingRow.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+    const pinned = sidebar.locator("section").filter({
+      has: page.getByRole("button", { name: "Pinned", exact: true }),
+    });
+    await expect(
+      pinned.locator(`a[href="/agents/${existingId}"]`),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "New", exact: true }).click();
+    await dismissOnboardingIfShown(page);
+    let releaseStart: () => void = () => {};
+    const startReleased = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    let threadId = "";
+    let pinnedOnServer = false;
+    await page.route("**/dashboard/api/threads/*/commands", async (route) => {
+      threadId =
+        new URL(route.request().url()).pathname.split("/").at(-2) ?? "";
+      const response = await route.fetch();
+      const pin = await page.request.post(
+        `/dashboard/api/threads/${threadId}/pin`,
+        {
+          headers: { origin: new URL(route.request().url()).origin },
+        },
+      );
+      expect(pin.ok()).toBeTruthy();
+      pinnedOnServer = true;
+      await startReleased;
+      await route.fulfill({ response });
+    });
+    let reorders = 0;
+    await page.route("**/dashboard/api/threads/pinned/order", async (route) => {
+      reorders++;
+      await route.continue();
+    });
+    try {
+      await expect(
+        page.getByRole("heading", { name: "What should we work on?" }),
+      ).toBeVisible();
+      await typeIntoComposer(
+        page,
+        "Keep this pinned chat safe before acceptance.",
+      );
+      await expect.poll(() => threadId).not.toBe("");
+      await expect.poll(() => pinnedOnServer).toBe(true);
+      await existingRow.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
+      await existingRow.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+      const pendingRow = pinned.locator(`a[href="/agents/${threadId}"]`);
+      await expect(pendingRow).toBeVisible();
+      await expect(
+        sidebar.locator(`a[href="/agents/${threadId}"]`),
+      ).toHaveCount(1);
+      await expect(
+        pendingRow.getByRole("img", { name: "Starting chat" }),
+      ).toBeVisible();
+      await expect(pendingRow).not.toHaveAttribute("data-selectable-thread");
+      await expect(pendingRow.locator("..").locator("..")).not.toHaveAttribute(
+        "draggable",
+        "true",
+      );
+      await pendingRow.press("Alt+ArrowDown");
+      await existingRow.press("Alt+ArrowUp");
+      expect(reorders).toBe(0);
+      await pendingRow.click();
+      await expect(page).toHaveURL(new RegExp(`/agents/${threadId}$`));
+      await expect(page.getByText("1 selected", { exact: true })).toHaveCount(
+        0,
+      );
+      await expect(
+        page.getByRole("button", { name: "Stop run" }),
+      ).toBeVisible();
+      await test.info().attach("pinned-before-acceptance", {
+        body: await page.screenshot(),
+        contentType: "image/png",
+      });
+      releaseStart();
+      await expect(
+        pendingRow.getByRole("img", { name: "Starting chat" }),
+      ).toHaveCount(0);
+      await expect(pendingRow).toHaveAttribute(
+        "data-selectable-thread",
+        threadId,
+      );
+      await existingRow.press("Alt+ArrowUp");
+      await expect.poll(() => reorders).toBe(1);
+      await expect(
+        sidebar.locator(`a[href="/agents/${threadId}"]`),
+      ).toHaveCount(1);
+    } finally {
+      releaseStart();
+    }
   });
 
   test("shows a sent Slack message before the tool call that follows it", async ({
@@ -267,7 +1064,7 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     ).toBe(true);
   });
 
-  test("keeps the live activity row below a Slack reply sent mid-run", async ({
+  test("keeps live and settled work ordered between Slack replies", async ({
     page,
   }) => {
     await loginAs(page, SAME_USER);
@@ -281,16 +1078,6 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
       page.getByText("Found the cause.", { exact: true }),
       page.getByRole("button", { name: /^Running · sleep 10 · 1 action$/ }),
     ]);
-  });
-
-  test("folds each stretch of settled work between its replies", async ({
-    page,
-  }) => {
-    await loginAs(page, SAME_USER);
-    await page.request.post("/control/reset");
-    const threadId = await sendSegmentedReplies(page);
-
-    await page.goto(`/agents/${threadId}`);
     await expect(page.getByText("Fixed it.", { exact: true })).toBeVisible({
       timeout: 60_000,
     });
@@ -339,6 +1126,7 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
       .getByTestId("queued-message")
       .filter({ hasText: queuedText });
     await expect(queuedMessage).toBeVisible();
+    await expect(queuedMessage).toHaveAttribute("data-queued-pending", "false");
     await page.reload();
     await expect(queuedMessage).toBeVisible();
     const screenshotPath = testInfo.outputPath("queued-messages-dashboard.png");
@@ -428,7 +1216,7 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
       ).toHaveLength(1);
     };
 
-    const editor = page.getByTestId("composer-editor");
+    const editor = await readyComposerEditor(page);
     await editor.focus();
     await editor.pressSequentially("first sender payload message");
     await editor.press("Enter");
@@ -499,11 +1287,17 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     page,
   }) => {
     await loginAs(page, SAME_USER);
+    await page.route("**/dashboard/api/options", (route) =>
+      route.fulfill({ status: 503, json: { detail: "Options unavailable" } }),
+    );
     await page.goto("/agents");
     await dismissOnboardingIfShown(page);
+    await expect(
+      page.getByText("Could not load model settings. Reload to try again."),
+    ).toBeVisible();
 
     const prompt = "Reproduce the new chat send experience";
-    const editor = page.getByTestId("composer-editor");
+    const editor = await readyComposerEditor(page);
     await editor.click();
     await editor.pressSequentially(prompt);
     await page.evaluate((submittedPrompt) => {
@@ -687,7 +1481,7 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     ).toBeVisible({ timeout: 30_000 });
   });
 
-  test("previews each collapsed reasoning block on its brain-icon toggle", async ({
+  test("previews each collapsed reasoning block on its toggle", async ({
     page,
   }) => {
     await loginAs(page, SAME_USER);
@@ -730,7 +1524,15 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
   test("stops a Slack-started run from the web app", async ({ page }) => {
     await loginAs(page, SAME_USER);
     await page.goto("/mock/slack");
-    await page.locator("#reset").click();
+    const [reset] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/control/reset",
+      ),
+      page.locator("#reset").click(),
+    ]);
+    expect(reset.ok()).toBeTruthy();
 
     const send = await page.request.post("/mock/slack/send", {
       data: {
@@ -773,7 +1575,15 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
   test("stops a run with Escape from inside the composer", async ({ page }) => {
     await loginAs(page, SAME_USER);
     await page.goto("/mock/slack");
-    await page.locator("#reset").click();
+    const [reset] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/control/reset",
+      ),
+      page.locator("#reset").click(),
+    ]);
+    expect(reset.ok()).toBeTruthy();
 
     const send = await page.request.post("/mock/slack/send", {
       data: {
@@ -853,6 +1663,294 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     ).toBeVisible();
   });
 
+  test("shows each sidebar section once earlier sections have settled", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    const id = "75000000-0000-4000-8000-000000000001";
+    const now = Date.now();
+    await page.request.delete(`/threads/${id}`);
+    const created = await page.request.post("/threads", {
+      data: {
+        thread_id: id,
+        if_exists: "raise",
+        metadata: {
+          owner_login: SAME_USER.login,
+          participant_logins: { [SAME_USER.login]: true },
+          title: "Sidebar pinned thread",
+          source: "dashboard",
+          origin: "dashboard",
+          thread_category: "interactive",
+          trigger_kind: "user",
+          created_at_ms: now,
+          updated_at_ms: now,
+        },
+      },
+    });
+    expect(created.ok()).toBeTruthy();
+    const pin = await page.request.post(`/dashboard/api/threads/${id}/pin`, {
+      headers: { origin: new URL(created.url()).origin },
+    });
+    expect(pin.ok()).toBeTruthy();
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "open-swe.agents.sidebar-prefs",
+        JSON.stringify({ organize: "date", collapsedSectionKeys: ["pinned"] }),
+      );
+    });
+    let releaseRecents = () => {};
+    let releasePlugins = () => {};
+    let releasePinned = () => {};
+    const heldRecents = new Promise<void>((resolve) => {
+      releaseRecents = resolve;
+    });
+    const heldPlugins = new Promise<void>((resolve) => {
+      releasePlugins = resolve;
+    });
+    const heldPinned = new Promise<void>((resolve) => {
+      releasePinned = resolve;
+    });
+    await page.route("**/dashboard/api/threads/page?*", async (route) => {
+      await heldRecents;
+      await route.continue();
+    });
+    await page.route("**/dashboard/api/threads/pinned", async (route) => {
+      await heldPinned;
+      await route.continue();
+    });
+    await page.route("**/dashboard/api/plugins", async (route) => {
+      await heldPlugins;
+      await route.continue();
+    });
+    try {
+      await page.goto("/agents", { waitUntil: "commit" });
+      const pinned = page.getByText("Sidebar pinned thread");
+      const pinnedHeader = page.getByRole("button", {
+        name: "Pinned",
+        exact: true,
+      });
+      const recents = page.getByRole("status", {
+        name: "Loading recent threads",
+      });
+      await expect(
+        page.getByRole("status", { name: "Loading apps" }),
+      ).toBeVisible();
+      await expect(pinnedHeader).toBeHidden();
+      await expect(recents).toBeHidden();
+      releasePlugins();
+      await expect(pinnedHeader).toBeVisible();
+      await expect(recents).toBeHidden();
+      releasePinned();
+      await expect(recents).toBeVisible();
+      await pinnedHeader.click();
+      await expect(pinned).toBeVisible();
+      const pinnedY = (await pinned.boundingBox())!.y;
+      releaseRecents();
+      await expect(recents).toBeHidden();
+      expect((await pinned.boundingBox())!.y).toBe(pinnedY);
+    } finally {
+      releaseRecents();
+      releasePlugins();
+      releasePinned();
+      await page.request.delete(`/threads/${id}`);
+    }
+  });
+
+  test("keeps navigation in place when the concierge profile loads", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    const threadId = "75000000-0000-4000-8000-000000000021";
+    await page.request.delete(`/threads/${threadId}`);
+    await page.request.post("/threads", {
+      data: {
+        thread_id: threadId,
+        metadata: {
+          owner_login: SAME_USER.login,
+          title: "Concierge navigation",
+          concierge: true,
+        },
+      },
+    });
+    await page.route("**/dashboard/api/slack/concierge", (route) =>
+      route.fulfill({ json: { thread_id: threadId, channel_id: "DTEST" } }),
+    );
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/dashboard/api/profile", async (route) => {
+      const response = await route.fetch();
+      const profile = (await response.json()) as Record<string, unknown>;
+      await held;
+      await route.fulfill({
+        response,
+        json: { ...profile, concierge_mode: true },
+      });
+    });
+    try {
+      await page.goto("/agents", { waitUntil: "commit" });
+      const newThread = page.getByRole("link", { name: "New", exact: true });
+      const navigation = page.getByRole("link", {
+        name: "Automations",
+        exact: true,
+      });
+      await expect(newThread).toBeVisible();
+      await expect(navigation).toBeHidden();
+      const newThreadY = (await newThread.boundingBox())!.y;
+      release();
+      await expect(page.getByText("Concierge", { exact: true })).toBeVisible();
+      await expect(navigation).toBeVisible();
+      expect((await newThread.boundingBox())!.y).toBe(newThreadY);
+      const documentRequests: string[] = [];
+      page.on("request", (request) => {
+        if (
+          request.isNavigationRequest() &&
+          request.frame() === page.mainFrame()
+        ) {
+          documentRequests.push(request.url());
+        }
+      });
+      await page.getByRole("link", { name: "Concierge", exact: true }).click();
+      await expect(page).toHaveURL(`/agents/${threadId}`);
+      await expect(newThread).toBeVisible();
+      expect(documentRequests).toEqual([]);
+      expect((await newThread.boundingBox())!.y).toBe(newThreadY);
+    } finally {
+      release();
+      await page.request.delete(`/threads/${threadId}`);
+    }
+  });
+
+  test("keeps later project folders hidden until earlier folders load", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    const ids = [
+      "75000000-0000-4000-8000-000000000011",
+      "75000000-0000-4000-8000-000000000012",
+    ];
+    const names = ["sidebar-first-folder", "sidebar-second-folder"];
+    for (const [index, id] of ids.entries()) {
+      await page.request.delete(`/threads/${id}`);
+      const created = await page.request.post("/threads", {
+        data: {
+          thread_id: id,
+          if_exists: "raise",
+          metadata: {
+            owner_login: SAME_USER.login,
+            participant_logins: { [SAME_USER.login]: true },
+            title: names[index],
+            source: "dashboard",
+            origin: "dashboard",
+            thread_category: "interactive",
+            trigger_kind: "user",
+            repo_owner: "acme",
+            repo_name: names[index],
+            created_at_ms: Date.now() + (1 - index) * 1000,
+            updated_at_ms: Date.now() + (1 - index) * 1000,
+          },
+        },
+      });
+      expect(created.ok()).toBeTruthy();
+    }
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "open-swe.agents.sidebar-prefs",
+        JSON.stringify({
+          organize: "repo",
+          pinnedRepoKeys: [
+            "repo:acme/sidebar-first-folder",
+            "repo:acme/sidebar-second-folder",
+          ],
+        }),
+      );
+    });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/dashboard/api/threads/page?*", async (route) => {
+      if (
+        new URL(route.request().url()).searchParams.get("repo") ===
+        "acme/sidebar-first-folder"
+      ) {
+        await held;
+      }
+      await route.continue();
+    });
+    try {
+      await page.goto("/agents", { waitUntil: "commit" });
+      const first = page.getByRole("button", { name: names[0], exact: true });
+      const second = page.getByRole("button", { name: names[1], exact: true });
+      await expect(first).toBeVisible();
+      await expect(
+        page.getByRole("status", { name: `Loading chats in ${names[0]}` }),
+      ).toBeVisible();
+      await expect(second).toBeHidden();
+      const firstY = (await first.boundingBox())!.y;
+      release();
+      await expect(second).toBeVisible();
+      expect((await first.boundingBox())!.y).toBe(firstY);
+    } finally {
+      release();
+      for (const id of ids) await page.request.delete(`/threads/${id}`);
+    }
+  });
+
+  test("keeps the active chat visible while its project loads", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    const id = "75000000-0000-4000-8000-000000000002";
+    await page.request.delete(`/threads/${id}`);
+    const now = Date.now();
+    const created = await page.request.post("/threads", {
+      data: {
+        thread_id: id,
+        if_exists: "raise",
+        metadata: {
+          owner_login: SAME_USER.login,
+          participant_logins: { [SAME_USER.login]: true },
+          title: "Sidebar active thread",
+          source: "dashboard",
+          origin: "dashboard",
+          thread_category: "interactive",
+          trigger_kind: "user",
+          repo_owner: "acme",
+          repo_name: "sidebar-loading",
+          created_at_ms: now,
+          updated_at_ms: now,
+        },
+      },
+    });
+    expect(created.ok()).toBeTruthy();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/dashboard/api/threads/page?*", async (route) => {
+      if (new URL(route.request().url()).searchParams.has("repo")) await held;
+      await route.continue();
+    });
+    try {
+      await page.goto(`/agents/${id}`, { waitUntil: "commit" });
+      await expect(
+        page.getByRole("status", { name: "Loading chats in sidebar-loading" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: /Sidebar active thread/ }).first(),
+      ).toBeVisible();
+      release();
+      await expect(
+        page.getByRole("status", { name: "Loading chats in sidebar-loading" }),
+      ).toBeHidden();
+    } finally {
+      release();
+      await page.request.delete(`/threads/${id}`);
+    }
+  });
+
   // A slow sidebar used to render as a blank column, indistinguishable from an
   // account with no threads.
   test("shows a loading placeholder while the sidebar list is in flight", async ({
@@ -866,23 +1964,23 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     });
     await page.route("**/dashboard/api/threads/page?*", async (route) => {
       const params = new URL(route.request().url()).searchParams;
-      if (params.get("resolved") === "false" && params.get("limit") === "10") {
+      if (params.get("ownerless") === "true" && params.get("limit") === "25") {
         await held;
       }
       await route.continue();
     });
 
-    // The held request would block `load`, so stop waiting at the first byte.
-    await page.goto("/agents", { waitUntil: "commit" });
-
-    const skeleton = page.locator(
-      "[data-testid=sidebar-threads-skeleton]:visible",
-    );
-    await expect(skeleton).toBeVisible({ timeout: 30_000 });
-    await expect(skeleton.getByRole("status")).toContainText("Loading threads");
-
-    release();
-    await expect(skeleton).toBeHidden({ timeout: 30_000 });
+    try {
+      await page.goto("/agents", { waitUntil: "commit" });
+      const skeleton = page.getByRole("status", {
+        name: "Loading recent threads",
+      });
+      await expect(skeleton).toBeVisible({ timeout: 30_000 });
+      release();
+      await expect(skeleton).toBeHidden({ timeout: 30_000 });
+    } finally {
+      release();
+    }
   });
 
   // A persisted filter makes the "no matches" branch true before any data has
@@ -894,7 +1992,10 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     await page.addInitScript(() => {
       localStorage.setItem(
         "open-swe.agents.sidebar-prefs",
-        JSON.stringify({ filters: { sources: ["slack"] } }),
+        JSON.stringify({
+          organize: "date",
+          filters: { sources: ["slack"] },
+        }),
       );
     });
 
@@ -902,37 +2003,35 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    await page.route("**/dashboard/api/threads/pinned", (route) =>
+      route.fulfill({ json: [] }),
+    );
     await page.route("**/dashboard/api/threads/page?*", async (route) => {
       const params = new URL(route.request().url()).searchParams;
-      if (params.get("resolved") === "false" && params.get("limit") === "10") {
+      if (params.get("resolved") === "false" && params.get("limit") === "25") {
         await held;
+        await route.fulfill({ json: { items: [], limit: 25, offset: 0 } });
+      } else {
+        await route.continue();
       }
-      await route.continue();
     });
 
-    const sidebarRequest = page.waitForRequest((request) => {
-      const url = new URL(request.url());
-      return (
-        url.pathname === "/dashboard/api/threads/page" &&
-        url.searchParams.get("resolved") === "false" &&
-        url.searchParams.get("limit") === "10"
-      );
-    });
-    await page.goto("/agents", { waitUntil: "commit" });
-
-    const skeleton = page.locator(
-      "[data-testid=sidebar-threads-skeleton]:visible",
-    );
-    await expect(skeleton).toBeVisible({ timeout: 30_000 });
-
-    await sidebarRequest;
-
-    await expect(skeleton).toBeVisible();
-    await expect(page.getByText("No threads match these filters.")).toHaveCount(
-      0,
-    );
-
-    release();
+    try {
+      await page.goto("/agents", { waitUntil: "commit" });
+      const skeleton = page.getByRole("status", {
+        name: "Loading recent threads",
+      });
+      await expect(skeleton).toBeVisible({ timeout: 30_000 });
+      await expect(
+        page.getByText("No threads match these filters."),
+      ).toHaveCount(0);
+      release();
+      await expect(
+        page.getByText("No threads match these filters."),
+      ).toBeVisible();
+    } finally {
+      release();
+    }
   });
 });
 

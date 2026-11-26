@@ -17,7 +17,6 @@ from openswe.reviewer import (
     ReviewerModelChoice,
     ensure_reviewer_sandbox_for_thread,
 )
-from openswe.run_config import RunConfig
 from openswe.sandboxes.lifecycle import SANDBOX_BACKENDS, ensure_sandbox_for_thread
 from openswe.sandboxes.providers.registry import SandboxGoneError
 from openswe.sandboxes.state import (
@@ -58,7 +57,7 @@ async def test_an_old_sandbox_that_cannot_be_reached_is_handed_to_mda_or_fails(
             side_effect=failure,
         ),
         patch(
-            "openswe.sandboxes.lifecycle.client.threads.update", new_callable=AsyncMock
+            "openswe.sandboxes.lifecycle.THREADS.update", new_callable=AsyncMock
         ) as update_thread,
         pytest.raises(SandboxUnreachableError) as excinfo,
     ):
@@ -85,12 +84,11 @@ async def test_an_abandoned_cached_sandbox_is_forgotten() -> None:
             return_value={"sandbox_id": "sandbox-cached-dead"},
         ),
         patch(
-            "openswe.sandboxes.lifecycle._refresh_github_proxy",
+            "openswe.sandboxes.lifecycle.configure_git_identity",
             new_callable=AsyncMock,
             side_effect=SandboxClientError("sandbox is gone"),
         ),
-        patch("openswe.sandboxes.lifecycle.configure_git_identity", new_callable=AsyncMock),
-        patch("openswe.sandboxes.lifecycle.client.threads.update", new_callable=AsyncMock),
+        patch("openswe.sandboxes.lifecycle.THREADS.update", new_callable=AsyncMock),
         pytest.raises(SandboxUnreachableError),
     ):
         await ensure_sandbox_for_thread(thread_id, abandon_unreachable=True)
@@ -109,10 +107,7 @@ async def test_reviewer_opts_into_abandoning_an_unreachable_sandbox() -> None:
         new_callable=AsyncMock,
         return_value=sandbox_backend,
     ) as ensure:
-        result = await ensure_reviewer_sandbox_for_thread(
-            "thread-reviewer",
-            RunConfig.parse({"repo": {"owner": "langchain-ai", "name": "open-swe"}}),
-        )
+        result = await ensure_reviewer_sandbox_for_thread("thread-reviewer")
 
     assert result is sandbox_backend
     assert ensure.await_args is not None
@@ -128,7 +123,6 @@ async def test_reviewer_says_whether_its_next_run_gets_a_fresh_sandbox(handed_ov
     middleware = PrepareReviewerRunMiddleware(
         thread_id="thread-reviewer",
         config=config,
-        use_gateway=False,
         model=ReviewerModelChoice("openai:gpt-6.1-sol", {}, None),
     )
 

@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from runtime_api.provenance import Provenance
 
 from openswe.audit_logs.tools import audit_tool
-from openswe.claude_code.hooks import mirror_thread_id
 from openswe.dashboard.admin import is_admin
 from openswe.dashboard.oauth import enforce_github_login_gate
 from openswe.dashboard.options import SUPPORTED_MODEL_IDS, model_supports_effort
@@ -57,6 +56,7 @@ from openswe.threads.workflow_approval import (
     workflow_push_approval_responses,
 )
 from openswe.tools.mcp_exposure import expose_mcp
+from openswe.trace_metadata import RunOrigin
 from openswe.users import User
 from openswe.utils.dashboard_handoff import RELAY_RUN_ID_KEY, RELAYED_FROM_KEY
 from openswe.utils.dashboard_links import (
@@ -79,6 +79,7 @@ logger = logging.getLogger(__name__)
 ThreadScope = Literal["all", "interactive", "automation"]
 ThreadAction = Literal[
     "send_message",
+    "rename",
     "cancel",
     "admin_cancel",
     "resolve",
@@ -139,20 +140,6 @@ class _Actor:
             and ThreadIdentity(self.login).github_login is not None
             and is_admin(self.email, login=self.login)
         )
-
-    async def mirror_of(self, session_id: str) -> tuple[str, Mapping[str, Any]] | None:
-        """The thread mirroring this person's Claude Code session, if it has one."""
-        owner = await User.for_login("github", self.login)
-        if owner is None:
-            return None
-        thread_id = mirror_thread_id(owner.id, session_id)
-        try:
-            summary = await get_dashboard_thread(thread_id, self.login, email=self.email)
-        except HTTPException as exc:
-            if exc.status_code == 404:
-                return None
-            raise
-        return thread_id, summary
 
 
 def _config() -> dict[str, Any]:
@@ -265,8 +252,6 @@ def _list_item(item: Mapping[str, Any], *, locator: str | None = None) -> dict[s
     result = dict(item)
     result.pop("messages", None)
     result.pop("sandboxId", None)
-    result.pop("sandboxBridgeClient", None)
-    result.pop("sandboxBridgeOnline", None)
     result["webUrl"] = _web_link(item)
     langsmith = _langsmith_identifiers(item.get("traceUrl"), locator)
     if any(value is not None for value in langsmith.values()):
@@ -294,7 +279,7 @@ async def _compact_list_item(item: Mapping[str, object]) -> dict[str, object]:
     )
     thread_id = item.get("id")
     if outcome is None and isinstance(thread_id, str):
-        thread_state = await THREADS.state(thread_id)
+        thread_state = await THREADS.state(thread_id, select=["values.messages"])
         outcome = _last_assistant_outcome(_state_messages(thread_state))
     result["final_message"] = outcome[:500] if outcome else None
     return result
@@ -867,18 +852,15 @@ async def _authorized_locator(
     except HTTPException as exc:
         if exc.status_code != 404 or langsmith_locator or not _looks_uuid(locator):
             raise
-        if mirror := await actor.mirror_of(locator):
-            thread_id, summary = mirror
-        else:
-            resolved = await get_open_swe_thread_id_from_langsmith(locator)
-            if not resolved or resolved == thread_id:
-                raise
-            thread_id = resolved
-            summary = await get_dashboard_thread(
-                thread_id,
-                actor.login,
-                email=actor.email,
-            )
+        resolved = await get_open_swe_thread_id_from_langsmith(locator)
+        if not resolved or resolved == thread_id:
+            raise
+        thread_id = resolved
+        summary = await get_dashboard_thread(
+            thread_id,
+            actor.login,
+            email=actor.email,
+        )
     if (
         summary.get("visibility") == "private"
         and not admin_override
@@ -934,7 +916,7 @@ def _available_actions(
         actions.append("add_plan_comment")
     if can_delete_plan_comment:
         actions.append("delete_plan_comment")
-    actions.extend(["mark_read", "mark_unread"])
+    actions.extend(["rename", "mark_read", "mark_unread"])
     actions.append("unresolve" if resolved else "resolve")
     if running:
         actions.append("cancel")
@@ -992,6 +974,12 @@ async def get_thread(
         # LangGraph run instead — count it too.
         queued_count += len(pending_runs_task.result())
     except HTTPException as exc:
+        if exc.status_code == 404:
+            return _failure(
+                "thread not found or inaccessible; the ID may be wrong, or the thread "
+                "may be private or otherwise unavailable to you",
+                status_code=404,
+            )
         return _http_failure(exc)
     except Exception:
         logger.exception("Could not load thread %s", thread_id)
@@ -1088,13 +1076,15 @@ async def _send_message(
             "config": {"configurable": configurable},
         },
     }
-    caller_thread_id = as_json_object(_config().get("configurable")).get("thread_id")
+    caller = RunConfig.from_config(_config())
+    caller_thread_id = caller.thread_id
     status_code, content, _ = await proxy_dashboard_thread_commands(
         thread_id,
         actor.login,
         json.dumps(command).encode(),
         email=actor.email,
-        relayed_from=caller_thread_id if isinstance(caller_thread_id, str) else None,
+        relayed_from=caller_thread_id,
+        relayed_origin=RunOrigin.resolve(caller.origin, fallback=caller.source),
     )
     try:
         reply = _CommandReply.model_validate_json(content or b"{}")
@@ -1152,6 +1142,7 @@ def _unexpected_action_arguments(
     action: str,
     *,
     message: str | None,
+    title: str | None,
     comment: str | None,
     comment_id: str | None,
     content: str | None,
@@ -1162,6 +1153,7 @@ def _unexpected_action_arguments(
 ) -> list[str]:
     allowed = {
         "send_message": {"message", "model_id", "effort"},
+        "rename": {"title"},
         "cancel": set(),
         "admin_cancel": set(),
         "resolve": set(),
@@ -1177,6 +1169,7 @@ def _unexpected_action_arguments(
         key
         for key, value in {
             "message": message,
+            "title": title,
             "comment": comment,
             "comment_id": comment_id,
             "content": content,
@@ -1244,6 +1237,7 @@ async def manage_thread(
     fingerprint: str | None = None,
     model_id: str | None = None,
     effort: str | None = None,
+    title: str | None = None,
     state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> dict[str, Any]:
     """Implement the `manage_thread` tool."""
@@ -1256,6 +1250,7 @@ async def manage_thread(
     unexpected = _unexpected_action_arguments(
         action,
         message=message,
+        title=title,
         comment=comment,
         comment_id=comment_id,
         content=content,
@@ -1303,6 +1298,13 @@ async def manage_thread(
                 model_id=model_id,
                 effort=effort,
             )
+        if action == "rename":
+            try:
+                body = thread_routes.ThreadRenameBody(title=title or "")
+            except ValidationError:
+                return _failure(f"title must be between 1 and {_MAX_TITLE_CHARS} characters")
+            thread = await thread_routes.api_rename_thread(thread_id, body, session=actor.session)
+            return {"success": True, "thread": _list_item(thread)}
         if action == "cancel":
             thread = await cancel_dashboard_thread(thread_id, actor.login, email=actor.email)
             return {"success": True, "thread": _list_item(thread)}

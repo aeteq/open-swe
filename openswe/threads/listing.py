@@ -9,9 +9,9 @@ from typing import Any, Literal
 from fastapi import HTTPException
 from langgraph_sdk.client import LangGraphClient
 from langgraph_sdk.errors import NotFoundError
-from langgraph_sdk.schema import ThreadSelectField
 from pydantic import BaseModel, Field, model_validator
 
+from openswe.database import postgres
 from openswe.projects.store import NO_PROJECTS, PROJECT_ID_KEY, PROJECTS, ProjectFiling
 from openswe.review.session import ReviewSessionMetadata
 from openswe.slack.client import parse_github_pr_url, parse_slack_thread_url
@@ -20,6 +20,7 @@ from openswe.slack.routed_work import RoutedWork
 from openswe.source_context import SourceContext
 from openswe.tasks.store import SidebarTaskMembership, sidebar_memberships
 from openswe.threads import index
+from openswe.threads.identity import ThreadIdentity
 from openswe.threads.pins import list_thread_pin_ids, pin_thread, unpin_thread
 from openswe.threads.read_state import THREAD_READ_STATES
 from openswe.threads.store import THREADS
@@ -48,18 +49,17 @@ from openswe.threads.summary import (
     thread_updated_ms,
 )
 from openswe.transcript.subagents import attach_subagents
+from openswe.users import User
 from openswe.users.records import UserRecords
 from openswe.utils.json_types import JsonObject, ThreadLike, as_thread_dict
 from openswe.utils.search import FuzzySearch
 from openswe.utils.thread_ops import langgraph_client
 from openswe.utils.thread_participants import participant_search_filters
 from openswe.walkthrough.record import Walkthrough
-from openswe.workspaces.routing import workspace_for_repo
-from openswe.workspaces.store import DEFAULT_WORKSPACE_SLUG
 
 _THREADS_SEARCH_PAGE = 50
 _THREADS_PAGE_SCAN_CAP = 5000
-_THREAD_LIST_SELECT: list[ThreadSelectField] = [
+_THREAD_LIST_SELECT: list[index.SelectField] = [
     "thread_id",
     "status",
     "metadata",
@@ -233,7 +233,6 @@ def _search_metadata_filter(
 
 
 async def _search_threads_batch(
-    client: Any,
     metadata: JsonObject,
     *,
     limit: int,
@@ -246,25 +245,19 @@ async def _search_threads_batch(
     The thread index narrows to and ranks ``text`` matches in SQL; callers still
     match each thread exactly with :func:`_metadata_matches_filters`.
     """
-    if client is None:
-        return [
-            thread.as_langgraph()
-            for thread in await THREADS.search(
-                index.ThreadSearch(
-                    metadata=metadata, limit=limit, offset=offset, sort_by=sort_by, text=text
-                )
+    return [
+        thread.as_langgraph()
+        for thread in await THREADS.search(
+            index.ThreadSearch(
+                metadata=metadata,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                activity_order=sort_by == "updated_at",
+                text=text,
             )
-        ]
-    batch = await client.threads.search(
-        metadata=metadata,
-        limit=limit,
-        offset=offset,
-        sort_by=sort_by,
-        sort_order="desc",
-        select=_THREAD_LIST_SELECT,
-        params={"text": text} if text else None,
-    )
-    return [thread for thread in batch or [] if isinstance(thread, Mapping)]
+        )
+    ]
 
 
 def _search_rank(thread: ThreadLike) -> float:
@@ -466,6 +459,7 @@ async def _summarize_thread(
     *,
     viewer_login: str | None = None,
     read_states: Mapping[str, JsonObject] | None = None,
+    owner_ids: Mapping[str, str] | None = None,
     refresh_active_run: bool = True,
     minimal_run_update: bool = False,
 ) -> dict[str, Any]:
@@ -479,9 +473,10 @@ async def _summarize_thread(
         thread,
         latest_run_status=latest_run_status,
         latest_run_id=latest_run_id,
-        bridge_status=False,
         viewer_login=viewer_login,
         read_states=read_states,
+        owner_ids=owner_ids,
+        include_automation_capability=False,
     )
 
 
@@ -492,13 +487,33 @@ async def _summarize_threads(
     minimal_run_update: bool = False,
     viewer_login: str | None = None,
 ) -> list[dict[str, Any]]:
-    read_states = (
-        await THREAD_READ_STATES.for_threads(
-            viewer_login, [thread_id for thread in threads if (thread_id := _thread_id(thread))]
-        )
-        if viewer_login
-        else {}
-    )
+    owner_logins = {
+        login.lower()
+        for thread in threads
+        if (metadata := _thread_metadata(thread)).get("owner_type") != "system"
+        and _metadata_string(metadata, "owner_user_id") is None
+        and (login := _metadata_string(metadata, "owner_login"))
+        and ThreadIdentity(login).user_id is None
+    }
+    read_states = {}
+    owner_ids = {}
+    if threads and (viewer_login or owner_logins):
+        async with postgres.session() as session:
+            read_states = (
+                await THREAD_READ_STATES.for_threads(
+                    viewer_login,
+                    [thread_id for thread in threads if (thread_id := _thread_id(thread))],
+                    session=session,
+                )
+                if viewer_login
+                else {}
+            )
+            owner_ids = {
+                login: str(user.id)
+                for login, user in (
+                    await User.for_github_logins(owner_logins, session=session)
+                ).items()
+            }
     semaphore = asyncio.Semaphore(_RUN_REFRESH_CONCURRENCY)
 
     async def summarize(thread: ThreadLike) -> dict[str, Any]:
@@ -510,6 +525,7 @@ async def _summarize_threads(
                 minimal_run_update=minimal_run_update,
                 viewer_login=viewer_login,
                 read_states=read_states,
+                owner_ids=owner_ids,
             )
 
     summaries = list(await asyncio.gather(*(summarize(thread) for thread in threads)))
@@ -518,7 +534,6 @@ async def _summarize_threads(
 
 
 async def _readable_threads_by_id(
-    client: LangGraphClient,
     thread_ids: Sequence[str],
     login: str,
     email: str | None,
@@ -529,9 +544,8 @@ async def _readable_threads_by_id(
     threads_by_id: dict[str, ThreadLike] = {}
     for offset in range(0, len(thread_ids), _PINNED_THREADS_BATCH_SIZE):
         ids = thread_ids[offset : offset + _PINNED_THREADS_BATCH_SIZE]
-        for thread in await client.threads.search(
-            ids=list(ids), limit=len(ids), select=_THREAD_LIST_SELECT
-        ):
+        for indexed in await THREADS.search(index.ThreadSearch(ids=list(ids), limit=len(ids))):
+            thread = indexed.as_langgraph()
             metadata = _thread_metadata(thread)
             thread_id = _thread_id(thread)
             if (
@@ -588,36 +602,29 @@ async def attach_task_workers(
     filter_workers: Callable[[list[ThreadLike]], Awaitable[list[ThreadLike]]] | None = None,
 ) -> None:
     """Attach independently readable task children without recursively expanding them."""
-    semaphore = asyncio.Semaphore(_RUN_REFRESH_CONCURRENCY)
-
-    async def attach_waiting(summary: JsonObject) -> None:
-        summary["waitingForDelegatedWork"] = False
-        if summary.get("status") == "running" or not isinstance(
-            thread_id := summary.get("id"), str
-        ):
-            return
-        async with semaphore:
-            try:
-                summary["waitingForDelegatedWork"] = await RoutedWork(thread_id).delegated_active(
-                    prune=False
-                )
-            except Exception:
-                logger.exception(
-                    "Could not read delegated work status", extra={"thread_id": thread_id}
-                )
-
-    await asyncio.gather(*(attach_waiting(summary) for summary in summaries))
-    ids = [thread_id for summary in summaries if isinstance(thread_id := summary.get("id"), str)]
-    memberships = await sidebar_memberships(ids)
-    if not memberships:
-        return
-    coordinator_ids = [
-        key for key, membership in memberships.items() if membership.role == "coordinator"
+    waiting_ids = [
+        thread_id
+        for summary in summaries
+        if summary.get("status") != "running" and isinstance(thread_id := summary.get("id"), str)
     ]
-    children = await sidebar_memberships(coordinator_ids, workers_of=True)
+    try:
+        waiting = await RoutedWork.delegated_active_for(waiting_ids)
+    except Exception:
+        logger.exception("Could not read delegated work status")
+        waiting = {}
+    for summary in summaries:
+        summary["waitingForDelegatedWork"] = waiting.get(str(summary.get("id")), False)
+    ids = [thread_id for summary in summaries if isinstance(thread_id := summary.get("id"), str)]
+    async with postgres.session() as session:
+        memberships = await sidebar_memberships(ids, session=session)
+        if not memberships:
+            return
+        coordinator_ids = [
+            key for key, membership in memberships.items() if membership.role == "coordinator"
+        ]
+        children = await sidebar_memberships(coordinator_ids, workers_of=True, session=session)
     parent_ids = list({membership.coordinator_thread_id for membership in memberships.values()})
     related = await _readable_threads_by_id(
-        client,
         [*parent_ids, *children],
         login,
         email,
@@ -683,7 +690,6 @@ async def _task_hierarchy_page(
         if membership.role == "worker" and thread_id in matches
     }
     parents = await _readable_threads_by_id(
-        client,
         list(parent_ids),
         login,
         email,
@@ -811,11 +817,12 @@ async def _collect_thread_candidates(
             bot=bot,
             admin_threads=admin_threads,
         )
+        batch_limit = _THREADS_SEARCH_PAGE
         while offset < _THREADS_PAGE_SCAN_CAP:
+            batch_limit = min(batch_limit, _THREADS_PAGE_SCAN_CAP - offset)
             batch = await _search_threads_batch(
-                client,
                 metadata_filter,
-                limit=_THREADS_SEARCH_PAGE,
+                limit=batch_limit,
                 offset=offset,
                 sort_by=sort_by,
                 text=query,
@@ -901,7 +908,6 @@ async def _collect_thread_candidates(
                 } - checked_parents
                 readable_parents.update(
                     await _readable_threads_by_id(
-                        client,
                         list(parent_ids),
                         viewer_login or "",
                         viewer_email,
@@ -927,11 +933,13 @@ async def _collect_thread_candidates(
                 thread_id = str(_thread_id(thread))
                 matched_for_search.add(root_ids.get(thread_id, thread_id))
                 seen.setdefault(thread_id, thread)
-            if batch_size < _THREADS_SEARCH_PAGE:
+            if batch_size < batch_limit:
                 break
             if target_per_search is not None and len(matched_for_search) >= target_per_search:
                 break
-            offset += _THREADS_SEARCH_PAGE
+            offset += batch_limit
+            if not hierarchy or viewed is None and status is None:
+                batch_limit = min(batch_limit * 2, 1000)
     return sorted(
         seen.values(),
         key=lambda thread: (_search_rank(thread), _thread_timestamp_ms(thread, sort_by)),
@@ -942,12 +950,11 @@ async def _collect_thread_candidates(
 async def list_unresolved_dashboard_threads(
     login: str, *, email: str | None = None
 ) -> list[ThreadLike]:
-    client = langgraph_client()
     seen: dict[str, ThreadLike] = {}
     for metadata in _participant_search_filters(login, email=email):
         offset = 0
         while batch := await _search_threads_batch(
-            client, metadata, limit=_THREADS_SEARCH_PAGE, offset=offset
+            metadata, limit=_THREADS_SEARCH_PAGE, offset=offset
         ):
             for thread in batch:
                 thread_metadata = _thread_metadata(thread)
@@ -992,12 +999,10 @@ async def _pinned_thread_summaries(
     # state. Refresh idle metadata too: external runs and visibility can change.
     for offset in range(0, len(pin_ids), _PINNED_THREADS_BATCH_SIZE):
         batch_ids = pin_ids[offset : offset + _PINNED_THREADS_BATCH_SIZE]
-        threads = await client.threads.search(
-            ids=batch_ids,
-            limit=len(batch_ids),
-            select=_THREAD_LIST_SELECT,
-        )
-        for thread in threads:
+        for indexed in await THREADS.search(
+            index.ThreadSearch(ids=batch_ids, limit=len(batch_ids))
+        ):
+            thread = indexed.as_langgraph(_THREAD_LIST_SELECT)
             thread_id = _thread_id(thread)
             metadata = _thread_metadata(thread)
             slack_thread = SourceContext.from_metadata(metadata).slack_thread
@@ -1039,14 +1044,12 @@ async def list_dashboard_thread_repos(
     """The sidebar's folders: the viewer's projects and the repositories their other
     threads ran in, newest activity first.
 
-    Each entry names the workspace it belongs to so the sidebar can nest folders
-    under their workspace; an unassigned repository belongs to ``default``. A
-    project's entry carries its ``projectId`` and is listed even before it has a
+    A project's entry carries its ``projectId`` and is listed even before it has a
     thread.
     """
     filing = await PROJECTS.filing_for(login)
     candidates = await _collect_thread_candidates(
-        langgraph_client(),
+        None,
         _participant_search_filters(login, email=email, include_all=include_all),
         viewer_login=login,
         viewer_email=email,
@@ -1075,9 +1078,6 @@ async def list_dashboard_thread_repos(
                 "updatedAt": updated_at,
                 "projectId": None,
             }
-    for entry in repos.values():
-        owner, _, repo_name = str(entry["repoFullName"]).partition("/")
-        entry["workspace"] = await workspace_for_repo(owner, repo_name) or DEFAULT_WORKSPACE_SLUG
     folders = [
         *repos.values(),
         *(
@@ -1089,7 +1089,6 @@ async def list_dashboard_thread_repos(
                     int(project.updated_at.timestamp() * 1000),
                 ),
                 "projectId": project_id,
-                "workspace": project.workspace,
             }
             for project_id, project in filing.projects.items()
         ),

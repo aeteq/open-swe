@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  QueryClient,
+  QueryClientProvider,
+  onlineManager,
+} from "@tanstack/react-query"
 import { act, render, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -9,14 +13,20 @@ import { clearPerfSpans, getPerfSpans } from "@/lib/perf/trace"
 
 import { agentsApi } from "./api"
 import {
+  cloudSidebarThread,
+  groupSidebarThreadsByRecency,
+} from "./sidebarThreads"
+import {
   SIDEBAR_PAGE_SIZE,
   agentScheduleKeys,
   agentThreadKeys,
   markAgentThreadViewed,
   useSetAgentThreadViewed,
+  useShareThread,
   optimisticThread,
   setAgentThreadStatus,
   setAgentThreadResolved,
+  useActiveAgentThread,
   useAgentThread,
   useAgentThreadBrowser,
   useAgentThreadWorkingTreeDiff,
@@ -48,6 +58,12 @@ import type {
   WorkflowPushApproval,
   WorkflowPushApprovalsResponse,
 } from "./types"
+
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({
+    data: { user_id: "alice-id", auth_provider: "github" },
+  }),
+}))
 
 const params: ThreadsPageParams = {
   limit: 100,
@@ -413,6 +429,11 @@ describe("sidebar queries", () => {
         result.current.data?.every((thread) => thread.status === "finished")
       ).toBe(true)
     )
+    expect(listPins.mock.calls.map(([measure]) => measure)).toEqual([
+      true,
+      false,
+      false,
+    ])
     const calls = listPins.mock.calls.length
     await act(() => vi.advanceTimersByTimeAsync(6000))
     expect(listPins).toHaveBeenCalledTimes(calls)
@@ -459,6 +480,33 @@ describe("sidebar queries", () => {
     await waitFor(() => expect(result.current.pins.data).toEqual([]))
   })
 
+  it("does not measure background page polling", async () => {
+    vi.useFakeTimers()
+    const running = optimisticThread("running", { prompt: "Running" })
+    const listThreads = vi
+      .spyOn(agentsApi, "listThreadsPage")
+      .mockResolvedValue({
+        ...page,
+        items: [running],
+      })
+    const client = testClient()
+    const { result } = renderHook(
+      () => useSidebarRecents({ repoMode: false }),
+      {
+        wrapper: wrapperFor(client),
+      }
+    )
+    await vi.waitFor(() => expect(result.current.items).toHaveLength(1))
+    await act(() => vi.advanceTimersByTimeAsync(2000))
+    await vi.waitFor(() =>
+      expect(listThreads.mock.calls.length).toBeGreaterThan(1)
+    )
+    expect(listThreads.mock.calls[0]?.[1]).toBe(true)
+    expect(
+      listThreads.mock.calls.slice(1).every(([, measure]) => !measure)
+    ).toBe(true)
+  })
+
   it("scopes Recents to ownerless threads only in repository mode", async () => {
     const listThreads = vi
       .spyOn(agentsApi, "listThreadsPage")
@@ -473,28 +521,34 @@ describe("sidebar queries", () => {
     )
 
     await waitFor(() =>
-      expect(listThreads).toHaveBeenCalledWith({
-        limit: SIDEBAR_PAGE_SIZE,
-        hierarchy: true,
-        offset: 0,
-        resolved: false,
-        scope: "interactive",
-        ownerless: true,
-        sortBy: "created_at",
-      })
+      expect(listThreads).toHaveBeenCalledWith(
+        {
+          limit: SIDEBAR_PAGE_SIZE,
+          hierarchy: true,
+          offset: 0,
+          resolved: false,
+          scope: "interactive",
+          ownerless: true,
+          sortBy: "created_at",
+        },
+        true
+      )
     )
 
     rerender({ repoMode: false })
 
     await waitFor(() =>
-      expect(listThreads).toHaveBeenCalledWith({
-        limit: SIDEBAR_PAGE_SIZE,
-        hierarchy: true,
-        offset: 0,
-        resolved: false,
-        scope: "interactive",
-        sortBy: "created_at",
-      })
+      expect(listThreads).toHaveBeenCalledWith(
+        {
+          limit: SIDEBAR_PAGE_SIZE,
+          hierarchy: true,
+          offset: 0,
+          resolved: false,
+          scope: "interactive",
+          sortBy: "created_at",
+        },
+        true
+      )
     )
   })
 
@@ -545,14 +599,16 @@ describe("sidebar queries", () => {
         expect.objectContaining({
           repo: "langchain-ai/first",
           offset: 1,
-        })
+        }),
+        false
       )
     )
     expect(listThreads).not.toHaveBeenCalledWith(
       expect.objectContaining({
         repo: "langchain-ai/second",
         offset: 1,
-      })
+      }),
+      false
     )
   })
 
@@ -594,6 +650,170 @@ describe("sidebar queries", () => {
       await waitFor(() => expect(result.current).toEqual(updated))
     }
   )
+
+  function openThreadSidebarFirst(opened: AgentThread, listed: boolean) {
+    const client = testClient()
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const sidebar = renderHook(
+      () =>
+        useSidebarActiveThread({
+          activeThreadId: opened.id,
+          loadedThreads: listed ? [opened] : [],
+        }),
+      { wrapper }
+    )
+    const detail = renderHook(() => useAgentThread(opened.id), { wrapper })
+    const shell = renderHook(() => useActiveAgentThread(opened.id), {
+      wrapper,
+    })
+    return { client, sidebar, detail, shell }
+  }
+
+  it.each([{ listed: false }, { listed: true }])(
+    "requests an opened thread's summary once (listed in the sidebar: $listed)",
+    async ({ listed }) => {
+      const opened = { id: "opened-thread", title: "Opened" } as AgentThread
+      const getThread = vi
+        .spyOn(agentsApi, "getThread")
+        .mockResolvedValue(opened)
+
+      const { sidebar, detail, shell } = openThreadSidebarFirst(opened, listed)
+
+      await waitFor(() => expect(detail.result.current.data).toEqual(opened))
+      expect(sidebar.result.current).toEqual(opened)
+      expect(shell.result.current).toEqual(opened)
+      expect(getThread).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it("loads the open thread for its commands when no page shows it", async () => {
+    const opened = { id: "opened-thread", title: "Opened" } as AgentThread
+    const getThread = vi.spyOn(agentsApi, "getThread").mockResolvedValue(opened)
+    const client = testClient()
+
+    const { result } = renderHook(() => useActiveAgentThread(opened.id), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    })
+
+    await waitFor(() => expect(result.current).toEqual(opened))
+    expect(getThread).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows an unlisted thread's run finishing in the sidebar when no page shows it", async () => {
+    vi.useFakeTimers()
+    const running = {
+      id: "review-chat",
+      title: "Review chat",
+      status: "running",
+      updatedAt: 1,
+    } as AgentThread
+    const getThread = vi
+      .spyOn(agentsApi, "getThread")
+      .mockResolvedValueOnce(running)
+      .mockResolvedValue({ ...running, status: "finished", updatedAt: 2 })
+    const client = testClient()
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const sidebar = renderHook(
+      () =>
+        useSidebarActiveThread({
+          activeThreadId: running.id,
+          loadedThreads: [],
+        }),
+      { wrapper }
+    )
+    renderHook(() => useActiveAgentThread(running.id), { wrapper })
+    await vi.waitFor(() =>
+      expect(sidebar.result.current?.status).toBe("running")
+    )
+
+    await act(() => vi.advanceTimersByTimeAsync(3000))
+
+    expect(sidebar.result.current?.status).toBe("finished")
+    await act(() => vi.advanceTimersByTimeAsync(30_000))
+    expect(getThread).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    { watchers: "the page", hooks: [useAgentThread] },
+    { watchers: "the shell", hooks: [useActiveAgentThread] },
+    {
+      watchers: "the page and the shell",
+      hooks: [useAgentThread, useActiveAgentThread],
+    },
+  ])(
+    "polls a running thread's summary every 3 s, watched by $watchers",
+    async ({ hooks }) => {
+      vi.useFakeTimers()
+      const running = {
+        id: "running-thread",
+        title: "Running",
+        status: "running",
+      } as AgentThread
+      const getThread = vi
+        .spyOn(agentsApi, "getThread")
+        .mockResolvedValue(running)
+      const client = testClient()
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      )
+      for (const hook of hooks) renderHook(() => hook(running.id), { wrapper })
+      await vi.waitFor(() => expect(getThread).toHaveBeenCalledTimes(1))
+
+      await act(() => vi.advanceTimersByTimeAsync(10_000))
+
+      expect(getThread).toHaveBeenCalledTimes(4)
+    }
+  )
+
+  it("loads an opened thread's summary that was asked for offline once back online", async () => {
+    const opened = { id: "opened-thread", title: "Opened" } as AgentThread
+    vi.spyOn(agentsApi, "getThread").mockResolvedValue(opened)
+    onlineManager.setOnline(false)
+    try {
+      const { detail } = openThreadSidebarFirst(opened, false)
+      act(() => onlineManager.setOnline(true))
+
+      await waitFor(() => expect(detail.result.current.data).toEqual(opened))
+    } finally {
+      onlineManager.setOnline(true)
+    }
+  })
+
+  it("loads an opened thread's summary on its own when the request it shares is cancelled", async () => {
+    const opened = { id: "opened-thread", title: "Opened" } as AgentThread
+    const getThread = vi
+      .spyOn(agentsApi, "getThread")
+      .mockReturnValueOnce(new Promise<AgentThread>(() => {}))
+      .mockResolvedValue(opened)
+    const client = testClient()
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    renderHook(
+      () =>
+        useSidebarActiveThread({
+          activeThreadId: opened.id,
+          loadedThreads: [],
+        }),
+      { wrapper }
+    )
+    const detail = renderHook(() => useAgentThread(opened.id), { wrapper })
+
+    await act(() =>
+      client.cancelQueries({
+        queryKey: agentThreadKeys.sidebarActive(opened.id),
+      })
+    )
+
+    await waitFor(() => expect(detail.result.current.data).toEqual(opened))
+    expect(getThread).toHaveBeenCalledTimes(2)
+  })
 
   it("does not reinsert an open concierge conversation into the sidebar", () => {
     const opened = {
@@ -883,7 +1103,80 @@ function wrapperFor(client: QueryClient) {
   )
 }
 
+describe("useShareThread", () => {
+  it("keeps confirmed sharing when an older detail read finishes later", async () => {
+    const client = testClient()
+    const thread = {
+      ...optimisticThread("thread-1", { prompt: "Private prompt" }),
+      visibility: "private",
+      status: "finished",
+    } satisfies AgentThread
+    const shared: AgentThread = { ...thread, visibility: "public" }
+    const staleRead = deferred<AgentThread>()
+    const share = deferred<AgentThread>()
+    vi.spyOn(agentsApi, "getThread").mockReturnValue(staleRead.promise)
+    vi.spyOn(agentsApi, "shareThread").mockReturnValue(share.promise)
+    client.setQueryData(agentThreadKeys.detail(thread.id), thread)
+    const { result } = renderHook(
+      () => ({
+        detail: useAgentThread(thread.id),
+        share: useShareThread(),
+      }),
+      { wrapper: wrapperFor(client) }
+    )
+    act(() => result.current.share.mutate(thread.id))
+    await waitFor(() => expect(result.current.share.isPending).toBe(true))
+    const refetch = result.current.detail.refetch()
+    expect(
+      client.isFetching({ queryKey: agentThreadKeys.detail(thread.id) })
+    ).toBe(1)
+    await act(async () => share.resolve(shared))
+    await waitFor(() =>
+      expect(result.current.detail.data?.visibility).toBe("public")
+    )
+    await act(async () => {
+      staleRead.resolve(thread)
+      await refetch
+    })
+    expect(
+      client.getQueryData<AgentThread>(agentThreadKeys.detail(thread.id))
+        ?.visibility
+    ).toBe("public")
+  })
+})
+
 describe("active thread menu metadata", () => {
+  it("refetches an unknown automation capability and keeps verified detail on sidebar refresh", async () => {
+    const client = testClient()
+    const summary = {
+      ...optimisticThread("automation-1", { prompt: "" }),
+      threadCategory: "automation",
+      automationCanPost: null,
+    } as AgentThread
+    const detail = { ...summary, automationCanPost: true }
+    const getThread = vi.spyOn(agentsApi, "getThread").mockResolvedValue(detail)
+    const { rerender } = renderHook(
+      ({ threads }) => useSeedAgentThreadDetails(threads),
+      { initialProps: { threads: [summary] }, wrapper: wrapperFor(client) }
+    )
+    expect(
+      client.getQueryData<AgentThread>(agentThreadKeys.detail(summary.id))
+        ?.automationCanPost
+    ).toBeNull()
+    const { result } = renderHook(() => useAgentThread(summary.id), {
+      wrapper: wrapperFor(client),
+    })
+    await waitFor(() =>
+      expect(result.current.data?.automationCanPost).toBe(true)
+    )
+    expect(getThread).toHaveBeenCalledTimes(1)
+    rerender({ threads: [{ ...summary, updatedAt: summary.updatedAt + 1 }] })
+    expect(
+      client.getQueryData<AgentThread>(agentThreadKeys.detail(summary.id))
+        ?.automationCanPost
+    ).toBe(true)
+  })
+
   it("refreshes menu actions from the sidebar without replacing live detail", () => {
     const client = testClient()
     const detail = optimisticThread("thread-1", { prompt: "Pending prompt" })
@@ -1304,11 +1597,124 @@ describe("thread read state", () => {
     })
     await waitFor(() => expect(result.current.data?.latestRunId).toBe("run-1"))
     expect(save).not.toHaveBeenCalled()
-    get.mockResolvedValue({ ...thread, latestRunId: "run-2", viewed: false })
+    get.mockResolvedValue({
+      ...thread,
+      unreadResponseId: "response-2",
+      viewed: false,
+    })
     await act(() => result.current.refetch())
-    await waitFor(() => expect(save).toHaveBeenCalledWith(thread.id, true))
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(thread.id, true, "response-2")
+    )
     await waitFor(() => expect(client.isMutating()).toBe(0))
     await waitFor(() => expect(result.current.data?.viewed).toBe(true))
+  })
+
+  it("leaves an answer unread when the reader leaves before completion", async () => {
+    const thread = {
+      ...optimisticThread("thread-1", { prompt: "Read me" }),
+      status: "running" as const,
+      unreadResponseId: null,
+      viewed: true,
+    }
+    vi.spyOn(agentsApi, "getThread").mockResolvedValue(thread)
+    const save = vi
+      .spyOn(agentsApi, "setThreadViewed")
+      .mockResolvedValue({ viewed: true })
+    const client = testClient()
+    const { result, rerender } = renderHook(
+      ({ active }) => useAgentThread(thread.id, active),
+      { wrapper: wrapperFor(client), initialProps: { active: true } }
+    )
+    await waitFor(() => expect(result.current.data?.status).toBe("running"))
+    expect(save).not.toHaveBeenCalled()
+    rerender({ active: false })
+    act(() =>
+      client.setQueryData(agentThreadKeys.detail(thread.id), {
+        ...thread,
+        status: "finished",
+        unreadResponseId: "response-1",
+        viewed: false,
+      })
+    )
+    await waitFor(() => expect(result.current.data?.viewed).toBe(false))
+    expect(save).not.toHaveBeenCalled()
+    rerender({ active: true })
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(thread.id, true, "response-1")
+    )
+    await waitFor(() => expect(result.current.data?.viewed).toBe(true))
+  })
+
+  it("does not clear a newer response when an older acknowledgement completes", async () => {
+    const thread = {
+      ...optimisticThread("thread-1", { prompt: "Read me" }),
+      unreadResponseId: "response-1",
+      viewed: false,
+    }
+    const request = Promise.withResolvers<{ viewed: boolean }>()
+    vi.spyOn(agentsApi, "setThreadViewed").mockReturnValue(request.promise)
+    const client = testClient()
+    client.setQueryData(agentThreadKeys.detail(thread.id), thread)
+    const { result } = renderHook(() => useSetAgentThreadViewed(), {
+      wrapper: wrapperFor(client),
+    })
+    act(() =>
+      result.current.mutate({
+        threadId: thread.id,
+        viewed: true,
+        responseId: "response-1",
+      })
+    )
+    await waitFor(() =>
+      expect(
+        client.getQueryData<AgentThread>(agentThreadKeys.detail(thread.id))
+          ?.viewed
+      ).toBe(true)
+    )
+    act(() =>
+      client.setQueryData(agentThreadKeys.detail(thread.id), {
+        ...thread,
+        unreadResponseId: "response-2",
+      })
+    )
+    await act(() => request.resolve({ viewed: true }))
+    await waitFor(() => expect(client.isMutating()).toBe(0))
+    expect(
+      client.getQueryData<AgentThread>(agentThreadKeys.detail(thread.id))
+        ?.viewed
+    ).toBe(false)
+  })
+
+  it("refreshes the displayed response when the server rejects a stale acknowledgement", async () => {
+    const thread = {
+      ...optimisticThread("thread-1", { prompt: "Read me" }),
+      unreadResponseId: "response-1",
+      viewed: false,
+    }
+    vi.spyOn(agentsApi, "setThreadViewed").mockResolvedValue({ viewed: false })
+    const client = testClient()
+    client.setQueryData(agentThreadKeys.detail(thread.id), thread)
+    const invalidate = vi.spyOn(client, "invalidateQueries")
+    const { result } = renderHook(() => useSetAgentThreadViewed(), {
+      wrapper: wrapperFor(client),
+    })
+    act(() =>
+      result.current.mutate({
+        threadId: thread.id,
+        viewed: true,
+        responseId: "response-1",
+      })
+    )
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: agentThreadKeys.detail(thread.id),
+      exact: true,
+    })
+    expect(
+      client.getQueryData<AgentThread>(agentThreadKeys.detail(thread.id))
+        ?.viewed
+    ).toBe(false)
   })
 
   it("rolls back an optimistic unread action when saving fails", async () => {
@@ -1337,6 +1743,144 @@ describe("thread read state", () => {
           ?.viewed
       ).toBe(true)
     )
+  })
+
+  it("updates unread state across caches without refetching unfiltered sidebar lists", async () => {
+    const unread = {
+      ...optimisticThread("thread-1", { prompt: "Read me" }),
+      status: "finished" as const,
+      viewed: false,
+    }
+    const listPage = vi.spyOn(agentsApi, "listThreadsPage").mockResolvedValue({
+      items: [unread],
+      limit: 25,
+      offset: 0,
+      hasMore: false,
+    })
+    const listPins = vi
+      .spyOn(agentsApi, "listPinnedThreads")
+      .mockResolvedValue([unread])
+    const listFiltered = vi
+      .spyOn(agentsApi, "setThreadViewed")
+      .mockResolvedValue({ viewed: true })
+    const client = testClient()
+    const unreadFilterParams = { limit: 25, offset: 0, viewed: false }
+    const { result, unmount } = renderHook(
+      () => ({
+        shellPins: useSidebarPinnedThreads(),
+        headerPins: useSidebarPinnedThreads({ refetchOnMount: false }),
+        recents: useSidebarRecents({ repoMode: false }),
+        unreadList: useThreadsPage(unreadFilterParams),
+        setViewed: useSetAgentThreadViewed(),
+      }),
+      { wrapper: wrapperFor(client) }
+    )
+    await waitFor(() =>
+      expect(result.current.recents.items[0]?.viewed).toBe(false)
+    )
+    expect(listPins).toHaveBeenCalledTimes(1)
+    expect(listPage).toHaveBeenCalledTimes(2)
+
+    // Remounting a non-refetching header observer across thread clicks does not refetch pins.
+    const secondHeader = renderHook(
+      () => useSidebarPinnedThreads({ refetchOnMount: false }),
+      { wrapper: wrapperFor(client) }
+    )
+    expect(listPins).toHaveBeenCalledTimes(1)
+    secondHeader.unmount()
+
+    listPage.mockResolvedValue({
+      items: [],
+      limit: 25,
+      offset: 0,
+      hasMore: false,
+    })
+    await act(() =>
+      result.current.setViewed.mutateAsync({
+        threadId: unread.id,
+        viewed: true,
+      })
+    )
+    expect(listFiltered).toHaveBeenCalledTimes(1)
+    // Unfiltered recents and pinned lists keep their patched state without network refetches;
+    // the viewed-filtered page query still invalidates and refetches.
+    await waitFor(() => {
+      expect(result.current.recents.items[0]?.viewed).toBe(true)
+      expect(result.current.shellPins.data?.[0]?.viewed).toBe(true)
+      expect(result.current.unreadList.data?.items).toEqual([])
+    })
+    expect(listPins).toHaveBeenCalledTimes(1)
+    expect(listPage).toHaveBeenCalledTimes(3)
+    unmount()
+  })
+})
+
+describe("sidebar activity invalidation", () => {
+  it.each([true, false])(
+    "only subscribes shared lists to public activity (owned: %s)",
+    async (owned) => {
+      vi.spyOn(agentsApi, "listThreadsPage").mockResolvedValue(page)
+      const client = testClient()
+      renderHook(() => useSidebarRecents({ repoMode: false, owned }), {
+        wrapper: wrapperFor(client),
+      })
+      await waitFor(() =>
+        expect(
+          client
+            .getQueryCache()
+            .getAll()
+            .some((query) => query.state.status === "success")
+        ).toBe(true)
+      )
+      const topics = client.getQueryCache().getAll().flatMap(queryTopics)
+      expect(topics).toContain(invalidationTopic("threads", "alice-id"))
+      expect(topics.includes(invalidationTopic("threads", "public"))).toBe(
+        !owned
+      )
+    }
+  )
+
+  it("moves yesterday's idle thread to Today when activity is invalidated, without polling", async () => {
+    const now = new Date(2026, 5, 10, 15)
+    const yesterday = new Date(2026, 5, 9, 12).getTime()
+    let updatedAt = yesterday
+    const listThreads = vi
+      .spyOn(agentsApi, "listThreadsPage")
+      .mockImplementation(async () => ({
+        ...page,
+        items: [
+          {
+            ...optimisticThread("old-thread", { prompt: "Continue" }),
+            createdAt: yesterday,
+            updatedAt,
+            status: "idle",
+          },
+        ],
+      }))
+    const client = testClient()
+    const { result } = renderHook(
+      () =>
+        groupSidebarThreadsByRecency(
+          useSidebarRecents({ repoMode: false, sort: "updated" }).items.map(
+            cloudSidebarThread
+          ),
+          now
+        ),
+      { wrapper: wrapperFor(client) }
+    )
+    await waitFor(() => expect(result.current[0]?.label).toBe("Yesterday"))
+    updatedAt = now.getTime()
+    await act(() =>
+      client.invalidateQueries({
+        predicate: (query) =>
+          queryTopics(query).includes(invalidationTopic("threads", "alice-id")),
+      })
+    )
+    await waitFor(() => expect(result.current[0]?.label).toBe("Today"))
+    expect(listThreads.mock.calls.map(([, measure]) => measure)).toEqual([
+      true,
+      false,
+    ])
   })
 })
 

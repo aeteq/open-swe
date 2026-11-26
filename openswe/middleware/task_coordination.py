@@ -1,32 +1,16 @@
-import logging
 from typing import Self
-from uuid import uuid4
 
-from langchain.agents.middleware import AgentState
-from langgraph.runtime import Runtime
 from runtime_api.catalog import TaskContext as LoopTaskContext
-from runtime_api.provenance import Provenance
 
-from openswe.github.proxy import maybe_refresh_proxy_token
-from openswe.input_messages import (
-    RunMessage,
-    dynamic_context_hash,
-    run_context,
-    visible_dynamic_context_hashes,
-)
+from openswe.input_messages import run_context
 from openswe.middleware.trace import OpenSWEMiddleware
 from openswe.prompts import prompt
-from openswe.tasks.schemas import Thread
 from openswe.tasks.store import TaskContext, TaskDelegation, TaskMembership
-from openswe.utils.thread_reads import read_thread
-
-logger = logging.getLogger(__name__)
 
 
 class TaskCoordinationMiddleware(OpenSWEMiddleware):
-    def __init__(self, thread_id: str, enabled: bool, context: TaskContext | None) -> None:
+    def __init__(self, thread_id: str, context: TaskContext | None) -> None:
         self.thread_id = thread_id
-        self.enabled = enabled
         self.context = context
         # The thread's role, told in the conversation so the system prompt never changes.
         self.instructions = run_context(
@@ -39,10 +23,7 @@ class TaskCoordinationMiddleware(OpenSWEMiddleware):
         )
 
     @classmethod
-    async def for_thread(cls, thread_id: str) -> Self | None:
-        enabled = await Thread.model_validate(
-            await read_thread(thread_id)
-        ).metadata.delegation_supported()
+    async def for_thread(cls, thread_id: str) -> Self:
         context = await TaskMembership.delegation_for_thread(thread_id)
         if context is not None and context.membership.role == "worker":
             delegation = await TaskDelegation.get(thread_id)
@@ -50,7 +31,7 @@ class TaskCoordinationMiddleware(OpenSWEMiddleware):
                 raise PermissionError(
                     "This worker was cancelled; create a new worker for further work"
                 )
-        return cls(thread_id, enabled, context) if enabled or context else None
+        return cls(thread_id, context)
 
     @property
     def is_worker(self) -> bool:
@@ -58,7 +39,7 @@ class TaskCoordinationMiddleware(OpenSWEMiddleware):
 
     @property
     def can_delegate(self) -> bool:
-        return self.enabled and not self.is_worker
+        return not self.is_worker
 
     @property
     def coordinator_thread_id(self) -> str | None:
@@ -79,35 +60,3 @@ class TaskCoordinationMiddleware(OpenSWEMiddleware):
             title=self.context.task.title,
             coordinator_thread_id=self.context.task.coordinator_thread_id,
         )
-
-    async def abefore_model(
-        self, state: AgentState, runtime: Runtime
-    ) -> dict[str, list[RunMessage]] | None:
-        if self.context is None:
-            self.context = await TaskMembership.delegation_for_thread(self.thread_id)
-        if (coordinator := self.coordinator_thread_id) is not None:
-            # A worker keeps its coordinator's sandbox token fresh, as an MDA run's
-            # ``refresh_github_proxy`` does.
-            try:
-                await maybe_refresh_proxy_token(coordinator)
-            except Exception:
-                logger.warning(
-                    "Failed to refresh the task's GitHub proxy",
-                    exc_info=True,
-                    extra={"thread_id": self.thread_id},
-                )
-        visible = visible_dynamic_context_hashes(state)
-        added: list[RunMessage] = [
-            {
-                "role": "user",
-                "id": f"{prefix}{uuid4()}",
-                "content": content,
-                "additional_kwargs": Provenance.harness("task_context").stamp(),
-            }
-            for prefix, content in (
-                ("task-role:", self.instructions),
-                ("task-context:", self.context_message()),
-            )
-            if content is not None and dynamic_context_hash(content) not in visible
-        ]
-        return {"messages": added} if added else None

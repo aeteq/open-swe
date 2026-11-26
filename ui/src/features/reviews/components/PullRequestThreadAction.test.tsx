@@ -15,11 +15,13 @@ import {
   type OpenPullRequest,
   type PullRequestThreadResult,
 } from "@/lib/api"
+import { InvalidationTab } from "@/lib/invalidations/client"
 import { PullRequestThreadAction } from "./PullRequestThreadAction"
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 const pr: OpenPullRequest = {
@@ -49,12 +51,12 @@ const pr: OpenPullRequest = {
   conversationResolutionRequired: false,
 }
 
-it("blocks the sibling action as soon as one is queued", async () => {
-  vi.spyOn(api, "pullRequestThreadStatus").mockResolvedValue({
+it("blocks duplicate fixes and enables both cards again when the run stops", async () => {
+  const status = vi.spyOn(api, "pullRequestThreadStatus").mockResolvedValue({
     running: false,
   })
   let finish: (result: PullRequestThreadResult) => void = () => {}
-  vi.spyOn(api, "fixPullRequest").mockImplementation(
+  vi.spyOn(api, "fixUpPullRequest").mockImplementation(
     () => new Promise<PullRequestThreadResult>((resolve) => (finish = resolve))
   )
   const client = new QueryClient({
@@ -62,24 +64,63 @@ it("blocks the sibling action as soon as one is queued", async () => {
   })
   render(
     <QueryClientProvider client={client}>
-      <PullRequestThreadAction pr={pr} login="me" actions={["fix"]} />
-      <PullRequestThreadAction
-        pr={pr}
-        login="me"
-        actions={["address-comments"]}
-      />
+      <div data-testid="first">
+        <PullRequestThreadAction pr={pr} login="me" />
+      </div>
+      <div data-testid="second">
+        <PullRequestThreadAction pr={pr} login="me" />
+      </div>
     </QueryClientProvider>
   )
 
-  const fix = await screen.findByRole("button", { name: "Fix" })
-  const address = screen.getByRole("button", { name: "Address comments" })
-  await waitFor(() => expect(address.hasAttribute("disabled")).toBe(false))
+  const [first, second] = await screen.findAllByRole("button", {
+    name: "Fix up",
+  })
+  await waitFor(() => expect(second!.hasAttribute("disabled")).toBe(false))
 
-  fireEvent.click(fix)
-  await screen.findByRole("button", { name: "Fix queued" })
+  fireEvent.click(first!)
+  await screen.findByRole("button", { name: "Fix up queued" })
   finish({ thread_id: "t", already_running: false })
 
-  await screen.findByRole("button", { name: "Fix queued" })
-  const blocked = screen.getByRole("button", { name: "Addressing comments" })
+  await screen.findByRole("button", { name: "Fix up queued" })
+  const blocked = screen.getByRole("button", { name: "Fixing up" })
   expect(blocked.hasAttribute("disabled")).toBe(true)
+
+  status.mockResolvedValue({ running: true })
+  await client.invalidateQueries({ queryKey: ["pr-thread-status"] })
+  expect(
+    screen
+      .getAllByRole("button")
+      .every((button) => button.hasAttribute("disabled"))
+  ).toBe(true)
+
+  const channel: { receive?: (event: { data: unknown }) => void } = {}
+  vi.stubGlobal(
+    "BroadcastChannel",
+    class {
+      set onmessage(handler: (event: { data: unknown }) => void) {
+        channel.receive = handler
+      }
+      postMessage() {}
+      close() {}
+    }
+  )
+  vi.stubGlobal("navigator", {
+    locks: { request: () => new Promise(() => {}) },
+  })
+  const tab = new InvalidationTab(client, () => {})
+  tab.start()
+  status.mockResolvedValue({ running: false })
+  channel.receive?.({
+    data: { kind: "invalidated", topics: ["pull-requests/acme/app/7"] },
+  })
+  await waitFor(() => {
+    const buttons = screen.getAllByRole("button", { name: "Fix up" })
+    expect(buttons).toHaveLength(2)
+    expect(buttons.every((button) => !button.hasAttribute("disabled"))).toBe(
+      true
+    )
+  })
+  tab.stop()
+  client.clear()
 })

@@ -8,6 +8,11 @@ import {
   type SeededPullRequest,
 } from "./helpers/dashboard";
 
+// A route handler still reading a response when the test ends must not fail it.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 const OWNER = "fakeorg";
 const REPO = "demo";
 const DESCRIPTION = "Adds the ALPHA and ZETA constant modules.";
@@ -110,7 +115,10 @@ function diffColumn(page: Page): Locator {
 }
 
 async function openChatTab(page: Page) {
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  const tab = page.getByRole("tab", { name: "Chat", exact: true });
+  if (!(await tab.isVisible()))
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await tab.click();
   await expect(page.getByTestId("composer-editor")).toBeVisible();
 }
 
@@ -121,6 +129,7 @@ async function sendChat(page: Page, text: string) {
 let pr: SeededPullRequest;
 
 test.describe("review page", () => {
+  test.use({ viewport: { width: 1600, height: 1000 } });
   test.beforeEach(async ({ page }) => {
     await page.request.post("/control/reset");
     await loginAs(page, SAME_USER);
@@ -135,10 +144,59 @@ test.describe("review page", () => {
     await forgetReviewThreads(page, pr);
   });
 
+  test("refreshes an unavailable pull request without reloading the page", async ({
+    page,
+  }) => {
+    let recovered = false;
+    let message = "GitHub API rate limit exceeded";
+    await page.route(`**${reviewApi(pr)}`, async (route) => {
+      if (recovered) {
+        await route.continue();
+      } else {
+        await route.fulfill({ status: 403, json: { detail: message } });
+      }
+    });
+    await page.goto(`/agents/reviews/${OWNER}/${REPO}/${pr.number}`);
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText(message);
+    const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+    const refresh = alert.getByRole("button", { name: "Refresh", exact: true });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(refresh).toBeInViewport();
+    message = "GitHub is still rate limited";
+    await refresh.focus();
+    await refresh.press("Enter");
+    await expect(alert).toContainText(message);
+    await expect(refresh).toBeEnabled();
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**${reviewApi(pr)}`, async (route) => {
+      await gate;
+      await route.fallback();
+    });
+    recovered = true;
+    await refresh.click();
+    await expect(refresh).toBeDisabled();
+    await expect(refresh).toHaveAttribute("aria-busy", "true");
+    release();
+    await expect(alert).toBeHidden();
+    await expect(
+      page.getByRole("heading", { name: "Changes", exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
+  });
+
   test("opens a review from a pasted or typed pull request link", async ({
     page,
   }) => {
-    const target = new RegExp(`/agents/reviews/${OWNER}/${REPO}/${pr.number}$`);
+    const target = (url: URL) =>
+      url.pathname === "/agents/reviews" &&
+      url.searchParams.get("pr") === `${OWNER}/${REPO}#${pr.number}`;
     const link = `https://github.com/${OWNER}/${REPO}/pull/${pr.number}/files?w=1`;
 
     const input = page.getByLabel("Open a pull request review");
@@ -174,19 +232,35 @@ test.describe("review page", () => {
   }) => {
     await openReview(page, pr);
     const title = page
-      .locator("h1")
+      .locator("h2")
       .filter({ hasText: "Add constant modules" });
     const menu = title.getByRole("link", { name: /Add constant modules/ });
     await expect(menu).toContainText("Add constant modules");
-    await expect(menu).toContainText(`#${pr.number}`);
-    const link = title.getByRole("link", { name: "Open on GitHub" });
+    await expect(menu).not.toContainText(`#${pr.number}`);
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    const number = page.getByRole("button", {
+      name: `Copy PR number #${pr.number}`,
+      exact: true,
+    });
+    await expect(number).toHaveText(`#${pr.number}`);
+    await number.click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(`#${pr.number}`);
+    await expect(page.getByRole("menu")).toBeHidden();
+    const link = page.getByRole("link", {
+      name: "Open on GitHub",
+      exact: true,
+    });
     await expect(link).toBeVisible();
     await expect(link).toHaveAttribute(
       "href",
       `https://github.com/${OWNER}/${REPO}/pull/${pr.number}`,
     );
 
-    const pill = title.locator("xpath=preceding-sibling::span[1]");
+    const pill = title.locator("xpath=../preceding-sibling::span[1]");
     await expect(pill).toHaveText("Reviewable");
     const pillBox = await pill.boundingBox();
     const titleBox = await title.boundingBox();
@@ -196,6 +270,69 @@ test.describe("review page", () => {
     expect(pillMiddle).toBeGreaterThan(titleBox!.y);
     expect(pillMiddle).toBeLessThan(titleBox!.y + titleBox!.height);
     expect(pillBox!.x + pillBox!.width).toBeLessThanOrEqual(titleBox!.x);
+  });
+
+  test("edits titles with keyboard controls and restores failed drafts", async ({
+    page,
+  }) => {
+    await openReview(page, pr);
+    const edit = page.getByRole("button", { name: "Edit title", exact: true });
+    const input = page.getByRole("textbox", { name: "PR title", exact: true });
+    const save = page.getByRole("button", { name: "Save title", exact: true });
+    await edit.click();
+    await expect(input).toBeFocused();
+    await expect(save).toBeDisabled();
+    await input.fill("Discard this title");
+    await input.press("Escape");
+    await expect(edit).toBeFocused();
+    await edit.click();
+    await expect(input).toHaveValue("Add constant modules");
+    await input.fill("   ");
+    await expect(save).toBeDisabled();
+    await input.fill("Rename constant modules");
+    const compositionHandled = await input.evaluate((element) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      element.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(compositionHandled).toBe(true);
+    await expect(input).toBeVisible();
+    await input.press("Enter");
+    await expect(input).toBeHidden();
+    await expect(
+      page.getByRole("heading", { level: 2, name: /Rename constant modules/ }),
+    ).toBeVisible();
+    await page.reload();
+    await edit.click();
+    await expect(input).toHaveValue("Rename constant modules");
+    const endpoint = `**${reviewApi(pr, "/title")}`;
+    await page.route(endpoint, (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "You do not have permission to edit this PR",
+        }),
+      }),
+    );
+    await input.fill("Retry this title");
+    await save.click();
+    await expect(input).toHaveValue("Retry this title");
+    await expect(
+      page.getByText("Couldn't update title", { exact: true }),
+    ).toBeVisible();
+    await page.unroute(endpoint);
+    await save.click();
+    await expect(input).toBeHidden();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { level: 2, name: /Retry this title/ }),
+    ).toBeVisible();
   });
 
   test("edits descriptions, cancels drafts, and keeps failed saves retryable", async ({
@@ -700,6 +837,7 @@ test.describe("review page", () => {
     page,
   }) => {
     await openReview(page, pr);
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
     await page.getByRole("tab", { name: /Discussion/ }).click();
     const conversation = page.getByRole("region", { name: "Conversation" });
     await expect(conversation).toBeVisible();
@@ -708,6 +846,18 @@ test.describe("review page", () => {
     await conversation
       .getByRole("textbox", { name: "Comment on this pull request" })
       .fill(comment);
+    await page
+      .getByRole("complementary", { name: "Chat and discussion" })
+      .getByRole("button", { name: "Close", exact: true })
+      .click();
+    await expect(conversation).toBeHidden();
+    await page.getByRole("button", { name: "Chat", exact: true }).click();
+    await page.getByRole("tab", { name: /Discussion/ }).click();
+    await expect(
+      conversation.getByRole("textbox", {
+        name: "Comment on this pull request",
+      }),
+    ).toHaveValue(comment);
     await conversation
       .getByRole("button", { name: "Comment", exact: true })
       .click();
@@ -849,7 +999,9 @@ test.describe("review page", () => {
     );
     await page.reload();
     await openChatTab(page);
-    await expect(page.getByText("0/2 viewed")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "0 / 2 viewed", exact: true }),
+    ).toBeVisible();
 
     await sendChat(page, "E2E_REVIEW_PAGE_STEPS walk me through it");
     await expect(
@@ -857,13 +1009,15 @@ test.describe("review page", () => {
     ).toBeVisible({ timeout: 60_000 });
 
     // The whole step was marked viewed, then alpha.py handed back unviewed.
-    await expect(page.getByText("1/2 viewed")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "1 / 2 viewed", exact: true }),
+    ).toBeVisible();
     await expect(
       diffColumn(page).getByText("Both constant modules").first(),
     ).toBeVisible();
   });
 
-  test("opens the chat as a sheet on a narrow window", async ({ page }) => {
+  test("opens the chat in place on a narrow window", async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 });
     await openReview(page, pr);
     const open = page.getByRole("button", { name: "Chat", exact: true });
@@ -871,26 +1025,27 @@ test.describe("review page", () => {
     await expect(page.getByTestId("composer-editor")).toBeHidden();
 
     await open.click();
-    const sheet = page.getByRole("dialog");
-    await expect(sheet).toBeVisible();
+    const chat = chatPanel(page);
+    await expect(diffColumn(page)).toBeHidden();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await openChatTab(page);
     await sendChat(page, "E2E_REVIEW_CHAT_PLAIN what does this add?");
     await expect(
-      sheet.getByText("The pull request adds two constant modules."),
+      chat.getByText("The pull request adds two constant modules."),
     ).toBeVisible({ timeout: 30_000 });
 
     await page.reload();
     await expect(open).toBeVisible();
     await open.click();
-    await expect(sheet).toBeVisible();
+    await expect(chat).toBeVisible();
     await openChatTab(page);
     await expect(
-      sheet.getByText("The pull request adds two constant modules."),
+      chat.getByText("The pull request adds two constant modules."),
     ).toBeVisible();
-    await expect(sheet).toBeVisible();
-    const input = sheet.getByTestId("composer-editor");
+    await expect(chat).toBeVisible();
+    const input = chat.getByTestId("composer-editor");
     await input.pressSequentially("follow-up question");
     await expect(input).toHaveText("follow-up question");
-    await expect(sheet).toBeVisible();
+    await expect(chat).toBeVisible();
   });
 });

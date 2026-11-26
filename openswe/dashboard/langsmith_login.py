@@ -3,7 +3,8 @@
 import asyncio
 import logging
 import secrets
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import monotonic
@@ -13,6 +14,7 @@ from urllib.parse import urlencode, urlparse
 import httpx2
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openswe.config import ENV
 from openswe.dashboard.langsmith_oauth import langsmith_issuer, langsmith_oauth_configured
@@ -24,6 +26,7 @@ from openswe.dashboard.oauth_credentials import (
     save_credential,
 )
 from openswe.dashboard.oauth_refresh import refresh_guard
+from openswe.database import postgres
 from openswe.encryption import decrypt_token, encrypt_token
 from openswe.users.authorization import UnauthorizedUser
 from openswe.utils.dashboard_links import PublicOrigin
@@ -36,9 +39,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 LANGSMITH_AUTHORIZATION_TTL = timedelta(seconds=60)
+LANGSMITH_WORKSPACE_LOGIN_SINCE = datetime(2026, 11, 12, 4, 15, 14, tzinfo=UTC)
 # The callback already registered on the LangSmith OAuth client.
 LANGSMITH_LOGIN_CALLBACK_PATH = "/dashboard/api/langsmith/callback"
 LANGSMITH_STATE_COOKIE_PATH = "/dashboard/api/langsmith"
+# LangSmith's edge rate limiter rejects a request before the app sees it, so
+# resending it cannot replay an authorization code.
+LANGSMITH_RATE_LIMIT_ATTEMPTS = 3
+LANGSMITH_RATE_LIMIT_MAX_WAIT = 2.0
 
 
 class LangSmithAccount(BaseModel):
@@ -57,10 +65,11 @@ class LangSmithOrgDiscovery:
     def __init__(self) -> None:
         self.identity: tuple[str, str] | None = None
         self.org_id = ""
+        self.workspace_id = ""
         self.expires_at = 0.0
         self.lock = asyncio.Lock()
 
-    async def resolve(self) -> str:
+    async def resolve(self) -> tuple[str, str]:
         key = ENV.LANGSMITH_API_KEY.get()
         if not key:
             raise HTTPException(503, "LangSmith login is not configured")
@@ -70,24 +79,26 @@ class LangSmithOrgDiscovery:
         identity = (endpoint, key)
         async with self.lock:
             if self.identity == identity and monotonic() < self.expires_at:
-                if not self.org_id:
+                if not self.org_id or not self.workspace_id:
                     raise HTTPException(
                         503, "LangSmith organization discovery is temporarily unavailable"
                     )
-                return self.org_id
+                return self.org_id, self.workspace_id
             try:
-                org_id = await self.discover(endpoint, key)
+                org_id, workspace_id = await self.discover(endpoint, key)
             except HTTPException:
                 self.identity = identity
                 self.org_id = ""
+                self.workspace_id = ""
                 self.expires_at = monotonic() + 3
                 raise
             self.identity = identity
             self.org_id = org_id
+            self.workspace_id = workspace_id
             self.expires_at = monotonic() + LANGSMITH_AUTHORIZATION_TTL.total_seconds()
-            return org_id
+            return org_id, workspace_id
 
-    async def discover(self, endpoint: str, key: str) -> str:
+    async def discover(self, endpoint: str, key: str) -> tuple[str, str]:
         try:
             async with httpx2.AsyncClient(
                 timeout=httpx2.Timeout(3.0, connect=1.0), transport=pooled_transport()
@@ -106,7 +117,10 @@ class LangSmithOrgDiscovery:
         org_id = data.get("organization_id") if isinstance(data, dict) else None
         if not isinstance(org_id, str) or not org_id.strip():
             raise HTTPException(503, "Invalid LangSmith deployment organization response")
-        return org_id
+        workspace_id = data.get("tenant_id") if isinstance(data, dict) else None
+        if not isinstance(workspace_id, str) or not workspace_id.strip():
+            raise HTTPException(503, "Invalid LangSmith deployment workspace response")
+        return org_id, workspace_id
 
 
 LANGSMITH_ORG_DISCOVERY = LangSmithOrgDiscovery()
@@ -123,9 +137,10 @@ class LangSmithLogin:
         self.client_id = ENV.LANGSMITH_OAUTH_CLIENT_ID.get()
         self.client_secret = ENV.LANGSMITH_OAUTH_CLIENT_SECRET.get()
         self.org_id = ""
+        self.workspace_id = ""
 
     async def allowed_org(self) -> str:
-        self.org_id = await LANGSMITH_ORG_DISCOVERY.resolve()
+        self.org_id, self.workspace_id = await LANGSMITH_ORG_DISCOVERY.resolve()
         return self.org_id
 
     async def require_configured(self) -> None:
@@ -151,26 +166,50 @@ class LangSmithLogin:
             async with httpx2.AsyncClient(
                 timeout=httpx2.Timeout(15.0, connect=5.0), transport=pooled_transport()
             ) as client:
-                response = await client.request(
-                    method, self.same_origin(url), headers=headers, data=data
-                )
+                for attempt in range(1, LANGSMITH_RATE_LIMIT_ATTEMPTS + 1):
+                    response = await client.request(
+                        method, self.same_origin(url), headers=headers, data=data
+                    )
+                    if response.status_code != 429 or attempt == LANGSMITH_RATE_LIMIT_ATTEMPTS:
+                        break
+                    await asyncio.sleep(self.rate_limit_wait(response, attempt))
         except httpx2.RequestError as exc:
             raise HTTPException(503, "LangSmith authorization is temporarily unavailable") from exc
-        if response.is_success and not response.content:
+        if not response.is_success:
+            raise self.failure(response)
+        if not response.content:
             return None
         try:
-            body: object = response.json()
+            return response.json()
         except ValueError as exc:
             raise HTTPException(502, "Invalid LangSmith authorization response") from exc
-        if not response.is_success:
-            if response.status_code in {401, 403} or (
-                isinstance(body, dict) and body.get("error") == "invalid_grant"
-            ):
-                raise HTTPException(
-                    401, "LangSmith authorization expired or revoked — sign in again"
-                )
-            raise HTTPException(503, "LangSmith authorization is temporarily unavailable")
-        return body
+
+    @staticmethod
+    def rate_limit_wait(response: httpx2.Response, attempt: int) -> float:
+        try:
+            requested = float(response.headers.get("Retry-After", ""))
+        except ValueError:
+            requested = 0.5 * attempt
+        return min(requested, LANGSMITH_RATE_LIMIT_MAX_WAIT) if requested >= 0 else 0.0
+
+    @staticmethod
+    def failure(response: httpx2.Response) -> HTTPException:
+        try:
+            body: object = response.json()
+        except ValueError:
+            body = None
+        if response.status_code in {401, 403} or (
+            isinstance(body, dict) and body.get("error") == "invalid_grant"
+        ):
+            return HTTPException(401, "LangSmith authorization expired or revoked — sign in again")
+        logger.warning(
+            "LangSmith authorization request failed",
+            extra={
+                "status_code": response.status_code,
+                "langsmith_path": response.request.url.path,
+            },
+        )
+        return HTTPException(503, "LangSmith authorization is temporarily unavailable")
 
     async def metadata(self) -> dict[str, str]:
         await self.require_configured()
@@ -219,6 +258,8 @@ class LangSmithLogin:
             "code_challenge_method": "S256",
             "scope": "openid profile email offline_access",
             "resource": self.issuer,
+            "organization_id": self.org_id,
+            "workspace_id": self.workspace_id,
         }
         return endpoints["authorization_endpoint"] + "?" + urlencode(params)
 
@@ -341,12 +382,20 @@ class LangSmithLogin:
         principal = DashboardPrincipal(
             "langsmith", f"user:{user.id}", user.id, identity.external_id
         )
-        return await self.authorize_session(principal)
+        return await self.authorize_session(principal, user=user)
 
-    async def credential(self, key: str) -> OAuthCredential:
-        credential = await load_credential("langsmith_login", key)
-        if credential is None or credential.client_id != self.client_id:
-            raise HTTPException(401, "LangSmith login expired — sign in again")
+    async def credential(self, key: str, *, session: AsyncSession | None = None) -> OAuthCredential:
+        async with postgres.session(session) as session:
+            credential = await load_credential("langsmith_login", key, session=session)
+            if credential is None or credential.client_id != self.client_id:
+                raise HTTPException(401, "LangSmith login expired — sign in again")
+            signed_in = await credential.signed_in_since(
+                LANGSMITH_WORKSPACE_LOGIN_SINCE, session=session
+            )
+        if not signed_in:
+            raise HTTPException(
+                401, "Sign in with LangSmith again to authorize Robin in its workspace"
+            )
         return credential
 
     def needs_refresh(self, credential: OAuthCredential) -> bool:
@@ -406,9 +455,7 @@ class LangSmithLogin:
                     )
                 raise
 
-    async def authorize_credential(
-        self, credential: OAuthCredential, principal: DashboardPrincipal
-    ) -> str:
+    def cached_token(self, credential: OAuthCredential) -> str | None:
         token = self.checked_token(credential)
         now = datetime.now(UTC)
         if (
@@ -419,19 +466,78 @@ class LangSmithLogin:
             and credential.access_token_expires_at > now
         ):
             return token
+        return None
+
+    @asynccontextmanager
+    async def authorized_person(
+        self, principal: DashboardPrincipal
+    ) -> AsyncIterator[tuple[AsyncSession, User]]:
+        """Share local authorization reads; release the transaction for provider calls."""
+        await self.require_configured()
+        async with postgres.session() as session:
+            user = await principal.user(session=session)
+            if user is None:
+                raise HTTPException(401, "Sign in with LangSmith to use Robin")
+            identity = next(
+                (item for item in user.identities if item.provider == "langsmith"), None
+            )
+            if identity is None:
+                raise HTTPException(401, "Sign in with LangSmith to use Robin")
+            principal = replace(
+                principal,
+                provider="langsmith",
+                subject=f"user:{user.id}",
+                user_id=user.id,
+                langsmith_subject=identity.external_id,
+            )
+            credential = await self.credential(principal.subject, session=session)
+            try:
+                cached = (
+                    not self.needs_refresh(credential) and self.cached_token(credential) is not None
+                )
+            except HTTPException:
+                logger.debug("Cached login token could not be read", exc_info=True)
+                cached = False
+            if cached:
+                yield session, user
+                return
+        await self.authorize_loaded(principal, credential)
+        async with postgres.session() as session:
+            yield session, user
+
+    @asynccontextmanager
+    async def authorized_read(self, principal: DashboardPrincipal) -> AsyncIterator[AsyncSession]:
+        async with self.authorized_person(principal) as (session, _user):
+            yield session
+
+    async def authorize_credential(
+        self, credential: OAuthCredential, principal: DashboardPrincipal
+    ) -> str:
+        token = self.cached_token(credential)
+        if token is not None:
+            return token
+        token = self.checked_token(credential)
+        now = datetime.now(UTC)
         authorized_until = now + LANGSMITH_AUTHORIZATION_TTL
         await self.check_identity(token, principal)
         if not await credential.authorize_login(self.org_id, authorized_until):
             raise HTTPException(401, "LangSmith login expired — sign in again")
         return token
 
-    async def authorize_session(self, principal: DashboardPrincipal) -> str:
+    async def authorize_session(
+        self, principal: DashboardPrincipal, *, user: User | None = None
+    ) -> str:
         await self.require_configured()
-        user = await principal.user()
+        user = user if user is not None else await principal.user()
         if user is not None:
             principal = replace(principal, subject=f"user:{user.id}", user_id=user.id)
+        credential = await self.credential(principal.subject)
+        return await self.authorize_loaded(principal, credential)
+
+    async def authorize_loaded(
+        self, principal: DashboardPrincipal, credential: OAuthCredential
+    ) -> str:
         key = principal.subject
-        credential = await self.credential(key)
         try:
             if self.needs_refresh(credential):
                 token = await self.refresh(principal)

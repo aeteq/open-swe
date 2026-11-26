@@ -1,10 +1,11 @@
-"""Instance and workspace settings records in PostgreSQL: the instance's under ``""``, a workspace's under its slug."""
+"""PostgreSQL records for global settings and execution profiles."""
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, and_, delete, func, select
+from sqlalchemy import ColumnElement, and_, delete, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,28 +24,113 @@ class SettingsRecord(Base):
     updated_at: Mapped[datetime | None] = mapped_column(server_default=NOW, init=False)
 
 
+@dataclass(frozen=True)
+class SettingsSnapshot:
+    value: JsonObject
+    version: str
+
+
 class SettingsRecords:
     """Every settings record of one tier."""
 
-    def __init__(self, tier: Literal["instance", "workspace"]) -> None:
+    def __init__(self, tier: Literal["instance", "execution"]) -> None:
         self.tier = tier
 
     def _where(self, key: str) -> ColumnElement[bool]:
         return and_(SettingsRecord.tier == self.tier, SettingsRecord.key == key)
 
-    async def get(self, key: str = "") -> JsonObject | None:
-        async with postgres.session() as session:
+    async def get(self, key: str = "", *, session: AsyncSession | None = None) -> JsonObject | None:
+        async with postgres.session(session) as session:
             return await session.scalar(select(SettingsRecord.value).where(self._where(key)))
 
-    async def put(self, key: str, value: JsonObject) -> None:
+    async def for_keys(self, keys: list[str], *, session: AsyncSession) -> dict[str, JsonObject]:
+        if not keys:
+            return {}
+        rows = await session.execute(
+            select(SettingsRecord.key, SettingsRecord.value).where(
+                SettingsRecord.tier == self.tier, SettingsRecord.key.in_(keys)
+            )
+        )
+        return dict(rows.tuples().all())
+
+    async def snapshot(self, key: str = "") -> SettingsSnapshot:
         async with postgres.session() as session:
+            row = (
+                await session.execute(
+                    select(SettingsRecord.value, SettingsRecord.updated_at).where(self._where(key))
+                )
+            ).one_or_none()
+        if row is None:
+            return SettingsSnapshot({}, "missing")
+        return SettingsSnapshot(
+            row.value, row.updated_at.isoformat() if row.updated_at else "unversioned"
+        )
+
+    async def put(
+        self,
+        key: str,
+        value: JsonObject,
+        *,
+        expected_version: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> None:
+        async with postgres.session(session) as session:
             upsert = insert(SettingsRecord).values(tier=self.tier, key=key, value=value)
-            await session.execute(
-                upsert.on_conflict_do_update(
+            if expected_version == "missing":
+                statement = upsert.on_conflict_do_nothing()
+            elif expected_version is None:
+                statement = upsert.on_conflict_do_update(
                     index_elements=[SettingsRecord.tier, SettingsRecord.key],
                     set_={"value": value, "updated_at": func.clock_timestamp()},
                 )
+            else:
+                condition = (
+                    SettingsRecord.updated_at.is_(None)
+                    if expected_version == "unversioned"
+                    else SettingsRecord.updated_at == datetime.fromisoformat(expected_version)
+                )
+                statement = (
+                    update(SettingsRecord)
+                    .where(self._where(key), condition)
+                    .values(value=value, updated_at=func.clock_timestamp())
+                )
+            result = await session.scalar(statement.returning(SettingsRecord.key))
+            if result is None:
+                raise ValueError(
+                    "Settings changed; read the resource privately again before retrying"
+                )
+
+    async def lock(self, key: str = "", *, session: AsyncSession) -> JsonObject:
+        """Read a record under the caller's transaction lock, creating an empty one if absent."""
+        await session.execute(
+            insert(SettingsRecord)
+            .values(tier=self.tier, key=key, value={})
+            .on_conflict_do_nothing(index_elements=[SettingsRecord.tier, SettingsRecord.key])
+        )
+        return (
+            await session.scalars(
+                select(SettingsRecord.value).where(self._where(key)).with_for_update()
             )
+        ).one()
+
+    async def patch(
+        self, key: str, value: JsonObject, *, session: AsyncSession | None = None
+    ) -> tuple[JsonObject, JsonObject]:
+        async with postgres.session(session) as session:
+            before = await self.lock(key, session=session)
+            upsert = insert(SettingsRecord).values(tier=self.tier, key=key, value=value)
+            saved = await session.scalar(
+                upsert.on_conflict_do_update(
+                    index_elements=[SettingsRecord.tier, SettingsRecord.key],
+                    set_={
+                        "value": SettingsRecord.value.op("||")(upsert.excluded.value),
+                        "updated_at": func.clock_timestamp(),
+                    },
+                ).returning(SettingsRecord.value)
+            )
+            if saved is None:
+                raise RuntimeError("Settings update did not return a record")
+            return before, saved
 
     async def delete(self, key: str) -> None:
         async with postgres.session() as session:
@@ -52,8 +138,7 @@ class SettingsRecords:
 
     @staticmethod
     async def pinned_releases(session: AsyncSession) -> frozenset[UUID]:
-        """Every app release a record at either tier pins, in Apps in reviews or Apps for
-        everyone, so cleanup keeps it."""
+        """Every app release pinned by a current or historical record, retained for cleanup."""
         found: set[UUID] = set()
         for value in await session.scalars(select(SettingsRecord.value)):
             for field in ("review_apps", "featured_apps"):
@@ -67,4 +152,3 @@ class SettingsRecords:
 
 
 INSTANCE_SETTINGS = SettingsRecords("instance")
-WORKSPACE_SETTINGS = SettingsRecords("workspace")

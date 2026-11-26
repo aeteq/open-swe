@@ -1,10 +1,10 @@
 import { queryOptions, useQuery } from "@tanstack/react-query"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, useHydrated } from "@tanstack/react-router"
 import { useEffect, useMemo } from "react"
 
 import { Button } from "@langchain/macaw-components/Button"
 import { Card } from "@langchain/macaw-components/Card"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Skeleton } from "@/components/Skeleton"
 import { Text } from "@langchain/macaw-components/Text"
 
 import { LogoMark } from "@/components/Branding"
@@ -41,6 +41,7 @@ export const Route = createFileRoute("/login")({
 })
 function Login() {
   const session = useSession()
+  const hydrated = useHydrated()
   const signInOptions = useQuery(signInOptionsQuery)
   const signInWithGitHub = signInOptions.data?.provider === "github"
   const search = Route.useSearch()
@@ -56,7 +57,13 @@ function Login() {
     () => (session.data ? consumeAuthRedirect(redirectParam) : null),
     [redirectParam, session.data]
   )
-  if (session.isLoading || signInOptions.isLoading) {
+  // The server knows only that a visitor with no session cookie is signed out,
+  // so a session the browser resolved before hydrating waits until it has.
+  if (
+    session.isLoading ||
+    signInOptions.isLoading ||
+    (!hydrated && session.data !== null)
+  ) {
     return (
       <main className="flex min-h-svh items-center justify-center bg-surface-level-1 p-space-5">
         <Skeleton className="h-40 w-80" />

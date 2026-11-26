@@ -1,5 +1,6 @@
 """FastAPI application composition."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -15,29 +16,31 @@ from openswe.api.github_errors import add_github_error_handlers
 from openswe.api.health import router as health_router
 from openswe.api.public_origin import PublicOriginMiddleware
 from openswe.api.request_ids import add_request_ids
-from openswe.api.tracing import add_trace_resource_names, configure_datadog_environment
+from openswe.api.tracing import configure_datadog_environment
 from openswe.audit_logs.middleware import AuditLogMiddleware
 from openswe.config import ENV
 from openswe.dashboard import router as dashboard_router
+from openswe.dashboard.oauth import DESKTOP_APP_ORIGINS
 from openswe.mcp import server as agent_mcp_server
 from openswe.mda_channels.api import router as mda_channel_api_router
 from openswe.mda_channels.github_deliveries import router as mda_github_deliveries_router
 from openswe.mda_channels.resolve_user import router as mda_resolve_user_router
 from openswe.mda_channels.slack_channel_events import router as mda_slack_channel_events_router
+from openswe.merge_queue.control import router as queue_control_router
 from openswe.notion.routes import router as notion_webhook_router
-from openswe.openai_responses.routes import router as sandbox_openai_router
-from openswe.review.eval_report_routes import router as reviewer_eval_report_router
 from openswe.rollout_events import router as rollout_webhook_router
+from openswe.sandboxes.proxy_callback_routes import router as sandbox_proxy_callback_router
 from openswe.sandboxes.tool_routes import router as sandbox_tool_router
 from openswe.short_links.routes import router as short_link_router
 from openswe.slack.routes import router as slack_webhook_router
 from openswe.threads.plan_api import plan_router
 from openswe.threads.router import ThreadRouter
+from openswe.threads.runs_api import JOIN_HEADER, STEERED_HEADER
 from openswe.threads.workflow_approval_api import workflow_approval_router
 from openswe.users.authorization import AccountConflict
 from openswe.users.records import UnknownUser
 from openswe.utils.dashboard_ui import mount_dashboard_ui
-from openswe.utils.event_loop import pin_single_event_loop, watch_for_stalls
+from openswe.utils.event_loop import GcPauses, pin_single_event_loop, watch_for_stalls
 from openswe.utils.http_pool import close_pool as close_http_pool
 
 logger = logging.getLogger(__name__)
@@ -57,11 +60,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from openswe.bridge import listener as bridge_listener
     from openswe.dashboard.admin import configured_admins
     from openswe.dashboard.oauth import validate_github_login_allowlist
-    from openswe.dashboard.options import validate_local_dev_llm_config
     from openswe.database.analytics import activate_reporting, load_workspace
     from openswe.database.notifications import LISTENER
+    from openswe.github.run_calls import RUN_GITHUB_CALLS
     from openswe.jobs.kinds import SEGMENT_WORKER, start_jobs
     from openswe.jobs.kinds import WORKER as JOB_WORKER
+    from openswe.jobs.worker import WorkerShutdown
     from openswe.plugins.rooms import ROOMS as PLUGIN_ROOMS
     from openswe.review.styles import delete_analyzer_crons
     from openswe.sandboxes.providers.registry import validate_sandbox_startup_config
@@ -70,11 +74,13 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from openswe.transcript import listener as transcript_listener
     from openswe.ui_invalidations.hub import HUB
     from openswe.users import User
+    from openswe.utils.datadog_spans import DatadogSpans
 
     pin_single_event_loop()
+    # Before any request: a LangSmith detailed trace takes Datadog's spans from here on.
+    DatadogSpans.install()
     validate_github_login_allowlist()
     validate_sandbox_startup_config()
-    validate_local_dev_llm_config()
     validate_mda_startup_config()
     validate_slack_startup_config()
     # Before anything is served: no thread or run is ever made on this Agent Server.
@@ -120,6 +126,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     LISTENER.start()
     JOB_WORKER.start(first=start_jobs)
     SEGMENT_WORKER.start()
+    RUN_GITHUB_CALLS.start()
     try:
         from openswe.server import warm_agent_build
 
@@ -129,14 +136,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Warming the agent build failed", exc_info=True)
     try:
         async with AsyncExitStack() as stack:
+            stack.enter_context(WorkerShutdown(JOB_WORKER, SEGMENT_WORKER))
             stack.enter_context(watch_for_stalls())
+            stack.enter_context(GcPauses.watch())
             if AGENT_MCP is not None:
                 for mcp_app in AGENT_MCP.apps:
                     await stack.enter_async_context(mcp_app.lifespan(mcp_app))
+            GcPauses.freeze_startup_objects()
+            GcPauses.space_out_full_collections()
             yield
     finally:
-        await SEGMENT_WORKER.stop()
-        await JOB_WORKER.stop()
+        await asyncio.gather(SEGMENT_WORKER.stop(), JOB_WORKER.stop())
+        await RUN_GITHUB_CALLS.stop()
         await HUB.stop()
         await bridge_listener.stop()
         await PLUGIN_ROOMS.stop()
@@ -145,6 +156,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await stop_worker()
         await close_http_pool()
         await database.close()
+        # Spans still queued at exit would miss the LangSmith client's own flush.
+        await asyncio.to_thread(DatadogSpans.drain, 5)
 
 
 async def _conflict(_request: Request, exc: Exception) -> JSONResponse:
@@ -165,11 +178,21 @@ def create_app() -> FastAPI:
         )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[*allowed_origins, "open-swe://app"],
+        allow_origins=[*allowed_origins, *DESKTOP_APP_ORIGINS],
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID", "Retry-After"],
+        # The SDK reconnects to a run stream's Location and reads its run id from
+        # Content-Location. The steered header says the message joined the live run, and
+        # the join header names the join a run stream answers.
+        expose_headers=[
+            "X-Request-ID",
+            "Retry-After",
+            "Location",
+            "Content-Location",
+            STEERED_HEADER,
+            JOIN_HEADER,
+        ],
     )
     app.add_middleware(AuditLogMiddleware)
     # Ahead of the core /threads and /runs routes, which the custom app shadows.
@@ -178,7 +201,6 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
     # Wraps every route and the MCP mount, so they see which domain the request used.
     app.add_middleware(PublicOriginMiddleware)
-    add_trace_resource_names(app)
     add_request_ids(app)
     add_github_error_handlers(app)
     app.add_exception_handler(UnknownUser, _conflict)
@@ -193,11 +215,11 @@ def create_app() -> FastAPI:
     app.include_router(notion_webhook_router)
     app.include_router(slack_webhook_router)
     app.include_router(health_router)
+    app.include_router(queue_control_router)
     app.include_router(rollout_webhook_router)
     app.include_router(sandbox_tool_router)
+    app.include_router(sandbox_proxy_callback_router)
     app.include_router(short_link_router)
-    app.include_router(sandbox_openai_router)
-    app.include_router(reviewer_eval_report_router)
     # Routed at the exact path so no redirect sits between MDA and the agent API.
     app.router.routes.append(
         Route(agent_api_server.API_PATH, agent_api_server.API, methods=["POST"])

@@ -1,16 +1,18 @@
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 from fastapi import FastAPI
 
 from openswe.dashboard.oauth import require_session
+from openswe.database import postgres
 from openswe.threads import handlers as thread_api
-from openswe.threads import listing, routes
+from openswe.threads import listing, routes, store
 from openswe.threads.principals import Principal, require_principal
 from openswe.threads.runtimes import MdaRun
+from openswe.users.models import User, UserIdentity
 from tests.conftest import ThreadStoreOverClient, patch_thread_module
 
 pytestmark = pytest.mark.usefixtures("registry_db")
@@ -70,6 +72,16 @@ class FakeClient:
         self.threads = FakeThreads(metadata, status=thread_status)
         self.runs = FakeRuns(run_status)
 
+    def serve(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Serve the dashboard's thread reads, its index and its runtime from this client."""
+        patch_thread_module(monkeypatch, "langgraph_client", lambda: self)
+        threads = ThreadStoreOverClient()
+        runtimes = SimpleNamespace(runs_on=lambda runtime: self.runs)
+        patch_thread_module(monkeypatch, "THREADS", threads)
+        monkeypatch.setattr(routes, "THREADS", threads)
+        for module in (store, routes):
+            monkeypatch.setattr(module, "RUNTIMES", runtimes)
+
 
 @pytest.mark.parametrize("run_status", ["running", "success", "error", "interrupted"])
 async def test_get_dashboard_thread_does_not_mark_thread_viewed(monkeypatch, run_status) -> None:
@@ -83,43 +95,46 @@ async def test_get_dashboard_thread_does_not_mark_thread_viewed(monkeypatch, run
         run_status,
         thread_status="busy" if run_status == "running" else "idle",
     )
-    patch_thread_module(monkeypatch, "langgraph_client", lambda: client)
+    client.serve(monkeypatch)
 
     result = await thread_api.get_dashboard_thread("tid", "octocat")
 
-    assert result["viewed"] is False
+    assert result["viewed"] is True
     assert "last_viewed_run_id" not in client.threads.thread["metadata"]
     assert client.threads.updates == []
 
 
-async def test_follow_up_withdrawn_from_the_queue_leaves_the_thread_running(monkeypatch) -> None:
-    # Cancelling the queued run also leaves LangGraph reporting the thread idle.
+async def test_detail_records_a_run_that_finished_since_the_index_saw_it(monkeypatch) -> None:
     client = FakeClient(
         {
             "source": "dashboard",
             "github_login": "octocat",
-            "latest_run_id": "live",
+            "latest_run_id": "run-1",
             "latest_run_status": "running",
         },
-        "running",
+        "success",
     )
-    client.runs.runs = [
-        {"run_id": "withdrawn", "status": "interrupted"},
-        {"run_id": "live", "status": "running"},
-    ]
-    patch_thread_module(monkeypatch, "langgraph_client", lambda: client)
+    client.serve(monkeypatch)
 
     result = await thread_api.get_dashboard_thread("tid", "octocat")
 
-    assert result["status"] == "running"
-    # What the commands proxy reads to steer or queue the next follow-up.
-    metadata = client.threads.thread["metadata"]
-    assert (metadata["latest_run_status"], metadata["latest_run_id"]) == ("running", "live")
+    assert result["status"] == "finished"
+    # What the sidebar and the commands proxy read until the next refresh.
+    assert client.threads.updates == [{"latest_run_id": "run-1", "latest_run_status": "success"}]
 
 
 class TestThreadReadState:
     @pytest.fixture(autouse=True)
-    def context(self, monkeypatch, user_records) -> None:
+    async def context(self, monkeypatch, registry_db) -> None:
+        async with postgres.session() as session:
+            session.add_all(
+                [
+                    User(
+                        identities=[UserIdentity(provider="github", external_id=login, login=login)]
+                    )
+                    for login in ("octocat", "other")
+                ]
+            )
         self.client = FakeClient(
             {
                 "source": "dashboard",
@@ -129,11 +144,7 @@ class TestThreadReadState:
             },
             "success",
         )
-        patch_thread_module(monkeypatch, "langgraph_client", lambda: self.client)
-        monkeypatch.setattr(routes, "THREADS", ThreadStoreOverClient())
-        monkeypatch.setattr(
-            routes, "RUNTIMES", SimpleNamespace(runs_on=lambda runtime: self.client.runs)
-        )
+        self.client.serve(monkeypatch)
         self.session = {"sub": "octocat"}
         self.app = FastAPI()
         self.app.include_router(routes.router, prefix="/dashboard/api")
@@ -159,7 +170,7 @@ class TestThreadReadState:
             assert response.status_code == 200
             assert response.json() == {"viewed": True}
             assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is True
-            assert (await thread_api.get_dashboard_thread("tid", "other"))["viewed"] is False
+            assert (await thread_api.get_dashboard_thread("tid", "other"))["viewed"] is True
             self.session = {"sub": "other"}
             assert (await client.put(url, json={"viewed": True})).status_code == 200
             self.session = {"sub": "octocat"}
@@ -198,14 +209,77 @@ class TestThreadReadState:
         )
         assert (await thread_api.get_dashboard_thread("tid", "other"))["viewed"] is True
 
-    async def test_new_run_is_unread_in_detail_and_lists(self) -> None:
+    async def test_owner_id_is_stable_in_detail_and_lists(self) -> None:
+        owner = await User.for_login("github", "octocat")
+        assert owner is not None
+        detail = await thread_api.get_dashboard_thread("tid", "octocat")
+        assert detail["ownerId"] == str(owner.id)
+        thread = self.client.threads.thread
+        variants: list[dict[str, object]] = [
+            {"owner_login": "octocat"},
+            {"owner_login": "OCTOCAT"},
+            {"owner_login": "missing"},
+            {"owner_login": f"user:{owner.id}"},
+            {"owner_user_id": str(owner.id), "owner_login": "renamed-owner"},
+            {"owner_type": "system", "owner_user_id": str(owner.id), "owner_login": "octocat"},
+        ]
+        with (
+            patch.object(User, "for_github_logins", wraps=User.for_github_logins) as batch,
+            patch.object(User, "for_login", wraps=User.for_login) as individual,
+        ):
+            summaries = await listing._summarize_threads(
+                self.client,
+                [{**thread, "metadata": {**thread["metadata"], **variant}} for variant in variants],
+            )
+        assert [summary["ownerId"] for summary in summaries] == [
+            str(owner.id),
+            str(owner.id),
+            None,
+            str(owner.id),
+            str(owner.id),
+            None,
+        ]
+        assert batch.await_count == 1
+        individual.assert_not_awaited()
+        thread["metadata"]["owner_type"] = "system"
+        detail = await thread_api.get_dashboard_thread("tid", "octocat")
+        assert detail["ownerId"] is None
+
+    async def test_automation_capability_is_only_computed_on_detail(self) -> None:
+        owner = await User.for_login("github", "octocat")
+        assert owner is not None
+        self.client.threads.thread["metadata"].update(
+            {
+                "source": "schedule",
+                "thread_category": "automation",
+                "automation_creator_user_id": str(owner.id),
+            }
+        )
+        threads = [{**self.client.threads.thread, "thread_id": f"tid-{i}"} for i in range(25)]
+        with patch.object(User, "get", wraps=User.get) as get_user:
+            summaries = await listing._summarize_threads(
+                self.client, threads, viewer_login="octocat"
+            )
+        assert all(item["automationCanPost"] is None for item in summaries)
+        get_user.assert_not_awaited()
+        assert (await thread_api.get_dashboard_thread("tid", "octocat"))["automationCanPost"]
+        assert not (await thread_api.get_dashboard_thread("tid", "other"))["automationCanPost"]
+        self.client.threads.thread["metadata"]["automation_system"] = True
+        assert not (await thread_api.get_dashboard_thread("tid", "octocat"))["automationCanPost"]
+
+    async def test_only_eligible_response_is_unread_in_detail_and_lists(self) -> None:
         await routes.api_set_thread_read_state(
             "tid", routes.ThreadReadState(viewed=True), self.session
         )
         self.client.threads.thread["metadata"]["latest_run_id"] = "run-2"
         self.client.runs.runs = [{"run_id": "run-2", "status": "success"}]
+        assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is True
+        saved = await routes.THREAD_READ_STATES.saved("octocat", "tid") or {}
+        saved["latest_response_id"] = "message:7"
+        await routes.THREAD_READ_STATES.put("octocat", saved, "tid")
         detail = await thread_api.get_dashboard_thread("tid", "octocat")
         assert detail["viewed"] is False
+        assert detail["unreadResponseId"] == "message:7"
         assert detail["latestRunId"] == "run-2"
         summaries = await listing._summarize_threads(
             self.client, [self.client.threads.thread], viewer_login="octocat"
@@ -223,18 +297,45 @@ class TestThreadReadState:
         summaries = await listing._summarize_threads(
             self.client, [self.client.threads.thread], viewer_login="other"
         )
-        assert summaries[0]["viewed"] is False
+        assert summaries[0]["viewed"] is True
+
+    @pytest.mark.parametrize("observed", [None, "message:1"])
+    async def test_stale_acknowledgement_preserves_new_response(self, observed) -> None:
+        await routes.THREAD_READ_STATES.put("octocat", {"latest_response_id": "message:2"}, "tid")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=self.app), base_url="http://test"
+        ) as client:
+            response = await client.put(
+                "/dashboard/api/threads/tid/read-state",
+                json={"viewed": True, "responseId": observed},
+            )
+            assert response.json() == {"viewed": False}
+            response = await client.put(
+                "/dashboard/api/threads/tid/read-state",
+                json={"viewed": True, "responseId": "message:2"},
+            )
+            assert response.json() == {"viewed": True}
+            response = await client.put(
+                "/dashboard/api/threads/tid/read-state",
+                json={"viewed": True, "responseId": observed},
+            )
+            assert response.json() == {"viewed": True}
+            assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is True
 
     async def test_legacy_read_markers_belong_only_to_owner(self) -> None:
         self.client.threads.thread["metadata"].update(
-            last_viewed_run_id="run-1", last_viewed_at_ms=123
-        )
-        assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is True
-        assert (await thread_api.get_dashboard_thread("tid", "other"))["viewed"] is False
-        await routes.api_set_thread_read_state(
-            "tid", routes.ThreadReadState(viewed=False), self.session
+            last_viewed_run_id="run-1", last_viewed_at_ms=123, viewed=False
         )
         assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is False
+        assert (await thread_api.get_dashboard_thread("tid", "other"))["viewed"] is True
+        await routes.THREAD_READ_STATES.put("octocat", {"latest_response_id": "message:1"}, "tid")
+        result = await thread_api.get_dashboard_thread("tid", "octocat")
+        assert result["viewed"] is False
+        assert result["viewedAt"] == 123
+        await routes.api_set_thread_read_state(
+            "tid", routes.ThreadReadState(viewed=True), self.session
+        )
+        assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is True
 
     async def test_review_walkthrough_uses_personal_view_time(self) -> None:
         metadata = self.client.threads.thread["metadata"]
@@ -254,9 +355,15 @@ class TestThreadReadState:
         assert result["viewed"] is True
         metadata["walkthrough_ready_at_ms"] = result["viewedAt"] + 1
         assert (await thread_api.get_dashboard_thread("tid", "octocat"))["viewed"] is False
+        stale = await routes.api_set_thread_read_state(
+            "tid",
+            routes.ThreadReadState(viewed=True, responseId=result["unreadResponseId"]),
+            self.session,
+        )
+        assert stale.viewed is False
 
     async def test_unreadable_and_missing_threads_cannot_change_read_state(
-        self, monkeypatch, user_records
+        self, monkeypatch
     ) -> None:
         self.client.threads.thread["metadata"]["visibility"] = "private"
         self.session = {"sub": "other"}
@@ -279,4 +386,4 @@ class TestThreadReadState:
                 "/dashboard/api/threads/tid/read-state", json={"viewed": True}
             )
             assert response.status_code == 401
-        assert user_records.items == {}
+        assert await routes.THREAD_READ_STATES.saved("other", "tid") is None

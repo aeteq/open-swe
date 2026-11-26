@@ -1,55 +1,150 @@
-Design QA keeps before and after screenshots of a pull request's frontend, which reviewers compare side by side.
+Design QA saves before/after screenshots of a pull request's frontend and checks every visual change against the repository's design system, as a design system engineer would.
 
-Capture only when the diff changes what people see in a web frontend and a preview of this pull request is up: a deployment or a bot's comment on the pull request links it.
-Otherwise do nothing for Design QA, and don't mention it.
+## Outcome
 
-1. Find the preview, and its base: the site built from the default branch that shares the preview's data.
-   The workspace's review guidelines name the base when there is one; without a base, don't capture.
-1. If the pages need a sign-in, sign the browser in to the base's host and to the preview's host.
-1. Pick the pages and interaction states the diff changes, at most ten.
-   For each, open the same route on the base and on the preview at one viewport size, such as 1440×900, reach the same state, let the page settle, and save a viewport screenshot of each with run code, such as `await page.screenshot({ path: 'design-qa/settings-before.png' })`, which saves `/workspace/design-qa/settings-before.png`.
-   Don't take full-page screenshots: pages of different heights can't be compared.
-1. Look at each pair with `read_file` for what changed and anything that looks wrong; Design QA measures how many pixels differ itself.
-1. Save the capture once, with `save_app_document`: collection `captures`, key `pulls/<number>/`, the document below, and `files` naming every screenshot you refer to.
+Always record one with `record_app_review_outcome`:
+
+- `skipped`: genuinely no visual changes after tracing the diff to rendered surfaces.
+  Start the reason with `No visual changes:` and explain what makes the change nonvisual.
+  A shared component, tab, token, style, or layout change is not nonvisual just because it has no page of its own.
+- `blocked`: a visual change cannot be compared yet.
+  For a preview known to be building or deploying, start the reason with `Preview pending:`; name the check and current head when known.
+  Set `retryable: true` only when a known build/deployment or preview propagation is temporary; preview follow-up runs retry at most three times.
+  Do not call a failed deployment pending or retry sign-in/permission failures automatically.
+  When a preview is not deployed yet, say so, not that capture failed.
+  For no supported preview or comparison base, start with `Comparison unavailable:` and identify the missing prerequisite; this is not evidence of no visual changes.
+  For sign-in, permissions, failed builds, or other gates, give the concrete blocker and remedy.
+- `failed`: an attempted capture or save failed; preserve the actual error.
+- `complete`: only after saving at least one matched pair from the running UI.
+
+## Steps
+
+1. **Preview and base.**
+   Use the head commit's latest successful preview (deployment records or the newest deployment-bot comment, never a guess) and the base the review guidelines name, signing in to both if needed.
+1. **Design system.**
+   Before looking at the change, read in full and list in `design_system.sources`:
+   - every `DESIGN.md`, at the root and in the changed app, and the docs they link;
+   - UI guidance in `AGENTS.md`;
+   - design, UI or Macaw skills in `.agents/skills` or `.claude/skills`, and `macaw-design`;
+   - the component library's docs and tokens, for Macaw `docs/*.md` and `dist/catalog.json` of `@langchain/macaw-components` and `@langchain/macaw-tokens`, else `langchain-ai/macaw-design-system` via `gh`.
+1. **Check.**
+   Hold every changed frontend line, then every screenshot, to the design system:
+   - documented components, variants and sizes, not hand-rolled copies or style overrides;
+   - semantic tokens for color, spacing, radius, type, shadow and motion, not raw hex, off-scale or arbitrary values;
+   - icons, hover, focus-visible, disabled, loading, empty and error states, light and dark, contrast, layout patterns and copy.
+
+   Judge only what the diff changes.
+1. **Map every surface.**
+   Before opening a browser, work out from the code everywhere the diff shows up; never settle for the pages you happen to find by clicking around.
+   - For each changed component, hook, style, token or asset, find what imports it (`rg`), then what imports those, up to the routes, layouts and shared chrome (app header, top bar, sidebar, navigation, page shells) that render it.
+     Read the router for each route's real path.
+   - For shared libraries such as Macaw Tabs, inspect the changed component's source and stories, package exports, and consuming apps.
+     Use an actual running consumer or the repository's Storybook preview, with the exact story id and query.
+     A library file without an app route still has a visual surface.
+   - If the deployed app does not include the changed package version, it cannot prove the library change; use the PR's actual Storybook/build or record the comparison as unavailable.
+   - Note what gates each place: feature flags, permissions, plan or settings, data (a non-empty list, several data planes), viewport and route handles.
+   - Add the places the PR's title and description say it targets; they come first.
+   - List each distinct placement once, as `coverage.surfaces`: a component in the app header counts once, shot on the home page, not once per route.
+     A placement in shared chrome is shot on the app's landing or home page.
+1. **Reach each surface.**
+   Find where its gates hold on both sides: switch to an organization, workspace or project that meets them, open the route handle's page, or turn a flag on with the app's own client-side override (its flag panel, `localStorage` or a query parameter) on both sides.
+   Never change server data or settings to reach one.
+   Every surface you can't reach goes in `coverage.missed` with the gate that kept it hidden.
+1. **Shoot.**
+   Shoot every surface on the map, the PR's targets first, then shared chrome, then the rest, up to fifteen; list any beyond that in `coverage.missed`.
+   The save takes at most 72 files: four per surface shot in both themes, two per recording.
+   For each, reach the same state on both sides at one viewport, such as 1440×900, and run `return await shoot('<id>-before')` (`-after` on the preview) to save `/workspace/design-qa/<id>-before.png`, never a full page.
+   Never fabricate screenshot evidence with hand-written HTML, recreated components, or painted mock images.
+   If no real app or Storybook can run, record the blocker rather than substituting a mock.
+   Shoot each dark too (`<id>-before-dark`, `-after-dark`) via `page.emulateMedia({ colorScheme: 'dark' })` or else the app's theme toggle, then switch back.
+   Skip dark if a side lacks it, noting so in `layout_warnings`.
+1. **Record.**
+   For up to three states whose motion matters (a popover, menu or dialog opening, a hover, a transition), `browser_record` `start` with `path` `/workspace/design-qa/<id>-before.mp4` (`-after` on the preview), interact, wait a second, `stop`; under 20 seconds, no passwords.
+1. **Compare** each pair with `read_file`, ignoring timing differences.
+1. **Score risk** from 1 to 5, as Robin's code review does: 1 none or tiny and conforming, 2 small and conforming, 3 noticeable or with design system warnings, 4 violations or a visible regression, 5 broken or inaccessible.
+1. **Save** once with `save_app_document`: collection `captures`, key `pulls/<number>/`, `files` mapping each file name to its path, and a document like this:
 
 ```json
-{
-  "status": "complete",
-  "auth_mode": "dummy",
-  "base_url": "https://base.example.com",
-  "head_url": "https://pr-123.preview.example.com",
-  "base_sha": "<the base commit>",
-  "head_sha": "<the head commit you reviewed>",
-  "report": {
-    "summary": "What changed visually, and anything that looks wrong, in a few sentences.",
-    "scenarios": [
-      {
-        "id": "settings",
-        "title": "Settings page",
-        "path": "/settings",
-        "before_url": "settings-before.png",
-        "after_url": "settings-after.png",
-        "width": 1440,
-        "height": 900,
-        "actions": ["Open the account menu"],
-        "annotations": [
-          { "x": 120, "y": 64, "width": 300, "height": 40, "title": "Label clipped", "body": "The new label is cut off at this width." }
-        ]
-      }
-    ]
+{"status": "complete", "auth_mode": "dummy", "base_url": "https://base.example", "head_url": "https://pr-1.example", "base_sha": "…", "head_sha": "…",
+ "report": {
+  "summary": "- Members menu is a hand-rolled dropdown, not Macaw Select\n- Selected tab uses the accent background",
+  "risk": {"score": 4, "reason": "A hand-rolled dropdown replaces Macaw's Select."},
+  "video_status": "recorded",
+  "coverage": {"surfaces": ["Settings page", "App header on home"],
+   "missed": [{"title": "App header on home", "path": "/", "reason": "Shown only with the org_nav flag, which has no client-side override."}]},
+  "design_system": {"sources": ["DESIGN.md", "macaw-design skill"],
+   "findings": [{"severity": "error", "title": "Hand-rolled dropdown", "body": "A div with raw colors.", "rule": "Macaw · Select", "location": "src/Members.tsx:42", "scenario": "settings"}]},
+  "scenarios": [{"id": "settings", "title": "Settings page", "path": "/settings", "before_url": "settings-before.png", "after_url": "settings-after.png",
+   "before_dark_url": "settings-before-dark.png", "after_dark_url": "settings-after-dark.png", "width": 1440, "height": 900,
+   "actions": ["Open the account menu"], "before_video_url": "settings-before.mp4", "after_video_url": "settings-after.mp4",
+   "annotations": [{"x": 120, "y": 64, "width": 300, "height": 40, "title": "Label clipped", "body": "Cut off at this width.", "severity": "error"}]}]}}
+```
+
+- `summary`: at most four `- ` lines of 15 words or fewer, problems first; name any surface in `coverage.missed`.
+- `coverage.surfaces`: every placement the map found, titled as its scenario is when shot; `coverage.missed`: each one without a scenario, with its `title`, `path` and the `reason` in one sentence.
+- `risk.reason`: one sentence of 20 words or fewer.
+- `findings`, worst first: `error` breaks a written rule or looks broken, such as a hand-rolled component, raw or off-scale value, missing focus, poor contrast, clipping or a broken theme; `warning` is only inconsistent.
+  `rule` cites the design system, `location` is the diff's `file:line`, and `scenario` is an `id`.
+  Empty `sources` means the repository has no design system, so check against the surrounding UI.
+- `annotations`: at most three areas of the light after screenshot, with `severity` `error`, `warning` or `info`.
+- Group evidence by scenario: each scenario must name the exact route and query (or Storybook iframe path and story id), the visible state, replay steps, and its actual base/PR screenshots.
+  Use separate scenarios for materially different tab, menu, empty, error, or disabled states; do not dump unrelated screenshots into one scenario.
+- `path` is the real browser path and query; for a modal, the parent route with the steps in `actions`.
+  Name missing evidence in `coverage.missed`, never as proof of no visual changes.
+- `auth_mode` is `dummy` if you signed in; names use letters, digits, `.`, `_`, `-`; ids are unique; `width` and `height` are the viewport; add `layout_warnings` when the sides can't match.
+
+## Steady screenshots
+
+Define `shoot` in each run that shoots; it waits for loading, freezes motion and shoots until two takes match:
+
+```js
+async function shoot(name) {
+  await page.evaluate(async () => {
+    const busy = '[aria-busy="true"], [role="progressbar"]:not([aria-valuenow]), [class*="skeleton" i], [class*="spinner" i], .animate-pulse, .animate-spin'
+    const seen = (el) => { const b = el.getBoundingClientRect(); return b.width > 0 && b.bottom > 0 && b.top < innerHeight }
+    for (const v of document.querySelectorAll('video')) { v.pause(); v.currentTime = 0 }
+    for (let w = 0; w < 40; w++) {
+      await document.fonts.ready
+      if (![...document.querySelectorAll(busy), ...[...document.images].filter((img) => !img.complete)].some(seen)) break
+      await new Promise((done) => setTimeout(done, 250))
+    }
+  })
+  const o = { path: `design-qa/${name}.png`, animations: 'disabled', style: '[data-design-qa-moving] { opacity: 0 !important }' }
+  let last = await page.screenshot(o)
+  for (let t = 0; t < 8; t++) {
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 500 + Math.random() * 500)))
+    const next = await page.screenshot(o)
+    if (next.length === last.length && next.every((b, i) => b === last[i])) return { name, steady: true }
+    last = next
   }
+  return { name, steady: false }
 }
 ```
 
-with `files` such as `{"settings-before.png": "/workspace/design-qa/settings-before.png", "settings-after.png": "/workspace/design-qa/settings-after.png"}`.
+On `steady: false`, mark what moves on both sides with this and shoot again; `shoot` hides it:
 
-- `auth_mode` is `"dummy"` when you signed in, `"none"` otherwise.
-- Each `*_url` is a name in `files`, of letters, digits, `.`, `_` and `-`.
-  Give each scenario a distinct `id` of the same characters.
-- `width` and `height` are the viewport size you took both screenshots at.
-- `actions` are the steps that reached an interaction state, such as opening a menu; leave them out for a page as it loads.
-- `annotations` are at most three areas of the after screenshot a reviewer should look at, in its pixels, each with a short `title` and a `body`; leave them out when nothing stands out.
-- When the two sides of a pair can't reach the same state or size, add `"layout_warnings": ["<why>"]`.
-- When the preview or the base won't load, or wants a sign-in you can't do, save a capture with `"status": "blocked"`, an `"error"` saying why, and no scenarios.
+```js
+return await page.evaluate(async () => {
+  const running = document.getAnimations().filter((a) => a.playState === 'running')
+  for (const a of running) a.pause()
+  const all = [...document.body.querySelectorAll('*')]
+  const look = (el) => { try { const b = el.getBoundingClientRect(); return [b.x, b.y, b.width, b.height, getComputedStyle(el).transform, el.toDataURL?.(), [...el.childNodes].map((n) => n.nodeType === Node.TEXT_NODE ? n.data : '').join('')].join() } catch { return '' } }
+  const first = all.map(look)
+  const moving = new Set()
+  for (let i = 0; i < 6; i++) {
+    await new Promise((done) => setTimeout(done, 250 + Math.random() * 250))
+    all.forEach((el, j) => look(el) !== first[j] && moving.add(el))
+  }
+  for (const a of running) a.play()
+  for (const el of moving) el.setAttribute('data-design-qa-moving', '')
+  return { marked: moving.size }
+})
+```
 
-Say something about the capture in your review only when it shows a visual problem, and then say that Design QA has the screenshots.
+If the marks hide what the diff changed, clear them and keep the last take.
+Reload and shoot again before noting a difference timing could explain.
+
+After saving, check `success` and keep the returned authenticated app `url`; never construct a screenshot bearer link for GitHub.
+Record `complete`, then call `publish_review` once, even with no findings, so the existing review publication includes the verified Design QA result link.
+If the capture shows a visual problem or design system violation, add its finding before publishing.
+A link preserves the destination's installation, repository-sharing and GitHub access checks; it does not make screenshots public.

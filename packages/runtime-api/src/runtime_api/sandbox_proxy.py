@@ -1,20 +1,16 @@
-"""The thread's sandbox's proxy config, which gives commands in the sandbox their credentials.
+"""How commands in the thread's sandbox get GitHub's credentials through its proxy.
 
-The proxy config is written whole, so one side writes all of it. The backend does,
-with a GitHub token it mints for the thread, unless the run's catalog names the
-connection the sandbox's GitHub rules carry (``SandboxSpec.github_proxy``). Then MDA
-writes it before each command: GitHub's rules from that connection, and the rest
-the backend keeps on the sandbox (``SANDBOX_PROXY``), such as its tool channel's
-capability, which names the sandbox.
+The sandbox's proxy config holds no credential (``runtime_api.catalog.SandboxSpec``):
+LangSmith asks the backend's proxy callback for the headers of a request to a GitHub host
+as it goes out, and the backend answers with a token for the sandbox's thread
+(``GITHUB_PROXY_RULES`` say how each host takes it).
 """
 
 import base64
+from fnmatch import fnmatchcase
 from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
-
-from runtime_api.endpoint import LOOP_CALL_SECONDS, Endpoint
-from runtime_api.operations import RunRequest
+from pydantic import BaseModel, ConfigDict
 
 # The user git sends with a GitHub token over HTTPS.
 GIT_TOKEN_USERNAME: Final = "x-access-token"
@@ -29,6 +25,10 @@ class GitHubProxyRule(BaseModel):
     hosts: tuple[str, ...]
     scheme: Literal["bearer", "basic"]
     env_vars: dict[str, str] = {}
+
+    def matches(self, host: str) -> bool:
+        """Whether a request to ``host`` takes this rule's header."""
+        return any(fnmatchcase(host.lower(), pattern) for pattern in self.hosts)
 
     def authorization(self, token: str) -> str:
         if self.scheme == "bearer":
@@ -46,26 +46,4 @@ GITHUB_PROXY_RULES: Final = (
         env_vars={"GH_TOKEN": "proxy-injected"},
     ),
     GitHubProxyRule(name="github", hosts=("github.com", "*.github.com"), scheme="basic"),
-)
-
-
-class SandboxProxyRequest(RunRequest):
-    # The sandbox MDA opened for the run, which the capability in the answer names.
-    sandbox_id: str
-
-
-class SandboxProxy(BaseModel):
-    """The backend's part of the sandbox's proxy config, which MDA writes beside GitHub's rules."""
-
-    # Its rules carry a capability for the sandbox, so it is never logged.
-    config: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
-
-
-# Only reads the thread and signs the same capability again, so it is safe to send again.
-SANDBOX_PROXY = Endpoint(
-    "sandbox_proxy",
-    SandboxProxyRequest,
-    SandboxProxy,
-    seconds=LOOP_CALL_SECONDS,
-    delivery="idempotent",
 )

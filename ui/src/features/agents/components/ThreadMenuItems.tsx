@@ -1,13 +1,18 @@
 import { SlackLinks } from "@/lib/slack-links"
 import { PushPinRegularIcon } from "@langchain/macaw-components/icons"
 import { ContextMenuSeparator } from "@langchain/macaw-components/ContextMenu"
-import { DropdownMenuSeparator } from "@langchain/macaw-components/DropdownMenu"
+import {
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+} from "@langchain/macaw-components/DropdownMenu"
 import { ArchiveIcon } from "@phosphor-icons/react/dist/ssr/Archive"
 import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ArrowCounterClockwise"
 import { ArrowLeftIcon } from "@phosphor-icons/react/dist/ssr/ArrowLeft"
 import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr/CaretRight"
 import { CodeIcon } from "@phosphor-icons/react/dist/ssr/Code"
 import { CopyIcon } from "@phosphor-icons/react/dist/ssr/Copy"
+import { ArrowSquareOutIcon } from "@phosphor-icons/react/dist/ssr/ArrowSquareOut"
 import { EyeIcon } from "@phosphor-icons/react/dist/ssr/Eye"
 import { EyeSlashIcon } from "@phosphor-icons/react/dist/ssr/EyeSlash"
 import { PencilSimpleIcon } from "@phosphor-icons/react/dist/ssr/PencilSimple"
@@ -19,8 +24,13 @@ import { TrashIcon } from "@phosphor-icons/react/dist/ssr/Trash"
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/ssr/TreeStructure"
 import { useState } from "react"
 
-import { ContextMenuItem, DropdownMenuItem } from "@/components/MenuItem"
+import {
+  ContextMenuItem,
+  DropdownMenuItem,
+  DropdownMenuSubTrigger,
+} from "@/components/MenuItem"
 import type { AgentThread } from "@/features/agents/lib/types"
+import { reportError } from "@/lib/errorReporting"
 
 export type ThreadMenuKind = "dropdown" | "context"
 
@@ -56,7 +66,34 @@ export function ThreadMenuItems({
 }) {
   const { Item, Separator } = MENU[menu]
   const [diagnostics, setDiagnostics] = useState(false)
-  if (diagnostics) {
+  const openInBrowser = window.openSweDesktop?.openInBrowser
+  const diagnosticItems = (
+    <>
+      {thread.traceUrl && (
+        <Item asChild>
+          <a href={thread.traceUrl} target="_blank" rel="noreferrer">
+            <TreeStructureIcon size={ICON_SIZE} />
+            Open trace
+          </a>
+        </Item>
+      )}
+      <Item
+        disabled={!thread.sandboxId}
+        onSelect={() => {
+          if (thread.sandboxId)
+            void navigator.clipboard.writeText(thread.sandboxId)
+        }}
+      >
+        <CopyIcon size={ICON_SIZE} />
+        Copy sandbox ID
+      </Item>
+      <Item onSelect={() => void navigator.clipboard.writeText(thread.id)}>
+        <CopyIcon size={ICON_SIZE} />
+        Copy thread ID
+      </Item>
+    </>
+  )
+  if (menu === "context" && diagnostics) {
     return (
       <>
         <Item
@@ -75,32 +112,7 @@ export function ThreadMenuItems({
           Back
         </Item>
         <Separator />
-        {thread.traceUrl && (
-          <Item asChild>
-            <a href={thread.traceUrl} target="_blank" rel="noreferrer">
-              <TreeStructureIcon size={ICON_SIZE} />
-              Open trace
-            </a>
-          </Item>
-        )}
-        <Item
-          disabled={!thread.sandboxId}
-          onSelect={() => {
-            if (thread.sandboxId)
-              void navigator.clipboard.writeText(thread.sandboxId)
-          }}
-        >
-          <CopyIcon size={ICON_SIZE} />
-          Copy sandbox ID
-        </Item>
-        <Item
-          onSelect={() => {
-            void navigator.clipboard.writeText(thread.id)
-          }}
-        >
-          <CopyIcon size={ICON_SIZE} />
-          Copy thread ID
-        </Item>
+        {diagnosticItems}
       </>
     )
   }
@@ -128,7 +140,23 @@ export function ThreadMenuItems({
         )}
         {thread.viewed ? "Mark unread" : "Mark read"}
       </Item>
-      {(thread.sourceUrl || thread.automationId) && <Separator />}
+      {(openInBrowser || thread.sourceUrl || thread.automationId) && (
+        <Separator />
+      )}
+      {openInBrowser && (
+        <Item
+          onSelect={() => {
+            void openInBrowser(
+              `/agents/${encodeURIComponent(thread.id)}`
+            ).catch((error: unknown) =>
+              reportError({ title: "Couldn't open the browser", error })
+            )
+          }}
+        >
+          <ArrowSquareOutIcon size={ICON_SIZE} />
+          Open in Browser
+        </Item>
+      )}
       {thread.sourceUrl && (
         <Item asChild>
           <a
@@ -153,22 +181,35 @@ export function ThreadMenuItems({
         </Item>
       )}
       <Separator />
-      <Item
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight") {
+      {menu === "context" ? (
+        <Item
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") {
+              event.preventDefault()
+              setDiagnostics(true)
+            }
+          }}
+          onSelect={(event) => {
             event.preventDefault()
             setDiagnostics(true)
-          }
-        }}
-        onSelect={(event) => {
-          event.preventDefault()
-          setDiagnostics(true)
-        }}
-      >
-        <CodeIcon size={ICON_SIZE} />
-        Diagnostics
-        <CaretRightIcon size={ICON_SIZE} className="ml-auto" />
-      </Item>
+          }}
+        >
+          <CodeIcon size={ICON_SIZE} />
+          Diagnostics
+          <CaretRightIcon size={ICON_SIZE} className="ml-auto" />
+        </Item>
+      ) : (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <CodeIcon size={ICON_SIZE} />
+            Diagnostics
+            <CaretRightIcon size={ICON_SIZE} className="ml-auto" />
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-40 border-default bg-elevated">
+            {diagnosticItems}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
       <Separator />
       <Item onSelect={onToggleArchived}>
         {archived ? (

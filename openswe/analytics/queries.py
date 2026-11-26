@@ -43,6 +43,12 @@ class InvalidUsageCursor(ValueError):
 
 def period_start(period: str | None, *, as_of: datetime | None = None) -> datetime:
     days = 1 if period == "24h" else 7 if period == "7d" else 30
+    if period == "mtd":
+        return (
+            (as_of or datetime.now(UTC))
+            .astimezone(UTC)
+            .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        )
     if period == "all":
         return datetime.min.replace(tzinfo=UTC)
     return (as_of or datetime.now(UTC)) - timedelta(days=days)
@@ -521,6 +527,10 @@ WITH runs AS (
     SELECT *, regexp_replace(favorite_model, '[^A-Za-z0-9._:/+-]', '-', 'g')
         AS sanitized_model
     FROM metrics
+    WHERE (CAST(:own_user_id AS uuid) IS NULL OR person_id = CAST(:own_user_id AS uuid)
+        OR person_id IN (SELECT person_id FROM identity_aliases
+            WHERE workspace_id = :workspace_id
+              AND alias_person_id = CAST(:own_user_id AS uuid)))
 ), ranked AS (
     SELECT *,
         feedback_given > 0 AND feedback_given = max(feedback_given) OVER ()
@@ -539,6 +549,7 @@ WITH runs AS (
         row_number() OVER (
             ORDER BY merged_prs DESC, agent_loc DESC, prs_opened DESC, name, person_id
         ) AS rank FROM labeled
+    WHERE COALESCE(lower(github_login) NOT LIKE '%[bot]', true)
 ), keyed AS (
     SELECT *,
         -- One key per sortable type: the inactive key is NULL for every row, so it
@@ -600,12 +611,26 @@ WITH runs AS (
             'invocations_with_partial_cost', invocations_with_partial_cost
         ) AS row
     FROM ordered WHERE position > :offset AND position <= :offset + :limit
+), bot_totals AS (
+    SELECT jsonb_build_object(
+        'accounts', count(*),
+        'invocations', COALESCE(sum(invocations), 0),
+        'threads', COALESCE(sum(threads), 0),
+        'total_tokens', COALESCE(sum(total_tokens), 0),
+        'total_cost_usd', COALESCE(sum(total_cost_usd), 0),
+        'invocations_without_cost', COALESCE(sum(invocations_without_cost), 0),
+        'invocations_with_partial_cost', COALESCE(sum(invocations_with_partial_cost), 0)
+    ) AS activity
+    FROM labeled WHERE lower(github_login) LIKE '%[bot]'
 )
 SELECT (SELECT COALESCE(jsonb_agg(row ORDER BY position), '[]'::jsonb) FROM selected) AS rows,
+    (SELECT activity FROM bot_totals) AS bot_activity,
     count(*) AS total_members,
     min(rank) FILTER (WHERE is_current) AS current_user_rank,
-    COALESCE(sum(invocations_without_cost), 0)::bigint AS invocations_without_cost,
-    COALESCE(sum(invocations_with_partial_cost), 0)::bigint AS invocations_with_partial_cost
+    (SELECT COALESCE(sum(invocations_without_cost), 0)::bigint FROM labeled)
+        AS invocations_without_cost,
+    (SELECT COALESCE(sum(invocations_with_partial_cost), 0)::bigint FROM labeled)
+        AS invocations_with_partial_cost
 FROM ranked
 """
 
@@ -657,9 +682,10 @@ async def usage_leaderboard(
     sort: UsageSort = "rank",
     direction: SortDirection = "asc",
     admin: bool = False,
+    own_user_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Read usage and review cohorts from one bounded PostgreSQL snapshot."""
-    normalized = period if period in {"24h", "7d", "30d", "all"} else "30d"
+    normalized = period if period in {"24h", "7d", "30d", "mtd", "all"} else "30d"
     workspace = workspace_id()
     if cursor:
         as_of, offset = _decode_usage_cursor(cursor, workspace, normalized, sort, direction)
@@ -674,6 +700,7 @@ async def usage_leaderboard(
         "current_login": (current_login or "").strip().lower(),
         "current_email": (current_email or "").strip().lower(),
         "admin": admin,
+        "own_user_id": str(own_user_id) if own_user_id is not None else None,
         "sort": sort,
         "direction": direction,
     }
@@ -682,6 +709,14 @@ async def usage_leaderboard(
         parameters["start"] = await _reporting_start(conn, normalized, as_of=as_of)
         result = await conn.execute(text(_USAGE_SQL), parameters)
         usage = dict(result.mappings().one())
+        if own_user_id is not None:
+            return {
+                "period": normalized,
+                **usage,
+                "next_cursor": None,
+                "start": parameters["start"].isoformat(),
+                "as_of": as_of.isoformat(),
+            }
         result = await conn.execute(text(_REVIEWER_SQL), parameters)
         reviewer = dict(result.mappings().one())
         metadata = await reporting_metadata(conn)

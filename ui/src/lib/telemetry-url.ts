@@ -7,7 +7,7 @@ function templateDashboardPath(pathname: string): string {
     return "/agents/:threadId/plan"
   if (
     /^\/agents\/[^/]+\/?$/.test(pathname) &&
-    !/^\/agents\/(automations|instructions|reviews|sandbox|skills|threads|workspaces)\/?$/.test(
+    !/^\/agents\/(automations|connections|instructions|reviews|sandbox|skills|threads)\/?$/.test(
       pathname
     )
   )
@@ -21,7 +21,7 @@ function templateDashboardPath(pathname: string): string {
 
 export function stripUrlDetails(url: string, dashboardOrigin?: string): string {
   const withoutDetails = url.split(/[?#]/, 1)[0] ?? ""
-  // A prefix match, so the desktop app's `open-swe://app` counts whatever origin its custom scheme parses to.
+  // A prefix match, so the desktop app's `robin://app` counts whatever origin its custom scheme parses to.
   if (dashboardOrigin && withoutDetails.startsWith(`${dashboardOrigin}/`))
     return `${dashboardOrigin}${templateDashboardPath(withoutDetails.slice(dashboardOrigin.length))}`
   if (withoutDetails.startsWith("/"))

@@ -21,6 +21,7 @@ import {
   toolTitle,
 } from "@/features/agents/lib/streamMessagesToUi"
 import { maybeDiffFromArgs } from "@/features/agents/lib/toolDisplay"
+import { BackgroundEvent } from "@/features/agents/lib/backgroundEvent"
 import {
   collectStructuredEntities,
   isSilentSender,
@@ -30,7 +31,6 @@ import {
   type ContextUsage,
   contextUsageFromUsageMetadata,
 } from "@/features/agents/lib/contextUsage"
-import { CLAUDE_CODE_SOURCE } from "@/features/agents/lib/sidebarFilter"
 import { attachmentUrl, fetchToolOutput } from "./api"
 import type { StructuredEntity } from "@/features/agents/lib/structuredInputMessages"
 import type {
@@ -104,6 +104,7 @@ export interface TranscriptTurnState {
   runId: string | null
   requestedAt: string
   startedAt: string | null
+  completedAt: string | null
   error: string | null
   items: ReadonlyArray<TurnItem>
   /** Bumped whenever this turn or anything it holds changed; the memo key. */
@@ -142,27 +143,42 @@ export interface TranscriptState {
   entities: ReadonlyMap<string, StructuredEntity>
 }
 
+class TranscriptTimestamp {
+  static seconds(timestamp: string): number {
+    const fraction = /\.(\d+)/.exec(timestamp)?.[1] ?? ""
+    return (
+      Date.parse(timestamp) / 1000 +
+      Number((fraction.slice(3) + "000").slice(0, 3)) / 1_000_000
+    )
+  }
+}
+
 function orderItems(
   messages: ReadonlyArray<TranscriptMessageState>,
   toolCalls: ReadonlyArray<TranscriptToolCallState>
 ): Array<TurnItem> {
-  const entries: Array<{ item: TurnItem; at: string; rank: number }> = [
-    ...messages.map((message) => ({
-      item: { kind: "message" as const, id: message.messageId },
-      at: message.createdAt,
-      rank: 0,
-    })),
+  const entries: Array<{ item: TurnItem; at: number; rank: number }> = [
+    ...messages.map((message) => {
+      const parsed =
+        message.role === "human" ? parseStructuredInput(message.text) : null
+      return {
+        item: { kind: "message" as const, id: message.messageId },
+        at:
+          parsed?.type === "message" && parsed.slackOccurredAt !== undefined
+            ? parsed.slackOccurredAt
+            : TranscriptTimestamp.seconds(message.createdAt),
+        rank: 0,
+      }
+    }),
     ...toolCalls.map((call) => ({
       item: { kind: "tool" as const, id: call.toolCallId },
-      at: call.startedAt,
+      at: TranscriptTimestamp.seconds(call.startedAt),
       rank: 1,
     })),
   ]
   entries.sort(
     (a, b) =>
-      a.at.localeCompare(b.at) ||
-      a.rank - b.rank ||
-      a.item.id.localeCompare(b.item.id)
+      a.at - b.at || a.rank - b.rank || a.item.id.localeCompare(b.item.id)
   )
   return entries.map((entry) => entry.item)
 }
@@ -257,6 +273,7 @@ function turnStates(
       runId: row.run_id ?? null,
       requestedAt: row.requested_at,
       startedAt: row.started_at ?? null,
+      completedAt: row.completed_at ?? null,
       error: row.error,
       items: orderItems(
         Object.values(messages).filter(
@@ -293,9 +310,10 @@ export function fromSnapshot(snapshot: TranscriptSnapshot): TranscriptState {
   const turns = turnStates(snapshot.turns, messages, toolCalls)
   const notices: Partial<Record<NoticeKind, TranscriptNoticeState>> = {}
   for (const row of snapshot.notices) {
-    notices[row.kind] = {
+    const kind = row.kind === "workspace_stale" ? "execution_stale" : row.kind
+    notices[kind] = {
       turnId: row.turn_id,
-      kind: row.kind,
+      kind,
       data: row.data,
     }
   }
@@ -422,6 +440,7 @@ function ensureTurn(
     runId: null,
     requestedAt: occurredAt,
     startedAt: state === "running" ? occurredAt : null,
+    completedAt: null,
     error: null,
     items: [],
     revision: 0,
@@ -659,6 +678,7 @@ export function applyEvent(
     case "turn.started": {
       const payload = event.payload
       const turn = ensureTurn(draft, payload.turn_id, "running", at)
+      if (turn.state !== "requested" && turn.state !== "running") break
       patchTurn(draft, turn, {
         state: "running",
         startedAt: turn.startedAt ?? at,
@@ -676,8 +696,9 @@ export function applyEvent(
     case "turn.completed": {
       const payload = event.payload
       const turn = draft.state.turns[payload.turn_id]
-      if (!turn) break
-      patchTurn(draft, turn, { state: "completed" })
+      if (!turn || (turn.state !== "requested" && turn.state !== "running"))
+        break
+      patchTurn(draft, turn, { state: "completed", completedAt: at })
       dropTransientNotices(draft, payload.turn_id)
       draft.state = { ...draft.state, status: settledStatus(draft, "idle") }
       break
@@ -685,8 +706,13 @@ export function applyEvent(
     case "turn.failed": {
       const payload = event.payload
       const turn = draft.state.turns[payload.turn_id]
-      if (!turn) break
-      patchTurn(draft, turn, { state: "failed", error: payload.error })
+      if (!turn || (turn.state !== "requested" && turn.state !== "running"))
+        break
+      patchTurn(draft, turn, {
+        state: "failed",
+        error: payload.error,
+        completedAt: at,
+      })
       dropTransientNotices(draft, payload.turn_id)
       draft.state = { ...draft.state, status: settledStatus(draft, "error") }
       break
@@ -694,8 +720,9 @@ export function applyEvent(
     case "turn.interrupted": {
       const payload = event.payload
       const turn = draft.state.turns[payload.turn_id]
-      if (!turn) break
-      patchTurn(draft, turn, { state: "interrupted" })
+      if (!turn || (turn.state !== "requested" && turn.state !== "running"))
+        break
+      patchTurn(draft, turn, { state: "interrupted", completedAt: at })
       dropTransientNotices(draft, payload.turn_id)
       draft.state = { ...draft.state, status: settledStatus(draft, "idle") }
       break
@@ -790,13 +817,15 @@ export function applyEvent(
     }
     case "run.notice": {
       const payload = event.payload
+      const kind =
+        payload.kind === "workspace_stale" ? "execution_stale" : payload.kind
       draft.state = {
         ...draft.state,
         notices: {
           ...draft.state.notices,
-          [payload.kind]: {
+          [kind]: {
             turnId: payload.turn_id,
-            kind: payload.kind,
+            kind,
             data: payload.data,
           },
         },
@@ -819,24 +848,6 @@ export function routedNotice(
   return {
     ...(typeof route === "string" ? { route } : {}),
     modelId: typeof modelId === "string" ? modelId : null,
-  }
-}
-
-export interface StaleWorkspace {
-  workspaceName: string
-  capturedAt: string | null
-}
-
-export function staleWorkspaceNotice(
-  state: TranscriptState
-): StaleWorkspace | null {
-  const notice = state.notices["workspace_stale"]
-  if (!notice) return null
-  const name = notice.data["workspace_name"]
-  const capturedAt = notice.data["captured_at"]
-  return {
-    workspaceName: typeof name === "string" ? name : "workspace",
-    capturedAt: typeof capturedAt === "string" ? capturedAt : null,
   }
 }
 
@@ -1002,7 +1013,7 @@ const CLAUDE_CODE_CONTEXT =
   /<(system-reminder|local-command-caveat|local-command-stdout|local-command-stderr|task-notification|ci-monitor-event|side-sessions-event|agent-message|cross-session-message|artifact-view-context|ide_opened_file|ide_selection)\b[^>]*>[\s\S]*?<\/\1>\s*/g
 
 function shownText(row: TranscriptMessageState): string {
-  return row.senderKind === CLAUDE_CODE_SOURCE
+  return row.senderKind === "claude_code"
     ? row.text.replace(CLAUDE_CODE_CONTEXT, "")
     : row.text
 }
@@ -1062,7 +1073,10 @@ function buildHumanMessage(
       parsed.type === "message" && parsed.senderKind === "system"
         ? "system"
         : "user",
-    timestamp: row.createdAt,
+    timestamp:
+      parsed.type === "message" && parsed.slackOccurredAt !== undefined
+        ? new Date(parsed.slackOccurredAt * 1000).toISOString()
+        : row.createdAt,
     chunks,
     ...(parsed.type === "message"
       ? {
@@ -1071,6 +1085,9 @@ function buildHumanMessage(
           structuredSurface: parsed.surface,
           ...(parsed.slackMessageUrl
             ? { slackMessageUrl: parsed.slackMessageUrl }
+            : {}),
+          ...(parsed.slackOccurredAt !== undefined
+            ? { slackOccurredAt: parsed.slackOccurredAt }
             : {}),
           ...(replies ? { replies } : {}),
           structuredSenderName:
@@ -1145,20 +1162,29 @@ function turnMessages(
   const out: Array<Message> = []
   let agent: AgentDraft | null = null
   let turnKey: string | undefined
+  let hasAgent = false
 
-  const flush = () => {
+  const flush = (last = false) => {
     if (!agent) return
     out.push({
       id: agent.id,
+      turnId: turn.turnId,
       author: "agent",
       timestamp: agent.timestamp,
       startedAt: agent.startedAt,
+      ...(namespace.length === 0 && !hasAgent && turn.startedAt
+        ? { runStartedAt: turn.startedAt }
+        : {}),
+      ...(last && namespace.length === 0 && turn.completedAt
+        ? { completedAt: turn.completedAt }
+        : {}),
       ...(agent.turnKey ? { turnKey: agent.turnKey } : {}),
       ...(agent.invocationIds.length
         ? { invocationIds: agent.invocationIds }
         : {}),
       chunks: agent.chunks,
     })
+    hasAgent = true
     agent = null
   }
 
@@ -1186,14 +1212,54 @@ function turnMessages(
     agent.chunks.push(...chunks)
   }
 
-  for (const item of turn.items) {
+  const turnRows = turn.items.flatMap((item) => {
+    const row = item.kind === "message" ? state.messages[item.id] : undefined
+    return row ? [row] : []
+  })
+  const hasSlackTime = turnRows.some((row) => {
+    if (row.role !== "human") return false
+    const parsed = parseStructuredInput(row.text, state.entities)
+    return parsed.type === "message" && parsed.slackOccurredAt !== undefined
+  })
+  const items = hasSlackTime
+    ? orderItems(
+        turnRows,
+        turn.items.flatMap((item) => {
+          const call =
+            item.kind === "tool" ? state.toolCalls[item.id] : undefined
+          return call ? [call] : []
+        })
+      )
+    : turn.items
+  for (const item of items) {
     if (item.kind === "message") {
       const row = state.messages[item.id]
       if (!row || !sameNamespace(row.namespace, namespace)) continue
       if (row.role === "human") {
-        flush()
         const message = humanMessage(state.threadId, row, state.entities)
         if (!message) continue
+        if (
+          agent &&
+          message.structuredSenderKind === "system" &&
+          !message.taskEvent &&
+          !BackgroundEvent.fromMessage(message) &&
+          message.structuredSenderId !== "system:sandbox-handoff" &&
+          !message.structuredSenderId?.startsWith("system:api_key/") &&
+          !message.structuredSenderId?.startsWith("system:github_actions/")
+        )
+          continue
+        if (agent && message.taskEvent?.kind === "completion") {
+          append(row.messageId, row.createdAt, [
+            {
+              kind: "task-event",
+              messageId: row.messageId,
+              event: message.taskEvent,
+              timestamp: row.createdAt,
+            },
+          ])
+          continue
+        }
+        flush()
         turnKey = row.messageId
         out.push(
           turn.state === "failed" && turn.startedAt === null
@@ -1226,7 +1292,7 @@ function turnMessages(
     }
     append(call.toolCallId, call.startedAt, [chunk])
   }
-  flush()
+  flush(true)
 
   if (!perNamespace) {
     perNamespace = new Map()
@@ -1267,13 +1333,37 @@ export function toMessages(state: TranscriptState): Array<Message> {
   ) {
     return cached.messages
   }
-  const messages: Array<Message> = []
+  let messages: Array<Message> = []
   for (const turnId of state.turnOrder) {
     const turn = state.turns[turnId]
     // Queued follow-ups render in the queue, not the record, until they run.
     if (!turn || isQueuedTurn(state, turn) || isCancelledBeforeStart(turn))
       continue
     messages.push(...turnMessages(state, turn, []))
+  }
+  const slackMessages = messages
+    .filter((message) => message.slackOccurredAt !== undefined)
+    .sort((a, b) => (a.slackOccurredAt ?? 0) - (b.slackOccurredAt ?? 0))
+  if (slackMessages.length) {
+    const otherMessages = messages.filter(
+      (message) => message.slackOccurredAt === undefined
+    )
+    const ordered: Array<Message> = []
+    let cursor = 0
+    for (const message of slackMessages) {
+      const at = message.slackOccurredAt ?? 0
+      while (cursor < otherMessages.length) {
+        const other = otherMessages[cursor]!
+        const otherAt = TranscriptTimestamp.seconds(
+          other.startedAt ?? other.timestamp
+        )
+        if (otherAt > at) break
+        ordered.push(other)
+        cursor += 1
+      }
+      ordered.push(message)
+    }
+    messages = ordered.concat(otherMessages.slice(cursor))
   }
   messagesCache.set(state.turns, {
     turnOrder: state.turnOrder,

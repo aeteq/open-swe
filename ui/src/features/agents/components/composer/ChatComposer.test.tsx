@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ChatComposer, buildCommandItems } from "./ChatComposer"
 import { api } from "@/lib/api"
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions"
 import { replaceTextRange } from "./composerTrigger"
 import type { ChatComposerProps } from "./ChatComposer"
 import { AgentThreadStreamBoundary } from "@/features/agents/lib/provider/useIsInAgentThreadStream"
@@ -80,16 +79,197 @@ function renderComposer(
     <QueryClientProvider client={client}>
       <AgentThreadStreamBoundary>
         <ThreadSourceProvider threadId="thread-1" transcript={false}>
-          <ChatComposer
-            activeRun={{ threadId: "thread-1", running }}
-            {...props}
-          />
+          <section aria-label="Chat" data-chat-drop-zone>
+            <ChatComposer
+              activeRun={{ threadId: "thread-1", running }}
+              {...props}
+            />
+          </section>
         </ThreadSourceProvider>
       </AgentThreadStreamBoundary>
     </QueryClientProvider>,
     { wrapper: TooltipProvider }
   )
 }
+
+describe("ChatComposer focus", () => {
+  it("autofocuses on initial load", async () => {
+    renderComposer(false, { autoFocus: true })
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("textbox", { name: "Message" })
+      )
+    )
+  })
+
+  it("autofocuses after navigating from a focused link", async () => {
+    render(<a href="/agents/thread-1">Thread</a>)
+    screen.getByRole("link", { name: "Thread" }).focus()
+    renderComposer(false, { autoFocus: true })
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("textbox", { name: "Message" })
+      )
+    )
+  })
+
+  it("preserves focus in file search", () => {
+    render(<input aria-label="Search files" autoFocus />)
+    const search = screen.getByRole("textbox", { name: "Search files" })
+    renderComposer(false, { autoFocus: true })
+
+    expect(document.activeElement).toBe(search)
+  })
+
+  it("preserves focus inside a dialog", () => {
+    render(
+      <div role="dialog" aria-label="Settings">
+        <button autoFocus>Close</button>
+      </div>
+    )
+    const close = screen.getByRole("button", { name: "Close" })
+    renderComposer(false, { autoFocus: true })
+
+    expect(document.activeElement).toBe(close)
+  })
+})
+
+describe("ChatComposer file drops", () => {
+  it("only attaches files dropped in the chat area", async () => {
+    renderComposer(false)
+    const file = new File(["Quarterly report"], "report.txt", {
+      type: "text/plain",
+    })
+
+    render(<aside aria-label="Threads">Thread sidebar</aside>)
+    const sidebar = screen.getByRole("complementary", { name: "Threads" })
+    fireEvent.dragEnter(sidebar, { dataTransfer: { types: ["Files"] } })
+    fireEvent.drop(sidebar, {
+      dataTransfer: { types: ["Files"], files: [file] },
+    })
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+    expect(screen.queryByText("report.txt")).toBeNull()
+
+    fireEvent.dragEnter(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer: { types: ["Files"] },
+    })
+    expect(screen.getByRole("status").textContent).toBe("Drop to attach")
+
+    fireEvent.drop(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer: { types: ["Files"], files: [file] },
+    })
+
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+    expect(await screen.findByText("report.txt")).toBeTruthy()
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Message" })
+    )
+  })
+
+  it("does not duplicate files dropped onto the composer", async () => {
+    renderComposer(false)
+    const file = new File(["Quarterly report"], "report.txt", {
+      type: "text/plain",
+    })
+
+    fireEvent.dragEnter(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer: { types: ["Files"] },
+    })
+    fireEvent.drop(screen.getByRole("textbox", { name: "Message" }), {
+      dataTransfer: { types: ["Files"], files: [file], getData: () => "" },
+    })
+
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+    expect(await screen.findByText("report.txt")).toBeTruthy()
+    expect(screen.getAllByText("report.txt")).toHaveLength(1)
+  })
+
+  it("keeps the overlay across child targets and clears it on exit or cancellation", () => {
+    renderComposer(false)
+    fireEvent.dragEnter(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer: { types: ["text/plain"] },
+    })
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+
+    const dataTransfer = { types: ["Files"] }
+    const editor = screen.getByRole("textbox", { name: "Message" })
+    fireEvent.dragEnter(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer,
+    })
+    fireEvent.dragEnter(editor, { dataTransfer })
+    fireEvent.dragLeave(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer,
+    })
+    expect(screen.getByRole("status").textContent).toBe("Drop to attach")
+
+    fireEvent.dragLeave(editor, { dataTransfer })
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+
+    fireEvent.dragEnter(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer,
+    })
+    fireEvent.blur(window)
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+  })
+
+  it("does not attach chat drops when disabled", () => {
+    renderComposer(false, { disabled: true })
+    const drop = new Event("drop", { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, "dataTransfer", {
+      value: { types: ["Files"], files: [new File(["report"], "report.txt")] },
+    })
+
+    fireEvent.dragEnter(screen.getByRole("region", { name: "Chat" }), {
+      dataTransfer: { types: ["Files"] },
+    })
+    expect(screen.queryByText("Drop to attach")).toBeNull()
+    fireEvent(screen.getByRole("region", { name: "Chat" }), drop)
+
+    expect(drop.defaultPrevented).toBe(false)
+    expect(screen.queryByText("report.txt")).toBeNull()
+  })
+})
+
+describe("ChatComposer model selection", () => {
+  it("hides the picker and model command when selection is disabled", async () => {
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => new DOMRect(),
+    })
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [],
+    })
+    const models = [
+      {
+        id: "openai:test",
+        label: "Test",
+        efforts: ["low"],
+        default_effort: "low",
+        supports_images: true,
+      },
+    ]
+    renderComposer(false, {
+      models,
+      modelSelectionEnabled: false,
+      restoreDraft: { key: 1, text: "/model", images: [] },
+    })
+    expect(screen.queryByRole("combobox", { name: "Model" })).toBeNull()
+    expect(screen.queryByRole("option", { name: /Pick a model/ })).toBeNull()
+    cleanup()
+
+    renderComposer(false, {
+      models,
+      modelSelectionEnabled: true,
+      restoreDraft: { key: 2, text: "/model", images: [] },
+    })
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy()
+    expect(
+      await screen.findByRole("option", { name: /Pick a model/ })
+    ).toBeTruthy()
+  })
+})
 
 describe("ChatComposer stop button", () => {
   it("offers to stop a run this client never joined", async () => {
@@ -165,34 +345,23 @@ describe("ChatComposer stop button", () => {
     expect(screen.queryByRole("button", { name: "Stop run" })).toBeNull()
   })
 
-  it("shows stop while a run submission is dispatching", () => {
-    render(
-      <ComposerPrimaryActions
-        canSubmit={false}
-        onStop={vi.fn()}
-        onSubmit={vi.fn()}
-        submitting
-      />,
-      { wrapper: TooltipProvider }
-    )
-
-    expect(screen.getByRole("button", { name: "Stop run" })).toBeTruthy()
+  it("keeps Stop available while a new thread is being created", async () => {
+    const onStop = vi.fn()
+    renderComposer(true, { disabled: true, onStop })
+    const stop = screen.getByRole("button", { name: "Stop run" })
+    expect(stop.hasAttribute("disabled")).toBe(false)
+    fireEvent.click(stop)
+    await waitFor(() => expect(onStop).toHaveBeenCalledOnce())
   })
 
   it("stops a direct run on Escape while steer is shown", () => {
     const onStop = vi.fn()
-    render(
-      <ComposerPrimaryActions
-        activeRun={{ threadId: "thread-1", running: true }}
-        canSubmit
-        onStop={onStop}
-        onSubmit={vi.fn()}
-        submitting={false}
-      />,
-      { wrapper: TooltipProvider }
-    )
+    renderComposer(true, {
+      onStop,
+      restoreDraft: { key: 99, text: "Please check the tests", images: [] },
+    })
 
-    expect(screen.getByRole("button", { name: "Queue message" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Steer agent" })).toBeTruthy()
     fireEvent.keyDown(document.body, { key: "Escape" })
 
     expect(onStop).toHaveBeenCalledOnce()
@@ -273,7 +442,7 @@ describe("ChatComposer drafts", () => {
       expect(screen.getByRole("textbox").textContent).toBe("About the header")
     )
     cleanup()
-    const next = [1, 2, 3, 4].map((n) => shot(`footer-${n}.png`))
+    const next = [1, 2, 3, 4, 5, 6].map((n) => shot(`footer-${n}.png`))
     const onSubmit = vi.fn()
     renderComposer(false, {
       draftKey,
@@ -295,6 +464,48 @@ describe("ChatComposer drafts", () => {
         expect.anything()
       )
     )
+  })
+
+  it("keeps an oversized attachment draft until enough images are removed", async () => {
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => new DOMRect(),
+    })
+    const onSubmit = vi.fn()
+    const image = {
+      kind: "image" as const,
+      base64: "A".repeat(12 * 1024 * 1024),
+      mimeType: "image/png",
+      fileName: "large.png",
+    }
+    renderComposer(false, {
+      onSubmit,
+      restoreDraft: {
+        key: 1,
+        text: "Keep this draft",
+        images: Array.from({ length: 6 }, () => image),
+      },
+    })
+    expect((await screen.findByRole("alert")).textContent).toContain("50MB")
+    expect(
+      screen
+        .getByRole("button", { name: "Send message" })
+        .hasAttribute("disabled")
+    ).toBe(true)
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole("textbox").textContent).toBe("Keep this draft")
+    const remove = screen.getAllByRole("button", {
+      name: "Remove large.png",
+    })[0]
+    if (!remove) throw new Error("Missing attachment removal button")
+    fireEvent.click(remove)
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(
+      screen
+        .getByRole("button", { name: "Send message" })
+        .hasAttribute("disabled")
+    ).toBe(false)
   })
 
   it("keeps every unsent image when a cancelled queued message comes back", async () => {
@@ -339,60 +550,6 @@ describe("ChatComposer drafts", () => {
 })
 
 describe("ChatComposer options", () => {
-  it.each([false, true])(
-    "shows the Cloud target only in the desktop app (desktop: %s)",
-    (desktop) => {
-      vi.stubGlobal("openSweDesktop", desktop ? {} : undefined)
-      try {
-        renderComposer(false, { runTarget: "cloud" })
-        expect(Boolean(screen.queryByText("Cloud"))).toBe(desktop)
-      } finally {
-        vi.unstubAllGlobals()
-      }
-    }
-  )
-
-  it("offers a project picker locally and shows branch controls only for Git folders", async () => {
-    const local = {
-      runTarget: "local" as const,
-      onRunTargetChange: vi.fn(),
-      onSelectLocalRepo: vi.fn(),
-      onAddLocalRepo: vi.fn(),
-      onRemoveLocalRepo: vi.fn(),
-      onSelectLocalRepoBranch: vi.fn(),
-      onRefreshLocalRepoBranch: vi.fn(),
-      onLocalWorkspaceModeChange: vi.fn(),
-    }
-    renderComposer(false, local)
-    expect(screen.getByRole("button", { name: "This Mac" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: /Choose project/ })).toBeTruthy()
-    expect(screen.queryByRole("button", { name: "No branch" })).toBeNull()
-    cleanup()
-
-    renderComposer(false, {
-      ...local,
-      selectedLocalRepoPath: "/projects/demo",
-      selectedLocalRepoBranch: "main",
-      localRepoBranches: [
-        { name: "main", current: true, isDefault: true, worktreePath: null },
-      ],
-    })
-    expect(await screen.findByRole("button", { name: "main" })).toBeTruthy()
-  })
-
-  it("shows a started thread's project, or no project, without a picker", () => {
-    renderComposer(false, {
-      runTarget: "local",
-      selectedLocalRepoPath: "/projects/demo",
-    })
-    expect(screen.getByText("demo")).toBeTruthy()
-    expect(screen.queryByRole("button", { name: /Choose project/ })).toBeNull()
-    cleanup()
-
-    renderComposer(false, { runTarget: "local", selectedLocalRepoPath: null })
-    expect(screen.getByText("No project")).toBeTruthy()
-  })
-
   it("asks someone without GitHub to link it before choosing a repository", async () => {
     const onRepoChange = vi.fn()
     renderComposer(false, {
@@ -420,15 +577,27 @@ describe("ChatComposer options", () => {
   it("offers attachments without a plan-mode toggle", async () => {
     renderComposer(false)
 
-    fireEvent.keyDown(
-      screen.getByRole("button", { name: "More composer options" }),
-      { key: "Enter" }
-    )
+    fireEvent.keyDown(screen.getByRole("button", { name: "Add attachments" }), {
+      key: "Enter",
+    })
 
     expect(
-      await screen.findByRole("menuitem", { name: "Attach files" })
+      await screen.findByRole("menuitem", { name: "Upload files" })
     ).toBeTruthy()
     expect(screen.queryByRole("menuitem", { name: /plan mode/i })).toBeNull()
+  })
+
+  it("attaches files of any type, such as a typeless JSONL", async () => {
+    renderComposer(false)
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]')!
+
+    fireEvent.change(input, {
+      target: { files: [new File(['{"a":1}\n'], "trace.jsonl")] },
+    })
+
+    expect(await screen.findByText("trace.jsonl")).toBeTruthy()
+    expect(screen.queryByText(/skipped/)).toBeNull()
   })
 })
 
@@ -485,6 +654,35 @@ describe("ChatComposer people autocomplete", () => {
       )
     )
     vi.restoreAllMocks()
+  })
+
+  it("ranks people whose names contain the query ahead of fuzzy matches", () => {
+    const person = (id: string, name: string, realName: string) => ({
+      id,
+      name,
+      display_name: realName,
+      real_name: realName,
+    })
+    const users = [
+      person("U01", "a_velichkevich", "A Velichkevich"),
+      ...["Ben", "Benny", "Beni", "Bena", "Bev", "Ken", "Kev", "Vin"].map(
+        (first, index) => person(`U1${index}`, first.toLowerCase(), first)
+      ),
+      person("U99", "kevin.lee", "Kevin Lee"),
+    ]
+
+    const labels = buildCommandItems(
+      { kind: "path", query: "kevin", rangeStart: 0, rangeEnd: 6 },
+      [],
+      [],
+      true,
+      false,
+      [],
+      [],
+      users
+    ).map((item) => item.label)
+
+    expect(labels[0]).toBe("@Kevin Lee")
   })
 })
 

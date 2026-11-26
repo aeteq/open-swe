@@ -9,20 +9,12 @@ from uuid import uuid4
 from xml.etree import ElementTree
 
 import pytest
-from deepagents.middleware.summarization import (
-    SummarizationEvent,
-    SummarizationState,
-    _DeepAgentsSummarizationMiddleware,
-)
-from langchain.agents.middleware.types import AgentState
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langgraph.graph.message import add_messages
-from langgraph.runtime import Runtime
 from runtime_api.catalog import InboxSpec
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import text, update
 
 from openswe import completion
 from openswe.database import postgres
+from openswe.jobs import queue
 from openswe.tasks import events, presentation, store
 from openswe.tasks import messages as task_messages
 from openswe.tasks.messages import TaskMessage
@@ -136,9 +128,11 @@ async def test_result_uses_completed_payload_and_invocation_not_newer_thread_sta
     client.threads.get_state.assert_not_awaited()
 
 
+@pytest.mark.parametrize("unreadable", [False, True])
 async def test_worker_failure_details_return_to_its_task_coordinator(
     worker_context: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
+    unreadable: bool,
 ) -> None:
     from openswe.tasks import service
 
@@ -148,14 +142,24 @@ async def test_worker_failure_details_return_to_its_task_coordinator(
         _WORKER,
         "run",
         "error",
-        {"error": {"error": "SandboxGoneError", "message": "Shared sandbox deleted"}},
+        {
+            "metadata": None,
+            "kwargs": {"context": {"origin": "github"}},
+            "error": {"error": "SandboxGoneError", "message": "Shared sandbox deleted"},
+            **({"values": "unreadable checkpoint"} if unreadable else {}),
+        },
     )
     task, recipient, delivery_id, content = notify.await_args.args
     display = notify.await_args.kwargs["task_event"]
     assert isinstance(display, TaskEventMetadata)
     assert recipient == _COORDINATOR
     assert delivery_id == f"finished:{_WORKER}:run"
-    assert display.content == "SandboxGoneError: Shared sandbox deleted"
+    assert notify.await_args.kwargs["origin"] == "github"
+    assert display.content == (
+        "The worker finished, but its final answer could not be read. Inspect the worker thread."
+        if unreadable
+        else "SandboxGoneError: Shared sandbox deleted"
+    )
     assert display.kind == "completion"
     assert display.status == "error"
     assert display.sender_role == "worker"
@@ -302,8 +306,9 @@ async def test_cancelled_worker_only_reports_interruption_without_restarting_owe
 
 
 @pytest.mark.parametrize("busy", [False, True])
+@pytest.mark.parametrize("native_worker", [False, True])
 async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_coordinator(
-    registry_db: None, monkeypatch: pytest.MonkeyPatch, busy: bool
+    registry_db: None, monkeypatch: pytest.MonkeyPatch, busy: bool, native_worker: bool
 ) -> None:
     from openswe.tasks import service
 
@@ -311,7 +316,6 @@ async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_
         _COORDINATOR,
         _WORKER,
         title="Repair login",
-        workspace="default",
         instructions="Fix login",
         model="openai:gpt-5.5",
         effort="high",
@@ -332,6 +336,8 @@ async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_
         assert kwargs["multitask_strategy"] == "enqueue"
         config = kwargs["config"]
         assert isinstance(config, dict)
+        assert config["configurable"]["origin"] == "github"
+        assert config["configurable"]["source"] == "slack"
         attempted_turns.append(config["configurable"]["transcript_turn_id"])
         if fail_first_wake:
             fail_first_wake = False
@@ -343,10 +349,25 @@ async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_
     monkeypatch.setattr(task_messages, "dispatch_client", lambda: client)
     monkeypatch.setattr(task_messages, "create_durable_run", dispatch)
     monkeypatch.setattr(
-        service, "recipient_config", AsyncMock(return_value={"transcript_turn_id": inherited_turn})
+        service,
+        "recipient_config",
+        AsyncMock(
+            return_value={
+                "transcript_turn_id": inherited_turn,
+                "source": "slack",
+                "origin": "slack",
+            }
+        ),
     )
     monkeypatch.setattr(events.EventSubscription, "deliver_to", AsyncMock())
-    payload = {"values": {"messages": [{"type": "ai", "content": _RESULT}]}}
+    payload = {
+        **(
+            {"kwargs": {"context": {"origin": "github"}}}
+            if native_worker
+            else {"metadata": {"origin": "github"}}
+        ),
+        "values": {"messages": [{"type": "ai", "content": _RESULT}]},
+    }
     if not busy:
         with pytest.raises(ConnectionError, match="temporary dispatch failure"):
             await events.worker_finished(_WORKER, "run", "success", payload)
@@ -354,6 +375,7 @@ async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_
     assert await events.worker_finished(_WORKER, "run", "success", payload)
     (original,) = await TaskMessage.owed(_COORDINATOR)
     assert "Login passes" in original.content
+    assert original.run_config["origin"] == "github"
     assert len(dispatched) == (0 if busy else 1)
 
     async with postgres.session() as session:
@@ -365,6 +387,7 @@ async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_
     assert await events.worker_finished(_WORKER, "run", "success", payload)
     (retried,) = await TaskMessage.owed(_COORDINATOR)
     assert retried.id == original.id
+    assert retried.run_config["origin"] == "github"
     assert len(dispatched) == (0 if busy else 1)
 
     if busy:
@@ -401,6 +424,64 @@ async def test_duplicate_completion_delivers_one_durable_result_to_idle_or_busy_
     assert attempted_turns[-1] != attempted_turns[-2]
 
 
+@pytest.mark.parametrize("failure", ["lookup", "dispatch"])
+async def test_failed_task_message_retries_settle_without_abandoning_later_messages(
+    registry_db: None, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from openswe.jobs.kinds import WORKER
+
+    task, _ = await store.Task.reserve_worker(
+        _COORDINATOR,
+        _WORKER,
+        title="Repair login",
+        instructions="Fix login",
+        model="openai:gpt-5.5",
+        effort="high",
+    )
+    message = TaskMessage(
+        task_id=task.id,
+        thread_id=_WORKER,
+        delivery_id="follow-up",
+        content="Check logout too",
+        run_config={},
+    )
+    async with postgres.session() as session:
+        await message.record(session)
+    client = SimpleNamespace(threads=AsyncMock())
+    client.threads.get.return_value = {"status": "idle"}
+    if failure == "lookup":
+        client.threads.get.side_effect = ConnectionError("runtime unavailable")
+    monkeypatch.setattr(task_messages, "dispatch_client", lambda: client)
+    monkeypatch.setattr(
+        task_messages,
+        "create_durable_run",
+        AsyncMock(side_effect=ConnectionError("runtime unavailable")),
+    )
+    with pytest.raises(ConnectionError, match="runtime unavailable"):
+        await TaskMessage.deliver(_WORKER, "enqueue")
+    (retry,) = await queue.find({"kind": task_messages.RETRY_JOB_KIND})
+    assert retry.key is not None
+    later = TaskMessage(
+        task_id=task.id,
+        thread_id=_WORKER,
+        delivery_id="later-follow-up",
+        content="Check password reset too",
+        run_config={},
+    )
+    async with postgres.session() as session:
+        await later.record(session)
+    for _ in range(queue.MAX_ATTEMPTS):
+        if await queue.get(retry.key) is None:
+            break
+        await queue.run_now(retry.key)
+        assert await WORKER.run_due() == 1
+    assert await queue.find({"kind": task_messages.RETRY_JOB_KIND}) == []
+    assert await TaskMessage.pending_threads([_WORKER]) == {_WORKER}
+    await TaskMessage.received(_WORKER, [later.id])
+    assert await TaskMessage.pending_threads([_WORKER]) == set()
+    assert [owed.id for owed in await TaskMessage.owed(_WORKER)] == [message.id]
+
+
 async def test_task_message_retention_preserves_owed_work_and_deduplicates_pruned_results(
     registry_db: None,
 ) -> None:
@@ -408,7 +489,6 @@ async def test_task_message_retention_preserves_owed_work_and_deduplicates_prune
         _COORDINATOR,
         _WORKER,
         title="Repair login",
-        workspace="default",
         instructions="Fix login",
         model="openai:gpt-5.5",
         effort="high",
@@ -462,7 +542,6 @@ async def test_repaired_task_thread_checkpoints_owed_messages_once(
         _COORDINATOR,
         _WORKER,
         title="Repair login",
-        workspace="default",
         instructions="Fix login",
         model="openai:gpt-5.5",
         effort="high",
@@ -505,143 +584,6 @@ async def test_repaired_task_thread_checkpoints_owed_messages_once(
         assert saved.delivered_at is not None
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_task_context_is_checkpointed_once_without_changing_request_prefix(
-    monkeypatch: pytest.MonkeyPatch, enabled: bool
-) -> None:
-    from openswe.middleware import task_coordination
-
-    task = store.Task(
-        title="Repair login",
-        workspace_id=uuid4(),
-        coordinator_thread_id=_COORDINATOR,
-        delegated=True,
-    )
-    context = store.TaskContext(
-        task,
-        store.TaskMembership(thread_id=_COORDINATOR, task_id=task.id, role="coordinator"),
-    )
-    lookup = AsyncMock(return_value=None)
-    monkeypatch.setattr(store.TaskMembership, "context_for_thread", lookup)
-    middleware = task_coordination.TaskCoordinationMiddleware(_COORDINATOR, enabled, None)
-    state: AgentState = {"messages": [HumanMessage(content="Repair login", id="request")]}
-
-    # The role and the task's context arrive as messages, so the system prompt stays the same.
-    role = await middleware.abefore_model(state, Runtime())
-    assert role is not None
-    assert [message["content"] for message in role["messages"]] == [middleware.instructions]
-    state["messages"] = add_messages(state["messages"], role["messages"])
-    assert await middleware.abefore_model(state, Runtime()) is None
-    state["messages"] = add_messages(
-        state["messages"],
-        [
-            AIMessage(
-                content="", tool_calls=[{"name": "start_async_task", "args": {}, "id": "spawn"}]
-            ),
-            ToolMessage(content="Worker started", tool_call_id="spawn"),
-        ],
-    )
-    lookup.return_value = context
-    update = await middleware.abefore_model(state, Runtime())
-    assert update is not None
-    assert len(update["messages"]) == 1
-    state["messages"] = add_messages(state["messages"], update["messages"])
-    assert str(task.id) in state["messages"][-1].text
-    assert _COORDINATOR in state["messages"][-1].text
-    state["messages"] = add_messages(
-        state["messages"],
-        [
-            AIMessage(
-                content="",
-                tool_calls=[{"name": "slack_no_reply_needed", "args": {}, "id": "quiet"}],
-            ),
-            ToolMessage(content="Done", tool_call_id="quiet"),
-        ],
-    )
-    assert await middleware.abefore_model(state, Runtime()) is None
-    middleware = task_coordination.TaskCoordinationMiddleware(_COORDINATOR, enabled, None)
-    assert await middleware.abefore_model(state, Runtime()) is None
-
-
-async def test_task_context_returns_after_summarization_without_replacing_history(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from openswe.middleware import task_coordination
-
-    task = store.Task(
-        title="Repair login", workspace_id=uuid4(), coordinator_thread_id=_COORDINATOR
-    )
-    context = store.TaskContext(
-        task,
-        store.TaskMembership(thread_id=_COORDINATOR, task_id=task.id, role="coordinator"),
-    )
-    state: SummarizationState = {"messages": [HumanMessage(content="Repair login")]}
-    middleware = task_coordination.TaskCoordinationMiddleware(_COORDINATOR, False, context)
-    initial = await middleware.abefore_model(state, Runtime())
-    assert initial is not None
-    state["messages"] = add_messages(state["messages"], initial["messages"])
-    told = state["messages"][-2:]
-    for _ in range(2):
-        cutoff = len(state["messages"])
-        state["messages"] = add_messages(
-            state["messages"],
-            [
-                AIMessage(content="", tool_calls=[{"name": "ls", "args": {}, "id": "list"}]),
-                ToolMessage(content="Files", tool_call_id="list"),
-            ],
-        )
-        event: SummarizationEvent = {
-            "cutoff_index": cutoff,
-            "summary_message": HumanMessage(content="Investigating login"),
-            "file_path": None,
-        }
-        state["_summarization_event"] = event
-        before = list(state["messages"])
-        visible_before = _DeepAgentsSummarizationMiddleware._apply_event_to_messages(before, event)
-        assert not any(message in visible_before for message in told)
-        update = await middleware.abefore_model(state, Runtime())
-        assert update is not None
-        state["messages"] = add_messages(before, update["messages"])
-        assert state["messages"][:-2] == before
-        visible = _DeepAgentsSummarizationMiddleware._apply_event_to_messages(
-            state["messages"], event
-        )
-        assert visible[:-2] == visible_before
-        assert [message.content for message in visible[-2:]] == [m.content for m in told]
-        assert {message.id for message in visible[-2:]}.isdisjoint(m.id for m in told)
-        middleware = task_coordination.TaskCoordinationMiddleware(_COORDINATOR, False, context)
-        assert await middleware.abefore_model(state, Runtime()) is None
-
-
-async def test_workspace_deletion_cascades_through_tasks_and_messages(registry_db: None) -> None:
-    from openswe.workspaces.rows import WorkspaceRow
-
-    workspace = WorkspaceRow(slug="task-cascade", name="Task cascade")
-    async with postgres.session() as session:
-        session.add(workspace)
-    task, _ = await store.Task.reserve_worker(
-        _COORDINATOR,
-        _WORKER,
-        title="Repair login",
-        workspace=workspace.slug,
-        instructions="Fix login",
-        model="openai:gpt-5.5",
-        effort="high",
-    )
-    async with postgres.session() as session:
-        await TaskMessage(
-            task_id=task.id,
-            thread_id=_WORKER,
-            delivery_id="assignment",
-            content="Fix login",
-            run_config={},
-        ).record(session)
-        await session.execute(delete(WorkspaceRow).where(WorkspaceRow.id == workspace.id))
-    async with postgres.session() as session:
-        for model in (store.Task, store.TaskMembership, store.TaskDelegation, TaskMessage):
-            assert await session.scalar(select(func.count()).select_from(model)) == 0
-
-
 @pytest.mark.parametrize("strategy", ["enqueue", "interrupt"])
 async def test_subscription_delivery_waiting_on_worker_cancel_cannot_launch(
     registry_db: None, monkeypatch: pytest.MonkeyPatch, strategy: Literal["enqueue", "interrupt"]
@@ -656,14 +598,12 @@ async def test_subscription_delivery_waiting_on_worker_cancel_cannot_launch(
         _COORDINATOR,
         _WORKER,
         title="Repair login",
-        workspace="default",
         instructions="Fix login",
         model="openai:gpt-5.5",
         effort="high",
     )
     subscription = await EventSubscription(
         thread_id=_WORKER,
-        workspace_id=task.workspace_id,
         multitask_strategy=strategy,
         run_config={"thread_id": _WORKER},
         expires_at=datetime.now(UTC) + timedelta(hours=1),
@@ -674,7 +614,6 @@ async def test_subscription_delivery_waiting_on_worker_cancel_cannot_launch(
         delivery_id="finished-ci",
         received_at=datetime.now(UTC),
         user_id=None,
-        workspace_id=task.workspace_id,
         repository_id=None,
         pull_request_id=None,
         payload={"check_suite": {"conclusion": "success"}},
@@ -696,6 +635,7 @@ async def test_subscription_delivery_waiting_on_worker_cancel_cannot_launch(
         return []
 
     dispatch = AsyncMock()
+    monkeypatch.setattr(event_matches.EventAudience, "allows", AsyncMock(return_value=True))
     monkeypatch.setattr(event_matches, "dispatch_client", dispatch_client)
     monkeypatch.setattr(event_matches, "create_durable_run", dispatch)
     monkeypatch.setattr(service, "owned_worker", AsyncMock(return_value=(task, delegation)))

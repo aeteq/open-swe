@@ -12,6 +12,11 @@ import {
   waitForThreadIdle,
 } from "./helpers/dashboard";
 
+// A route handler still reading a response when the test ends must not fail it.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 const USER = {
   login: "threads-workspace-e2e",
   email: "threads-workspace-e2e@example.com",
@@ -301,7 +306,6 @@ async function seedSchedules(request: APIRequestContext) {
     {
       key: "daily" as const,
       body: {
-        workspace: "default",
         name: "E2E Daily Health",
         prompt: "Check repository health.",
         triggers: [{ kind: "schedule", cron: "0 9 * * 1-5" }],
@@ -311,7 +315,6 @@ async function seedSchedules(request: APIRequestContext) {
     {
       key: "weekly" as const,
       body: {
-        workspace: "default",
         name: "E2E Weekly Cleanup",
         prompt: "Clean up stale work.",
         triggers: [{ kind: "schedule", cron: "0 10 * * 1" }],
@@ -416,6 +419,21 @@ test.describe("threads workspace", () => {
     await page.goto(`/agents/${THREAD_IDS.shared}`);
 
     const row = page.getByRole("link", { name: TITLES.shared }).first();
+    await expect(
+      page.getByRole("button", { name: "Rename thread" }),
+    ).toHaveText(TITLES.shared);
+    await expect(row).toHaveCount(0);
+    await page
+      .locator("aside")
+      .getByRole("button", { name: "Projects options" })
+      .click();
+    const ownedOnly = page.getByRole("menuitemcheckbox", {
+      name: "Only my threads",
+      exact: true,
+    });
+    await expect(ownedOnly).toBeChecked();
+    await ownedOnly.click();
+    await page.keyboard.press("Escape");
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
     const pinResponse = page.waitForResponse(
@@ -514,30 +532,39 @@ test.describe("threads workspace", () => {
       });
     });
 
-    await page.getByRole("link", { name: title }).click();
-    await threadChunkStarted.promise;
-    profileGate.resolve();
-    await profileFinished.promise;
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        }),
-    );
-    threadChunkGate.resolve();
+    try {
+      await page.getByRole("button", { name: "Search", exact: true }).click();
+      await page
+        .getByPlaceholder("Search commands, threads, and pull requests…")
+        .fill(title);
+      await page.getByRole("option", { name: title }).click();
+      await threadChunkStarted.promise;
+      profileGate.resolve();
+      await profileFinished.promise;
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          }),
+      );
+      threadChunkGate.resolve();
 
-    await expect(page).toHaveURL(`/agents/${threadId}`);
-    await expect(
-      page.getByText("This thread has no messages yet."),
-    ).toBeVisible();
-    const flashed = await page.evaluate(
-      () =>
-        (
-          (window as unknown as Record<string, unknown>)
-            .__newThreadDialogSeen as { value: boolean }
-        ).value,
-    );
-    expect(flashed).toBe(false);
+      await expect(page).toHaveURL(`/agents/${threadId}`);
+      await expect(
+        page.getByText("This thread has no messages yet."),
+      ).toBeVisible();
+      const flashed = await page.evaluate(
+        () =>
+          (
+            (window as unknown as Record<string, unknown>)
+              .__newThreadDialogSeen as { value: boolean }
+          ).value,
+      );
+      expect(flashed).toBe(false);
+    } finally {
+      profileGate.resolve();
+      threadChunkGate.resolve();
+    }
   });
 
   test("shows a recency-sorted repository list in the sidebar", async ({
@@ -625,12 +652,20 @@ test.describe("threads workspace", () => {
       name: "Show more",
       exact: true,
     });
-    await showMore.click();
-    await showMore.click();
-    await expect(sidebar).toContainText("E2E Workspace Resolved overflow 03");
-    await showMore.click();
-    await expect(sidebar).toContainText("E2E Workspace Resolved overflow 01");
-    await expect(sidebar).toContainText(TITLES.done);
+    const overflowIds = resolvedOverflowThreads().map((thread) => thread.id);
+    const alphaThreads = alphaGroup.locator("a[data-selectable-thread]");
+    // Activity invalidations can refetch the list while a page is loading.
+    // Keep paging until the fixture rows are present, rather than assuming
+    // each click permanently increases the number of loaded rows.
+    await expect
+      .poll(async () => {
+        if (await showMore.isVisible()) await showMore.click();
+        return alphaThreads.evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute("data-selectable-thread")),
+        );
+      })
+      .toEqual(expect.arrayContaining(overflowIds));
+    await expect(alphaGroup).toContainText(TITLES.done);
     await expect(showMore).toHaveCount(0);
 
     const screenshotPath = testInfo.outputPath("unified-thread-sidebar.png");
@@ -641,100 +676,227 @@ test.describe("threads workspace", () => {
     });
   });
 
-  test("groups repository-less chats in a pinnable No project folder", async ({
+  test("shows unfiled chats by activity in Recents below Projects", async ({
     page,
     request,
-  }, testInfo) => {
+  }) => {
     const now = Date.now();
     await seedThreads(request, [
       {
         id: THREAD_IDS.noRepo,
-        metadata: baseMetadata(now, TITLES.noRepo, 1_000, {
-          participant_logins: { [ADMIN_USER.login]: true },
-          owner_login: ADMIN_USER.login,
+        metadata: baseMetadata(now, TITLES.noRepo, 3_000, {
           repo_owner: "",
           repo_name: "",
+          created_at_ms: now - 1_000,
+          latest_run_status: "success",
+        }),
+      },
+      {
+        id: THREAD_IDS.shared,
+        metadata: baseMetadata(now, TITLES.shared, 1_000, {
+          repo_owner: "",
+          repo_name: "",
+          created_at_ms: now - 86_400_000,
+          latest_run_id: "e2e-resumed-chat",
+          latest_run_status: "running",
         }),
       },
       {
         id: THREAD_IDS.pinnedRepo,
         metadata: baseMetadata(now, TITLES.pinnedRepo, 2_000, {
-          participant_logins: { [ADMIN_USER.login]: true },
-          owner_login: ADMIN_USER.login,
+          latest_run_status: "success",
         }),
       },
+      ...Array.from({ length: 26 }, (_, index) => ({
+        id: `7a000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        metadata: baseMetadata(now, `Filed chat ${index + 1}`, index, {
+          repo_name: "beta",
+          latest_run_status: "success",
+        }),
+      })),
     ]);
-    const loginResponse = await page.request.post("/control/login", {
-      data: ADMIN_USER,
+    await loginAs(page);
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "open-swe.agents.sidebar-prefs",
+        JSON.stringify({
+          organize: "repo",
+          pinnedRepoKeys: ["repo:no-repo"],
+          collapsedRepoKeys: ["repo:no-repo", "repo:acme/beta"],
+        }),
+      );
     });
-    expect(loginResponse.ok()).toBeTruthy();
-    await seedRepoSidebar(page);
     await page.setViewportSize({ width: 1280, height: 900 });
+    const recentsResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/dashboard/api/threads/page" &&
+        url.searchParams.get("ownerless") === "true"
+      );
+    });
     await page.goto("/agents");
     await dismissOnboardingIfShown(page);
-
-    const sidebar = page.locator("[data-sidebar-frame]");
-    const noRepo = sidebar.getByRole("button", {
-      name: "No project",
-      exact: true,
+    const recentsPage = await (await recentsResponse).json();
+    expect(recentsPage).toMatchObject({
+      hasMore: false,
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: THREAD_IDS.shared }),
+        expect.objectContaining({ id: THREAD_IDS.noRepo }),
+      ]),
     });
-    await expect(noRepo).toBeVisible();
-    await expect(sidebar).toContainText(TITLES.noRepo);
+    expect(recentsPage.items).toHaveLength(2);
 
-    await sidebar.getByRole("button", { name: "Projects options" }).click();
+    const sidebar = page.getByRole("complementary");
+    const projects = sidebarSection(sidebar, "Projects");
+    const recents = sidebarSection(sidebar, "Recents");
+    await expect(recents.getByRole("link")).toHaveText([
+      TITLES.shared,
+      TITLES.noRepo,
+    ]);
     await expect(
-      page.getByRole("menuitemcheckbox", {
-        name: "Only my threads",
-        exact: true,
-      }),
-    ).toBeChecked();
+      projects.getByRole("link", { name: TITLES.pinnedRepo }),
+    ).toBeVisible();
     await expect(
-      page.getByRole("menuitemradio", { name: "Created", exact: true }),
-    ).toHaveCount(0);
-    const viewScreenshotPath = testInfo.outputPath("project-view-options.png");
-    await page.screenshot({ path: viewScreenshotPath });
-    await testInfo.attach("project-view-options", {
-      path: viewScreenshotPath,
-      contentType: "image/png",
-    });
-    await page.keyboard.press("Escape");
-
-    const pinNoRepo = sidebar.getByRole("button", {
-      name: "Pin No project",
-      includeHidden: true,
-    });
-    // Rows seeded by earlier tests can still shift the folder after the hover lands.
-    await expect(async () => {
-      await pinNoRepo.locator("..").hover();
-      await pinNoRepo.click({ timeout: 2_000 });
-    }).toPass();
-    await expect(sidebar.getByText("Pinned", { exact: true })).toBeVisible();
+      sidebar.getByRole("link", { name: TITLES.pinnedRepo }),
+    ).toHaveCount(1);
+    await expect(
+      recents.getByRole("img", { name: "Thread running" }),
+    ).toBeVisible();
     await expect(
       sidebar.getByRole("button", { name: "No project", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      sidebar.getByRole("button", { name: "Running", exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await projects.evaluate((node) => node.getBoundingClientRect().top),
+    ).toBeLessThan(
+      await recents.evaluate((node) => node.getBoundingClientRect().top),
+    );
+
+    await sidebar
+      .getByRole("button", { name: "Projects", exact: true })
+      .click();
+    await expect(projects.getByRole("link")).toHaveCount(0);
+    await expect(
+      recents.getByRole("link", { name: TITLES.shared }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(recents.getByRole("link")).toHaveText([
+      TITLES.shared,
+      TITLES.noRepo,
+    ]);
+    await page.addInitScript(() => {
+      const key = "open-swe.agents.sidebar-prefs";
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          ...JSON.parse(localStorage.getItem(key) ?? "{}"),
+          collapsedSectionKeys: ["repos"],
+          collapsedRepoKeys: ["repo:acme/alpha"],
+        }),
+      );
+    });
+    await page.goto(`/agents/${THREAD_IDS.pinnedRepo}`);
+    await expect(
+      projects.getByRole("link", { name: TITLES.pinnedRepo }),
     ).toBeVisible();
 
+    for (const id of [THREAD_IDS.shared, THREAD_IDS.noRepo]) {
+      const response = await request.delete(`/threads/${id}`);
+      expect(response.ok()).toBeTruthy();
+    }
     await page.reload();
-    await dismissOnboardingIfShown(page);
-    await expect(sidebar).toContainText(TITLES.noRepo);
-    const unpinNoRepo = sidebar.getByRole("button", {
-      name: "Unpin No project",
-      includeHidden: true,
-    });
-    await expect(async () => {
-      await unpinNoRepo.locator("..").hover();
-      await expect(unpinNoRepo).toBeVisible({ timeout: 2_000 });
-    }).toPass();
-
-    const screenshotPath = testInfo.outputPath("pinned-no-repository.png");
-    await sidebar.screenshot({ path: screenshotPath });
-    await testInfo.attach("pinned-no-repository", {
-      path: screenshotPath,
-      contentType: "image/png",
-    });
+    await expect(
+      projects.getByRole("link", { name: TITLES.pinnedRepo }),
+    ).toBeVisible();
+    await expect(
+      sidebar.getByRole("button", { name: "Recents", exact: true }),
+    ).toHaveCount(0);
   });
 });
 
 test.describe("automation run history", () => {
+  test("gates the run composer on the viewer's automation capability", async ({
+    page,
+    request,
+  }, testInfo) => {
+    await seedThreads(request, workspaceThreads());
+    await loginAs(page);
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    let capability: boolean | undefined = true;
+    let adminThread = false;
+    await page.route(
+      `**/dashboard/api/threads/${THREAD_IDS.ready}`,
+      async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({
+          response,
+          json: {
+            ...(await response.json()),
+            threadCategory: "automation",
+            automationCanPost: capability,
+            adminThread,
+          },
+        });
+      },
+    );
+
+    await page.goto(`/agents/${THREAD_IDS.ready}`);
+    await dismissOnboardingIfShown(page);
+    const composer = page.getByRole("textbox", {
+      name: "Message",
+      exact: true,
+    });
+    await expect(composer).toBeEditable();
+    await composer.fill("Follow up on this automation run");
+    await expect(
+      page.getByRole("button", { name: "Send message", exact: true }),
+    ).toBeEnabled();
+    const screenshotPath = testInfo.outputPath(
+      "automation-owner-composer-dark.png",
+    );
+    await page.screenshot({ path: screenshotPath });
+    await testInfo.attach("automation-owner-composer-dark-api-fixture", {
+      path: screenshotPath,
+      contentType: "image/png",
+    });
+
+    capability = false;
+    await page.reload();
+    await expect(composer).not.toBeEditable();
+    await expect(
+      page.getByText("You can't send messages in this thread", { exact: true }),
+    ).toBeVisible();
+
+    capability = undefined;
+    await page.reload();
+    await expect(composer).not.toBeEditable();
+
+    capability = true;
+    adminThread = true;
+    await page.reload();
+    await expect(composer).not.toBeEditable();
+    await expect(
+      page.getByText("Only Robin admins can send messages in this thread", {
+        exact: true,
+      }),
+    ).toBeVisible();
+
+    const adminLogin = await page.request.post("/control/login", {
+      data: ADMIN_USER,
+    });
+    expect(adminLogin.ok()).toBeTruthy();
+    capability = false;
+    await page.reload();
+    await expect(composer).not.toBeEditable();
+
+    capability = true;
+    await page.reload();
+    await expect(composer).toBeEditable();
+  });
+
   test("retries failures and scopes global and per-automation runs", async ({
     page,
     request,
@@ -801,7 +963,7 @@ test.describe("automation run history", () => {
       await route.continue();
     });
 
-    await page.goto("/agents/automations?tab=runs");
+    await page.goto("/agents/automations?tab=runs&view=all");
     const automations = page
       .getByRole("heading", { name: "Automations", level: 1 })
       .locator("..");
@@ -812,7 +974,7 @@ test.describe("automation run history", () => {
     failAutomationRuns = false;
     const retryResponse = waitForThreadsPage(page, {
       scope: "automation",
-      limit: "100",
+      limit: "25",
       offset: "0",
     });
     await automations.getByRole("button", { name: "Retry" }).click();
@@ -848,7 +1010,7 @@ test.describe("automation run history", () => {
     await expect(weekly).toContainText("Running");
     await expect(automations).not.toContainText(TITLES.attention);
 
-    await automations.getByRole("button", { name: "Overview" }).click();
+    await automations.getByRole("button", { name: "Automations" }).click();
     const scheduleLink = automations.getByRole("link", {
       name: /E2E Daily Health/,
     });
@@ -871,9 +1033,9 @@ test.describe("automation run history", () => {
     await expect(page.getByText(TITLES.dailyScheduled)).toBeVisible();
     await expect(page.getByText(TITLES.dailyTest)).toBeVisible();
     await expect(page.getByText(TITLES.weeklyRunning)).toHaveCount(0);
-    const recentProducedRun = page.locator(
-      `a[href="/agents/${triggered.thread_id}"]`,
-    );
+    const recentProducedRun = page
+      .locator(`a[href="/agents/${triggered.thread_id}"]`)
+      .filter({ hasText: "Add greet() helper" });
     await expect(recentProducedRun).toContainText("Add greet() helper");
 
     await recentProducedRun.click();

@@ -16,7 +16,11 @@ from typing import Any, TypedDict
 
 from pydantic import TypeAdapter, ValidationError
 
-from openswe.dashboard.options import SUPPORTED_MODEL_IDS, normalize_model_choice
+from openswe.dashboard.options import (
+    SUPPORTED_MODEL_IDS,
+    model_supports_effort,
+    normalize_model_choice,
+)
 from openswe.utils import ttl_cache
 
 logger = logging.getLogger(__name__)
@@ -65,6 +69,40 @@ def normalize_thread_settings(settings: Mapping[str, Any]) -> tuple[ThreadSettin
         value = _THREAD_SETTINGS_ADAPTER.validate_python(settings, strict=True)
     except ValidationError:
         return {}, bool(settings)
+    if (model_id := value.get("model_id")) is not None:
+        if model_id not in SUPPORTED_MODEL_IDS:
+            value.pop("model_id", None)
+            value.pop("effort", None)
+        elif (effort := value.get("effort")) is not None and not model_supports_effort(
+            model_id, effort
+        ):
+            value["effort"] = None
+    if (subagent_model := value.get("subagent_model_id")) is not None:
+        if subagent_model not in SUPPORTED_MODEL_IDS:
+            value.pop("subagent_model_id", None)
+            value.pop("subagent_effort", None)
+        elif (
+            subagent_effort := value.get("subagent_effort")
+        ) is not None and not model_supports_effort(subagent_model, subagent_effort):
+            value["subagent_effort"] = None
+    if (requested := value.get("requested_model")) is not None and (
+        requested not in SUPPORTED_MODEL_IDS
+    ):
+        value["requested_model"] = None
+    if (routing_models := value.get("routing_models")) is not None:
+        value["routing_models"] = {
+            route: {
+                "model_id": entry["model_id"],
+                "effort": (
+                    entry["effort"]
+                    if entry["effort"] is not None
+                    and model_supports_effort(entry["model_id"], entry["effort"])
+                    else None
+                ),
+            }
+            for route, entry in routing_models.items()
+            if entry["model_id"] in SUPPORTED_MODEL_IDS
+        }
     return value, value != settings
 
 

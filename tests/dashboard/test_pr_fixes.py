@@ -1,12 +1,20 @@
 from contextlib import asynccontextmanager
+from functools import partial
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx2
 import pytest
 from fastapi import HTTPException
+from runtime_api.provenance import Provenance
 
-from openswe.threads import pr_fixes
+from openswe import dispatch
+from openswe.dashboard import profiles
+from openswe.github.http import GitHubError
+from openswe.github.pull_request_status import PullRequestClient
+from openswe.threads import pr_fixes, proxy
+from tests.conftest import ThreadStoreOverClient
 
 pytestmark = pytest.mark.usefixtures("no_local_threads")
 
@@ -50,6 +58,10 @@ class FakeRegistry:
         self.number = number
 
     @classmethod
+    async def get(cls, owner: str, repo: str, number: int) -> FakeRegistry:
+        return cls(owner, repo, number)
+
+    @classmethod
     async def load(cls, owner: str, repo: str, number: int) -> FakeRegistry:
         if cls.unavailable:
             raise RuntimeError("postgres unavailable")
@@ -75,6 +87,8 @@ def setup(monkeypatch):
     FakeRegistry.linked = []
     FakeRegistry.discovered = []
     FakeRegistry.unavailable = False
+    monkeypatch.setattr(profiles, "get_valid_access_token", AsyncMock(return_value="token"))
+    monkeypatch.setattr(PullRequestClient, "pull", AsyncMock(return_value={"number": 12}))
 
     async def get(thread_id: str) -> dict[str, Any]:
         return threads[thread_id]
@@ -83,6 +97,8 @@ def setup(monkeypatch):
         threads=SimpleNamespace(get=AsyncMock(side_effect=get), update=AsyncMock())
     )
     monkeypatch.setattr(pr_fixes, "langgraph_client", lambda: client)
+    monkeypatch.setattr(proxy, "langgraph_client", lambda: client)
+    monkeypatch.setattr(pr_fixes, "THREADS", ThreadStoreOverClient())
     monkeypatch.setattr(pr_fixes, "agent_thread_pr_state_lock", unlocked)
     monkeypatch.setattr(pr_fixes, "PullRequest", FakeRegistry)
     for name in (
@@ -140,7 +156,10 @@ async def test_linked_thread_the_caller_cannot_post_to_is_never_reused(setup, mo
     ) == pr_fixes.PullRequestThreadRun(thread_id="new")
 
 
-async def test_internal_pr_dispatch_does_not_hide_or_reuse_user_thread(setup):
+async def test_internal_pr_dispatch_does_not_hide_or_reuse_user_thread(setup, monkeypatch):
+    queued = AsyncMock()
+    monkeypatch.setattr(dispatch, "create_durable_run", queued)
+    monkeypatch.setattr(pr_fixes, "dispatch_agent_run", dispatch.dispatch_agent_run)
     thread_id = await pr_fixes.dispatch_pull_request_prompt(
         "acme",
         "app",
@@ -149,8 +168,18 @@ async def test_internal_pr_dispatch_does_not_hide_or_reuse_user_thread(setup):
         "Pick a reviewer",
         title="Reviewer assignment",
         before_dispatch=AsyncMock(),
+        system={
+            "id": "system:human-review",
+            "display_name": "Human review",
+            "platform": "open-swe",
+        },
         unlisted=True,
     )
+    messages = queued.await_args.kwargs["input"]["messages"]
+    assert Provenance.of(messages[-1]) == Provenance(
+        kind="system", sender="system:human-review", surface="automation"
+    )
+    assert not any((source := Provenance.of(message)) and source.human for message in messages)
     assert thread_id == "new"
     metadata = setup.client.threads.update.await_args_list[0].kwargs["metadata"]
     assert metadata["unlisted"] is True
@@ -158,10 +187,10 @@ async def test_internal_pr_dispatch_does_not_hide_or_reuse_user_thread(setup):
     setup.threads["new"]["metadata"].update(metadata)
     FakeRegistry.thread_ids.append("new")
     assert [
-        t["thread_id"] for t in await pr_fixes.find_pr_threads("acme", "app", 12, "alice", None)
+        t.thread_id for t in await pr_fixes.find_pr_threads("acme", "app", 12, "alice", None)
     ] == ["existing"]
     assert [
-        t["thread_id"]
+        t.thread_id
         for t in await pr_fixes.find_pr_threads("acme", "app", 12, "alice", None, unlisted=True)
     ] == ["new"]
 
@@ -185,6 +214,32 @@ async def test_review_open_preserves_existing_task_and_fix_lists_review_chat(set
     assert "review_chat" not in setup.client.threads.update.await_args.kwargs["metadata"]
     await pr_fixes.start_pull_request_thread("acme", "app", 12, "alice", intent=FIX)
     assert setup.client.threads.update.await_args.kwargs["metadata"]["review_chat"] is False
+
+
+async def test_a_linked_thread_that_cannot_be_read_fails_the_open_instead_of_starting_another(
+    setup,
+):
+    setup.client.threads.get.side_effect = RuntimeError("thread index unavailable")
+
+    with pytest.raises(RuntimeError):
+        await pr_fixes.start_pull_request_thread("acme", "app", 12, "alice", intent=OPEN)
+    pr_fixes.create_dashboard_thread_record.assert_not_awaited()
+
+
+async def test_a_number_github_has_no_pull_request_for_gets_no_thread_or_record(setup, monkeypatch):
+    from openswe.review.routes import api_get_review_chat
+
+    FakeRegistry.thread_ids = []
+    monkeypatch.setattr(FakeRegistry, "load", AsyncMock())
+    not_found = httpx2.Response(
+        404, request=httpx2.Request("GET", "https://api.github.com/repos/acme/app/pulls/12")
+    )
+    monkeypatch.setattr(PullRequestClient, "pull", AsyncMock(side_effect=GitHubError(not_found)))
+
+    with pytest.raises(GitHubError):
+        await api_get_review_chat("acme", "app", 12, {"sub": "alice"})
+    FakeRegistry.load.assert_not_awaited()
+    pr_fixes.create_dashboard_thread_record.assert_not_awaited()
 
 
 @pytest.mark.parametrize("intent", [OPEN, FIX])
@@ -251,13 +306,7 @@ async def test_a_busy_thread_is_reported_instead_of_being_sent_another_run(setup
         "status": "busy",
         "metadata": {"source": "slack", "graph_id": "agent"},
     }
-    setup.threads["duplicate"] = {
-        "thread_id": "duplicate",
-        "status": "idle",
-        "updated_at": "2099-01-01",
-        "metadata": {"source": "dashboard"},
-    }
-    FakeRegistry.thread_ids = ["duplicate", "slack-thread"]
+    FakeRegistry.thread_ids = ["slack-thread", "existing"]
 
     assert await pr_fixes.pull_request_thread_running(
         "acme", "app", 12, "alice"
@@ -271,3 +320,88 @@ async def test_a_busy_thread_is_reported_instead_of_being_sent_another_run(setup
     pr_fixes.dispatch_agent_run.assert_not_awaited()
     pr_fixes.create_dashboard_thread_record.assert_not_awaited()
     setup.client.threads.update.assert_not_awaited()
+
+
+async def test_fix_up_is_announced_as_a_button_click_with_open_findings(
+    setup, monkeypatch, langsmith_users
+):
+    from openswe.dashboard import profiles
+    from openswe.threads import runs
+
+    langsmith_users.add("alice")
+    setup.threads["existing"]["metadata"].update(repo_owner="acme", repo_name="app", pr_number=12)
+    monkeypatch.setattr(profiles, "get_valid_access_token", AsyncMock(return_value="github-token"))
+    monkeypatch.setattr(runs, "resolve_run_email", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        pr_fixes,
+        "_build_dashboard_configurable",
+        partial(runs._build_dashboard_configurable, profile={}),
+    )
+    finding = {
+        "title": "Off by one",
+        "severity": "high",
+        "file": "app.py",
+        "end_line": 3,
+        "description": "Loop skips the last item.",
+        "suggestion": None,
+    }
+    monkeypatch.setattr(
+        pr_fixes,
+        "list_findings",
+        AsyncMock(
+            return_value=[
+                {**finding, "status": "open"},
+                {**finding, "title": "Already fixed", "status": "resolved"},
+            ]
+        ),
+    )
+    await pr_fixes.start_pull_request_thread(
+        "acme", "app", 12, "alice", intent=pr_fixes.FixUpIntent(intent="fix-up")
+    )
+    call = pr_fixes.dispatch_agent_run.await_args
+    assert call.args[1] is None
+    assert call.args[2]["pr_number"] == 12
+    assert call.args[2]["repo"] == {"owner": "acme", "name": "app"}
+    message = call.kwargs["input"]["messages"][-1]["content"]
+    assert 'sender="system:pull-request-fix-up"' in message
+    assert "@alice clicked **Fix up**" in message
+    assert "Off by one" in message
+    assert "Already fixed" not in message
+
+
+@pytest.mark.parametrize("status", ["idle", "busy"])
+async def test_a_thread_linked_later_never_replaces_the_one_that_opened_the_pr(setup, status):
+    setup.threads["opener"] = {
+        "thread_id": "opener",
+        "status": "idle",
+        "updated_at": "2026-11-10T12:00:00Z",
+        "metadata": {"source": "slack", "graph_id": "agent"},
+    }
+    setup.threads["github-comment"] = {
+        "thread_id": "github-comment",
+        "status": status,
+        "updated_at": "2099-01-01",
+        "metadata": {"source": "github", "graph_id": "agent"},
+    }
+    FakeRegistry.thread_ids = ["opener", "github-comment"]
+
+    for intent in (OPEN, FIX):
+        thread = await pr_fixes.start_pull_request_thread("acme", "app", 12, "alice", intent=intent)
+        assert thread.thread_id == "opener"
+    pr_fixes.create_dashboard_thread_record.assert_not_awaited()
+
+
+async def test_fix_up_keeps_findings_owned_by_the_recovered_reviewer(monkeypatch):
+    from openswe.thread_ids import mda_successor_thread_id, reviewer_thread_id
+
+    original = reviewer_thread_id("acme", "app", 12)
+    successor = mda_successor_thread_id(original)
+    findings = [{"id": "f-recovered", "status": "open"}]
+    monkeypatch.setattr(pr_fixes.index, "current_thread_id", AsyncMock(return_value=successor))
+    monkeypatch.setattr(
+        pr_fixes,
+        "list_findings",
+        AsyncMock(side_effect=lambda thread: findings if thread == successor else []),
+    )
+
+    assert await pr_fixes._open_findings("acme", "app", 12) == findings

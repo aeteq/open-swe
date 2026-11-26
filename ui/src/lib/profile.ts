@@ -5,7 +5,8 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 
-import { ApiError, api, DEFAULT_WORKSPACE_SLUG } from "./api"
+import { ApiError, api } from "./api"
+import { invalidationTopic } from "./invalidations/topics"
 import { hasLinkedGitHub } from "./linkedGitHub"
 import {
   REPOS_CACHE_MAX_AGE_MS,
@@ -50,19 +51,17 @@ export function useProfile() {
     queryKey: profileQueryKey(login),
     queryFn: api.profile,
     enabled: !!session.data,
+    staleTime: 60_000,
     select: (profile) => pending.reduce(applyProfileWrite, profile),
   })
 }
 
-/**
- * Selectable models and defaults for the workspace a run will land in; model
- * defaults and the Fable flag are per workspace, so the key carries the slug.
- */
-export function useOptions(workspace?: string | null) {
-  const slug = workspace ?? DEFAULT_WORKSPACE_SLUG
+export function useOptions() {
   return useQuery({
-    queryKey: ["options", slug],
-    queryFn: () => api.options(slug),
+    queryKey: ["options"],
+    queryFn: api.options,
+    staleTime: 60_000,
+    meta: { invalidatedBy: [invalidationTopic("settings")] },
   })
 }
 
@@ -169,11 +168,11 @@ export function buildProfileUpdate(
 ): ProfileUpdate {
   return {
     default_repo: current?.default_repo ?? null,
-    workspace_default_repos: current?.workspace_default_repos ?? {},
     base_branch: current?.base_branch ?? null,
     branch_prefix: current?.branch_prefix ?? null,
     auto_fix_ci: current?.auto_fix_ci ?? true,
     auto_human_review_enabled: current?.auto_human_review_enabled ?? true,
+    review_request_dms_enabled: current?.review_request_dms_enabled ?? true,
     draft_prs: current?.draft_prs ?? true,
     review_draft_prs: current?.review_draft_prs ?? null,
     experimental_background_callbacks:

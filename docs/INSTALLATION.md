@@ -30,7 +30,7 @@ Member-started coding sandboxes normally use the GitHub App's installation-wide 
 A user can therefore have the agent read or write an installed repository they cannot access personally, subject to the App's permissions and GitHub protections.
 
 Before admitting users, limit the App installation and sandbox images to repositories and source that every admitted user is trusted to access.
-Repository selection, workspace bindings, and private-thread visibility do not narrow sandbox GitHub access.
+Repository selection, integration bindings, and private-thread visibility do not narrow sandbox GitHub access.
 Source preloaded into an image remains readable even if a later token is narrowed.
 Separate trust groups need separate deployments, App installations, and appropriately restricted images.
 
@@ -38,7 +38,7 @@ Trusted users can still expose the agent to malicious instructions in repository
 Prompt instructions are not a repository authorization boundary.
 User-authorized PR creation does not constrain every shell or GitHub API operation in the sandbox.
 
-Some workflows, including reviewers and public-repository event threads, use narrower tokens; see [GitHub access and the sandbox image](reference/workspaces.md#github-access-and-the-sandbox-image).
+Some workflows, including reviewers and public-repository event threads, use narrower tokens; see [GitHub access and the sandbox image](reference/execution.md#github-access-and-the-sandbox-image).
 For the distinction between server-side user credentials and sandbox credentials, see [Thread credential scope](#thread-credential-scope).
 
 Robin's GitHub approvals can affect branch protection.
@@ -51,7 +51,7 @@ What a deployment needs:
 | Value | How you get it |
 |---|---|
 | `LANGSMITH_API_KEY` | LangSmith → Settings → API Keys. LangGraph Platform injects it. |
-| A model provider key such as `ANTHROPIC_API_KEY`, or `LANGSMITH_GATEWAY_API_KEY` for the LangSmith LLM Gateway | Your provider, or a LangSmith key with `gateway:invoke` (step 4) |
+| `LANGSMITH_GATEWAY_API_KEY` for the LangSmith LLM Gateway | A LangSmith key with `gateway:invoke` (step 4) |
 | `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID` | The GitHub App you create in step 3 |
 | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_APP_ID`, `SLACK_BOT_USER_ID`, `SLACK_BOT_USERNAME` | The Slack app you create in step 5 |
 | `TOKEN_ENCRYPTION_KEY`, `DASHBOARD_JWT_SECRET` | Two random secrets you generate (step 6) |
@@ -72,13 +72,13 @@ The dashboard reads the same key from `/dashboard/api/analytics/config` and capt
 
 The dashboard sends `$pageview` and `$pageleave` events grouped into PostHog sessions, with the page title, a normalized `page_name` and URLs whose ids and query strings are replaced by placeholders (`/agents/:threadId`); autocapture, heatmaps, session recording, exception capture and web vitals are off.
 `platform` is `web` or `desktop` (with `desktop_version`), so desktop app usage can be told apart.
-MCP executions send `MCP Tool Called` with tool name, `is_error`, and the run repository name; persisted webhook deliveries send `Webhook Received` with source, event type, action, resolved workspace/repository/PR IDs, and the repository name on GitHub events.
+MCP executions send `MCP Tool Called` with tool name, `is_error`, and the run repository name; persisted webhook deliveries send `Webhook Received` with source, event type, action, resolved repository/PR IDs, and the repository name on GitHub events.
 `DD_ENV` identifies the deployment.
 Resolved users share the internal user UUID, with email and GitHub login traits on usage events.
 Signed-out dashboard visits create no person profiles; unresolved MCP usage is skipped.
 A webhook whose sender is no Robin user counts as that account (`github:<id>`, `slack:<id>`); bots get a person profile marked `is_bot`, people without an account get none, and events with no sender use `open-swe:webhook:<source>`.
 Webhooks on a pull request also carry `pull_request_author_id`, the author's user UUID, so bot activity on a PR can be credited to its author.
-Private events, such as a person's own threads, record only who acted, the source, event type and workspace, marked `visibility: private`; PRs they open are public and tracked in full.
+Private events, such as a person's own threads, record only who acted, the source and event type, marked `visibility: private`; PRs they open are public and tracked in full.
 
 Delivery is best effort, not a durable export or historical backfill.
 Tool arguments/results, page URLs/query strings/thread identifiers, and raw webhook payloads are excluded; only allowlisted metadata properties are exported; IP geolocation is disabled.
@@ -105,7 +105,7 @@ Query-only changes do not count as page views.
 `agents_thread_created` still means an accepted new thread, with `run_target` (`local` or `cloud`) and `has_attachments`.
 `agents_message_submitted` still means a follow-up attempt, with `mode` (`new_turn`, `queue` or `steer`) and `has_attachments`; it excludes offloading.
 
-`agents_action_started` and `agents_action_completed` add bounded `action`, `result` (`accepted` or `failed`) and `failure_kind` properties for thread starts, follow-ups, queue/steer/offload/cancel, project membership and filing, thread sharing, integration connection, MCP saves/deletes, automations, explicit preference saves and review request/submission/rerun.
+`agents_action_started` and `agents_action_completed` add bounded `action`, `result` (`accepted` or `failed`) and `failure_kind` properties for thread starts, follow-ups, queue/steer/offload/cancel, project membership and filing, thread sharing, integration connection, automations, explicit preference saves and review request/submission/rerun.
 Acceptance is the API's acceptance, not successful agent completion; a later stream failure does not rewrite an accepted action.
 OAuth redirects only record the start when the browser cannot observe the outcome.
 `agents_feature_opened` records intentional panel/tab opens for terminal, browser, files, diff, artifacts, background work, apps and review surfaces, not automatic panel opens or background reads.
@@ -201,8 +201,10 @@ Either way, the URL browsers and webhooks use from here on is `<URL>`: `https://
 **Analytics storage.**
 When `POSTGRES_URI` is available to application code, startup migrations create and update the `open_swe_analytics` schema in that database.
 The database role must be allowed to create the schema and manage its tables and indexes.
-Workspace identity and collection-start metadata are persisted automatically; no additional analytics settings or worker deployment are required.
-`POSTGRES_URI` is required: the same migrations create the `repository`, `pull_request`, `pull_request_thread`, and `pull_request_review` tables that record which threads and reviews belong to each pull request, the `users` and `user_identity` tables that give each person one stable id across their GitHub and Slack identities (a user row is only ever created for a GitHub login that passes the same `ALLOWED_GITHUB_USERS`/`ALLOWED_GITHUB_ORGS` gate as dashboard login; when `CONFIGURED_ADMINS` is set, startup also syncs each user's `is_admin` flag from it), and the `workspace`, `workspace_repository`, and `workspace_slack_channel` tables that hold Robin's workspaces and the repository and Slack-channel bindings that route to them (a repository or Slack channel belongs to at most one workspace, enforced by the binding table's primary key, not just checked in application code), and the server refuses to start without it.
+Deployment identity and collection-start metadata are persisted automatically; no additional analytics settings or worker deployment are required.
+`POSTGRES_URI` is required: startup migrations create the repository and pull-request records, user identities, flat repository and Slack integration bindings, global settings, and execution-image state.
+A user row is created only for a GitHub login that passes the dashboard allowlist; `CONFIGURED_ADMINS` also synchronizes admin flags at startup.
+The server refuses to start without database access.
 Startup logs identify the setting and schema without printing the connection string.
 
 Analytics opens its own pooled SQLAlchemy/asyncpg connection to PostgreSQL.
@@ -218,7 +220,7 @@ A signed-in administrator can then open `/dashboard/api/analytics/readiness` and
 These endpoints are added by the analytics API integration.
 Startup failures leave the app running, so a healthy homepage alone does not verify analytics.
 If readiness fails, check that the role can create the analytics schema and owns its tables for future migrations.
-No workspace UUID or collection timestamp needs to be supplied.
+No deployment UUID or collection timestamp needs to be supplied.
 
 `collection_started_at` is set when the first event is successfully captured, not at startup.
 Reports read event-derived SQL tables and include `last_processed_at` plus indicators for queued or failed deliveries.
@@ -237,7 +239,8 @@ LangGraph Platform injects it into the deployment for you, along with `LANGSMITH
 
 The same key is used for tracing, sandboxes, and trace links.
 Trace links find your workspace through the key and the project by name, so no tenant or project ids are needed (`LANGSMITH_TENANT_ID` remains an override).
-Sandboxes boot from LangSmith's root snapshot, which ships `git`, `gh`, Python, `uv`, and Node, so there is nothing to configure; when your repositories need more, admins capture a sandbox image for a workspace from the **Workspaces** page later (see step 6).
+Sandboxes use the global execution image, falling back to the configured base or LangSmith's root snapshot when no image is configured.
+The root ships `git`, `gh`, Python, `uv`, and Node; admins configure additional tooling and publish a shared image when needed (see [Defaults and images](reference/execution.md#shared-defaults-and-images)).
 Other sandbox providers are covered in [CUSTOMIZATION.md](CUSTOMIZATION.md).
 
 ## 3. Create a GitHub App
@@ -284,32 +287,24 @@ Give each deployment its own GitHub App, or at least a distinct mention handle (
 
 ## 4. Model providers and API keys
 
-Robin calls models through [LangChain](https://python.langchain.com/) chat models named `provider:model`, so any provider you give a key for is available.
-Set at least one provider key unless you use an LLM gateway, such as the LangSmith Gateway described below:
-
-| Provider | Variable | Notes |
-|---|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` | Default model when it is the only key set |
-| OpenAI | `OPENAI_API_KEY` | Default model otherwise. `OPENAI_BASE_URL` points at an OpenAI-compatible API |
-| Google | `GOOGLE_API_KEY` | `google_genai:` models |
-| Fireworks | `FIREWORKS_API_KEY` | `fireworks:` models |
-| Groq | `GROQ_API_KEY` | `groq:` models |
-| Baseten | `BASETEN_API_KEY` | `baseten:` models |
-
-**LangSmith LLM Gateway.**
-Instead of per-provider keys, route every model call through the gateway with one LangSmith key that has the `gateway:invoke` permission, set as `LANGSMITH_GATEWAY_API_KEY`.
-Setting that key turns the gateway on; `LANGSMITH_GATEWAY_ENABLED=true|false` forces it either way (with `true` and no gateway key, `LANGSMITH_API_KEY` is used, which on LangGraph Platform may lack the permission).
+Robin calls models through [LangChain](https://python.langchain.com/) chat models named `provider:model`, using providers supported by the gateway integration.
+All model calls use the LangSmith LLM Gateway.
+Configure provider credentials in your LangSmith workspace's Provider Secrets, not Robin's environment.
+Set `LANGSMITH_GATEWAY_API_KEY` to a LangSmith key with `gateway:invoke`; if unset, Robin uses `LANGSMITH_API_KEY` (the platform-provided key may lack this permission).
 `LANGSMITH_GATEWAY_BASE_URL` points at a regional or self-hosted gateway.
-Admins can also toggle the gateway per team in the dashboard.
+Routing cannot be disabled.
+Unsupported providers or missing gateway credentials fail closed.
+OpenAI uses the Responses API.
 
 **Which model runs.**
-The deployment default comes from the supported-model list in `packages/runtime-api/src/runtime_api/models.py` (an Anthropic model when only an Anthropic key is configured, otherwise an OpenAI one); override it with `LLM_MODEL_ID` (`provider:model`) and `LLM_REASONING_EFFORT` (`low`, `medium`, `high`, `max`), and name a `LLM_FALLBACK_MODEL_ID` for when the primary provider fails.
-Admins set the instance default under **Admin → Defaults** and can override model and effort defaults per workspace.
+The deployment default is `openai:gpt-6.1-sol` with medium reasoning effort; override it with `LLM_MODEL_ID` (`provider:model`) and `LLM_REASONING_EFFORT` (`low`, `medium`, `high`, `max`), and name a `LLM_FALLBACK_MODEL_ID` for when the primary provider fails.
+Admins set global model and effort defaults under **Defaults** (`/settings`).
 Users can override the model for an individual thread, for example by asking the agent to switch to the performance model there.
 Model ids and their providers are described in [CUSTOMIZATION.md](CUSTOMIZATION.md).
 
 **Other API keys.**
-`EXA_API_KEY` (from [dashboard.exa.ai](https://dashboard.exa.ai)) enables the web search tool; with `MDA_EXA_CONNECTION`, runs read the key from the MDA deployment's connection instead ([mda/README.md](../mda/README.md#configure)).
+Web search is Parallel's `parallel_web_search`, a built-in LangSmith Managed Tools server: add it to Robin's bot kit (`LMT_BOT_KIT_ID`) and runs find it with `search_tools`.
+LangSmith holds its key; the organization needs a Parallel usage limit.
 `REVIEWER_OUTCOMES_DATASET` names the LangSmith dataset the reviewer records finding outcomes in (default `openswe-reviewer-outcomes`).
 
 ## 5. Create the Slack app
@@ -338,23 +333,7 @@ The app posts events to your deployment's URL, so it needs the same public URL a
         "bot_user": {
             "display_name": "Robin",
             "always_online": true
-        },
-        "slash_commands": [
-            {
-                "command": "/robin",
-                "url": "https://<your-url>/webhooks/slack/commands",
-                "description": "Ask Robin",
-                "usage_hint": "[your request or question]",
-                "should_escape": false
-            },
-            {
-                "command": "/oswe",
-                "url": "https://<your-url>/webhooks/slack/commands",
-                "description": "Ask Robin (legacy alias)",
-                "usage_hint": "[your request or question]",
-                "should_escape": false
-            }
-        ]
+        }
     },
     "oauth_config": {
         "redirect_urls": [
@@ -378,7 +357,9 @@ The app posts events to your deployment's URL, so it needs the same public URL a
                 "im:write",
                 "mpim:history",
                 "mpim:read",
+                "search:read.files",
                 "search:read.public",
+                "search:read.users",
                 "team:read",
                 "users:read",
                 "users:read.email"
@@ -424,7 +405,7 @@ The app posts events to your deployment's URL, so it needs the same public URL a
 ```bash
 SLACK_BOT_TOKEN=""        # OAuth & Permissions → Bot User OAuth Token (xoxb-...)
 SLACK_SIGNING_SECRET=""   # Basic Information → App Credentials → Signing Secret
-SLACK_APP_ID=""           # Basic Information → App ID (A...); Incidents accepts events only from this app
+SLACK_APP_ID=""           # Basic Information → App ID (A...)
 SLACK_BOT_USER_ID=""      # the bot's member id (open the bot's profile in Slack → ⋮ → Copy member ID)
 SLACK_BOT_USERNAME=""     # the bot's handle, e.g. robin (use its actual configured handle)
 ```
@@ -432,10 +413,6 @@ SLACK_BOT_USERNAME=""     # the bot's handle, e.g. robin (use its actual configu
 Set `SLACK_ALERTS_CHANNEL_ID` to the channel ID for operational alerts and invite the bot to that channel.
 If unset, alerts stay in server logs and are not sent to Slack.
 Slack delivery is limited to one operational alert per minute per channel across replicas.
-
-`/robin <request or question>` (legacy alias `/oswe`) answers or carries out a request without starting a Slack thread: replies are ephemeral, visible only to whoever asked, and the immediate acknowledgement links to the thread in the web dashboard.
-Each person's commands in a channel share one private scratch thread, kept out of everyone's thread list; continuing it on the web makes it an ordinary thread.
-Substantial work belongs in a thread of its own, which Robin starts in the channel.
 
 Both Slack URLs must point at the Robin deployment, and Block Kit buttons only work with Interactivity enabled and pointed at `/webhooks/slack/interactivity`.
 Slack messages are routed to the thread's repository, a `repo:owner/name` token in the message, or the team default repository.
@@ -452,7 +429,7 @@ Slack verifies the events Request URL the first time it can reach it; if the bac
 LANGGRAPH_URL="<URL>"                 # the deployment's own URL
 LANGSMITH_API_KEY=""                  # step 2; injected by LangGraph Platform
 LANGSMITH_TRACING="true"              # injected by LangGraph Platform
-ANTHROPIC_API_KEY=""                  # step 4: any provider key, or LANGSMITH_GATEWAY_API_KEY
+LANGSMITH_GATEWAY_API_KEY=""          # step 4: LangSmith key with gateway:invoke
 
 GITHUB_APP_ID=""                      # step 3
 GITHUB_APP_CLIENT_ID=""
@@ -474,6 +451,7 @@ CONFIGURED_ADMINS=""                  # GitHub logins or emails, comma-separated
 MDA_RUNTIME_URL=""                    # the Managed Deep Agents deployment of mda/; required
 MDA_RUNTIME_API_KEY=""                # LangSmith key to call it with; defaults to LANGSMITH_API_KEY
 MDA_WORKSPACE_ID=""                   # its LangSmith workspace; defaults to this backend's
+MDA_DEPLOYMENT_ID=""                  # its deployment id, once `mda deploy` registered the Slack app: the bot token is then read from Agent Auth, not SLACK_BOT_TOKEN
 MDA_LANGSMITH_PROJECT=""              # its LangSmith project (the deployment name); defaults to LANGSMITH_PROJECT
 REMOTE_RUNTIME_TOKEN_SECRET=""        # openssl rand -hex 32     (signs the run tokens it calls back with); required
 ```
@@ -489,16 +467,19 @@ With Docker, put them in the file you pass as `--env-file`.
 
 **Dashboard.**
 Open `<URL>`, click **Sign in with GitHub**, and you should land logged in.
-With your login in `CONFIGURED_ADMINS`, the **Administration** pages (Defaults, Integrations, Users, …) appear, along with the **Workspaces** page at `/workspaces` that every signed-in user can see.
+With your login in `CONFIGURED_ADMINS`, **Defaults** (`/settings`) and the **Administration** pages (Integrations, Users, …) appear.
 Set **Admin → Defaults → Default repository** so runs that name no repository have somewhere to go.
 Start a task from the composer.
-Every run gets a sandbox booted from LangSmith's root snapshot; when your repositories need extra toolchains preinstalled, an admin can start an **admin thread** (the Admin toggle in the composer), have the agent set the sandbox up, and capture it from the **Workspaces** page into the `default` workspace, which later runs boot from.
+New cloud sandboxes use the global execution image, or the configured base/root snapshot when no image is set.
+For extra preinstalled toolchains, an admin can configure reproducible scripts in **Defaults**, then ask an admin thread to run `rebuild_execution_image(kind="full")`.
+Alternatively, explicitly provision that thread's sandbox and request `publish_execution_image()`; publication changes future sandboxes without stopping its source.
+Saving Defaults alone does not build an image.
 
 **Slack.**
 Invite the bot to a channel and mention it: `@Robin what's in the repo?`.
 It replies in a thread.
-Public runs use the workspace GitHub App for agent operations, and user-owned PRs are opened as the thread's initiating GitHub user.
-Link the Slack user to a GitHub login before starting the thread, either by signing in to the dashboard once or through [Sign in with Slack](#slack-sign-in-and-code-channels).
+Public runs use the deployment GitHub App for agent operations, and user-owned PRs are opened as the thread's initiating GitHub user.
+Link the Slack user to a GitHub login before starting the thread, either by signing in to the dashboard once or through [Sign in with Slack](#slack-sign-in).
 
 **GitHub.**
 GitHub-triggered conversations are public.
@@ -508,11 +489,10 @@ Comment `@robin-agent what files are in this repo?` on an issue in a repository 
 Within a few seconds you should see a 👀 reaction, a run in your LangSmith project, and a reply comment.
 GitHub lists every delivery and its response under the App's **Advanced** tab.
 
-**How a run picks its workspace.**
-A workspace owns repositories, Slack channels, MCP connections, and workspace settings, and carries the sandbox prompt/snapshot/scripts described above.
-New work is routed to a workspace in this order, first match wins: the thread it belongs to already has one; the message that opened the thread starts with `/workspace:<slug>` (`workspace:<slug>` and `env:<slug>` anywhere in the message still work); the repository belongs to a workspace; the Slack channel it was posted in is bound to a workspace; the user has a default workspace set under **Settings → General**; otherwise it falls back to `default`.
-GitHub events for a repository that no workspace owns follow `OPEN_SWE_UNASSIGNED_REPO_WORKSPACE`: `default` (the default) routes them to the `default` workspace, and `ignore` drops them without creating a run.
-Workspace records and their repository and Slack-channel bindings, instance and workspace settings, per-repository agent instructions, and MCP connections live in PostgreSQL (see **Analytics storage** above).
+**Defaults and integration bindings.**
+Every run uses global shared defaults, with personal repository preferences and explicit thread choices where supported.
+Admins manage repository and Slack bindings under **Integrations**; these do not select different sandbox images or settings.
+See [Defaults, routing, and sandbox images](reference/execution.md) for the tools, API, and access model.
 
 ---
 
@@ -520,8 +500,8 @@ Workspace records and their repository and Slack-channel bindings, instance and 
 
 Open a section when you want that feature; everything above keeps working without it.
 
-<details id="slack-sign-in-and-code-channels">
-<summary><strong>Slack: "Sign in with Slack" linking and code channels</strong></summary>
+<details id="slack-sign-in">
+<summary><strong>Slack: "Sign in with Slack" linking</strong></summary>
 
 **"Sign in with Slack" account linking.**
 Lets a user link their Slack identity to their GitHub login from **Settings → Connections**, so Slack-triggered runs resolve to the right GitHub user through Slack's verified claims.
@@ -529,15 +509,34 @@ Without it, Slack senders stay unlinked until they connect from **Settings → C
 The manifest already registers the OIDC redirect; make sure the `openid`, `email`, and `profile` user scopes are available, then set `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET` from **Basic Information → App Credentials**, and optionally `SLACK_TEAM_ID` (`T...`) to restrict linking to one workspace.
 When they are unset the link is simply hidden.
 
-**Kitchen and Ask channels.**
-Admins choose Mention-only, Kitchen, or Ask per channel in the workspace editor (**Workspaces → edit workspace → Slack channels**); a channel must be bound to a workspace to use Kitchen or Ask, and Robin must have joined it.
-In a Kitchen or Ask channel, a top-level human message starts a new agent thread and replies continue it without tagging Robin; ordinary untagged replies queue behind an active run.
-Ask channels attempt reproduction before deciding whether to fix a reported bug, distinguish confirmed bugs from expected behavior and unverified reports, and propose a draft PR when appropriate.
-Public Ask-channel PRs open as Robin rather than the reporter, and the agent identifies a human validator—preferably the current on-call—without assuming the reporter owns delivery.
-If no owner can be established, it asks the thread to identify one.
-Ordinary Kitchen channels retain their existing behavior.
+**Listening channels.**
+Admins configure listening channels and their editable instructions under **Integrations** (`/admin/integrations`), or with `bind_slack_channel(channel_id=..., prompt=...)`.
+Robin must have joined the internal channel; externally shared channels are not eligible.
+The prompt can describe what Robin should respond to, a DRI, escalation guidance, and whether to investigate only or implement requested fixes.
+Slack topics, purposes, and descriptions no longer configure behavior or repository defaults; existing description instructions are not migrated.
+Prompts accept up to 32,000 characters; an empty prompt uses standard response behavior.
+Updating the binding replaces its instructions without changing its channel or existing conversations.
+Jev uses those instructions to decide whether an untagged message needs a response, a reaction, or no action.
+A responding top-level message starts an agent thread and replies continue it without tagging Robin; ordinary untagged replies queue behind an active run.
+The current instructions reach every turn, including explicit mentions and follow-ups in existing threads.
+Deploy the UI, backend, and runtime together.
+The listening-channel migration clears existing channel bindings; re-add channels and enter their instructions after deployment.
+Existing conversations are not deleted.
+Listening channels can answer ordinary questions from unlinked humans without borrowing personal credentials.
+Implementation and PR requests require the requester to sign in and link Slack and their own GitHub account in **Settings → Connections**.
+Public listening-channel PRs remain drafts and require the requester's linked GitHub authorization and repository access, without falling back to Robin.
+Instructions cannot grant credentials or tool permissions.
+Slack-triggered automations remain useful for separate event-driven tasks; they do not replace listening channels' ongoing conversation and reply handling.
 
-Other channels still require mentions.
+**Channel name rules.**
+A rule makes every public, internal, unarchived channel whose name starts with its prefix a listening channel, with the rule's instructions; add one under **Integrations** with **Start listening** → **Channels named…**, or with `bind_slack_channel_prefix(prefix=..., prompt=..., kickoff=...)`.
+A channel's own binding takes precedence over a rule, and the longest matching prefix wins between rules.
+Robin joins a channel created with the prefix, or renamed into it; that needs the `channel_created` and `channel_rename` events and the `channels:join` scope from the manifest above.
+When the rule's **On join** run is on, Robin then posts one message and about a minute later starts a system-owned thread under it that follows them, for example `inc-` with "Investigate the incident" for incident channels.
+A kickoff run acts for no one: it researches and replies in its own thread, and treats channel messages as evidence, never instructions.
+Optionally give the agent an incident tracker by adding its MCP server, for example incident.io at `https://mcp.incident.io/mcp`, to Robin's LangSmith Managed Tools bot kit in LangSmith; see [MCP servers](CUSTOMIZATION.md#mcp-servers).
+Rules replace the former Incidents page: its migration turns an enabled incident policy into the rule for its prefix without its excluded channels or model choice, and keeps the old incident tables, unread, so past records stay recoverable.
+
 To enable private channels, update the Slack app with the current manifest and reinstall it so Slack sends the `message.groups` event (the base manifest already includes the `groups:history` scope).
 
 Existing Slack app installations must update their event subscriptions; saving the dashboard setting alone does not change them.
@@ -550,120 +549,49 @@ Stop uses the linked clicker's dashboard cancellation permissions, interrupts cu
 Other participants' queued runs and pending follow-ups are preserved and may continue; a later message can also continue the thread.
 Anyone who can read a bot-triggered thread can stop it; it otherwise stays read-only.
 
-**Code channels (early access).**
-To enable Slack [code channels](https://api.slack.com/partners/code-channels), open **Admin → Slack integration**, turn on **Slack Code Channels**, copy the generated manifest, update the Slack app, and reinstall it.
-In a code channel the whole channel is one Robin session: it answers without an `@`-mention, replies at the channel level by default, reports session status, and keeps the context bar current; the `manage_code_channel` tool covers channel lifecycle, status, views, and canvases.
-This requires the `code_channels:manage` bot scope, the `agent_session_stopped` and `code_channel_action` bot events, and `features.code_channels.enabled`; `slash_command_url` delivers runtime-registered commands to the signed Robin endpoint.
-If your workspace is not enrolled, leave the toggle off.
-
 </details>
 
-<details id="incidents">
-<summary><strong>Incidents</strong></summary>
-
-The **Incidents** dashboard at `/incidents` investigates public internal Slack channels.
-Each incident is one persistent, system-owned conversation on the main `agent` graph, driven by the same Slack webhook path as code channels, with the normal sandbox, coding/PR tools, subagents, organization skills, and configured workspace integrations.
-Responders can copy the agent's postmortem summary and consult retained incident history.
-
-1. Install or reinstall the Slack manifest above and set `SLACK_APP_ID` from **Basic Information → App ID**.
-   Incidents needs the `channel_created`, `channel_rename`, `channel_archive`, `message.channels`, and `app_mention` events.
-   The manifest includes the public-channel scopes and `users:read` / `users:read.email` needed for authorized Slack controls.
-1. Access follows the rest of Robin: any signed-in dashboard user can read incidents, postmortems, and history, and only `CONFIGURED_ADMINS` can change incident settings.
-   In Slack, anyone in an incident channel can pause, resume, or complete it; asking the agent a question or starting an incident manually requires a connected Robin account (Sign in with Slack in the dashboard), the same as mentioning Robin anywhere else.
-   Reads recheck current channel access.
-1. Optionally give the agent an incident tracker: add its MCP server, for example incident.io at `https://mcp.incident.io/mcp`, under **Workspaces → the workspace → MCP connections** following [Workspace MCP servers](CUSTOMIZATION.md#workspace-mcp-servers).
-   The agent uses those tools like any other workspace integration, only for an explicit responder request.
-1. In **Admin → Incidents**, set a channel prefix such as `inc-` and optionally a model and a model-call limit per turn.
-   Enable Incidents, then create a matching public channel or rename one into the prefix.
-   Anyone with a connected Robin account can also mention the bot in any public channel and ask it to monitor that channel as an incident; the agent's `manage_incident` tool enrolls it.
-   To turn it off, anyone in the channel mentions the bot with `pause` (stops automatic analysis) or `complete` (ends the incident), asks it in plain words, or uses the buttons on the incident's dashboard page.
-
-Slack findings and control notices use compact messages directly in the incident channel.
-Questions posted in the channel receive channel replies; questions inside an existing thread receive replies in that thread.
-Detailed hypotheses, questions, coverage gaps, and citations remain in the incident report and postmortem.
-Changes only to those detailed hypotheses or questions do not generate another Slack update.
-
-Ordinary channel messages, including bot alerts, are queued as context and analyzed together in one turn about 15 seconds after the first arrives; enrollment queues the most recent channel history the same way.
-Direct questions and pause/stop controls bypass the delay.
-As in the main Slack handler, a direct mention interrupts an active turn, while ordinary messages wait for the next one.
-Nothing runs while the channel is quiet, so there is no idle timeout or watch limit; complete, pause, or archiving the channel stops the bot.
-
-The agent stores its latest postmortem summary as Markdown in PostgreSQL.
-The **Postmortem** tab renders it and **Copy incident** copies the text and source links for use elsewhere.
-**History** searches retained incident metadata and summaries, including incidents whose raw context has expired.
-There is no document editor or revision-history UI.
-
-Public status-page publishing is not implemented.
-For status-page requests, the agent drafts a message for responders to publish using incident.io's Slack command or web dashboard; its unavailable status-page update MCP tool is excluded from incident runs.
-Authorized responders can ask the agent to edit code, open a PR as the GitHub App, or use configured integrations for a specified action.
-Automatic turns investigate and propose mitigation; alerts and ordinary channel messages do not authorize external changes.
-Personal integrations remain unavailable in these system-owned threads.
-
-</details>
 
 <details id="api-keys">
-<summary><strong>Machine callers: API keys and GitHub Actions</strong></summary>
+<summary><strong>Machine callers: API keys</strong></summary>
 
-Two kinds of machine can start Robin threads without a browser session.
-Both post the same command the dashboard posts, to `POST /dashboard/api/threads/<thread_id>/commands`, and both may only start **system** threads: owned by a workspace rather than a person, public, and carrying no GitHub user, so nothing they do borrows anyone's credentials.
+LangSmith API keys can start Robin threads without a browser session.
+They post the same command the dashboard posts, to `POST /dashboard/api/threads/<thread_id>/commands`.
 
 Every creating command names the kind of thread it wants in `config.configurable.thread_type`:
 
 | `thread_type` | Who may ask for it |
 |---|---|
-| `system` | API keys, federated workflows, and admins |
-| `workspace` | any signed-in person |
-| `private` | any signed-in person |
+| `system` | the bot (Workspace Admin service keys) and admins |
+| `workspace` | any signed-in person, or their personal access token |
+| `private` | any signed-in person, or their personal access token |
 
-**API keys.**
-Only `CONFIGURED_ADMINS` mint, list, or revoke them, and a key is scoped to one workspace with a required expiry at most 365 days out:
+**LangSmith API keys.**
+Robin mints no keys of its own.
+Send a LangSmith key as `Authorization: Bearer <key>` or `X-Api-Key: <key>`, and Robin asks LangSmith (its tenant `/auth` endpoint) who it is, pinned to the LangSmith workspace Robin signs people in to: the workspace of the deployment's own `LANGSMITH_API_KEY`.
+A key that cannot act in that workspace is refused, whatever else it can reach.
+LangSmith's answer is reused for up to 60 seconds, so a key revoked in LangSmith stops working here within a minute.
 
-```bash
-curl -X POST "<URL>/dashboard/api/admin/api-keys" \
-  -H 'Content-Type: application/json' -b osw_session=<your session cookie> \
-  -d '{"workspace": "core", "name": "release CI", "expires_at": "2027-01-01T00:00:00Z"}'
-```
+- A **personal access token** (`lsv2_pt_…`) acts as its person: the Robin user who signed in with that LangSmith account, with the same access as their session.
+  Their Robin login must still be live (the same check a session gets), because their runs call models on it; otherwise the token gets a 403 asking them to sign in again.
+- A **service key** (`lsv2_sk_…`) that holds `workspaces:manage` in that workspace (a Workspace Admin key) acts as the workspace's **bot**, a machine that may only start **system** threads: owned by the deployment rather than a person, public, and carrying no GitHub user, so nothing it does borrows anyone's credentials.
+  Every service key is the same bot, so a rotated key still reads the threads the old one started.
+  The bot's threads use global execution defaults.
 
-The response is the only place the secret appears.
-The server stores the SHA-256 digest of the secret and its last six characters, so a lost key cannot be recovered: mint a new one and revoke the old.
-`GET /dashboard/api/admin/api-keys?workspace=core` lists keys with `last_used_at`, `revoked_at` and a `status` of `active`, `expired` or `revoked`; `DELETE /dashboard/api/admin/api-keys/<id>` revokes one.
-Deleting a workspace deletes its keys, because a slug can be reused.
+Service keys without `workspaces:manage` (for example ones made for tracing or CI) get a 403: the bot can start threads in any repository the GitHub App reaches, so only a key a workspace admin made for it may act as it.
+Robin's own deployment keys (`LANGSMITH_API_KEY`, `LANGSMITH_GATEWAY_API_KEY`, `MDA_RUNTIME_API_KEY`) are refused, as are tracing keys and legacy `ls__` keys.
 
 ```bash
 curl -X POST "<URL>/dashboard/api/threads/$(uuidgen | tr 'A-Z' 'a-z')/commands" \
-  -H 'Authorization: Bearer osk_…' -H 'Content-Type: application/json' \
+  -H 'X-Api-Key: lsv2_sk_…' -H 'Content-Type: application/json' \
   -d '{"id": 1, "method": "run.start", "params": {
         "input": {"messages": [{"type": "human", "content": "Upgrade the linter and open a PR"}]},
         "config": {"configurable": {"thread_type": "system", "repo": "acme/api"}}}}'
 ```
 
-**GitHub Actions, with no stored secret.**
-A workflow asks GitHub for an OIDC token naming its repository, ref and workflow, and presents that instead of a key.
-Robin verifies GitHub's signature against its published keys, checks the audience, and then checks its own trust policy: the repository must be bound to a workspace *and* granted the right to start threads there.
-Grant it per repository under **Repository permissions** on the workspace's settings page, or with the `configure_repository` agent tool.
-Binding a repository never implies the grant.
+A GitHub Actions workflow calls Robin the same way, with a Workspace Admin service key stored as a secret.
 
-Set `GITHUB_OIDC_AUDIENCE` to the value your workflows request; it defaults to `DASHBOARD_BASE_URL`.
-
-```yaml
-permissions:
-  id-token: write
-steps:
-  - id: token
-    run: |
-      echo "value=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-        "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=<URL>" | jq -r .value)" >> "$GITHUB_OUTPUT"
-  - run: |
-      curl -X POST "<URL>/dashboard/api/threads/$(uuidgen | tr 'A-Z' 'a-z')/commands" \
-        -H "Authorization: Bearer ${{ steps.token.outputs.value }}" \
-        -H 'Content-Type: application/json' \
-        -d '{"id": 1, "method": "run.start", "params": {
-              "input": {"messages": [{"type": "human", "content": "Nightly build failed, investigate"}]},
-              "config": {"configurable": {"thread_type": "system"}}}}'
-```
-
-A workflow that names no `repo` works in its own repository.
-A machine caller reads back only the threads it started, through `GET /dashboard/api/threads` and `GET /dashboard/api/threads/<id>`; unknown, revoked and expired credentials all answer `401`.
+A machine caller reads back only the threads it started, through `GET /dashboard/api/threads` and `GET /dashboard/api/threads/<id>`, and their transcripts, through `GET /dashboard/api/threads/<id>/transcript`, `/transcript/turns`, `/transcript/events`, `/transcript/tool-calls/<id>/output` and `/transcript/attachments/<id>`; unknown, revoked and expired credentials all answer `401`.
 
 </details>
 
@@ -681,12 +609,13 @@ The dashboard shows these threads read-only: continue them in Linear.
 1. Run `mda deploy` in `mda/`.
    Deploy sets up the Linear app, which takes a Linear workspace admin: it opens Linear's new-app page filled in with the app's name, redirect URI, webhook URL and events, then asks for the app's client ID, client secret and webhook signing secret, and the admin approves the install.
    The deployment checks each delivery's signature with that secret; the backend needs no Linear secret.
-1. Add a Linear MCP server named `linear` under **Workspaces → the workspace → MCP connections** and select the tools Robin may use to read issues and change them.
-   Include `save_comment` (or `create_comment` if offered) so a run can still post a notice on the issue, such as when its sandbox keeps failing; the session's answer and errors need no tool.
-1. Set a workspace default repository under **Robin Agent**.
+1. Set the global default repository under **Defaults**.
    Add a `repo:owner/name` token or GitHub URL to the message that mentions the app when the issue belongs to another repository.
 
-Issue events still reach workspace automations and `listen_events`: the channel forwards them to the backend.
+The session's answer and errors need no tool.
+For Robin to read and change issues beyond the session, add Linear's tools to the LangSmith Managed Tools bot kit; see [MCP servers](CUSTOMIZATION.md#mcp-servers).
+
+Issue events still reach automations and `listen_events`: the channel forwards them to the backend.
 
 **Verify:** mention the app on an issue with `what files are in this repo?`, adding `repo:owner/name` when needed.
 
@@ -765,15 +694,17 @@ An app's [review step](PLUGINS.md#review-steps) has pull request reviews do work
    To put it in everyone's sidebar, an instance admin turns it on under **Defaults → Apps for everyone**, and names the repositories it reads for everyone, such as the one its reviews capture.
 1. For apps whose review step uses the browser, an instance admin fills in **Defaults → Review browser**.
    List the domains, each with its subdomains, the review's browser may sign in to: your previews' and their base site's, never production.
-   Optionally, name the instance or workspace MCP tool that returns a browser session, as `<connection>/<tool>`.
-   Workspaces can't override either.
+   Optionally, name the bot kit's MCP tool that returns a browser session, as `<connection>/<tool>`.
 
    The deployment's LangSmith workspace needs the LangSmith browser beta, as the coding agent's browser does.
    Browser sessions install only on LangSmith sites, so a review signs in to LangSmith previews; it browses any other preview signed out.
-1. Add the app in a workspace's **Settings → Review → Apps in reviews**.
+1. Add the app under **Defaults → Apps in reviews**.
    Only reviews of private repositories follow it.
    Reviews follow the release that was newest when it was added; when its owner releases again, **Update** there moves reviews to the new one.
-1. Say where the previews' base site is in the workspace's review guidelines, so the review knows where to take "before" screenshots.
+1. Under **Preview checks** there, name the checks that pass only once a pull request's preview serves its head commit, one per line, as the pull request's checks list shows them, such as a deploy workflow's `wait-for-dns` job.
+   A review usually finishes before the preview is up; when one of these passes for a pull request, Robin does the apps' review steps against the preview.
+   Pick a check that is skipped when no preview is built, and the GitHub App must receive `check_run` events.
+1. Say where the previews' base site is in the shared review guidelines, so the review knows where to take "before" screenshots.
 
 </details>
 
@@ -792,9 +723,17 @@ To have the browser call the backend cross-origin instead, build the UI with `VI
 **Mount prefix.**
 If the server runs under a LangGraph `http.mount_prefix`, the Platform image builds the UI for that prefix automatically; locally pass it to the build (`DASHBOARD_BASE_PATH=/<prefix>/ make build-dashboard`) and keep `LANGGRAPH_URL` on the mounted URL.
 
-**Datadog RUM.**
-Set `VITE_DATADOG_APPLICATION_ID` and `VITE_DATADOG_CLIENT_TOKEN` when building.
-Optional: `VITE_DATADOG_SITE` (default `us5.datadoghq.com`), `VITE_DATADOG_SERVICE` (default `open-swe-dashboard`), `VITE_DATADOG_VERSION`, `VITE_DATADOG_SESSION_SAMPLE_RATE` and `VITE_DATADOG_SESSION_REPLAY_SAMPLE_RATE` (default `100`).
+</details>
+
+<details id="datadog-rum">
+<summary><strong>Datadog RUM</strong></summary>
+
+Set `DD_RUM_APPLICATION_ID` and `DD_RUM_CLIENT_TOKEN` on the backend to enable RUM for the web and downloaded desktop UI without rebuilding them.
+Optionally set `DD_RUM_SITE` (default `us5.datadoghq.com`); both identifiers must be set or RUM stays disabled.
+The backend returns these public values from `/dashboard/api/analytics/config`: use only a browser client token, never a Datadog API or application key.
+A complete pair of `VITE_DATADOG_APPLICATION_ID` and `VITE_DATADOG_CLIENT_TOKEN` at build time takes precedence over the backend settings; `VITE_DATADOG_SITE` applies to that pair.
+Other optional build settings: `VITE_DATADOG_SERVICE` (default `open-swe-dashboard`), `VITE_DATADOG_VERSION`, `VITE_DATADOG_SESSION_SAMPLE_RATE` (default `100`), and `VITE_DATADOG_SESSION_REPLAY_SAMPLE_RATE` (default `0` for runtime configuration, `100` for build-time identifiers).
+Review replay sampling before enabling it; changing a build setting requires rebuilding the UI.
 The environment comes from the backend's `DD_ENV` at runtime, shared with Segment and analytics (default `production`); `ANALYTICS_ENVIRONMENT`, `VITE_DATADOG_ENV`, and the Vite mode no longer select it.
 RUM skips initialization if the backend telemetry configuration cannot be loaded.
 Session Replay masks all content and telemetry strips query strings and fragments.
@@ -821,7 +760,6 @@ ALLOWED_GITHUB_ORGS="langchain-ai,anthropics"                        # org membe
 ALLOWED_GITHUB_USERS="octocat,hubot"                                 # individual users allowed to log in
 ALLOWED_GITHUB_REPOS="some-user/their-repo,another-org/specific-repo"  # specific owner/repo pairs
 PUBLIC_REPO_ORG_GATE=""   # single org whose members may trigger runs on *public* repos; empty = no gate
-OPEN_SWE_UNASSIGNED_REPO_WORKSPACE="default"   # GitHub events for a repo no workspace owns: "default" (the default) routes to the default workspace, "ignore" drops them
 ```
 
 Backend startup requires at least one entry in `ALLOWED_GITHUB_ORGS` or `ALLOWED_GITHUB_USERS`; an empty value in both stops the server.
@@ -838,7 +776,7 @@ An unlinked person who tags Robin in Slack gets a run with the GitHub App's inst
 Records from the older Store-backed user mapping are imported into `users` on the first startup that finds them, then deleted.
 
 **Default repository.**
-Runs that name no repository use the workspace's default repository (**Workspaces → the workspace → Default repository**, inheriting **Admin → Default repository** unless overridden), seeded from `DEFAULT_REPO_OWNER` / `DEFAULT_REPO_NAME` when set; `SLACK_REPO_OWNER` / `SLACK_REPO_NAME` are a Slack-only fallback.
+Runs that name no repository use the global default repository under **Defaults**, seeded from `DEFAULT_REPO_OWNER` / `DEFAULT_REPO_NAME` when set; `SLACK_REPO_OWNER` / `SLACK_REPO_NAME` are a Slack-only fallback.
 
 </details>
 
@@ -880,28 +818,30 @@ For example, if Alice starts a Slack task and Bob triggers a follow-up run askin
 Alice remains the task owner, and existing PR authors are unchanged.
 If the requester's identity or token is unavailable, PR creation fails without falling back to the task owner or bot.
 The requester must have access to the target repository.
-Public PR creation first verifies that the target repository is accessible through the configured workspace installation.
-System-owned threads, including scheduled automations, open PRs as the GitHub App.
+Public PR creation first verifies that the target repository is accessible through the configured GitHub App installation.
+Ask-channel PRs use the authenticated person who explicitly requests the PR, even in a system-owned Ask thread.
+Other system-owned threads, including scheduled automations, open PRs as the GitHub App.
 Existing threads without recorded ownership retain bot PR authorship.
-Scheduled runs check repository access with the workspace GitHub App.
+System automation runs check repository access with the deployment GitHub App.
 They record the automation creator for auditing but do not require that person's OAuth token or inject their GitHub login or email as the agent's execution identity.
+Personal automations instead run as their creator, using that person's linked authorization and private thread access.
 Admin schedules retain their management tools through authorization tied to the scheduled invocation.
 The graph and tools recheck the creator's current admin status; later participants do not inherit that authorization.
-Automation management from these system runs also uses workspace credentials.
+Automation management from these system runs also uses deployment credentials.
 
-Authorship is bound to the publishing run, not inferred from conversation text.
-Slack follow-ups carry their own requester identity whether they interrupt or queue behind an active run.
+PR authorship is bound to the saved thread owner outside public listening channels, never inferred from conversation text.
+Slack follow-ups carry their own requester identity whether they interrupt or queue behind an active run; that identity does not replace the saved owner outside public listening channels.
 Dashboard messages and Slack edits injected into an existing run do not change its identity.
-A collaborator must start a new run to publish under their own account.
-Workflow push approval starts a run with the authenticated actor's identity.
-Background-task completion runs cannot reliably identify the launching requester, so PR creation from user-owned threads is blocked in those runs.
-Start a direct user-triggered run to publish.
-System-owned and legacy unowned threads retain bot authorship.
-This prevents the publisher from approving their own PR; it does not prevent other task participants from approving it.
+A collaborator outside public listening channels must start their own thread to publish under their own account.
+Workflow push approval starts a run with the authenticated actor's identity without changing the saved PR owner.
+Public listening-channel PRs use the authenticated requester's own linked GitHub authorization, including background completions of an existing explicit PR request when that requester identity is available.
+Missing requester authorization blocks the PR rather than borrowing the thread owner's or App's authorization.
+Outside listening channels, PRs use the saved thread owner's identity, including background completions; system-owned and legacy unowned threads retain bot authorship.
+GitHub prevents the author from approving their own PR; person-authored PRs otherwise follow the repository's review rules.
 
-Public threads load workspace MCP connections and organization skills.
-Personal MCP connections, user skills, and user custom instructions are available only in a private thread started by its immutable owner.
-The same ownership check applies when a personal MCP tool refreshes its credentials at execution time.
+Public threads load Robin's LangSmith Managed Tools bot kit and organization skills.
+Personal LangSmith Managed Tools, user skills, and user custom instructions are available only in a private thread started by its immutable owner.
+The same ownership check applies when a personal managed tool refreshes its credentials at execution time.
 
 Private threads use their owner's stored GitHub OAuth token for server-side GitHub operations and PR creation.
 If that token is unavailable, the owner must sign in again; the run does not fall back to the bot.
@@ -934,7 +874,8 @@ User identity and membership checks still apply to public runs.
 
 - `LANGSMITH_API_KEY` must be set and valid, and the workspace must have sandbox access (403 on the sandbox endpoints means it does not; contact LangSmith support).
 - Check LangSmith sandbox quotas in your workspace settings.
-- `Failed to create sandbox from snapshot '<id>'` means a workspace's captured snapshot or the base snapshot no longer exists or is not `ready`; delete or recapture it from the **Workspaces** page (or clear **Admin → Sandbox → Base snapshot**) to fall back to the root snapshot.
+- `Failed to create sandbox from snapshot '<id>'` means the global execution image or configured base snapshot no longer exists or is not `ready`; an admin should inspect `read_execution_image()` and correct the image/base snapshot configuration in **Defaults**.
+  Rebuild or publish only when explicitly requested; do not delete images or recreate sandboxes as automatic recovery.
 
 ### Agent not responding to comments
 

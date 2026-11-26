@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 from deepagents.backends import LocalShellBackend
+from deepagents.backends.protocol import FileDownloadResponse
 
 REAL = os.environ.get("E2E_REAL_SANDBOX") == "1"
 
@@ -57,6 +58,17 @@ class StandInSandbox(LocalShellBackend):
     def get_work_dir(self) -> str:
         return str(self.cwd)
 
+    async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        """Takes the absolute paths the shell sees, as LangSmith's file API does; virtual mode would re-root them."""
+        root = self.cwd.resolve()
+        virtual = [
+            "/" + str(Path(path).relative_to(root))
+            if Path(path).is_absolute() and Path(path).is_relative_to(root)
+            else path
+            for path in paths
+        ]
+        return await super().adownload_files(virtual)
+
     @property
     def id(self) -> str:
         return self._stand_in_id
@@ -67,6 +79,9 @@ def open_mda_sandbox(sandbox_id: str | None = None) -> StandInSandbox:
     return StandInSandbox(sandbox_id or f"e2e-{uuid.uuid4().hex[:12]}")
 
 
-def mda_sandbox_name(scope_key: str) -> str:
-    """The name MDA gives the sandbox it keeps for ``scope_key``, the same on every call."""
+def mda_sandbox_name(scope_key: str, existing: object = None) -> str:
+    """The sandbox MDA opens for ``scope_key``: the ``existing`` sandbox the run names, or else
+    the one it keeps for the scope, under the same name on every call."""
+    if isinstance(existing, str):
+        return existing
     return f"e2e-{hashlib.sha256(scope_key.encode()).hexdigest()[:16]}"

@@ -7,6 +7,7 @@ import base64
 import contextvars
 import hashlib
 import json
+import re
 from collections.abc import Coroutine, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
@@ -17,6 +18,7 @@ from urllib.parse import quote
 from langchain_core.runnables.config import var_child_runnable_config
 from langgraph.errors import GraphInterrupt
 
+from managed_deepagents._agent_auth_http import CredentialStoreUnavailableError
 from managed_deepagents._connections import (
     ConnectionNotFoundError,
     ConnectionReference,
@@ -24,9 +26,11 @@ from managed_deepagents._connections import (
     is_connection_reference,
 )
 from managed_deepagents._langsmith_env import resolve_langsmith_endpoint
+from managed_deepagents._run_local import RunLocal
 from managed_deepagents.sandbox import ConnectionHeader, SandboxDefinition
 
 if TYPE_CHECKING:
+    import httpx
     from langsmith.sandbox import SandboxProxyConfig
 
     from managed_deepagents._credential_gate import CredentialConsumer
@@ -81,6 +85,8 @@ def _format_header(value: object, resolved_token: str) -> str:
         return resolved_token
     if value.format == "bearer":
         return f"Bearer {resolved_token}"
+    if value.format == "template":
+        return cast("str", value.template).replace("{token}", resolved_token)
     encoded = base64.b64encode(f"{value.username}:{resolved_token}".encode()).decode()
     return f"Basic {encoded}"
 
@@ -123,7 +129,11 @@ async def resolve_sandbox_proxy_config(
                 headers.append({**header, "value": header_value, "type": "opaque"})
             rules.append({**rule, "headers": headers} if "headers" in rule else dict(rule))
         return {**cast("dict[str, object]", config), "rules": rules}
-    except (ConnectionNotFoundError, CredentialAuthorizationRequiredError):
+    except (
+        ConnectionNotFoundError,
+        CredentialAuthorizationRequiredError,
+        CredentialStoreUnavailableError,
+    ):
         raise
     except Exception as error:
         if isinstance(error, GraphInterrupt):
@@ -181,31 +191,116 @@ def patch_sandbox_proxy_config(
             "Could not update sandbox proxy credentials.", "sandbox"
         ) from None
     if not response.is_success:
-        raise RuntimeError("Could not update sandbox proxy credentials.")
+        raise ProxyConfigRefusedError.of(response, config)
+
+
+#: Credential-shaped text an API error may echo back, never repeated in an error message.
+_SECRET_TEXT = re.compile(
+    r"(gh[opsu]_|github_pat_|lsv2_[a-z]{2}_|Bearer\s+|Basic\s+)[A-Za-z0-9_.=+/-]+", re.IGNORECASE
+)
+_DETAIL_LIMIT = 300
+#: Shorter pieces of a sent value (a scheme such as ``Bearer``) are not credentials.
+_SECRET_PIECE_MIN = 8
+
+
+def _sent_secrets(config: object) -> list[str]:
+    """Each credential ``config`` carries, as an API error could echo it, longest first.
+
+    That is every ``value`` the config sends (header values, opaque secrets), whole and
+    split on whitespace (a ``Bearer`` or ``Basic`` header's token), plain and JSON-escaped.
+    Workspace secret references name a secret rather than carry one.
+    """
+    found: set[str] = set()
+
+    def visit(node: object) -> None:
+        if isinstance(node, Mapping):
+            value = node.get("value")
+            if isinstance(value, str) and node.get("type") != "workspace_secret":
+                whole = " ".join(value.split())
+                for piece in (whole, *whole.split(" ")):
+                    if len(piece) >= _SECRET_PIECE_MIN:
+                        found.update((piece, json.dumps(piece)[1:-1]))
+            for child in node.values():
+                visit(child)
+        elif isinstance(node, list | tuple):
+            for child in node:
+                visit(child)
+
+    visit(config)
+    return sorted(found, key=len, reverse=True)
+
+
+class ProxyConfigRefusedError(RuntimeError):
+    """The sandbox API answered a proxy config write with an error; its message says why,
+    credentials removed.
+
+    Without it a refusal (for example HTTP 422) does not say which part of the config the API
+    rejected.
+    """
+
+    @classmethod
+    def of(cls, response: httpx.Response, sent: object = None) -> ProxyConfigRefusedError:
+        """The error for ``response``: its status, and the API's ``detail`` where it has one.
+
+        ``sent`` is the config that was written: any of its values the detail echoes is
+        removed, whatever its format.
+        """
+        status, detail = response.status_code, cls._detail(response, sent)
+        return cls(f"Could not update sandbox proxy credentials (HTTP {status}{detail}).")
+
+    @staticmethod
+    def _detail(response: httpx.Response, sent: object) -> str:
+        try:
+            body = response.json()
+        except Exception:  # noqa: BLE001 — a body that is not JSON says nothing safe to repeat
+            return ""
+        detail = body.get("detail") if isinstance(body, Mapping) else None
+        if detail is None:
+            return ""
+        text = detail if isinstance(detail, str) else json.dumps(detail, default=str)
+        text = " ".join(text.split())
+        for secret in _sent_secrets(sent):
+            text = text.replace(secret, "[redacted]")
+        text = _SECRET_TEXT.sub(r"\1[redacted]", text)
+        if len(text) > _DETAIL_LIMIT:
+            text = f"{text[: _DETAIL_LIMIT - 1]}…"
+        return f": {text}"
 
 
 class SandboxProxyConfigSync:
-    """Keep wire-config digests for one graph factory invocation.
+    """Remember which proxy config each run already applied to each sandbox.
 
-    MDA rebuilds the graph for every run and resume, so each starts with an empty cache.
+    The memo is per run: a cached graph serves many runs with one instance, and the
+    shared sandbox's config can be changed by other runs, replicas or graphs in the
+    meantime. So each run applies its own config once before its first command,
+    then skips re-applying the same digest for the rest of the run.
     """
 
     def __init__(self) -> None:
-        self._hashes: dict[str, str] = {}
+        self._runs: RunLocal[dict[str, str]] = RunLocal(dict)
 
-    def invalidate(self, name: str | None) -> None:
-        if name is not None:
-            self._hashes.pop(name, None)
+    @property
+    def _hashes(self) -> dict[str, str]:
+        return self._runs.get()
 
     async def sync(
         self,
         sandbox: SandboxDefinition,
         name: str | None,
         config: Mapping[str, object] | None,
+        *,
+        keeps_proxy: bool = False,
     ) -> None:
+        """Write this run's proxy config on sandbox ``name`` before its first command.
+
+        An existing sandbox, named by the run or opened from its lead's binding
+        (``keeps_proxy``), keeps its own proxy config unless the run declares one.
+        """
         from langsmith.sandbox import ResourceNotFoundError  # noqa: PLC0415
 
         template = sandbox.options.get("proxy_config")
+        if template is None and (keeps_proxy or sandbox.options.get("existing_sandbox")):
+            return
         if not name:
             raise RuntimeError("Cannot update sandbox proxy credentials without a sandbox name.")
         # Proxy state belongs to the shared Host box. Set this run's config,
@@ -225,8 +320,17 @@ class SandboxProxyConfigSync:
                 raise ResourceNotFoundError(
                     "Could not update sandbox proxy credentials.", "sandbox"
                 ) from None
+            if isinstance(error, ProxyConfigRefusedError):
+                raise ProxyConfigRefusedError(str(error)) from None
             raise RuntimeError("Could not update sandbox proxy credentials.") from None
         self._hashes[name] = digest
+
+
+def sandbox_has_proxy_connections(sandbox: SandboxDefinition | None) -> bool:
+    """Whether the sandbox proxy config resolves any connection through Agent Auth."""
+    return sandbox is not None and bool(
+        validate_and_collect_sandbox_proxy_config_references(sandbox.options.get("proxy_config"))
+    )
 
 
 def sandbox_credential_consumers(sandbox: SandboxDefinition | None) -> list[CredentialConsumer]:

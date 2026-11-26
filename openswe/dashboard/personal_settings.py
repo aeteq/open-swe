@@ -18,16 +18,16 @@ from openswe.users import User, UserPreferencesPatch
 from openswe.utils.time import now_iso
 
 SQL_FLAG_KEYS = feature_flag_names(UserPreferencesPatch)
-SQL_SETTING_KEYS = SQL_FLAG_KEYS | {"personal_kitchen_channel_id"}
+SQL_SETTING_KEYS = SQL_FLAG_KEYS | {"thread_title_instructions"}
 
 PROFILE_SETTING_KEYS = frozenset(
     {
         "default_repo",
-        "workspace_default_repos",
         "base_branch",
         "branch_prefix",
         "auto_fix_ci",
         "auto_human_review_enabled",
+        "review_request_dms_enabled",
         "draft_prs",
         "review_draft_prs",
     }
@@ -35,12 +35,11 @@ PROFILE_SETTING_KEYS = frozenset(
 PREFERENCE_SETTING_KEYS = frozenset(
     {
         "default_visibility",
-        "default_workspace",
         "follow_up_behavior",
         "auto_show_changes",
     }
 )
-type SettingValue = str | bool | dict[str, str] | None
+type SettingValue = str | bool | None
 
 
 async def patch_personal_settings(

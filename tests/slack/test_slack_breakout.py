@@ -10,7 +10,6 @@ from openswe.slack.parsed_message import ParsedSlackMessage
 from openswe.slack.request import SlackRequest
 from openswe.users import User
 from openswe.users.models import UserIdentity
-from openswe.workspaces import routing
 
 Command = breakout.BreakoutCommand
 
@@ -35,9 +34,6 @@ def public_channels(monkeypatch, langsmith_users):
     monkeypatch.setattr(breakout.common, "account_link_reason", AsyncMock(return_value=None))
     load = AsyncMock(side_effect=lambda channel_id, **_: _channel(channel_id, private=False))
     monkeypatch.setattr(SlackChannel, "load", load)
-    monkeypatch.setattr(
-        breakout.common, "get_thread_workspace", AsyncMock(return_value="engineering")
-    )
     monkeypatch.setattr(breakout.common, "thread_exists", AsyncMock(return_value=False))
     monkeypatch.setattr(User, "login_for_slack", AsyncMock(return_value="alice"))
     return load
@@ -76,6 +72,8 @@ def _patch_slack(monkeypatch) -> SimpleNamespace:
         ("<@U0BOT> /breakout in <#C2>", Command("", "<#C2>", "C2")),
         ("<@U0BOT> /breakout in #target fix it", Command("fix it", "#target")),
         ("<@U0BOT> /breakout in the parser", Command("in the parser")),
+        ("<@U0BOT> /breakout to <#C2|target> fix it", Command("fix it", "<#C2|target>", "C2")),
+        ("<@U0BOT> /breakout to the parser", Command("to the parser")),
         (
             "details <@U0BOT> /breakout <#C2|target> fix it",
             Command("fix it", "<#C2|target>", "C2", "details"),
@@ -83,12 +81,12 @@ def _patch_slack(monkeypatch) -> SimpleNamespace:
         ("details <@U0BOT> /breakout", Command("", prior_text="details")),
         (
             "<@U0BOT> /WORKSPACE:Infra /breakout fix it",
-            Command("fix it", options="/workspace:infra", workspace="infra"),
+            Command("<@U0BOT> /WORKSPACE:Infra /breakout fix it"),
         ),
         ("<@U0BOT> /breakout:web <#C2> why", Command("<#C2> why")),
         (
             "<@U0BOT> /breakout fix workspace:infra bug",
-            Command("fix workspace:infra bug", workspace="infra"),
+            Command("fix workspace:infra bug"),
         ),
     ],
 )
@@ -131,32 +129,14 @@ async def test_breakout_with_text_starts_new_thread_with_old_transcript(
     monkeypatch.setattr(breakout.service, "process_slack_mention", mention)
 
     request = _request()
-    command = Command("fix it", channel_id=explicit, options="/workspace:other", workspace="other")
+    command = Command("fix it", channel_id=explicit, options="/model:perf")
     if without_thread:
         request = request.model_copy(update={"thread_id": None})
         command = Command("fix it", channel_id=explicit)
-        monkeypatch.setattr(
-            routing.WORKSPACES, "owner_of_slack_channel", AsyncMock(return_value=None)
-        )
-        monkeypatch.setattr(
-            routing.WORKSPACES,
-            "slug_exists",
-            AsyncMock(side_effect=lambda slug: slug == "engineering"),
-        )
-        monkeypatch.setattr(
-            routing,
-            "get_user_preferences",
-            AsyncMock(
-                side_effect=lambda login: (
-                    {"default_workspace": "engineering"} if login == "alice" else {}
-                )
-            ),
-        )
     monkeypatch.setattr(breakout.common, "get_slack_repo_config", AsyncMock(return_value=None))
     await breakout.process_slack_breakout(request, command, None)
 
     assert mention.await_args is not None
-    assert mention.await_args.kwargs["inherited_workspace"] == (None if explicit else "engineering")
     assert root.await_args is not None
     assert root.await_args.args[0] == expected
     assert root.await_args.args[1] == (
@@ -166,7 +146,7 @@ async def test_breakout_with_text_starts_new_thread_with_old_transcript(
         expected,
         "200.0",
         "`/breakout`: fix it · <https://slack/p105|(source)> · <@U_ALICE> "
-        "<https://dashboard.example/agents/new-thread|Open in Web>",
+        "<https://dashboard.example/agents/new-thread|Open in Robin>",
         blocks=ANY,
         unfurl_links=False,
         unfurl_media=False,
@@ -181,7 +161,7 @@ async def test_breakout_with_text_starts_new_thread_with_old_transcript(
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "<https://dashboard.example/agents/new-thread|Open in Web>",
+                    "text": "<https://dashboard.example/agents/new-thread|Open in Robin>",
                 }
             ],
         },
@@ -367,7 +347,6 @@ async def test_a_breakout_handed_to_mda_opens_its_thread_then_hands_over_the_fir
         "fix it",
     )
     assert (opening.context_channel_id, opening.context_thread_ts) == ("C1", "100.0")
-    assert opening.inherited_workspace == "engineering"
     posted.notifications.assert_awaited_once_with("C1", "100.0", "C1", "200.0")
 
 

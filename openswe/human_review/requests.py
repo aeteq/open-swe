@@ -17,7 +17,7 @@ handle.
 from collections import Counter
 from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal, Self, TypedDict
 from uuid import UUID, uuid7
 
@@ -38,14 +38,18 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
+from openswe.config import ENV
 from openswe.database import postgres
 from openswe.database.orm import NOW, Base
 from openswe.expedited_review.eligibility import ExcludedHunk
+from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS
 from openswe.github.pull_request_key import PullRequestKey
 from openswe.github.pull_requests import PullRequest
 from openswe.github.repositories import Repository
 from openswe.human_review.pick_message import PickMessage
 from openswe.run_config import RunConfig
+from openswe.slack.channels import SlackChannel
+from openswe.slack.client import get_slack_permalink
 from openswe.slack.dm import DmOrigin
 from openswe.slack.records import lookup_slack_thread_id
 from openswe.ui_invalidations import Topic
@@ -169,6 +173,16 @@ class HumanReviewRequest(Base):
         return self.state == "open"
 
     @property
+    def unpublished(self) -> bool:
+        """An open expedited request, ready for approval, whose card is not posted yet."""
+        return (
+            self.kind == "expedited"
+            and self.state == "open"
+            and not self.awaiting_ready
+            and not self.slack_message_ts
+        )
+
+    @property
     def has_card(self) -> bool:
         """Whether the Slack message is Open SWE's card rather than someone's own post."""
         return self.kind != "posted"
@@ -212,7 +226,15 @@ class HumanReviewRequest(Base):
     async def author_mention(self) -> str:
         pr = self.pull_request
         author = await User.get(pr.author_user_id) if pr.author_user_id else None
+        if author is None and pr.author.lower() in OPEN_SWE_AUTHOR_LOGINS:
+            bot_user_id = ENV.SLACK_BOT_USER_ID.get()
+            return f"<@{bot_user_id}>" if bot_user_id else "@robin"
         return slack_mention(author, pr.author or "the author")
+
+    async def author_login(self) -> str:
+        pr = self.pull_request
+        author = await User.get(pr.author_user_id) if pr.author_user_id else None
+        return (author.github_login if author else "") or pr.author
 
     def is_author(self, user_id: UUID, login: str) -> bool:
         pr = self.pull_request
@@ -239,6 +261,28 @@ class HumanReviewRequest(Base):
 
     def participant(self, user_id: UUID) -> HumanReviewParticipant | None:
         return next((p for p in self.participants if p.user_id == user_id), None)
+
+    async def recent_channel_posters(self) -> set[UUID]:
+        """Linked authors of top-level review-channel messages from the last 7 days."""
+        if not self.slack_channel_id:
+            return set()
+        channel = await SlackChannel.load(self.slack_channel_id)
+        if channel is None:
+            return set()
+        messages = await channel.messages(limit=100)
+        since = (datetime.now(UTC) - timedelta(days=7)).timestamp()
+        users = await User.for_identities(
+            "slack",
+            {
+                message.user
+                for message in messages
+                if message.sort_key >= since
+                and (not message.thread_ts or message.thread_ts == message.ts)
+                and not message.is_from_bot
+                and not message.is_noise
+            },
+        )
+        return {user.id for user in users.values()}
 
     @property
     def dm_origin(self) -> DmOrigin | None:
@@ -274,6 +318,22 @@ class HumanReviewRequest(Base):
         if permalink:
             return permalink
         return SlackLink(channel, timestamp, self.slack_thread_ts).url
+
+    async def permalink(self, viewer: User | None = None) -> str:
+        """Where ``viewer`` can open the request in Slack: its card, else the author's own confirmation DM."""
+        from openswe.slack.links import SlackLink
+
+        if self.slack_channel_id and self.slack_message_ts:
+            return await self.card_url()
+        channel, timestamp = self.slack_dm_channel_id, self.slack_dm_message_ts
+        if (
+            viewer is None
+            or not channel
+            or not timestamp
+            or not self.is_author(viewer.id, viewer.github_login)
+        ):
+            return ""
+        return await get_slack_permalink(channel, timestamp) or SlackLink(channel, timestamp).url
 
     @property
     def slack_location(self) -> tuple[str, str] | None:
@@ -553,6 +613,28 @@ class HumanReviewRequest(Base):
             "state": self.state,
             "head_sha": self.head_sha,
             "detail": self.detail,
+            "tldr": self.tldr,
+            "diff_fingerprint": self.diff_fingerprint,
+            "excluded_hunks": [
+                {
+                    "path": hunk["path"],
+                    "digest": hunk["digest"],
+                    "header": hunk["header"],
+                    "additions": hunk["additions"],
+                    "deletions": hunk["deletions"],
+                    "guideline": hunk["guideline"],
+                    "reason": hunk["reason"],
+                    "approval_condition": hunk.get("approval_condition", False),
+                }
+                for hunk in self.excluded_hunks
+            ],
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "slack_thread_ts": self.slack_thread_ts,
+            "slack_diff_file_id": self.slack_diff_file_id,
+            "slack_channel_choices": [
+                {"id": choice["id"], "name": choice["name"]}
+                for choice in self.slack_channel_choices
+            ],
             "auto_merge": self.auto_merge,
             "awaiting_ready": self.awaiting_ready,
             "slack_channel_id": self.slack_channel_id,
@@ -587,6 +669,7 @@ class HumanReviewRequest(Base):
                     "assigned_by_agent": p.assigned_by_agent,
                     "joined_at": p.joined_at.isoformat() if p.joined_at else None,
                     "github_review_id": p.github_review_id,
+                    "github_review_sha": p.github_review_sha,
                     "dm_channel_id": p.dm_channel_id,
                     "dm_ts": p.dm_ts,
                 }
@@ -636,7 +719,8 @@ class HumanReviewRequest(Base):
 
     async def save(self) -> Self:
         cls = type(self)
-        previous = await cls.get(self.id)
+        # A request never stored has nothing to compare against, so skip reading it back.
+        previous = None if inspect(self).transient else await cls.get(self.id)
         before = previous.event_state() if previous is not None else None
         async with postgres.session() as session:
             session.add(self)

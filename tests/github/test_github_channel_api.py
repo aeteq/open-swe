@@ -1,11 +1,14 @@
 """MDA's GitHub channel calls the backend's typed channel API, and only it can."""
 
 import uuid
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from types import ModuleType
 from unittest.mock import AsyncMock
 
 import httpx
+import httpx2
 import pytest
 from fastapi import FastAPI
 from pydantic import JsonValue
@@ -14,12 +17,12 @@ from runtime_api.github import (
     GITHUB_AUTOMATION_RULES,
     GITHUB_DELIVERY_FACTS,
     GITHUB_ISSUE_FACTS,
-    RECORD_GITHUB_DELIVERY,
     ActOnGitHubDelivery,
     GitHubAutomationRulesRequest,
     GitHubDelivery,
     GitHubIssueFactsRequest,
     GitHubIssueRunRequest,
+    PullRequestBranches,
 )
 from standardwebhooks import Webhook
 
@@ -27,9 +30,11 @@ from openswe import dispatch
 from openswe.agent_api.tokens import verify_runtime_token
 from openswe.github import channel
 from openswe.github import webhook as github_webhooks
+from openswe.github.pull_request_key import PullRequestKey
 from openswe.mda_channels import api, github_deliveries
 from openswe.users import User
 from openswe.webhooks import common as webhook_common
+from openswe.webhooks import event_log
 from tests.conftest import register_github_logins
 from tests.github_channel import (
     ISSUE_RUN_INPUT,
@@ -77,12 +82,10 @@ def app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     monkeypatch.setenv("MDA_SERVICE_SECRET", SERVICE_SECRET)
     monkeypatch.setenv("REMOTE_RUNTIME_TOKEN_SECRET", "test-signing-key-0123456789abcdef")
     monkeypatch.setattr("openswe.github.channel.EventLog.record_once", AsyncMock(return_value=True))
-    monkeypatch.setattr(channel.Topic.PULL_REQUESTS, "invalidate", AsyncMock())
-    monkeypatch.setattr(channel, "repo_is_routable", AsyncMock(return_value=True))
+    monkeypatch.setattr(channel.Topic, "invalidate_pull_request", AsyncMock())
     monkeypatch.setattr(channel.schedules, "plan_github_automations", AsyncMock(return_value=[]))
     monkeypatch.setattr(channel.schedules, "github_automation_rules", AsyncMock(return_value=[]))
     monkeypatch.setattr(github_webhooks, "conversation_started", AsyncMock(return_value=False))
-    monkeypatch.setattr(webhook_common, "get_thread_workspace", AsyncMock(return_value="team-a"))
     monkeypatch.setattr(User, "email_for_login", AsyncMock(return_value="ada@example.com"))
     monkeypatch.setattr(
         webhook_common, "enforce_public_repo_org_gate", AsyncMock(return_value=None)
@@ -101,7 +104,6 @@ def prepared(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 
     async def adopt_then_prepare(
         *_args: object,
-        workspace: str | None,
         adopt: Callable[[str], Awaitable[None]] | None = None,
     ) -> object:
         # The real one adopts the thread before it writes the thread's metadata.
@@ -149,7 +151,7 @@ async def test_only_calls_mda_signed_are_answered(app: FastAPI) -> None:
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.post(
-            RECORD_GITHUB_DELIVERY.path,
+            GITHUB_DELIVERY_FACTS.path,
             json={"event": "issues", "delivery_id": "delivery-1", "payload": _issue_payload()},
         )
 
@@ -194,7 +196,11 @@ async def test_a_delivery_is_logged_with_what_open_swe_knows_of_its_repository(
     assert "@openswe" in delivered.facts.tags
     channel.EventLog.record_once.assert_awaited_once()  # type: ignore[attr-defined]
     assert channel.EventLog.record_once.await_args.kwargs["delivery_id"] == "delivery-1"  # type: ignore[attr-defined]
-    channel.Topic.PULL_REQUESTS.invalidate.assert_awaited_once()  # type: ignore[attr-defined]
+    channel.Topic.invalidate_pull_request.assert_awaited_once_with(  # type: ignore[attr-defined]
+        PullRequestKey.of("acme", "api", 7),
+        channel.Topic.PULL_REQUESTS,
+        channel.Topic.PULL_REQUEST_STATE,
+    )
 
 
 async def test_automatic_review_is_only_read_for_pull_requests_and_pushes(
@@ -263,8 +269,8 @@ async def test_a_forward_answers_before_picking_the_work_and_a_failed_lookup_kee
     unclaimed, so the delivery, redelivered, runs it."""
     process = AsyncMock()
     monkeypatch.setattr(github_webhooks, "process_github_ci_event", process)
-    routable = AsyncMock(side_effect=RuntimeError("the database is away"))
-    monkeypatch.setattr(channel, "repo_is_routable", routable)
+    claim = AsyncMock(side_effect=RuntimeError("the database is away"))
+    monkeypatch.setattr(channel.event_claims, "claim", claim)
     delivery = GitHubDelivery(
         event="status",
         delivery_id="delivery-1",
@@ -279,8 +285,8 @@ async def test_a_forward_answers_before_picking_the_work_and_a_failed_lookup_kee
         process.assert_not_awaited()
         channel.EventLog.record_once.assert_awaited_once()  # type: ignore[attr-defined]
 
-        routable.side_effect = None
-        routable.return_value = True
+        claim.side_effect = None
+        claim.return_value = True
         await forward_as_mda(client, delivery, SERVICE_SECRET)
 
     process.assert_awaited_once()
@@ -331,30 +337,6 @@ async def test_a_forward_mda_didnt_sign_or_that_names_no_event_is_refused(
     assert response.status_code == status
 
 
-async def test_the_backend_runs_its_work_when_it_records_the_delivery(
-    app: FastAPI, monkeypatch: pytest.MonkeyPatch, registry_db: None
-) -> None:
-    process = AsyncMock()
-    monkeypatch.setattr(github_webhooks, "process_github_ci_event", process)
-    delivery = GitHubDelivery(
-        event="status",
-        delivery_id="delivery-1",
-        payload={"repository": {"name": "api", "owner": {"login": "acme"}}},
-    )
-
-    await call_as_mda(app, RECORD_GITHUB_DELIVERY, delivery, secret=SERVICE_SECRET)
-    process.assert_awaited_once()
-    # A channel deployed before the backend picked its own work still names it; it
-    # doesn't run twice.
-    await call_as_mda(
-        app,
-        ACT_ON_GITHUB_DELIVERY,
-        ActOnGitHubDelivery(**delivery.model_dump(), work=["ci_event"]),
-        secret=SERVICE_SECRET,
-    )
-    process.assert_awaited_once()
-
-
 async def test_automations_that_fail_to_plan_start_nothing_and_stop_nothing(
     app: FastAPI, prepared: AsyncMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -399,6 +381,26 @@ async def test_work_runs_once_per_delivery(
         await _deliver(app, "status", payload)
 
     process.assert_awaited_once()
+
+
+async def test_preview_work_runs_again_when_its_delivery_comes_again(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(webhook_common, "is_repo_auto_review_enabled", AsyncMock(return_value=True))
+    tasks: defaultdict[str, AsyncMock] = defaultdict(AsyncMock)
+    monkeypatch.setattr(channel, "_tasks", lambda _delivery: tasks)
+    payload: dict[str, JsonValue] = {
+        "action": "opened",
+        "pull_request": {"number": 7},
+        "repository": {"name": "api", "owner": {"login": "acme"}},
+    }
+
+    # Redelivered after its watch failed to queue: its jobs are keyed, the rest isn't.
+    for _ in range(2):
+        await _deliver(app, "pull_request", payload)
+
+    assert tasks["review_apps_on_preview"].await_count == 2
+    tasks["walkthrough_pull_request"].assert_awaited_once()
 
 
 @pytest.mark.parametrize("action", ["added", "removed"])
@@ -447,8 +449,7 @@ async def test_an_issue_mention_starts_a_run_on_the_channels_thread(
     prepared.assert_awaited_once()
     assert prepared.await_args is not None
     assert prepared.await_args.args[1:] == (str(THREAD),)
-    # A new conversation: the repository's own workspace.
-    assert prepared.await_args.kwargs["workspace"] is None
+    assert "workspace" not in prepared.await_args.kwargs
     # The run completes through the backend's run-complete webhook.
     assert run.webhook == webhook
     channel.adopt_channel_run.assert_awaited_once_with(str(THREAD), "github")  # type: ignore[attr-defined]
@@ -462,10 +463,12 @@ async def test_an_issue_mention_starts_a_run_on_the_channels_thread(
     assert context["graph"] == "agent"
     # The attribution the run's hooks read rides in its token.
     assert token.metadata["ls_attribution_identifier"] == "ada"
+    assert token.metadata["origin"] == "github"
     # MDA starts the run: the answer sets none of the metadata keys MDA keeps.
     metadata = mda_starts({"input": ISSUE_RUN_INPUT, **run.model_dump()})["metadata"]
     assert metadata == run.metadata
     assert metadata["channel"] == "github"
+    assert metadata["origin"] == "github"
     assert metadata["github_delivery"] == "delivery-1"
     assert metadata["LANGSMITH_AGENT_VERSION"] == "v1"
     assert "invocation_id" in metadata
@@ -577,7 +580,7 @@ async def test_a_waiting_thread_is_only_asked_whether_open_swe_acts(
     channel.adopt_channel_run.assert_not_awaited()  # type: ignore[attr-defined]
 
 
-async def test_a_follow_up_stays_in_the_workspace_its_thread_started_in(
+async def test_a_follow_up_stays_on_its_existing_thread_without_environment_routing(
     app: FastAPI, prepared: AsyncMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(github_webhooks, "conversation_started", AsyncMock(return_value=True))
@@ -586,7 +589,8 @@ async def test_a_follow_up_stays_in_the_workspace_its_thread_started_in(
 
     assert delivered.issue_run is not None and delivered.issue_run.starts
     assert prepared.await_args is not None
-    assert prepared.await_args.kwargs["workspace"] == "team-a"
+    assert prepared.await_args.args[1:] == (str(THREAD),)
+    assert "workspace" not in prepared.await_args.kwargs
 
 
 async def test_an_issue_run_needs_the_input_the_channel_wrote() -> None:
@@ -612,8 +616,7 @@ async def test_issue_facts_say_who_is_a_user_and_what_the_thread_holds(
 
     assert facts.trusted == ["ada", "carol"]
     assert (facts.conversation_started, facts.sender_email_known) == (started, True)
-    # Only a follow-up reads the workspace its thread started in.
-    assert facts.thread_workspace == ("team-a" if started else None)
+    assert "thread_workspace" not in facts.model_dump()
 
 
 async def test_issue_facts_refuse_a_login_github_cant_spell(app: FastAPI) -> None:
@@ -641,14 +644,33 @@ async def test_automation_rules_name_each_automations_events_on_the_repository(
             {"kind": "linear", "config": {"team": "ENG", "events": ["issue.created"]}},
         ],
     }
-    rules = AsyncMock(return_value=[record])
+    # Skips the pull request's head branch, so the channel never matches it.
+    skipping = {
+        "id": "00000000-0000-4000-8000-0000000000a2",
+        "prompt": "Update the docs",
+        "triggers": [
+            {
+                "kind": "github",
+                "config": {
+                    "repo": "acme/api",
+                    "events": ["pull_request.opened"],
+                    "head_branches_exclude": ["actions/*"],
+                },
+            }
+        ],
+    }
+    rules = AsyncMock(return_value=[record, skipping])
     monkeypatch.setattr(channel.schedules, "github_automation_rules", rules)
     register_github_logins(monkeypatch, "bob")
 
     answer = await call_as_mda(
         app,
         GITHUB_AUTOMATION_RULES,
-        GitHubAutomationRulesRequest(repository="Acme/API", author="Bob"),
+        GitHubAutomationRulesRequest(
+            repository="Acme/API",
+            author="Bob",
+            branches=PullRequestBranches(head="actions/update-dev-docker-image-1a2b", base="main"),
+        ),
         secret=SERVICE_SECRET,
     )
 
@@ -660,17 +682,41 @@ async def test_automation_rules_name_each_automations_events_on_the_repository(
 
 
 @pytest.mark.parametrize("status", [404, 500])
+@pytest.mark.parametrize("http", [httpx, httpx2], ids=["sdk", "mda"])
 async def test_an_issue_thread_mda_never_ran_has_not_started(
-    monkeypatch: pytest.MonkeyPatch, status: int
+    monkeypatch: pytest.MonkeyPatch, status: int, http: ModuleType
 ) -> None:
-    request = httpx.Request("GET", "http://mda.test/threads/t1/state")
-    error = httpx.HTTPStatusError(
-        "MDA answered", request=request, response=httpx.Response(status, request=request)
+    request = http.Request("GET", "http://mda.test/threads/t1/state")
+    error = http.HTTPStatusError(
+        "MDA answered", request=request, response=http.Response(status, request=request)
     )
     monkeypatch.setattr(github_webhooks.THREADS, "state", AsyncMock(side_effect=error))
 
     if status == 404:
         assert await github_webhooks.conversation_started("t1") is False
     else:
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(http.HTTPStatusError):
             await github_webhooks.conversation_started("t1")
+
+
+@pytest.mark.parametrize("event", ["check_run", "check_suite", "workflow_run", "status"])
+async def test_dropped_events_skip_the_event_log(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch, event: str
+) -> None:
+    monkeypatch.setattr(event_log, "DROPPED_EVENTS", frozenset({f"github:{event}"}))
+    monkeypatch.setattr(webhook_common, "is_repo_allowed", lambda _repo: True)
+    record = AsyncMock()
+    monkeypatch.setattr(channel.EventLog, "record_once", record)
+    work = AsyncMock()
+    monkeypatch.setattr(channel, "_work_after_answer", work)
+    preview = AsyncMock()
+    monkeypatch.setattr(github_webhooks.PreviewReady, "run", preview)
+    payload = {"repository": {"owner": {"login": "acme"}, "name": "repo"}}
+
+    delivered = await deliver_as_mda(app, event, payload, secret=SERVICE_SECRET)
+
+    assert delivered.work == ()
+    record.assert_not_awaited()
+    work.assert_not_awaited()
+    # A check finishing can still mean a preview is deployed.
+    assert preview.await_count == (event == "check_run")

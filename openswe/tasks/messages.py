@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Collection, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal, Self
 from uuid import NAMESPACE_URL, UUID, uuid5, uuid7
 
@@ -21,11 +21,15 @@ from openswe.input_messages import (
     SystemIdentity,
     build_input_messages,
 )
+from openswe.jobs import queue
+from openswe.jobs.queue import Job
 from openswe.tasks.presentation import TaskEventMetadata
-from openswe.tasks.store import TaskDelegation
+from openswe.tasks.store import Task, TaskDelegation
 
 logger = logging.getLogger(__name__)
 TASK_MESSAGE_KIND = "task_message"
+RETRY_JOB_KIND = "task_message_delivery"
+_RETRY_DELAY = timedelta(seconds=30)
 _RETAINED = timedelta(days=7)
 _MAX_ATTEMPTS = 3
 _SYSTEM: SystemIdentity = {
@@ -160,6 +164,20 @@ class TaskMessage(Base):
         return found is not None
 
     @classmethod
+    async def recorded_deliveries(
+        cls, thread_id: str, delivery_ids: Collection[str], *, session: AsyncSession
+    ) -> set[str]:
+        if not delivery_ids:
+            return set()
+        return set(
+            await session.scalars(
+                select(cls.delivery_id).where(
+                    cls.thread_id == thread_id, cls.delivery_id.in_(delivery_ids)
+                )
+            )
+        )
+
+    @classmethod
     async def _any_undelivered(cls, thread_id: str, *conditions: ColumnElement[bool]) -> bool:
         async with postgres.session() as session:
             found = await session.scalar(
@@ -170,25 +188,112 @@ class TaskMessage(Base):
         return found is not None
 
     @classmethod
-    async def awaiting_delivery(cls, thread_id: str, *, since: datetime | None) -> bool:
+    async def awaiting_delivery(
+        cls, thread_id: str, *, since: datetime | None, session: AsyncSession | None = None
+    ) -> bool:
         """Whether a message has yet to reach a run of the thread.
 
         Only messages recorded after ``since`` count, when given. A message that ran out of
         delivery attempts awaits nothing.
         """
         recent = [] if since is None else [cls.matched_at >= since]
-        if not await cls._any_undelivered(
-            thread_id, cls.delivery_attempts < _MAX_ATTEMPTS, *recent
-        ):
-            return False
-        return any(
-            message.delivery_attempts < _MAX_ATTEMPTS
-            and (since is None or (message.matched_at is not None and message.matched_at >= since))
-            for message in await cls.owed(thread_id)
-        )
+        async with postgres.session(session) as db:
+            return (
+                await db.scalar(
+                    select(cls.id)
+                    .where(
+                        cls.thread_id == thread_id,
+                        cls.delivered_at.is_(None),
+                        cls.delivery_attempts < _MAX_ATTEMPTS,
+                        *recent,
+                    )
+                    .limit(1)
+                )
+                is not None
+            )
 
     @classmethod
     async def deliver(cls, thread_id: str, strategy: Literal["enqueue", "interrupt"]) -> bool:
+        try:
+            return await cls._deliver(thread_id, strategy)
+        except Exception:
+            try:
+                await cls._schedule_retry(thread_id, strategy)
+            except Exception:
+                logger.exception(
+                    "Could not schedule task message delivery retry",
+                    extra={"agent_thread_id": thread_id},
+                )
+            raise
+
+    @classmethod
+    async def _schedule_retry(
+        cls, thread_id: str, strategy: Literal["enqueue", "interrupt"]
+    ) -> None:
+        owed = await cls.owed(thread_id)
+        task = await Task.of_thread(thread_id)
+        if not any(message.delivery_attempts < _MAX_ATTEMPTS for message in owed) or task is None:
+            return
+        await queue.schedule(
+            RETRY_JOB_KIND,
+            {
+                "thread_id": thread_id,
+                "strategy": strategy,
+                "message_ids": [str(message.id) for message in owed],
+            },
+            key=f"{RETRY_JOB_KIND}:{thread_id}:{owed[-1].id}",
+            due_at=datetime.now(UTC) + _RETRY_DELAY,
+            metadata={
+                "kind": RETRY_JOB_KIND,
+                "thread_id": thread_id,
+            },
+            replace=False,
+        )
+
+    @classmethod
+    async def retry(cls, job: Job) -> None:
+        thread_id = job.payload["thread_id"]
+        strategy = job.payload["strategy"]
+        message_ids = job.payload["message_ids"]
+        if (
+            not isinstance(thread_id, str)
+            or not isinstance(strategy, str)
+            or strategy not in ("enqueue", "interrupt")
+            or not isinstance(message_ids, list)
+        ):
+            raise ValueError("Invalid task message delivery job")
+        ids = [UUID(message_id) for message_id in message_ids if isinstance(message_id, str)]
+        if len(ids) != len(message_ids):
+            raise ValueError("Invalid task message ids")
+        try:
+            await cls._deliver(thread_id, strategy, message_ids=ids)
+        except Exception:
+            if job.attempts + 1 >= queue.MAX_ATTEMPTS:
+                async with postgres.session() as session:
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                        {"key": f"event_match:{thread_id}"},
+                    )
+                    await session.execute(
+                        update(cls)
+                        .where(
+                            cls.thread_id == thread_id,
+                            cls.id.in_(ids),
+                            cls.delivered_at.is_(None),
+                            cls.delivery_attempts < _MAX_ATTEMPTS,
+                        )
+                        .values(delivery_attempts=_MAX_ATTEMPTS)
+                    )
+            raise
+
+    @classmethod
+    async def _deliver(
+        cls,
+        thread_id: str,
+        strategy: Literal["enqueue", "interrupt"],
+        *,
+        message_ids: Collection[UUID] | None = None,
+    ) -> bool:
         if not await cls._any_undelivered(thread_id):
             return False
         client = dispatch_client()
@@ -204,7 +309,11 @@ class TaskMessage(Base):
                 thread = _Thread.model_validate(await client.threads.get(thread_id))
                 if thread.status == "busy":
                     return False
-            owed = await cls.owed(thread_id)
+            owed = [
+                message
+                for message in await cls.owed(thread_id)
+                if message_ids is None or message.id in message_ids
+            ]
             if all(message.delivery_attempts >= _MAX_ATTEMPTS for message in owed):
                 return False
             owed_ids = [message.id for message in owed]
@@ -250,10 +359,12 @@ class TaskMessage(Base):
             )
 
     @classmethod
-    async def pending_threads(cls, thread_ids: Sequence[str]) -> set[str]:
+    async def pending_threads(
+        cls, thread_ids: Sequence[str], *, session: AsyncSession | None = None
+    ) -> set[str]:
         if not thread_ids:
             return set()
-        async with postgres.session() as session:
+        async with postgres.session(session) as session:
             return set(
                 await session.scalars(
                     select(cls.thread_id).where(
@@ -268,3 +379,4 @@ class TaskMessage(Base):
     async def forget(cls, thread_id: str) -> None:
         async with postgres.session() as session:
             await session.execute(delete(cls).where(cls.thread_id == thread_id))
+        await queue.cancel_matching({"kind": RETRY_JOB_KIND, "thread_id": thread_id})

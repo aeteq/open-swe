@@ -7,18 +7,22 @@ to the thread's runtimes. Runs, checkpoints and streams stay with the runtime.
 
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import UTC, datetime, timedelta
-from typing import Final, Literal, Self, get_args
+from datetime import datetime, timedelta
+from typing import Final, Literal, Self
 from uuid import uuid7
 
 from langgraph_sdk.schema import ThreadSelectField
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from sqlalchemy import RowMapping, text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from openswe.agent_api.client import MDA_RUNTIME, RUNTIME_METADATA_KEY
 from openswe.database.postgres import transaction
+from openswe.github.pull_request_key import PullRequestKey
+from openswe.sandboxes.this_mac import MacSandbox
 from openswe.thread_ids import mda_successor_thread_id
 from openswe.threads.creation import TITLE_LOCKED_KEY
+from openswe.ui_invalidations import Topic
 
 Runtime = Literal["local", "mda"]
 ThreadStatus = Literal["idle", "busy", "interrupted", "error"]
@@ -27,7 +31,6 @@ SelectField = Literal[
     "thread_id", "created_at", "updated_at", "metadata", "status", "values", "interrupts", "config"
 ]
 
-THREAD_STATUSES: Final[frozenset[str]] = frozenset(get_args(ThreadStatus))
 # When someone last stopped the thread, in epoch milliseconds.
 STOPPED_AT_KEY: Final = "stopped_at_ms"
 # What the index keeps of an Agent Server thread; its values are its whole conversation.
@@ -105,6 +108,10 @@ class ThreadExistsError(Exception):
     """``create`` with ``if_exists="raise"`` found the thread already indexed."""
 
 
+class SandboxAlreadyBoundError(Exception):
+    """``create`` found an external sandbox already bound to another thread."""
+
+
 class IndexedThread(BaseModel):
     thread_id: str
     runtime: Runtime
@@ -118,6 +125,11 @@ class IndexedThread(BaseModel):
     @classmethod
     def from_row(cls, row: RowMapping) -> Self:
         return cls.model_validate(dict(row))
+
+    @property
+    def on_a_mac(self) -> bool:
+        """Whether this is a This Mac thread, which ran on its owner's machine and runs no more."""
+        return MacSandbox.names(self.metadata.get("sandbox_id"))
 
     @classmethod
     def from_agent_server(cls, thread: Mapping[str, object]) -> Self | None:
@@ -170,6 +182,20 @@ class IndexedThread(BaseModel):
         stopped = self.metadata.get(STOPPED_AT_KEY)
         return isinstance(stopped, int) and stopped >= moment_ms
 
+    async def pull_requests(self, conn: AsyncConnection) -> set[PullRequestKey]:
+        """The open pull requests whose pages show this thread: those it works on, or the one it reviews."""
+        # Imported on use: the pull request registry's imports reach back into this module.
+        from openswe.github.pull_requests import PullRequest
+
+        keys = set(await PullRequest.open_keys_for_thread(conn, self.thread_id))
+        if self.metadata.get("kind") == "reviewer" and isinstance(
+            pr := self.metadata.get("pr"), dict
+        ):
+            owner, repo, number = pr.get("owner"), pr.get("name"), pr.get("number")
+            if isinstance(owner, str) and isinstance(repo, str) and isinstance(number, int):
+                keys.add(PullRequestKey.of(owner, repo, number))
+        return keys
+
     def as_langgraph(self, select: Sequence[SelectField] | None = None) -> dict[str, JsonValue]:
         """The thread as the Agent Server serves it; its state stays with the runtime."""
         thread: dict[str, JsonValue] = {
@@ -204,6 +230,7 @@ class ThreadSearch(BaseModel):
     status: ThreadStatus | None = None
     sort_by: SortBy = "created_at"
     sort_order: Literal["asc", "desc"] = "desc"
+    activity_order: bool = False
     limit: int = Field(default=10, ge=0)
     offset: int = Field(default=0, ge=0)
     select: list[SelectField] | None = None
@@ -229,6 +256,9 @@ class ThreadSearch(BaseModel):
     async def run(self) -> list[IndexedThread]:
         where, params = self._where()
         order = "ASC" if self.sort_order == "asc" else "DESC"
+        ordering = self.sort_by
+        if self.activity_order and self.sort_by == "updated_at":
+            ordering = "last_activity_at"
         columns, ranking = _COLUMNS, ""
         if self.text:
             columns, ranking = f"{_COLUMNS}, {_RANK} AS rank", "rank DESC, "
@@ -237,7 +267,7 @@ class ThreadSearch(BaseModel):
                 await conn.execute(
                     text(
                         f"SELECT {columns} FROM thread_index WHERE {where} "
-                        f"ORDER BY {ranking}{self.sort_by} {order}, thread_id {order} "
+                        f"ORDER BY {ranking}{ordering} {order}, thread_id {order} "
                         "LIMIT :limit OFFSET :offset"
                     ),
                     {**params, "limit": self.limit, "offset": self.offset},
@@ -254,6 +284,16 @@ class ThreadSearch(BaseModel):
         return int(counted or 0)
 
 
+async def has_sandbox(sandbox_id: str) -> bool:
+    """Whether any indexed thread is already bound to ``sandbox_id``."""
+    async with transaction() as conn:
+        row = await conn.scalar(
+            text("SELECT 1 FROM thread_index WHERE metadata @> CAST(:filter AS jsonb) LIMIT 1"),
+            {"filter": json.dumps({"sandbox_id": sandbox_id})},
+        )
+    return row is not None
+
+
 async def create(
     thread_id: str,
     *,
@@ -265,7 +305,29 @@ async def create(
     updated_at: datetime | None = None,
 ) -> IndexedThread:
     """Index a thread; with ``do_nothing`` an existing one is returned as it is."""
+    meta = dict(metadata or {})
+    external_sandbox_id = (
+        meta.get("sandbox_id")
+        if meta.get("sandbox_owner") == "external"
+        and meta.get("task_id") is None
+        and isinstance(meta.get("sandbox_id"), str)
+        else None
+    )
     async with transaction() as conn:
+        if external_sandbox_id is not None:
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                {"key": f"external_sandbox:{external_sandbox_id}"},
+            )
+            taken = await conn.scalar(
+                text(
+                    "SELECT 1 FROM thread_index "
+                    "WHERE thread_id <> :thread_id AND metadata @> CAST(:filter AS jsonb) LIMIT 1"
+                ),
+                {"thread_id": thread_id, "filter": json.dumps({"sandbox_id": external_sandbox_id})},
+            )
+            if taken is not None:
+                raise SandboxAlreadyBoundError(external_sandbox_id)
         row = (
             (
                 await conn.execute(
@@ -284,7 +346,7 @@ async def create(
                         "id": uuid7(),
                         "thread_id": thread_id,
                         "runtime": runtime,
-                        "metadata": json.dumps(dict(metadata or {})),
+                        "metadata": json.dumps(meta),
                         "status": status,
                         "created_at": created_at,
                         "updated_at": updated_at,
@@ -294,6 +356,8 @@ async def create(
             .mappings()
             .first()
         )
+        if row is not None:
+            await Topic.THREADS.activity(conn, IndexedThread.from_row(row).metadata)
     if row is not None:
         return IndexedThread.from_row(row)
     if if_exists == "raise":
@@ -373,27 +437,34 @@ async def sync(thread_id: str, read: Callable[[], Awaitable[IndexedThread | None
         )
 
 
-async def get(thread_id: str) -> IndexedThread | None:
-    async with transaction() as conn:
-        row = (
-            (
-                await conn.execute(
-                    text(f"SELECT {_COLUMNS} FROM thread_index WHERE thread_id = :thread_id"),
-                    {"thread_id": thread_id},
-                )
+async def get(
+    thread_id: str, *, conn: AsyncConnection | None = None, for_update: bool = False
+) -> IndexedThread | None:
+    if conn is None:
+        async with transaction() as connection:
+            return await get(thread_id, conn=connection, for_update=for_update)
+    locked = " FOR UPDATE" if for_update else ""
+    row = (
+        (
+            await conn.execute(
+                text(f"SELECT {_COLUMNS} FROM thread_index WHERE thread_id = :thread_id{locked}"),
+                {"thread_id": thread_id},
             )
-            .mappings()
-            .first()
         )
+        .mappings()
+        .first()
+    )
     return None if row is None else IndexedThread.from_row(row)
 
 
 async def live_thread_id(thread_id: str) -> str:
     """Where new activity for ``thread_id`` goes: the thread itself, or for a ``local``
-    thread, which takes none, the thread on Managed Deep Agents that succeeds it."""
-    thread = await get(thread_id)
-    if thread is not None and thread.runtime == "local":
-        return mda_successor_thread_id(thread_id)
+    thread, which takes none, or a recovered review, its deterministic successor."""
+    while (thread := await get(thread_id)) is not None:
+        successor = mda_successor_thread_id(thread_id)
+        if thread.runtime != "local" and thread.metadata.get("succeeded_by") != successor:
+            break
+        thread_id = successor
     return thread_id
 
 
@@ -431,110 +502,53 @@ async def update(
             .mappings()
             .first()
         )
+        if row is not None and metadata.keys() & {"updated_at_ms", "title", "resolved"}:
+            await Topic.THREADS.activity(conn, IndexedThread.from_row(row).metadata)
     return None if row is None else IndexedThread.from_row(row)
 
 
-async def put_entry(
-    thread_id: str, key: str, entry: str, value: JsonValue, *, expired_before: float
-) -> None:
-    """Set ``metadata[key][entry]`` in one statement, so concurrent puts and takes keep
-    each other's entries; drops the entries under ``key`` whose ``at`` is before
-    ``expired_before``."""
-    async with transaction() as conn:
-        await conn.execute(
-            text(
-                "UPDATE thread_index SET metadata = metadata || jsonb_build_object("
-                "CAST(:key AS text), COALESCE((SELECT jsonb_object_agg(kept.key, kept.value) "
-                "FROM jsonb_each(CASE WHEN jsonb_typeof(metadata -> CAST(:key AS text)) = 'object' "
-                "THEN metadata -> CAST(:key AS text) ELSE '{}'::jsonb END) AS kept "
-                "WHERE CASE WHEN jsonb_typeof(kept.value -> 'at') = 'number' "
-                "THEN CAST(kept.value ->> 'at' AS double precision) >= :expired_before "
-                "ELSE false END), '{}'::jsonb) "
-                "|| jsonb_build_object(CAST(:entry AS text), CAST(:value AS jsonb))), "
-                "updated_at = clock_timestamp() WHERE thread_id = :thread_id"
-            ),
-            {
-                "thread_id": thread_id,
-                "key": key,
-                "entry": entry,
-                "value": json.dumps(value),
-                "expired_before": expired_before,
-            },
-        )
-
-
-async def take_entry(thread_id: str, key: str, entry: str) -> JsonValue | None:
-    """Remove ``metadata[key][entry]`` and return it, or ``None`` when it isn't there;
-    one taker gets it, however many ask at once."""
+async def set_status(thread_id: str, status: ThreadStatus) -> None:
+    """Record the thread's status; starting or stopping work makes its pull requests' pages stale."""
     async with transaction() as conn:
         row = (
-            await conn.execute(
-                text(
-                    "WITH taken AS (SELECT thread_id, "
-                    "metadata -> CAST(:key AS text) -> CAST(:entry AS text) AS value "
-                    "FROM thread_index WHERE thread_id = :thread_id FOR UPDATE) "
-                    "UPDATE thread_index SET metadata = thread_index.metadata "
-                    "#- CAST(ARRAY[CAST(:key AS text), CAST(:entry AS text)] AS text[]), "
-                    "updated_at = clock_timestamp() FROM taken "
-                    "WHERE thread_index.thread_id = taken.thread_id AND taken.value IS NOT NULL "
-                    "RETURNING taken.value"
-                ),
-                {"thread_id": thread_id, "key": key, "entry": entry},
+            (
+                await conn.execute(
+                    text(
+                        "UPDATE thread_index SET status = :status, updated_at = clock_timestamp(), "
+                        "status_since = CASE WHEN previous_status = :status THEN status_since "
+                        "ELSE clock_timestamp() END FROM (SELECT status AS previous_status "
+                        "FROM thread_index WHERE thread_id = :thread_id FOR UPDATE) AS previous "
+                        f"WHERE thread_id = :thread_id RETURNING {_COLUMNS}, previous_status"
+                    ),
+                    {"thread_id": thread_id, "status": status},
+                )
             )
-        ).first()
-    if row is None:
-        return None
-    value = row[0]
-    return json.loads(value) if isinstance(value, str) else value
-
-
-async def entries_between(
-    key: str, *, after: float, before: float, limit: int = 200
-) -> list[tuple[str, str]]:
-    """``(thread_id, entry)`` for each ``metadata[key][entry]`` whose ``at`` falls between
-    ``after`` and ``before``, oldest first; only threads updated since ``after`` hold one."""
-    async with transaction() as conn:
-        rows = await conn.execute(
-            text(
-                "SELECT thread_index.thread_id, entry.key FROM thread_index "
-                "CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof("
-                "thread_index.metadata -> CAST(:key AS text)) = 'object' "
-                "THEN thread_index.metadata -> CAST(:key AS text) ELSE '{}'::jsonb END) AS entry "
-                "WHERE thread_index.updated_at >= :since "
-                "AND jsonb_typeof(entry.value -> 'at') = 'number' "
-                "AND CAST(entry.value ->> 'at' AS double precision) BETWEEN :after AND :before "
-                "ORDER BY CAST(entry.value ->> 'at' AS double precision) LIMIT :limit"
-            ),
-            {
-                "key": key,
-                "since": datetime.fromtimestamp(after, UTC),
-                "after": after,
-                "before": before,
-                "limit": limit,
-            },
+            .mappings()
+            .first()
         )
-        return [(str(thread_id), str(entry)) for thread_id, entry in rows]
-
-
-async def set_status(thread_id: str, status: ThreadStatus) -> None:
-    async with transaction() as conn:
-        await conn.execute(
-            text(
-                "UPDATE thread_index SET status = :status, updated_at = clock_timestamp(), "
-                "status_since = CASE WHEN status = :status THEN status_since "
-                "ELSE clock_timestamp() END WHERE thread_id = :thread_id"
-            ),
-            {"thread_id": thread_id, "status": status},
-        )
+        if row is None or (row["previous_status"] == "busy") == (status == "busy"):
+            return
+        for key in await IndexedThread.from_row(row).pull_requests(conn):
+            await Topic.PULL_REQUESTS.invalidate(conn, key=key)
 
 
 async def delete(thread_id: str) -> bool:
     async with transaction() as conn:
-        result = await conn.execute(
-            text("DELETE FROM thread_index WHERE thread_id = :thread_id"),
-            {"thread_id": thread_id},
+        row = (
+            (
+                await conn.execute(
+                    text(
+                        f"DELETE FROM thread_index WHERE thread_id = :thread_id RETURNING {_COLUMNS}"
+                    ),
+                    {"thread_id": thread_id},
+                )
+            )
+            .mappings()
+            .first()
         )
-    return bool(result.rowcount)
+        if row is not None:
+            await Topic.THREADS.activity(conn, IndexedThread.from_row(row).metadata)
+    return row is not None
 
 
 async def busy_since(before: datetime, *, limit: int = 200) -> list[IndexedThread]:

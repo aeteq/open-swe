@@ -1,9 +1,8 @@
 """The coding agent, as Managed Deep Agents runs play it."""
 
 import logging
-from typing import Final, cast
+from typing import Final
 
-from deepagents.backends.protocol import BackendProtocol
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -13,24 +12,15 @@ from openswe.agent_api.run_kinds import RunKind
 from openswe.agent_api.tokens import RunSettings
 from openswe.github.thread_token import get_github_token
 from openswe.github.token import resolve_github_token
-from openswe.incidents.runtime import (
-    INCIDENT_SOURCE,
-    INCIDENT_TOOL_NAMES,
-    IncidentSession,
-    load_incident_session,
-)
+from openswe.middleware.ask_requester_guard import AskRequesterGuardMiddleware
 from openswe.middleware.pr_creation_guard import PullRequestCreationGuardMiddleware
 from openswe.middleware.record_run_usage import record_run_usage
 from openswe.middleware.transcript import TranscriptMiddleware
 from openswe.middleware.workflow_push_guard import WorkflowPushGuardMiddleware
-from openswe.prompts import apply_tool_descriptions
-from openswe.review_guide.middleware import ReviewGuideMiddleware
-from openswe.review_guide.sessions import ReviewGuideSession
 from openswe.run_config import RunConfig
 from openswe.sandboxes.tool_runtime import ToolSurface
 from openswe.server import (
     PrepareAgentRunMiddleware,
-    ThreadFiles,
     agent_catalog,
     agent_sender,
     agent_tools_by_name,
@@ -40,7 +30,6 @@ from openswe.server import (
 )
 from openswe.skill_store.run_skills import RunSkillStores
 from openswe.tools.page_commands import PageTools
-from openswe.tools.review_walkthrough import walkthrough_tools
 from openswe.utils.thread_settings import load_thread_settings
 
 logger = logging.getLogger(__name__)
@@ -53,13 +42,22 @@ class AgentKind(RunKind):
 
     assistant_id = "agent"
     reporters = (_TRANSCRIPT, record_run_usage)
-    shell_guards = (PullRequestCreationGuardMiddleware(), WorkflowPushGuardMiddleware())
+    shell_guards = (
+        PullRequestCreationGuardMiddleware(),
+        WorkflowPushGuardMiddleware(),
+        AskRequesterGuardMiddleware(),
+    )
 
     async def catalog(self, config: RunnableConfig, surface: ToolSurface) -> None:
         await agent_catalog(config, surface)
 
     async def preparation(
-        self, config: RunnableConfig, settings: RunSettings, *, sandbox_id: str | None
+        self,
+        config: RunnableConfig,
+        settings: RunSettings,
+        *,
+        sandbox_id: str | None,
+        sandbox_pending: bool = False,
     ) -> list[AgentMiddleware]:
         turn = settings.agent
         if turn is None:
@@ -74,13 +72,9 @@ class AgentKind(RunKind):
             turn,
             repo_instructions=repo_instructions if isinstance(repo_instructions, str) else None,
             sandbox_id=None if turn.reaches_sandbox else sandbox_id,
+            sandbox_pending=sandbox_pending and not turn.reaches_sandbox,
         )
-        if not (turn.review_guide or turn.review_guide_closed):
-            return [prepare]
-        cfg = RunConfig.from_config(config)
-        guide = ReviewGuideMiddleware(thread_id=thread_id, approve_ts=cfg.review_guide_approve_ts)
-        # Middleware types are invariant in the state they extend; a graph merges them all.
-        return cast(list[AgentMiddleware], [prepare, guide])
+        return [prepare]
 
     def sender(self, config: RunnableConfig, settings: RunSettings) -> RunSender | None:
         if settings.agent is None:
@@ -116,26 +110,14 @@ class AgentKind(RunKind):
     async def skills(self, config: RunnableConfig) -> RunSkillStores:
         return await RunSkillStores.for_run(config)
 
-    async def files(self, config: RunnableConfig) -> BackendProtocol:
-        return (await ThreadFiles.for_run(config)).backend
-
     async def tool(self, config: RunnableConfig, name: str) -> BaseTool | None:
         cfg = RunConfig.from_config(config)
-        if name in INCIDENT_TOOL_NAMES:
-            incident = await self.incident(config)
-            return None if incident is None else next(t for t in incident.tools if t.name == name)
-        if cfg.thread_id and name.startswith("walkthrough_"):
-            guide = await ReviewGuideSession.get(cfg.thread_id)
-            if guide is not None and not guide.closed:
-                tools = apply_tool_descriptions(walkthrough_tools(guide.mode))
-                return next((tool for tool in tools if tool.name == name), None)
         if (page := PageTools.of_run(cfg)) is not None and (tool := page.tool(name)) is not None:
             return tool
-        static = agent_tools_by_name().get(name)
-        return static if static is not None else (await integration_tools(config)).get(name)
-
-    async def incident(self, config: RunnableConfig) -> IncidentSession | None:
-        cfg = RunConfig.from_config(config)
-        if cfg.source != INCIDENT_SOURCE:
-            return None
-        return await load_incident_session(config, run_id=cfg.run_id)
+        if (static := agent_tools_by_name().get(name)) is not None:
+            return static
+        if (kept := (await integration_tools(config)).get(name)) is not None:
+            return kept
+        # The run was granted it, so it was added (a person's new MCP server, say) after
+        # this replica last listed them.
+        return (await integration_tools(config, fresh=True)).get(name)

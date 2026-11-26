@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import {
   migratePersistedRightPanelState,
-  selectActiveRightPanelSurface,
   selectThreadRightPanelState,
   useRightPanelStore,
 } from "@/features/agents/lib/rightPanelStore"
@@ -18,10 +17,10 @@ describe("right panel store", () => {
 
   it("opens a singleton surface once and keeps it active", () => {
     const { open } = useRightPanelStore.getState()
-    open(ref, "diff")
-    open(ref, "diff")
-    expect(state().surfaces.map((surface) => surface.id)).toEqual(["diff"])
-    expect(state().activeSurfaceId).toBe("diff")
+    open(ref, "artifact")
+    open(ref, "artifact")
+    expect(state().surfaces.map((surface) => surface.id)).toEqual(["artifact"])
+    expect(state().activeSurfaceId).toBe("artifact")
     expect(state().isOpen).toBe(true)
   })
 
@@ -75,12 +74,6 @@ describe("right panel store", () => {
     closeSurface(ref, "diff")
     expect(state().surfaces).toEqual([])
     expect(state().isOpen).toBe(false)
-    expect(
-      selectActiveRightPanelSurface(
-        useRightPanelStore.getState().byThreadKey,
-        ref
-      )
-    ).toBeNull()
   })
 
   it("scopes surfaces per thread and per scope", () => {

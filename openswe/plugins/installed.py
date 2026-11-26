@@ -12,10 +12,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
+from openswe.client_tools import ClientToolSpec
 from openswe.github.http import GitHubClient, RepoClient
 from openswe.github.repo_names import RepoFullName, normalize_repo_full_name
 from openswe.github.repos import accessible_repo_full_names
-from openswe.openai_responses.client_tools import ClientToolSpec
 from openswe.plugins.manifest import PluginPermission
 from openswe.plugins.records import (
     DocumentScope,
@@ -26,6 +26,7 @@ from openswe.plugins.records import (
     PluginDocuments,
 )
 from openswe.plugins.rooms import Room
+from openswe.plugins.threads import PluginThreads
 from openswe.thread_ids import plugin_chat_thread_id
 from openswe.threads.runs import create_dashboard_thread_record, start_run_with_tool_results
 from openswe.threads.summary import PLUGIN_CHAT_KEY
@@ -72,6 +73,8 @@ class InstalledPlugin:
     """The person using it, whose install it is."""
     email: str | None
     """The address their dashboard session signed in with."""
+    login: str | None = None
+    """Their dashboard session's subject: a GitHub login, or ``user:<id>``."""
 
     def require(self, *permissions: PluginPermission) -> None:
         """Pass when any of ``permissions`` was granted."""
@@ -113,6 +116,8 @@ class InstalledPlugin:
         install still pinned to a version or preview without it.
         """
         scope = await self.document_scope(repository)
+        if collection == "review_outcomes":
+            raise CollectionWrittenByApp(collection)
         if self.installation.manifest.app_writes(collection):
             raise CollectionWrittenByApp(collection)
         release = await PluginApps.newest_release(self.installation.plugin)
@@ -145,6 +150,14 @@ class InstalledPlugin:
         owner, repo = name.split("/", 1)
         async with GitHubClient.as_user(self.user.github_login) as github:
             yield github.repo(owner, repo)
+
+    @property
+    def threads(self) -> PluginThreads:
+        """Agent threads, read only as this person may read them."""
+        self.require(PluginPermission.THREADS_READ)
+        return PluginThreads(
+            login=self.login or self.user.github_login or f"user:{self.user.id}", email=self.email
+        )
 
     @property
     def chats(self) -> PluginChats:
@@ -220,6 +233,7 @@ class InstalledPlugin:
                 tool_results=[ClientToolSpec.result_message(i, outputs[i]) for i in answered],
                 overrides={},
                 plugin_tools=True,
+                as_sender=True,
             )
         except Exception:
             # Nothing resumed, so the calls wait to be answered again.

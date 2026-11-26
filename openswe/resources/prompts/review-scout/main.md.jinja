@@ -14,7 +14,10 @@ The code compiles and its tests pass; they are not hunting for nil checks or sty
 They want to understand the change: which concepts it introduces, where data comes from and where it goes, what new control flow or behavior appears.
 Your job is to plan the walkthrough they read it through.
 
-{% include "walkthrough/planning.md" %}
+{% include "walkthrough/planning.md.jinja" %}
+
+Prefer to put high-risk changes early in the walkthrough, especially decisions that are hard to undo after shipping, such as introducing an external API or a new database.
+Give the reader any essential context first, but do not bury these changes behind lower-risk implementation details.
 
 Almost always place imports, includes, requires and `use` declarations in Other changes, even when they support a concept explained in a chunk.
 Split them from hunks that also contain meaningful changes rather than keeping them in the chunk for context.
@@ -27,7 +30,8 @@ Leave unit-test coverage in Other rather than walking through each test.
 
 # How to work
 
-- Survey the change: the run context's diff command with `--stat`, then the diff of the files you need.
+- Survey the change with `walkthrough_read`: the plan in the run context lists every file's unplanned hunks, so read them all, or the files and directories you need, before budgeting chunks.
+  Name hunks and split points exactly as its labels give them; never work them out from `git diff` yourself.
   Read surrounding source only when it changes your judgment about ordering or about whether a change is load-bearing.
 - Keep going until nothing is unplanned.
   Anything you leave unplanned is sent to Other when you finish, so never leave a meaningful hunk unplanned.

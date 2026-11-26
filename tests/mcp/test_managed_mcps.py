@@ -1,373 +1,121 @@
 import asyncio
+import hashlib
 import importlib
+import json
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import langgraph_sdk
+import httpx2
 import pytest
 from fastapi import HTTPException
-from mcp.types import ListToolsResult, Tool
+from mcp.types import Tool
 
-from openswe.dashboard.workspace_settings import (
-    WorkspaceSettingsUpdate,
-    upsert_instance_settings,
-    upsert_workspace_overrides,
-)
+from openswe.encryption import decrypt_token
 from openswe.mcp import cards, managed, routes, runtime
+from openswe.mcp.transport import MCPCredentialMissing, MCPDiscoveryError
 from openswe.users.models import User
+from tests.conftest import serve_threads_from
 
-GATEWAY_ID = "01a0f8da-0f4b-7817-b2da-27b7bfa5f0f8"
+ORIGINAL_PAGES = managed.ManagedTools._pages
+ORIGINAL_CACHED = managed.ManagedTools._cached
+LINEAR_ID = "01a0f8da-0000-7000-8000-000000000001"
+NOTION_ID = "01a0f8da-0000-7000-8000-000000000002"
+
+
+def server(server_id, name, *, connected, kind="oauth", enabled=True):
+    return {
+        "id": server_id,
+        "name": name,
+        "connection": {"type": kind},
+        "connected": connected,
+        "has_credential": connected,
+        "enabled": enabled,
+    }
+
+
+BOT_KIT_ID = "01a1a619-0000-7000-8000-00000000b0c1"
+PEOPLE_KIT_ID = "01a11414-ed0f-79f6-b282-f7c7dc563801"
+PROFILE_ID = "01a1a619-0000-7000-8000-0000000b0700"
 
 
 @pytest.fixture(autouse=True)
 def lmt(monkeypatch):
+    """LMT as plain data: each caller's server list and the kit's links, with no cache."""
     monkeypatch.delenv("LMT_TENANT_ID", raising=False)
+    monkeypatch.delenv("LMT_KIT_ID", raising=False)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "openswe-key")
+    monkeypatch.setenv("LMT_BOT_KIT_ID", BOT_KIT_ID)
+    monkeypatch.setenv("LMT_BOT_PROFILE_ID", PROFILE_ID)
     monkeypatch.setattr(managed, "langsmith_oauth_configured", lambda: True)
-    tokens = {"alice": "alice-langsmith-token"}
 
     async def access_token(login):
-        return tokens.get(login.lower())
+        return {"alice": "alice-langsmith-token"}.get(login.lower())
 
     monkeypatch.setattr(managed, "langsmith_access_token", access_token)
-
-
-def test_gateway_challenge_lists_every_service_to_connect():
-    response = httpx.Response(
-        428,
-        json={
-            "credentials": [
-                {
-                    "kind": "oauth",
-                    "slug": "notion",
-                    "display_name": "Notion",
-                    "verification_url": "https://smith.langchain.com/connect/notion",
-                    "auth_id": "notion-auth",
-                },
-                {"kind": "secret", "slug": "exa", "display_name": "Exa"},
-            ]
+    state = SimpleNamespace(
+        servers={
+            "alice": [
+                server(LINEAR_ID, "Linear", connected=True),
+                server(NOTION_ID, "Notion", connected=False),
+                server("exa", "Exa", connected=False, kind="secret"),
+                server("off", "Off", connected=True, enabled=False),
+                server("sentry", "Sentry", connected=False),
+            ],
         },
-    )
-    required = managed._failure(response)
-    assert isinstance(required, managed.GatewayCredentialsRequired)
-    assert [(item.slug, item.kind) for item in required.missing] == [
-        ("notion", "oauth"),
-        ("exa", "secret"),
-    ]
-    assert required.links == {
-        "notion": managed.ConsentLink(
-            url="https://smith.langchain.com/connect/notion", auth_id="notion-auth"
-        )
-    }
-
-
-async def test_gateway_status_reads_missing_services_under_either_policy(monkeypatch):
-    linear = {
-        "kind": "oauth",
-        "slug": "linear",
-        "display_name": "Linear",
-        "verification_url": "https://smith.langchain.com/connect/linear",
-        "auth_id": "linear-auth",
-    }
-    listing: list[object] = [
-        ListToolsResult.model_validate(
-            {
-                "tools": [{"name": "notion_search", "inputSchema": {"type": "object"}}],
-                "_meta": {"com.langchain.langsmith/missingCredentials": [linear]},
-            }
-        )
-    ]
-
-    async def with_session(login, gateway, use):
-        if isinstance(listing[0], Exception):
-            raise listing[0]
-        return listing[0]
-
-    monkeypatch.setattr(managed, "_with_session", with_session)
-    monkeypatch.setattr(
-        managed,
-        "_gateway_detail",
-        AsyncMock(return_value={"id": GATEWAY_ID, "name": "Eng", "tool_count": 2}),
+        bot_kit_links=[],
+        people_kit_links=[],
+        listed_as=[],
+        bot_listing_status=None,
+        kit_headers=[],
+        posts=[],
+        registered=[],
     )
 
-    partial = await managed.gateway_status("alice", GATEWAY_ID)
-    assert (partial.ready, partial.all_required, partial.tool_count) == (False, False, 1)
-    assert [item.slug for item in partial.missing_for(["linear"])] == ["linear"]
-    assert partial.missing_for(["Notion"]) == []
-    assert (await managed.connect_link("alice", GATEWAY_ID, "linear")).auth_id == "linear-auth"
-    assert await managed.connect_link("alice", GATEWAY_ID, "notion") is None
-    inventory = await managed.gateway_inventory("alice", GATEWAY_ID)
-    assert [tool.name for tool in inventory.tools] == ["notion_search"]
-    assert [item.slug for item in inventory.missing] == ["linear"]
-    assert "verification_url" not in inventory.model_dump_json()
-    assert "linear-auth" not in inventory.model_dump_json()
+    async def cached(self, listing, *, fresh=False):
+        return await self._loaders()[listing]()
 
-    listing[0] = managed._credentials_required(
-        {"credentials": [linear, {"kind": "oauth", "slug": "notion", "display_name": "Notion"}]}
-    )
-    required = await managed.gateway_status("alice", GATEWAY_ID)
-    assert required.all_required
-    assert [item.slug for item in required.missing_for(["Linear"])] == ["linear", "notion"]
-    inventory = await managed.gateway_inventory("alice", GATEWAY_ID)
-    assert inventory.all_required
-    assert inventory.tools == []
-    assert [item.slug for item in inventory.missing] == ["linear", "notion"]
-    assert "linear-auth" not in inventory.model_dump_json()
+    async def pages(self, path, headers=None):
+        # A person reads the people kit's servers from its connections.
+        if path == f"{managed.KITS_PATH}/{PEOPLE_KIT_ID}/connections":
+            linked = {link["server_id"] for link in state.people_kit_links}
+            return [{"id": server_id, "tool_names": []} for server_id in sorted(linked)]
+        assert path == managed.SERVERS_PATH
+        caller = getattr(self, "login", "bot")
+        profile = (headers or {}).get("X-LangSmith-Profile")
+        state.listed_as.append(f"{caller} as {profile}" if profile else caller)
+        if caller == "bot" and state.bot_listing_status:
+            raise managed.ManagedToolsError("refused", state.bot_listing_status)
+        return state.servers.get("bot" if profile else caller, [])
 
-
-async def test_inventory_includes_later_pages_and_their_missing_connections(monkeypatch):
-    monkeypatch.setattr(managed, "_MAX_PAGES", 2)
-    client = managed._gateway_client({}, GATEWAY_ID)
-    pages = [
-        ListToolsResult.model_validate(
-            {
-                "tools": [{"name": "notion_search", "inputSchema": {}}],
-                "nextCursor": "next",
-                "_meta": {
-                    "com.langchain.langsmith/missingCredentials": [
-                        {"slug": "linear", "display_name": "Linear"}
-                    ]
-                },
-            }
-        ),
-        ListToolsResult.model_validate(
-            {
-                "tools": [{"name": "calendar_list", "inputSchema": {}}],
-                "_meta": {
-                    "com.langchain.langsmith/missingCredentials": [
-                        {"slug": "linear", "display_name": "Linear"}
-                    ]
-                },
-            }
-        ),
-    ]
-    monkeypatch.setattr(client, "list_tools_mcp", AsyncMock(side_effect=pages))
-
-    async def with_session(login, gateway, use):
-        return await use(client)
-
-    monkeypatch.setattr(managed, "_with_session", with_session)
-    monkeypatch.setattr(
-        managed, "_gateway_detail", AsyncMock(return_value={"id": GATEWAY_ID, "name": "Eng"})
-    )
-    inventory = await managed.gateway_inventory("alice", GATEWAY_ID)
-    assert [tool.name for tool in inventory.tools] == ["notion_search", "calendar_list"]
-    assert [item.slug for item in inventory.missing] == ["linear"]
-
-
-async def test_tool_listing_rejects_incomplete_results_at_the_page_limit(monkeypatch):
-    client = managed._gateway_client({}, GATEWAY_ID)
-    pages = [
-        ListToolsResult.model_validate(
-            {"tools": [{"name": f"tool_{index}", "inputSchema": {}}], "nextCursor": "next"}
-        )
-        for index in range(managed._MAX_PAGES)
-    ]
-    monkeypatch.setattr(client, "list_tools_mcp", AsyncMock(side_effect=pages))
-
-    with pytest.raises(managed.ManagedToolsError, match="page limit"):
-        await managed._list_tools(client)
-
-
-async def test_built_ins_sharing_a_langsmith_app_each_keep_their_own_consent_link(monkeypatch):
-    def google(name: str) -> dict[str, str]:
-        return {
-            "kind": "oauth",
-            "slug": "langsmith-google",
-            "display_name": f"Google {name}",
-            "verification_url": f"https://smith.langchain.com/connect/{name.lower()}",
-            "auth_id": f"{name.lower()}-auth",
-        }
-
-    listing = [[google("Calendar"), google("Drive")]]
-
-    async def with_session(login, gateway, use):
-        return ListToolsResult.model_validate(
-            {"tools": [], "_meta": {"com.langchain.langsmith/missingCredentials": listing[0]}}
-        )
-
-    monkeypatch.setattr(managed, "_with_session", with_session)
-    monkeypatch.setattr(
-        managed, "_gateway_detail", AsyncMock(return_value={"id": GATEWAY_ID, "name": "Eng"})
-    )
-
-    status = await managed.gateway_status("alice", GATEWAY_ID)
-    [calendar] = status.missing_for(["calendar"])
-    assert (await managed.connect_link("alice", GATEWAY_ID, calendar.slug)).auth_id == (
-        "calendar-auth"
-    )
-
-    # Once Drive is the only one left, the card's Calendar key must read as connected.
-    listing[0] = [google("Drive")]
-    status = await managed.gateway_status("alice", GATEWAY_ID)
-    assert status.missing_for([calendar.slug]) == []
-    assert await managed.connect_link("alice", GATEWAY_ID, calendar.slug) is None
-
-
-async def test_gateway_status_names_the_services_already_connected(monkeypatch):
-    notion_id = "01a0f8da-0000-7000-8000-000000000001"
-    linear_id = "01a0f8da-0000-7000-8000-000000000002"
-    detail = {
-        "id": GATEWAY_ID,
-        "name": "Eng",
-        "tool_count": 4,
-        "tools": [
-            {"server_id": notion_id, "tool_name": "search", "mcp_name": "notion_search"},
-            {"server_id": notion_id, "tool_name": "fetch", "mcp_name": "notion_fetch"},
-            {"server_id": linear_id, "tool_name": "get_issue", "mcp_name": "linear_get_issue"},
-            {
-                "builtin_server_key": "langchain-docs",
-                "tool_name": "search",
-                "mcp_name": "langsmith_langchain_docs_search",
-            },
-        ],
-    }
-    linear = {"kind": "oauth", "slug": "linear", "display_name": "Linear"}
-    listing: list[object] = [
-        ListToolsResult.model_validate(
-            {
-                "tools": [
-                    {"name": name, "inputSchema": {"type": "object"}}
-                    for name in ("notion_search", "notion_fetch", "langsmith_langchain_docs_search")
-                ],
-                "_meta": {"com.langchain.langsmith/missingCredentials": [linear]},
-            }
-        )
-    ]
-
-    async def with_session(login, gateway, use):
-        if isinstance(listing[0], Exception):
-            raise listing[0]
-        return listing[0]
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == managed.SERVERS_PATH
+    async def request(self, method, path, *, body=None, ok=()):
+        # An admin reads the bot kit's record.
+        if (method, path) == ("GET", f"{managed.KITS_PATH}/{BOT_KIT_ID}"):
+            state.kit_headers.append(await self.headers())
+            return httpx.Response(200, json={"id": BOT_KIT_ID, "tools": state.bot_kit_links})
+        if (method, path) == ("POST", managed.SERVERS_PATH):
+            kind = body["connection"]["type"]
+            added = server(f"own-{len(state.registered)}", body["name"], connected=kind == "none")
+            added |= {"connection": body["connection"], "scope": body["scope"]}
+            state.registered.append(body)
+            state.servers[self.login].append(added)
+            return httpx.Response(201, json=added)
+        state.posts.append((method, path))
         return httpx.Response(
-            200,
-            json={
-                "items": [
-                    {
-                        "id": notion_id,
-                        "key": "notion",
-                        "name": "Notion MCP",
-                        "has_credential": True,
-                    },
-                    {"id": linear_id, "key": "linear", "name": "Linear"},
-                ]
-            },
+            201, json={"verification_url": "https://smith.langchain.com/c/1", "auth_id": "a1"}
         )
 
-    monkeypatch.setattr(managed, "_with_session", with_session)
-    monkeypatch.setattr(managed, "_gateway_detail", AsyncMock(return_value=detail))
-    monkeypatch.setattr(
-        managed, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handle))
-    )
-
-    assert (await managed.gateway_status("alice", GATEWAY_ID)).connected == []
-
-    partial = await managed.gateway_status("alice", GATEWAY_ID, with_connected=True)
-    assert [
-        (item.id, item.name, item.tool_count, item.disconnectable) for item in partial.connected
-    ] == [
-        (notion_id, "Notion MCP", 2, True),
-        ("langchain-docs", "Langchain docs", 1, False),
-    ]
-
-    listing[0] = managed._credentials_required({"credentials": [linear]})
-    required = await managed.gateway_status("alice", GATEWAY_ID, with_connected=True)
-    assert [(item.name, item.tool_count) for item in required.connected] == [
-        ("Notion MCP", 2),
-        ("Langchain docs", 1),
-    ]
-
-    # LMT names a missing server by its credential slug, not the server's own name.
-    notion = {"kind": "oauth", "slug": f"mt-{notion_id}", "display_name": "Notion"}
-    listing[0] = managed._credentials_required({"credentials": [notion]})
-    required = await managed.gateway_status("alice", GATEWAY_ID, with_connected=True)
-    assert [(item.name, item.tool_count) for item in required.connected] == [
-        ("Linear", 1),
-        ("Langchain docs", 1),
-    ]
-
-
-async def test_only_the_instance_picks_the_gateway(registry_db):
-    await upsert_workspace_overrides(
-        "oss", WorkspaceSettingsUpdate(managed_tools_gateway_id=GATEWAY_ID)
-    )
-    assert await managed.instance_gateway() is None
-
-    # Saving drops the cached read, so the change applies at once.
-    await upsert_instance_settings(WorkspaceSettingsUpdate(managed_tools_gateway_id=GATEWAY_ID))
-    assert await managed.instance_gateway() == GATEWAY_ID
-
-
-async def test_gateways_are_read_with_the_users_own_token(monkeypatch):
-    requests: list[httpx.Request] = []
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(
-            200, json={"items": [{"id": GATEWAY_ID, "name": "Open SWE", "tool_count": 200}]}
-        )
-
-    monkeypatch.setattr(
-        managed, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handle))
-    )
-    assert await managed.list_gateways("Alice") == [
-        managed.Gateway(id=GATEWAY_ID, name="Open SWE", tool_count=200)
-    ]
-    assert requests[-1].headers["Authorization"] == "Bearer alice-langsmith-token"
-    assert "X-LangSmith-Identity" not in requests[-1].headers
-    assert "X-Tenant-Id" not in requests[-1].headers
-    with pytest.raises(managed.LangSmithNotConnected):
-        await managed.list_gateways("bob")
-
-
-async def test_disconnect_removes_only_the_callers_credential_for_a_gateway_service(monkeypatch):
-    notion_id = "01a0f8da-0000-7000-8000-000000000001"
-    detail = {
-        "id": GATEWAY_ID,
-        "tools": [{"server_id": notion_id, "tool_name": "search", "mcp_name": "notion_search"}],
-    }
-    requests: list[httpx.Request] = []
-    status = [204]
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(status[0])
-
-    monkeypatch.setattr(managed, "_gateway_detail", AsyncMock(return_value=detail))
-    monkeypatch.setattr(managed, "refresh_tools", AsyncMock())
-    monkeypatch.setattr(
-        managed, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handle))
-    )
-
-    with pytest.raises(managed.ManagedToolsError, match="no such service"):
-        await managed.disconnect_service("alice", GATEWAY_ID, "../../kits")
-    assert requests == []
-
-    await managed.disconnect_service("alice", GATEWAY_ID, notion_id)
-    assert (requests[-1].method, requests[-1].url.path) == (
-        "DELETE",
-        f"{managed.SERVERS_PATH}/{notion_id}/credential",
-    )
-    assert requests[-1].headers["Authorization"] == "Bearer alice-langsmith-token"
-
-    status[0] = 404
-    with pytest.raises(managed.ManagedToolsError, match="service no longer exists"):
-        await managed.disconnect_service("alice", GATEWAY_ID, notion_id)
+    monkeypatch.setattr(managed.ManagedTools, "_cached", cached)
+    monkeypatch.setattr(managed.ManagedTools, "_pages", pages)
+    monkeypatch.setattr(managed.ManagedTools, "_request", request)
+    return state
 
 
 def private_thread(monkeypatch, owner: str) -> dict[str, str]:
     metadata = {"visibility": "private", "owner_type": "user", "owner_login": owner}
-    monkeypatch.setattr(
-        langgraph_sdk,
-        "get_client",
-        lambda: SimpleNamespace(
-            threads=SimpleNamespace(get=AsyncMock(side_effect=lambda _: {"metadata": metadata}))
-        ),
-    )
+    serve_threads_from(monkeypatch, AsyncMock(side_effect=lambda _: {"metadata": metadata}))
     monkeypatch.setattr(
         "openswe.run_config.get_config",
         lambda: {"configurable": {"thread_id": "t", "github_login": owner}},
@@ -375,129 +123,855 @@ def private_thread(monkeypatch, owner: str) -> dict[str, str]:
     return metadata
 
 
-async def test_gateway_tools_load_only_for_the_private_owner(monkeypatch):
-    async def discover(record, namespace):
-        assert record.url.endswith(f"/v1/managed-tools/kits/{GATEWAY_ID}/mcp")
-        assert record.connection_headers()["Authorization"] == "Bearer alice-langsmith-token"
+@pytest.fixture
+def remote(monkeypatch):
+    """The kit lists the same tools to every caller, and echoes calls."""
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    async def discover(record):
+        seen.append((record.url, record.connection_headers()))
         return [
             Tool(name=name, input_schema={"type": "object"})
-            for name in ("notion_notion-search", "linear_list_issues")
+            for name in ("linear_list_issues", "notion_search")
         ]
 
     monkeypatch.setattr(runtime, "_discover_tools", discover)
+    return seen
+
+
+async def test_a_private_owner_loads_the_whole_kit_as_themselves(monkeypatch, remote):
     metadata = private_thread(monkeypatch, "alice")
-    tools = await runtime.load_mcp_tools(managed.managed_mcp_source("alice", GATEWAY_ID))
-    assert sorted(tool.metadata["mcp_tool_name"] for tool in tools) == [
-        "linear_list_issues",
-        "notion_notion-search",
+    tools = await runtime.load_mcp_tools(managed.PersonalTools("alice").source())
+
+    assert sorted(tool.name for tool in tools) == [
+        "mcp_lmt_linear_list_issues",
+        "mcp_lmt_notion_search",
+    ]
+    assert remote == [
+        (
+            f"https://api.smith.langchain.com{managed.KITS_PATH}/{managed.ME_KIT}/mcp",
+            {"Authorization": "Bearer alice-langsmith-token"},
+        )
     ]
     from openswe.sandboxes.tool_runtime import ToolSurface
 
-    catalog = ToolSurface(tools={tool.name: tool for tool in tools}).catalog()
-    assert len(catalog) == 2
-    for entry in catalog:
-        assert entry.model_dump()["mcp_provenance"] == {
-            "connection_name": managed.CONNECTION_NAME,
-            "scope": "managed",
-            "overridden_scopes": [],
-        }
+    for entry in ToolSurface(tools={tool.name: tool for tool in tools}).catalog():
         assert "alice-langsmith-token" not in entry.model_dump_json()
-        assert GATEWAY_ID not in entry.model_dump_json()
     metadata["visibility"] = "public"
     assert "MCP call failed" in await tools[0].ainvoke({})
-    assert await runtime.load_mcp_tools(managed.managed_mcp_source("bob", GATEWAY_ID)) == []
+    # Someone never signed in to LangSmith has no personal tools, and nothing fails.
+    assert await runtime.load_mcp_tools(managed.PersonalTools("bob").source()) == []
+
+
+async def test_a_private_owner_never_sees_the_slack_bot_built_in(monkeypatch, lmt):
+    """LMT's Slack built-in runs on LangSmith's Slack bot and reads public channels only,
+    which Robin's own Slack tools already do; a person's own Slack is the slack_user
+    server. So private threads neither load its tools nor offer to connect it."""
+    lmt.servers["alice"].append(server("slack", "Slack", connected=False))
+
+    async def discover(record):
+        return [
+            Tool(name=name, input_schema={"type": "object"})
+            for name in (
+                "langsmith_slack_read_channel_history",
+                "langsmith_slack_send_channel_message",
+                "langsmith_gmail_send_email",
+                "slack_user_slack_search_public",
+            )
+        ]
+
+    monkeypatch.setattr(runtime, "_discover_tools", discover)
+    private_thread(monkeypatch, "alice")
+    alice = managed.PersonalTools("alice")
+    tools = await runtime.load_mcp_tools(alice.source())
+
+    assert sorted(tool.name for tool in tools) == [
+        "mcp_lmt_langsmith_gmail_send_email",
+        "mcp_lmt_slack_user_slack_search_public",
+    ]
+    assert "Slack" not in await alice.connectable()
+    assert await alice.unconnected(["slack"]) == []
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "channel", "required", "expected"),
+    [
+        ("slack_user_slack_search_public_and_private", "", [], {"query": "deploys"}),
+        (
+            "slack_user_slack_search_public_and_private",
+            "C123",
+            [],
+            {"query": "deploys", "context_channel_id": "C123"},
+        ),
+        (
+            "slack_user_slack_search_public_and_private",
+            "",
+            ["context_channel_id"],
+            {"query": "deploys", "context_channel_id": ""},
+        ),
+        ("linear_update_issue", "", [], {"query": "deploys", "context_channel_id": ""}),
+    ],
+)
+async def test_only_the_optional_slack_search_channel_filter_omits_an_empty_string(
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+    channel: str,
+    required: list[str],
+    expected: dict[str, str],
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}, "context_channel_id": {"type": "string"}},
+        "required": ["query", *required],
+    }
+    definition = Tool(name=tool_name, input_schema=schema)
+    sent: list[dict[str, str]] = []
+
+    async def call(**arguments: str) -> tuple[str, None]:
+        sent.append(arguments)
+        return "ok", None
+
+    remote = StructuredTool.from_function(
+        coroutine=call, name=tool_name, description="Remote tool", args_schema=schema
+    )
+    private_thread(monkeypatch, "alice")
+    monkeypatch.setattr(runtime, "_discover_tools", AsyncMock(return_value=[definition]))
+    monkeypatch.setattr(runtime, "as_langchain_tool", AsyncMock(return_value=remote))
+    [tool] = await runtime.load_mcp_tools(managed.PersonalTools("alice").source())
+
+    assert await tool.ainvoke({"query": "deploys", "context_channel_id": channel}) == "ok"
+    assert sent == [expected]
+
+
+async def test_a_change_to_the_kit_relists_only_when_robin_refreshes_it(monkeypatch, lmt):
+    """A run never waits on the kit's slow listing because a service changed: its cached
+    list stays under the same key, and Robin lists it again when it makes the change."""
+    cache: dict[str, object] = {}
+
+    async def swr(key, load, **_):
+        if key not in cache:
+            cache[key] = await load()
+
+        async def mutate(value):
+            cache[key] = value
+
+        return SimpleNamespace(value=cache[key], status="fresh", mutate=mutate)
+
+    import langgraph_api.cache
+
+    monkeypatch.setattr(langgraph_api.cache, "swr", swr)
+    listed = []
+
+    async def discover(record):
+        listed.append(record.revision)
+        return [Tool(name="linear_list_issues", input_schema={"type": "object"})]
+
+    monkeypatch.setattr(runtime, "_discover_tools", discover)
+    private_thread(monkeypatch, "alice")
+    tools = managed.PersonalTools("alice")
+    await runtime.load_mcp_tools(tools.source())
+    lmt.servers["alice"][1]["connected"] = True
+    await runtime.load_mcp_tools(tools.source())
+    assert len(listed) == 1
+    await tools.refresh()
+    assert len(listed) == 2 and listed[0] == listed[1]
+
+
+async def test_the_built_kit_offers_every_server_and_takes_the_persons_own(monkeypatch, lmt):
+    """LangSmith builds the ``me`` kit from every server the person can use, so there is
+    no stored kit to read, and a person adds and removes only their own servers."""
+    monkeypatch.setattr(managed.ManagedTools, "refresh", AsyncMock())
+    tools = managed.PersonalTools("alice")
+    assert "Sentry" in [item.name for item in await tools.kit_servers()]
+    assert lmt.posts == []
+
+    new = managed.NewServer(
+        name="Mine", url="https://mcp.example.com/mcp", kind="secret", header="X-Api-Key"
+    )
+    # LangSmith registered it, so a failed refresh afterwards still reports it added.
+    monkeypatch.setattr(
+        managed.ManagedTools, "refresh", AsyncMock(side_effect=managed.ManagedToolsError("down"))
+    )
+    added = await tools.add_server(new)
+    assert added.personal and added.needs_connect
+    assert lmt.registered == [
+        {
+            "name": "Mine",
+            "upstream_url": "https://mcp.example.com/mcp",
+            "connection": {
+                "type": "secret",
+                "fields": [
+                    {"name": "X-Api-Key", "injection": {"type": "header", "name": "X-Api-Key"}}
+                ],
+            },
+            "scope": "personal",
+        }
+    ]
+
+    # Only a server the person registered is theirs to delete.
+    with pytest.raises(managed.ManagedToolsError):
+        await tools.remove_server(LINEAR_ID)
+    await tools.remove_server(added.id)
+    assert lmt.posts == [("DELETE", f"{managed.SERVERS_PATH}/{added.id}")]
+
+
+async def test_the_people_kit_loads_its_services_and_each_persons_own_servers(
+    monkeypatch, lmt, remote
+):
+    """With LMT_KIT_ID, a private thread loads only the services an admin put in the
+    people's kit, which cannot link a server someone added for themselves, so each server
+    the owner added and connected loads on its own route, as the owner. One they have not
+    connected is offered to connect instead, and a failed listing of them keeps the kit."""
+    monkeypatch.setenv("LMT_KIT_ID", PEOPLE_KIT_ID)
+    lmt.people_kit_links = [
+        {"server_id": LINEAR_ID, "tool_name": "linear_list_issues"},
+        {"server_id": NOTION_ID, "tool_name": "notion_search"},
+    ]
+    lmt.servers["alice"] += [
+        server("own-docs", "Docs", connected=True) | {"scope": "personal"},
+        server("own-lmt", "LMT", connected=True, kind="none") | {"scope": "personal"},
+        server("own-wiki", "Wiki", connected=False) | {"scope": "personal"},
+    ]
+    private_thread(monkeypatch, "alice")
+    alice = managed.PersonalTools("alice")
+
+    assert [item.name for item in await alice.kit_servers()] == [
+        "Linear",
+        "Notion",
+        "Docs",
+        "LMT",
+        "Wiki",
+    ]
+    assert await alice.connectable() == ["Notion", "Wiki"]
+    tools = await runtime.load_mcp_tools(alice.source())
+
+    # The person's server named like the kit gets its own name rather than replacing it.
+    own_lmt = f"lmt{hashlib.sha256(b'own-lmt').hexdigest()[:8]}"
+    assert sorted(tool.name for tool in tools) == sorted(
+        f"mcp_{connection}_{tool}"
+        for connection in ("lmt", "docs", own_lmt)
+        for tool in ("linear_list_issues", "notion_search")
+    )
+    owner = {"Authorization": "Bearer alice-langsmith-token"}
+    assert sorted(remote) == sorted(
+        (f"https://api.smith.langchain.com{route}", owner)
+        for route in (
+            f"{managed.KITS_PATH}/{PEOPLE_KIT_ID}/mcp",
+            f"{managed.SERVERS_PATH}/own-docs/mcp",
+            f"{managed.SERVERS_PATH}/own-lmt/mcp",
+        )
+    )
+
+    # One of the owner's servers failing to list again never holds up the refresh after a
+    # change to another service; it does when a consent just connected it, as does the
+    # kit failing.
+    listing = SimpleNamespace(refresh=AsyncMock())
+    monkeypatch.setattr(managed.ManagedTools, "_listing", AsyncMock(return_value=listing))
+    failing = {"docs"}
+    relisted: list[str] = []
+
+    async def relist(source, name):
+        relisted.append(name)
+        if name in failing:
+            raise MCPDiscoveryError("expired key")
+
+    monkeypatch.setattr(managed, "refresh_mcp_catalog", relist)
+    await alice.refresh()
+    assert relisted == ["lmt", "docs", own_lmt]
+    with pytest.raises(MCPDiscoveryError):
+        await alice.refresh(needed=["own-docs"])
+    await alice.refresh(needed=["own-lmt"])
+    failing.add("lmt")
+    with pytest.raises(MCPDiscoveryError):
+        await alice.refresh()
+
+    monkeypatch.setattr(
+        managed.ManagedTools, "servers", AsyncMock(side_effect=managed.ManagedToolsError("down"))
+    )
+    assert [item.name for item in await alice.connections()] == ["lmt"]
+
+
+async def test_a_run_names_connectable_services_from_its_owners_cached_list(monkeypatch, lmt):
+    """A run's start names the services its owner could connect from that person's own
+    list, kept up to a day: an old one comes back at once and LangSmith is read again in
+    the background, so a slow listing never holds the run."""
+    from langgraph_api import cache
+
+    monkeypatch.setattr(managed.ManagedTools, "_cached", ORIGINAL_CACHED)
+    tokens = {"alice": "alice-langsmith-token", "carol": "carol-langsmith-token"}
+
+    async def access_token(login):
+        return tokens.get(login)
+
+    monkeypatch.setattr(managed, "langsmith_access_token", access_token)
+    lmt.servers["carol"] = [server(LINEAR_ID, "Linear", connected=False)]
+    alice, carol = managed.PersonalTools("alice"), managed.PersonalTools("carol")
+
+    assert await alice.connectable() == ["Notion", "Exa", "Sentry"]
+    assert await carol.connectable() == ["Linear"]
+    listings = len(lmt.listed_as)
+    lmt.servers["alice"][1]["connected"] = True
+    assert await alice.connectable() == ["Notion", "Exa", "Sentry"]
+    assert len(lmt.listed_as) == listings
+
+    listed = asyncio.Event()
+    fast_pages = managed.ManagedTools._pages
+
+    async def slow_pages(self, path, headers=None):
+        await listed.wait()
+        return await fast_pages(self, path, headers)
+
+    monkeypatch.setattr(managed.ManagedTools, "_pages", slow_pages)
+    now = cache._now_ms
+    monkeypatch.setattr(cache, "_now_ms", lambda: now() + 2 * 60 * 60 * 1000)
+    assert await asyncio.wait_for(alice.connectable(), 1) == ["Notion", "Exa", "Sentry"]
+    listed.set()
+    await asyncio.gather(*(state.task for state in cache._SWR_STATES.values() if state.task))
+    assert await alice.connectable() == ["Exa", "Sentry"]
+    assert await carol.connectable() == ["Linear"]
+    await asyncio.gather(*(state.task for state in cache._SWR_STATES.values() if state.task))
+
+
+async def stored_catalog(person):
+    """What the shared cache holds for the person's kit tools."""
+    from langgraph_api import cache
+
+    [record] = await person.connections()
+    key = cache._swr_cache_key((await person.source().catalog(record)).key)
+    entry = await cache.cache_get(key)
+    return entry["value"] if entry else None
+
+
+async def test_a_run_reads_its_owners_kit_tools_from_their_own_cached_listing(monkeypatch, lmt):
+    """A run's start never waits on LangSmith listing the owner's kit: a cached list, up to a
+    day old, comes back at once and is listed again in the background; with none cached
+    the run starts without the kit's tools as soon as the listing goes out. Each person's
+    list is their own, holds no credential, and Robin lists it again after a change."""
+    from langgraph_api import cache
+
+    tokens = {"alice": "alice-langsmith-token", "carol": "carol-langsmith-token"}
+
+    async def access_token(login):
+        return tokens.get(login)
+
+    monkeypatch.setattr(managed, "langsmith_access_token", access_token)
+    kits = {
+        "alice-langsmith-token": ["linear_list_issues"],
+        "carol-langsmith-token": ["notion_search"],
+    }
+    listings: list[str] = []
+    gate = asyncio.Event()
+
+    async def discover(record):
+        token = record.connection_headers()["Authorization"].removeprefix("Bearer ")
+        listings.append(token)
+        await gate.wait()
+        return [Tool(name=name, input_schema={"type": "object"}) for name in kits[token]]
+
+    monkeypatch.setattr(runtime, "_discover_tools", discover)
+    alice, carol = managed.PersonalTools("alice"), managed.PersonalTools("carol")
+
+    async def names(person, within=0.5):
+        # Well inside the second a slow cache read may take: nothing here waits on LMT.
+        tools = await asyncio.wait_for(runtime.load_mcp_tools(person.source()), within)
+        return sorted(tool.name for tool in tools)
+
+    async def settled():
+        await asyncio.gather(*runtime._DEFERRED_LISTINGS)
+        await asyncio.gather(*(state.task for state in cache._SWR_STATES.values() if state.task))
+
+    # Nothing cached: the run starts without the kit's tools, its prompt says they are still
+    # loading, and the listing finishes.
+    started = await asyncio.wait_for(runtime.load_mcp_tools(alice.source()), 0.5)
+    assert list(started) == []
+    assert started.loading == [managed.KIT_CONNECTION]
+    assert "Do not tell them to connect or enable it" in started.catalog_note
+    assert listings == ["alice-langsmith-token"]
+    # An automation waits out a listing that a chat would not: its own (carol), and one it
+    # joins that an earlier run started (alice), past the second a cache read gets.
+    monkeypatch.setattr(runtime, "_CATALOG_GRACE", runtime.LISTING_GRACE)
+    automations = [
+        asyncio.ensure_future(
+            runtime.load_mcp_tools(person.source(), listing_grace=runtime.UNATTENDED_LISTING_GRACE)
+        )
+        for person in (alice, carol)
+    ]
+    await asyncio.sleep(runtime.LISTING_GRACE * 3)
+    gate.set()
+    joined, own = await asyncio.gather(*automations)
+    assert [tool.name for tool in joined] == ["mcp_lmt_linear_list_issues"]
+    assert [tool.name for tool in own] == ["mcp_lmt_notion_search"]
+    assert joined.loading == own.loading == []
+    await settled()
+
+    # Cached: no listing at all. Carol listed her own kit, as herself, and never sees alice's.
+    assert await names(alice) == ["mcp_lmt_linear_list_issues"]
+    assert await names(carol) == ["mcp_lmt_notion_search"]
+    assert await names(alice) == ["mcp_lmt_linear_list_issues"]
+    assert listings == ["alice-langsmith-token", "carol-langsmith-token"]
+
+    # The cache holds each list encrypted: ciphertext that decrypts to that person's tool
+    # definitions, never the token the kit was listed with.
+    for person, listed in ((alice, "linear_list_issues"), (carol, "notion_search")):
+        sealed = await stored_catalog(person)
+        assert isinstance(sealed, str) and listed not in sealed
+        plaintext = decrypt_token(sealed)
+        assert [tool["name"] for tool in json.loads(plaintext)] == [listed]
+        assert not any(token in plaintext for token in tokens.values())
+
+    # Stale (an hour old): served at once, and listed again in the background.
+    kits["alice-langsmith-token"].append("linear_create_issue")
+    gate.clear()
+    now = cache._now_ms
+    monkeypatch.setattr(cache, "_now_ms", lambda: now() + 60 * 60 * 1000)
+    assert await names(alice) == ["mcp_lmt_linear_list_issues"]
+    gate.set()
+    await settled()
+    assert await names(alice) == ["mcp_lmt_linear_create_issue", "mcp_lmt_linear_list_issues"]
+
+    # A change Robin makes (connect, disconnect, add, remove) lists the kit again at once.
+    monkeypatch.setattr(cache, "_now_ms", now)
+    kits["alice-langsmith-token"].remove("linear_create_issue")
+    await alice.refresh()
+    assert await names(alice) == ["mcp_lmt_linear_list_issues"]
+    assert await names(carol) == ["mcp_lmt_notion_search"]
+    await settled()
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("other_replica", [False, True])
+async def test_a_refresh_is_not_undone_by_a_listing_begun_before_it(
+    monkeypatch, cached, other_replica
+):
+    """A listing begun before a person connects a service, still running when Robin
+    refreshes, neither stands in for the refresh nor overwrites it, on this replica or on
+    another, which shares the cache but guards only its own writes."""
+    from langgraph_api import cache
+
+    from openswe.mcp.sealed import SealedListing
+
+    started = asyncio.Event()
+    connected = asyncio.Event()
+    upstream = ["connect_figma"]
+    loads = 0
+
+    async def load():
+        nonlocal loads
+        loads += 1
+        seen = list(upstream)
+        if loads == (2 if cached else 1):
+            started.set()
+            await connected.wait()
+        return seen
+
+    listing = SealedListing("test:kit", load, fresh_for=timedelta(0), max_age=timedelta(days=1))
+    if cached:
+        await listing.lookup()
+    # A run's lookup lists it, or a stale copy is listed again in the background.
+    older = asyncio.ensure_future(listing.lookup())
+    await started.wait()
+    upstream[:] = ["figma_get_file"]
+    replicas = [cache._SWR_STATES]
+    if other_replica:
+        replicas.append({})
+        monkeypatch.setattr(cache, "_SWR_STATES", replicas[1])
+    refresh = asyncio.ensure_future(listing.refresh())
+    await asyncio.sleep(0.05)
+    monkeypatch.setattr(cache, "_SWR_STATES", replicas[0])
+    connected.set()
+    await asyncio.wait_for(refresh, 1)
+    await older
+    tasks = [state.task for states in replicas for state in states.values() if state.task]
+    await asyncio.gather(*tasks)
+    assert await listing.read() == ["figma_get_file"]
+
+
+async def test_a_cached_kit_listing_that_cannot_be_read_is_listed_again(monkeypatch, lmt):
+    """A list sealed under a key since retired is nothing cached: the run starts without
+    the kit's tools, never failing, and the kit is listed again under the current key.
+    Entries cached before encryption stay under their own keys, for older replicas."""
+    from cryptography.fernet import Fernet
+    from langgraph_api import cache
+
+    listings = 0
+
+    async def discover(record):
+        nonlocal listings
+        listings += 1
+        return [Tool(name="linear_list_issues", input_schema={"type": "object"})]
+
+    monkeypatch.setattr(runtime, "_discover_tools", discover)
+    alice = managed.PersonalTools("alice")
+
+    async def names():
+        tools = await asyncio.wait_for(runtime.load_mcp_tools(alice.source()), 0.5)
+        return [tool.name for tool in tools]
+
+    async def settled():
+        await asyncio.gather(*runtime._DEFERRED_LISTINGS)
+        await asyncio.gather(*(state.task for state in cache._SWR_STATES.values() if state.task))
+
+    await names()
+    await settled()
+    assert await names() == ["mcp_lmt_linear_list_issues"] and listings == 1
+
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    assert await names() == []
+    await settled()
+    assert listings == 2
+    assert await names() == ["mcp_lmt_linear_list_issues"]
+    assert json.loads(decrypt_token(await stored_catalog(alice)))[0]["name"] == "linear_list_issues"
+
+    # Replicas still on the plaintext format keep their own entries during a rollout:
+    # this version neither reads nor overwrites them.
+    [record] = await alice.connections()
+    sealed_key = (await alice.source().catalog(record)).key
+    plaintext_key = sealed_key.removeprefix("sealed-v1:")
+    assert plaintext_key != sealed_key
+    plain = [{"name": "linear_search", "inputSchema": {"type": "object"}}]
+    await cache.swr(plaintext_key, AsyncMock(return_value=plain))
+    await alice.refresh()
+    assert await names() == ["mcp_lmt_linear_list_issues"]
+    assert (await cache.cache_get(cache._swr_cache_key(plaintext_key)))["value"] == plain
+
+
+async def test_managed_tools_listings_are_cached_encrypted(monkeypatch, lmt):
+    """The person's server listing, which also names the services they could connect, is
+    cached encrypted too, and one sealed under a retired key is read from LangSmith again."""
+    from cryptography.fernet import Fernet
+    from langgraph_api import cache
+
+    monkeypatch.setattr(managed.ManagedTools, "_cached", ORIGINAL_CACHED)
+    alice = managed.PersonalTools("alice")
+    assert await alice.connectable() == ["Notion", "Exa", "Sentry"]
+    digest = managed.hashlib.sha256(json.dumps(alice.namespace).encode()).hexdigest()
+    entry = await cache.cache_get(cache._swr_cache_key(f"sealed-v1:lmt:servers:{digest}"))
+    assert isinstance(entry["value"], str) and "Notion" not in entry["value"]
+    assert "Notion" in decrypt_token(entry["value"])
+
+    listed = len(lmt.listed_as)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    lmt.servers["alice"][1]["connected"] = True
+    assert await alice.connectable() == ["Exa", "Sentry"]
+    assert len(lmt.listed_as) == listed + 1
+
+
+async def test_a_connect_click_asks_langsmith_rather_than_the_cached_listing(monkeypatch, lmt):
+    """Every read takes the cached listing except a connect click, which must not answer
+    "already connected" for a service someone has since disconnected in LangSmith."""
+    monkeypatch.setattr(managed.ManagedTools, "_cached", ORIGINAL_CACHED)
+
+    async def mcp(self, path, use):
+        raise self._mcp_failure(
+            httpx.Response(428, json={"verification_url": "https://smith.langchain.com/c/l"})
+        )
+
+    monkeypatch.setattr(managed.ManagedTools, "_mcp", mcp)
+    alice = managed.PersonalTools("alice")
+    from langgraph_api import cache
+
+    assert (await alice.server(LINEAR_ID)).usable
+    lmt.servers["alice"][0]["connected"] = False
+    listed = len(lmt.listed_as)
+    assert (await alice.server(LINEAR_ID)).usable
+    assert len(lmt.listed_as) == listed
+    assert await alice.connect_link(LINEAR_ID) == managed.ConsentLink(
+        url="https://smith.langchain.com/c/l"
+    )
+    assert len(lmt.listed_as) == listed + 1
+    # The read also updated the cached copy for everything else.
+    assert not (await alice.server(LINEAR_ID)).usable
+
+    # A copy past its day is read from LangSmith once, not twice.
+    lmt.servers["alice"][0]["connected"] = True
+    now = cache._now_ms
+    monkeypatch.setattr(cache, "_now_ms", lambda: now() + 25 * 60 * 60 * 1000)
+    listed = len(lmt.listed_as)
+    assert await alice.connect_link(LINEAR_ID) is None
+    assert len(lmt.listed_as) == listed + 1
+
+
+async def test_a_listing_backing_off_still_reports_its_failure_to_the_run(monkeypatch, lmt):
+    """Not waiting on a listing must not hide a failure that is backing off, which fails
+    before anything goes to LangSmith and which the run's prompt names."""
+    calls = 0
+
+    async def missing(record):
+        nonlocal calls
+        calls += 1
+        request = httpx2.Request("POST", record.url)
+        raise httpx2.HTTPStatusError(
+            "gone", request=request, response=httpx2.Response(404, request=request)
+        )
+
+    monkeypatch.setattr(runtime, "_discover_tools", missing)
+    alice = managed.PersonalTools("alice")
+    for _ in range(2):
+        tools = await asyncio.wait_for(runtime.load_mcp_tools(alice.source()), 0.5)
+        assert list(tools) == []
+        assert tools.failures == ["MCP tool discovery failed (HTTP 404). Check the MCP server URL"]
+    assert calls == 1
+
+
+async def test_an_unreachable_langsmith_leaves_the_run_without_managed_tools(monkeypatch):
+    """A run starts whether or not LangSmith answers: listing failures only drop the
+    services the prompt offers to connect."""
+    monkeypatch.setattr(managed.ManagedTools, "_pages", ORIGINAL_PAGES)
+
+    def refused(request):
+        raise httpx2.ConnectError("refused", request=request)
+
+    monkeypatch.setattr(
+        managed.ManagedTools,
+        "_client",
+        lambda self: httpx2.AsyncClient(transport=httpx2.MockTransport(refused)),
+    )
+    assert await managed.PersonalTools("alice").connectable() == []
+
+    # An instance signing people in to a LangSmith without HTTPS has no managed tools.
+    monkeypatch.setenv("LANGSMITH_CONNECTION_URL", "http://127.0.0.1:9")
+    assert not managed.managed_tools_configured()
+
+
+async def test_a_server_added_after_the_last_listing_still_runs_its_tools(monkeypatch):
+    """A person's new server joins the next run's catalog at once, so running one of its
+    tools must not depend on what this replica listed before it was added."""
+    from langchain_core.tools import StructuredTool
+
+    from openswe import server as backend
+    from openswe.agent_api import agent
+
+    async def answer() -> str:
+        return "ok"
+
+    old, new = (
+        StructuredTool.from_function(coroutine=answer, name=name, description=name)
+        for name in ("mcp_lmt_linear_list_teams", "mcp_lmt_mine_fetch_docs")
+    )
+    monkeypatch.setattr(backend, "_integrations", {})
+    monkeypatch.setattr(backend, "private_credential_login", AsyncMock(return_value="alice"))
+    listings = AsyncMock(side_effect=[[old], [old, new]])
+    monkeypatch.setattr(backend, "_run_mcp_tools", listings)
+    monkeypatch.setattr(agent, "agent_tools_by_name", dict)
+    config = {"configurable": {"thread_id": "t"}}
+
+    kind = agent.AgentKind()
+    assert await kind.tool(config, old.name) is old
+    assert await kind.tool(config, new.name) is new
+    assert listings.await_count == 2
+
+
+async def test_the_bot_calls_its_own_kit_as_its_profile_with_robins_key(monkeypatch, remote):
+    tools = await runtime.load_mcp_tools(managed.BotTools().source())
+
+    assert sorted(tool.name for tool in tools) == [
+        "mcp_lmt_linear_list_issues",
+        "mcp_lmt_notion_search",
+    ]
+    assert remote == [
+        (
+            f"https://api.smith.langchain.com{managed.KITS_PATH}/{BOT_KIT_ID}/mcp",
+            {"X-Api-Key": "openswe-key", "X-LangSmith-Profile": PROFILE_ID},
+        )
+    ]
+    # The bot never falls back to the personal kit, or loads its kit without its profile.
+    monkeypatch.delenv("LMT_BOT_KIT_ID")
+    assert await runtime.load_mcp_tools(managed.BotTools().source()) == []
+    monkeypatch.setenv("LMT_BOT_KIT_ID", BOT_KIT_ID)
+    monkeypatch.delenv("LMT_BOT_PROFILE_ID")
+    assert await runtime.load_mcp_tools(managed.BotTools().source()) == []
+
+
+async def test_the_bot_leaves_out_tools_of_services_its_profile_has_not_connected(monkeypatch):
+    from mcp.types import ListToolsResult
+
+    pages = [
+        ListToolsResult(
+            tools=[Tool(name="linear_list_issues", input_schema={"type": "object"})],
+            next_cursor="2",
+        ),
+        ListToolsResult(tools=[Tool(name="notion_search", input_schema={"type": "object"})]),
+    ]
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+        async def list_tools_mcp(self, *, cursor=None, cache_mode="use"):
+            return pages[0 if cursor is None else 1]
+
+    def connections(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == f"/v1/managed-tools/kits/{BOT_KIT_ID}/connections"
+        if request.url.params.get("cursor") == "2":
+            notion = {"id": "notion", "connected": False, "tool_names": ["notion_search"]}
+            return httpx.Response(200, json={"items": [notion]})
+        linear = {"id": "linear", "connected": True, "tool_names": ["linear_list_issues"]}
+        return httpx.Response(200, json={"items": [linear], "next_cursor": "2"})
+
+    monkeypatch.setattr(runtime, "_client", lambda record: Client())
+    monkeypatch.setattr(
+        managed,
+        "mcp_http_client",
+        lambda url, timeout: httpx.AsyncClient(transport=httpx.MockTransport(connections)),
+    )
+    bot = (await managed.BotTools().connections())[0]
+    assert [tool.name for tool in await runtime._discover_tools(bot)] == ["linear_list_issues"]
+    # A person can connect what they lack, so their kit keeps every tool.
+    private_thread(monkeypatch, "alice")
+    person = (await managed.PersonalTools("alice").connections())[0]
+    assert [tool.name for tool in await runtime._discover_tools(person)] == [
+        "linear_list_issues",
+        "notion_search",
+    ]
+
+
+async def test_the_bot_fails_discovery_when_langsmith_cannot_check_its_connections(monkeypatch):
+    """An unchecked status would otherwise cache a guess as the bot's tools."""
+    unavailable = {"id": "notion", "connected": False, "credential_status": "unavailable"}
+    monkeypatch.setattr(
+        managed,
+        "mcp_http_client",
+        lambda url, timeout: httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"items": [unavailable]})
+            )
+        ),
+    )
+    bot = (await managed.BotTools().connections())[0]
+    with pytest.raises(MCPDiscoveryError, match="could not check"):
+        await bot.unusable_tools()
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(428, "Call connect_managed_tools"), (409, "workspace admin must connect")],
+)
+async def test_a_missing_credential_tells_the_model_what_to_do(status, expected):
+    """MCP transports reduce LMT's 428 and 409 to a bare protocol error, so the kit's
+    connection raises its own from the HTTP response, which the tool call explains."""
+    kit = managed._KitConnection(
+        name="lmt", kit="kit", url="https://lmt.example/mcp", revision="r", updated_at=""
+    )
+    await kit.check_response(httpx2.Response(200))
+    try:
+        try:
+            await kit.check_response(httpx2.Response(status))
+        except MCPCredentialMissing as exc:
+            raise RuntimeError("tool call failed") from exc
+    except RuntimeError as wrapped:
+        assert expected in runtime._call_failure(wrapped)
+
+
+@pytest.mark.parametrize("private", [True, False])
+async def test_private_threads_load_the_kit_as_the_owner_and_others_as_the_bot(
+    monkeypatch, private, remote
+):
+    import openswe.server as server_module
+
+    private_thread(monkeypatch, "alice")
+    tools = await server_module._mcp_tools_for("alice" if private else None)
+    assert sorted(tool.name for tool in tools) == [
+        "mcp_lmt_linear_list_issues",
+        "mcp_lmt_notion_search",
+    ]
+    assert remote == [
+        (
+            f"https://api.smith.langchain.com{managed.KITS_PATH}/{managed.ME_KIT if private else BOT_KIT_ID}/mcp",
+            {"Authorization": "Bearer alice-langsmith-token"}
+            if private
+            else {"X-Api-Key": "openswe-key", "X-LangSmith-Profile": PROFILE_ID},
+        )
+    ]
+    # A private thread's prompt names the services its owner could still connect.
+    assert tools.connectable == (["Notion", "Exa", "Sentry"] if private else [])
+    note = runtime.catalog_note(tools.failures, tools.connectable)
+    assert ("connect_managed_tools" in note) is private
+    # While the kit loads, the services not yet connected keep their connect instruction.
+    loading = runtime.catalog_note(tools.failures, tools.connectable, ["lmt"])
+    assert ("connect_managed_tools" in loading) is private
+    assert ("not one listed above as not connected yet" in loading) is private
+
+
+def test_a_connect_challenge_survives_the_client_wrapping_it():
+    """The MCP client re-raises a failed connect as a RuntimeError caused by LMT's 428."""
+    link = managed.ConsentLink(url="https://www.linkedin.com/oauth/v2/authorization")
+    required = managed._CredentialRequired(link)
+    try:
+        try:
+            raise required
+        except managed._CredentialRequired as exc:
+            raise RuntimeError("Client failed to connect: Connect this service first") from exc
+    except RuntimeError as wrapped:
+        assert managed._wrapped(wrapped, managed.ManagedToolsError) is required
+
+
+async def test_connect_links_come_from_lmt_for_the_kits_oauth_and_secret_services(monkeypatch, lmt):
+    tools = managed.PersonalTools("alice")
+    challenge = {
+        "kind": "oauth",
+        "slug": "notion",
+        "display_name": "Notion",
+        "verification_url": "https://smith.langchain.com/connect/notion",
+        "auth_id": "notion-auth",
+    }
+
+    async def mcp(self, path, use):
+        assert path == f"{managed.SERVERS_PATH}/{NOTION_ID}/mcp"
+        raise self._mcp_failure(httpx.Response(428, json=challenge))
+
+    real_request = managed.ManagedTools._request
+
+    async def request(self, method, path, *, body=None, ok=()):
+        if method == "GET":
+            return await real_request(self, method, path, body=body, ok=ok)
+        assert (method, path) == ("POST", f"{managed.SERVERS_PATH}/exa/credential-sessions")
+        return httpx.Response(
+            201,
+            json={"verification_url": "https://smith.langchain.com/secret/exa", "auth_id": "s1"},
+        )
+
+    monkeypatch.setattr(managed.ManagedTools, "_mcp", mcp)
+    monkeypatch.setattr(managed.ManagedTools, "_request", request)
+    assert await tools.connect_link(NOTION_ID) == managed.ConsentLink(
+        url="https://smith.langchain.com/connect/notion", auth_id="notion-auth"
+    )
+    assert await tools.connect_link("exa") == managed.ConsentLink(
+        url="https://smith.langchain.com/secret/exa"
+    )
+    assert await tools.connect_link(LINEAR_ID) is None
+    assert [server.name for server in await tools.unconnected(["notion"])] == ["Notion"]
+    # Every enabled service the person can use and has not connected, never one turned off.
+    assert [server.name for server in await tools.unconnected()] == ["Notion", "Exa", "Sentry"]
+
+
+async def test_personal_tools_view_preserves_optional_lmt_icons(lmt):
+    icon_url = "https://smith.example.com/logos/linear.svg"
+    icon_dark_url = "https://smith.example.com/logos/linear-dark.svg"
+    linear, notion, exa, *_ = lmt.servers["alice"]
+    linear.update(icon_url=icon_url, icon_dark_url=icon_dark_url)
+    exa.update(icon_url={"unexpected": True})
+
+    view = await routes.api_my_managed_tools({"sub": "alice"})
+    by_id = {item["id"]: item for item in view.model_dump()["servers"]}
+    assert by_id[LINEAR_ID]["icon_url"] == icon_url
+    assert by_id[LINEAR_ID]["icon_dark_url"] == icon_dark_url
+    assert by_id[notion["id"]]["icon_url"] is None
+    assert by_id[exa["id"]]["icon_url"] is None
 
 
 async def test_discovery_denies_shared_threads_before_reading_integrations(monkeypatch):
     tool = importlib.import_module("openswe.tools.discover_managed_tools")
     monkeypatch.setattr(tool, "private_credential_login", AsyncMock(return_value=None))
-    gateway = AsyncMock(return_value=GATEWAY_ID)
-    inventory = AsyncMock()
-    monkeypatch.setattr(tool, "instance_gateway", gateway)
-    monkeypatch.setattr(tool, "gateway_inventory", inventory)
-
-    assert (await tool.discover_managed_tools("calendar"))["success"] is False
-    gateway.assert_not_awaited()
-    inventory.assert_not_awaited()
-
-
-async def test_discovery_searches_only_the_private_owners_configured_kit(monkeypatch):
-    tool = importlib.import_module("openswe.tools.discover_managed_tools")
-    private_thread(monkeypatch, "alice")
-    monkeypatch.setattr(tool, "instance_gateway", AsyncMock(return_value=GATEWAY_ID))
-    monkeypatch.setattr(
-        managed,
-        "_gateway_detail",
-        AsyncMock(return_value={"id": GATEWAY_ID, "name": "Eng", "tool_count": 2}),
-    )
-
-    async def listing(login, gateway, use):
-        assert login == "alice"
-        assert gateway == GATEWAY_ID
-        assert (await managed._headers(login))["Authorization"] == "Bearer alice-langsmith-token"
-        return ListToolsResult.model_validate(
-            {
-                "tools": [
-                    {"name": "gcal_list", "description": "List calendar events", "inputSchema": {}},
-                    {"name": "notion_search", "inputSchema": {}},
-                ],
-                "_meta": {
-                    "com.langchain.langsmith/missingCredentials": [
-                        {
-                            "slug": "linear",
-                            "display_name": "Linear",
-                            "verification_url": "https://smith.langchain.com/private-consent",
-                            "auth_id": "private-auth",
-                        }
-                    ]
-                },
-            }
-        )
-
-    monkeypatch.setattr(managed, "_with_session", listing)
-    result = await tool.discover_managed_tools(" CALENDAR ")
-    assert result["success"] is True
-    assert result["tools"] == [{"name": "gcal_list", "description": "List calendar events"}]
-    assert result["total_available_tools"] == 2
-    assert result["missing"] == [{"slug": "linear", "display_name": "Linear", "kind": "oauth"}]
-    assert "private-consent" not in str(result)
-    assert "private-auth" not in str(result)
-    assert "alice-langsmith-token" not in str(result)
-    assert len((await tool.discover_managed_tools())["tools"]) == 2
-
-
-async def test_langsmith_outage_drops_only_the_gateway(monkeypatch):
-    from openswe.dashboard.langsmith_oauth import LangSmithOAuthError
-    from openswe.mcp import MCPConnection
-
-    async def unavailable(login):
-        raise LangSmithOAuthError(503, "LangSmith OAuth token refresh failed: network error")
-
-    monkeypatch.setattr(managed, "langsmith_access_token", unavailable)
-
-    async def discover(record, namespace):
-        return [Tool(name="search", input_schema={"type": "object"})]
-
-    monkeypatch.setattr(runtime, "_discover_tools", discover)
-    workspace_record = MCPConnection(
-        name="linear",
-        url="https://linear.example/mcp",
-        allowed_tools=["search"],
-        revision="r",
-        updated_at="2026-10-06T00:00:00Z",
-    )
-
-    async def list_workspace():
-        return [workspace_record]
-
-    async def get_workspace(name):
-        return workspace_record if name == "linear" else None
-
-    workspace = runtime.MCPSource(
-        ("workspace_mcps",), list_workspace, get_workspace, scope="workspace"
-    )
-    tools = await runtime.load_mcp_tools(workspace, managed.managed_mcp_source("alice", GATEWAY_ID))
-    assert [tool.metadata["mcp_tool_name"] for tool in tools] == ["search"]
+    servers = AsyncMock()
+    monkeypatch.setattr(managed.PersonalTools, "kit_servers", servers)
+    result = await tool.discover_managed_tools("linear")
+    assert result["success"] is False
+    servers.assert_not_awaited()
 
 
 @pytest.fixture
@@ -513,31 +987,76 @@ async def card_store(monkeypatch, registry_db) -> None:
     )
 
 
-async def test_card_resumes_once_its_own_services_are_connected(monkeypatch, card_store):
+async def test_admins_read_the_bot_kit_as_themselves_and_its_state_as_the_bot(lmt):
+    """LMT lets only a user read a kit, so the admin's LangSmith sign-in reads it; each
+    server's state is the bot's own listing, which needs no LangSmith grant from the admin."""
+    lmt.servers["bot"] = [
+        server("incident", "incident-io-bot", connected=True, kind="secret"),
+        server("brains", "LangChain-Brains", connected=False, kind="secret"),
+        # Not in the bot kit.
+        server("other", "Other", connected=True),
+    ]
+    lmt.bot_kit_links = [
+        {"server_id": "incident", "tool_name": "incident_list"},
+        {"server_id": "brains", "tool_name": "propose"},
+    ]
+
+    view = await routes.api_bot_managed_tools({"sub": "alice"})
+    assert view.langsmith_connected is True
+    assert [(server.name, server.connected) for server in view.servers] == [
+        ("incident-io-bot", True),
+        ("LangChain-Brains", False),
+    ]
+    [kit_headers] = lmt.kit_headers
+    assert kit_headers["Authorization"] == "Bearer alice-langsmith-token"
+    assert "X-LangSmith-Profile" not in kit_headers
+    assert lmt.listed_as == ["bot"]
+
+    # A bot key that may only invoke the kit falls back to listing as the admin, naming
+    # the bot's profile.
+    lmt.bot_listing_status = 403
+    lmt.listed_as.clear()
+    fallback = await routes.api_bot_managed_tools({"sub": "alice"})
+    assert [server.name for server in fallback.servers] == ["incident-io-bot", "LangChain-Brains"]
+    assert lmt.listed_as == ["bot", f"alice as {PROFILE_ID}"]
+
+    # A revoked bot key stays an error rather than showing the profile's stored
+    # credentials as if the bot could use them.
+    lmt.bot_listing_status = 401
+    lmt.listed_as.clear()
+    with pytest.raises(HTTPException) as revoked:
+        await routes.api_bot_managed_tools({"sub": "alice"})
+    assert revoked.value.status_code == 502
+    assert lmt.listed_as == ["bot"]
+
+    # An admin who has not signed in with LangSmith is asked to, not shown an error.
+    signed_out = await routes.api_bot_managed_tools({"sub": "bob"})
+    assert (signed_out.configured, signed_out.langsmith_connected) == (True, False)
+
+
+async def test_the_bot_kit_view_is_off_without_a_bot_profile(monkeypatch):
+    monkeypatch.delenv("LMT_BOT_PROFILE_ID")
+    assert (await routes.api_bot_managed_tools({"sub": "alice"})).configured is False
+
+
+@pytest.mark.parametrize("slack_fails", [False, True])
+async def test_card_resumes_once_its_own_services_are_connected(
+    monkeypatch, lmt, card_store, slack_fails
+):
     card = cards.ConnectCard(
         thread_id="t",
         card_id="call-1",
         login="alice",
-        gateway=GATEWAY_ID,
-        services=["linear", "pylon"],
+        services=[NOTION_ID, "exa"],
+        slack_channel_id="D123",
+        slack_message_ts="123.456",
+        slack_footer="<https://example.com/agents/t|Open in Robin> · $0.02",
     )
-    monkeypatch.setattr(cards, "consent_outcome", AsyncMock(return_value="completed"))
-    # Re-listing is best effort; a gateway refusing it must not keep the thread waiting.
-    refresh = AsyncMock(side_effect=ValueError("MCP tool discovery failed (HTTP 428)"))
-    monkeypatch.setattr(cards, "refresh_tools", refresh)
-    unconnected = {"notion", "linear", "pylon"}
-
-    async def status(login, gateway):
-        return managed.GatewayStatus(
-            gateway=managed.Gateway(id=GATEWAY_ID, name="Eng", tool_count=3),
-            ready=not unconnected,
-            missing=[
-                managed.MissingCredential(slug=slug, display_name=slug, kind="oauth")
-                for slug in sorted(unconnected)
-            ],
-        )
-
-    monkeypatch.setattr(cards, "gateway_status", status)
+    await card.save()
+    monkeypatch.setattr(
+        managed.PersonalTools, "consent_status", AsyncMock(return_value="completed")
+    )
+    monkeypatch.setattr(managed.PersonalTools, "refresh", AsyncMock())
     claims: set[str] = set()
 
     async def claim(scope, key, *, ttl):
@@ -549,39 +1068,171 @@ async def test_card_resumes_once_its_own_services_are_connected(monkeypatch, car
     monkeypatch.setattr(cards, "claim", claim)
     dispatch = AsyncMock()
     monkeypatch.setattr(cards, "dispatch_agent_run", dispatch)
+    update = AsyncMock(side_effect=RuntimeError("Slack unavailable") if slack_fails else None)
+    monkeypatch.setattr(cards, "update_slack_message", update)
+    alice = lmt.servers["alice"]
 
-    unconnected.discard("linear")
-    await card._resume_after("linear-auth")
+    def waiting(auth_id):
+        until = datetime.now(UTC) + timedelta(minutes=5)
+        return cards.ConsentWait(
+            login="alice", auth_id=auth_id, until=until, thread_id="t", card_id="call-1"
+        )
+
+    alice[1] = server(NOTION_ID, "Notion", connected=True)
+    await waiting("notion-auth").poll()
     dispatch.assert_not_awaited()
-    # Notion was not on this card, so it does not hold the thread back.
-    unconnected.discard("pylon")
-    await asyncio.gather(card._resume_after("pylon-auth"), card._resume_after("pylon-again"))
+    update.assert_awaited_once()
+    assert update.await_args.args[:2] == ("D123", "123.456")
+    blocks = update.await_args.kwargs["blocks"]
+    assert blocks[0]["text"]["text"] == "Connected: Notion"
+    assert [element["text"]["text"] for element in blocks[-2]["elements"]] == ["Set up Exa"]
+    assert blocks[-1] == {
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": card.slack_footer}],
+    }
+    assert card.slack_footer in update.await_args.args[2]
+    alice[2] = server("exa", "Exa", connected=True, kind="secret")
+    await asyncio.gather(waiting("exa-auth").poll(), waiting("exa-again").poll())
     assert dispatch.await_count == 1
-    refresh.assert_awaited_with("alice", GATEWAY_ID)
+    blocks = update.await_args.kwargs["blocks"]
+    assert blocks[:-1] == [
+        {"type": "section", "text": {"type": "mrkdwn", "text": "Connected: Notion, Exa"}}
+    ]
+    assert blocks[-1]["elements"][0]["text"] == card.slack_footer
     configurable = dispatch.await_args.args[2]
     assert configurable["github_login"] == "alice"
-    assert configurable["workspace"] == "eng"
-    assert dispatch.await_args.kwargs["multitask_strategy"] == "enqueue"
+    assert "workspace" not in configurable
+    assert "Notion, Exa" in dispatch.await_args.args[1]
+
+
+async def test_a_card_resumes_only_once_the_kit_is_listed_again(monkeypatch, lmt, card_store):
+    """The resumed run must see the service just connected, so a failed re-list after
+    consent is retried through the queue; past the wait's deadline the thread resumes."""
+    await cards.ConnectCard(
+        thread_id="t", card_id="call-1", login="alice", services=[LINEAR_ID]
+    ).save()
+    status = AsyncMock(return_value="completed")
+    monkeypatch.setattr(managed.PersonalTools, "consent_status", status)
+    refresh = AsyncMock(side_effect=[ValueError("listing failed"), None])
+    monkeypatch.setattr(managed.PersonalTools, "refresh", refresh)
+    monkeypatch.setattr(cards, "claim", AsyncMock(return_value=True))
+    dispatch = AsyncMock()
+    monkeypatch.setattr(cards, "dispatch_agent_run", dispatch)
+    scheduled = AsyncMock()
+    monkeypatch.setattr(cards.queue, "schedule", scheduled)
+
+    def waiting(until):
+        return cards.ConsentWait(
+            login="alice", auth_id="a", until=until, thread_id="t", card_id="call-1"
+        )
+
+    await waiting(datetime.now(UTC) + timedelta(minutes=5)).poll()
+    dispatch.assert_not_awaited()
+    retry = cards.ConsentWait.model_validate(scheduled.await_args.args[1])
+    await retry.poll()
+    # The consent already completed, so the retry only lists the kit again.
+    status.assert_awaited_once()
+    dispatch.assert_awaited_once()
+
+    refresh.side_effect = ValueError("listing failed")
+    scheduled.reset_mock()
+    await waiting(datetime.now(UTC) - timedelta(seconds=1)).poll()
+    scheduled.assert_not_awaited()
+    assert dispatch.await_count == 2
+
+
+async def test_removed_service_does_not_block_the_connected_cards_resume(monkeypatch, lmt):
+    card = cards.ConnectCard(
+        thread_id="t", card_id="removed", login="alice", services=[LINEAR_ID, "removed"]
+    )
+    resume = AsyncMock()
+    monkeypatch.setattr(cards, "claim", AsyncMock(return_value=True))
+    monkeypatch.setattr(cards.ConnectCard, "_resume", resume)
+    await card.resume_if_ready()
+    resume.assert_awaited_once_with(["Linear"])
 
 
 async def test_only_the_card_owner_can_mint_its_consent_links(monkeypatch, card_store):
     await cards.ConnectCard(
-        thread_id="t", card_id="call-1", login="alice", gateway=GATEWAY_ID
+        thread_id="t", card_id="call-1", login="alice", services=[NOTION_ID]
     ).save()
     link = managed.ConsentLink(url="https://linear.app/oauth/authorize?x=1", auth_id="a1")
-    monkeypatch.setattr(cards, "connect_link", AsyncMock(return_value=link))
-    monkeypatch.setattr(cards, "consent_outcome", AsyncMock(return_value="expired"))
+    connect = AsyncMock(return_value=link)
+    monkeypatch.setattr(managed.PersonalTools, "connect_link", connect)
+    waits = AsyncMock()
+    monkeypatch.setattr(cards.queue, "schedule", waits)
 
     with pytest.raises(HTTPException) as denied:
         await routes.connect_managed_tool_from_card(
-            GATEWAY_ID, "linear", "t", "call-1", session={"sub": "bob"}
+            NOTION_ID, "t", "call-1", session={"sub": "bob"}
         )
     assert denied.value.status_code == 404
+    with pytest.raises(HTTPException) as other:
+        await routes.connect_managed_tool_from_card(
+            LINEAR_ID, "t", "call-1", session={"sub": "alice"}
+        )
+    assert other.value.status_code == 400
     redirect = await routes.connect_managed_tool_from_card(
-        GATEWAY_ID, "linear", "t", "call-1", session={"sub": "Alice"}
+        NOTION_ID, "t", "call-1", session={"sub": "Alice"}
     )
     assert redirect.headers["location"] == link.url
-    cards.connect_link.assert_awaited_once_with("alice", GATEWAY_ID, "linear")
+    connect.assert_awaited_once_with(NOTION_ID)
+    # Settings links the same route with no card, connecting outside any thread.
+    connect.reset_mock()
+    outside = await routes.connect_managed_tool_from_card(NOTION_ID, session={"sub": "alice"})
+    assert outside.headers["location"] == link.url
+    connect.assert_awaited_once_with(NOTION_ID)
+    # The job queue waits on the link, so a restarted backend still resumes the thread.
+    queued = waits.await_args_list[0].args
+    assert queued[0] == cards.CONSENT_JOB
+    assert (queued[1]["auth_id"], queued[1]["card_id"]) == ("a1", "call-1")
+
+
+async def test_a_proposed_server_is_registered_only_when_its_cards_owner_confirms(
+    monkeypatch, lmt, card_store
+):
+    """The agent only proposes a server; what is registered is the stored proposal, once,
+    for the person the card was offered to."""
+    monkeypatch.setattr(managed.ManagedTools, "refresh", AsyncMock())
+    resume = AsyncMock()
+    monkeypatch.setattr(cards.ConnectCard, "_resume", resume)
+    queued = AsyncMock()
+    monkeypatch.setattr(cards.queue, "schedule", queued)
+    proposed = managed.NewServer(name="Docs", url="https://docs.example.com/mcp", kind="none")
+    await cards.ConnectCard(
+        thread_id="t", card_id="call-9", login="alice", proposed=proposed
+    ).save()
+
+    with pytest.raises(HTTPException) as denied:
+        await routes.api_add_proposed_managed_server("t", "call-9", session={"sub": "bob"})
+    assert denied.value.status_code == 404
+    assert lmt.registered == []
+
+    unconfirmed = await routes.api_get_proposed_managed_server(
+        "t", "call-9", session={"sub": "alice"}
+    )
+    assert unconfirmed is None
+    added = await routes.api_add_proposed_managed_server("t", "call-9", session={"sub": "alice"})
+    again = await routes.api_add_proposed_managed_server("t", "call-9", session={"sub": "alice"})
+    assert again.id == added.id
+    # The card names the server it added, so a reload shows it even beside a same-named one.
+    lmt.servers["alice"].append(server("older", "Docs", connected=True) | {"scope": "personal"})
+    shown = await routes.api_get_proposed_managed_server("t", "call-9", session={"sub": "alice"})
+    assert shown is not None and shown.id == added.id
+    [registered] = lmt.registered
+    assert (registered["upstream_url"], registered["scope"]) == (proposed.url, "personal")
+    # A public server needs no sign-in, so the queue continues the thread, retrying a run
+    # that cannot start yet.
+    [(kind, payload)] = [call.args for call in queued.await_args_list]
+    assert kind == cards.RESUME_JOB
+    # The job names the owner by users.id, which a GitHub login rename can't break.
+    assert "login" not in payload and payload["user_id"]
+    resume.side_effect = [RuntimeError("runtime busy"), None]
+    job = SimpleNamespace(id="j1", payload=payload)
+    with pytest.raises(RuntimeError):
+        await cards.ConnectCard.resume_job(job)
+    await cards.ConnectCard.resume_job(job)
+    assert resume.await_args_list[-1].args == (["Docs"],)
 
 
 async def test_slack_card_links_to_open_swe_not_the_consent_link(monkeypatch, card_store):
@@ -594,56 +1245,68 @@ async def test_slack_card_links_to_open_swe_not_the_consent_link(monkeypatch, ca
         lambda: {"configurable": {"source": "slack", "thread_id": "t", "github_login": "alice"}},
     )
     monkeypatch.setattr(tool, "private_credential_login", AsyncMock(return_value="alice"))
-    monkeypatch.setattr(tool, "instance_gateway", AsyncMock(return_value=GATEWAY_ID))
-    missing = [
-        managed.MissingCredential(slug="mt-1", display_name="Linear", kind="oauth"),
-        managed.MissingCredential(slug="mt-2", display_name="Notion", kind="oauth"),
-    ]
-    monkeypatch.setattr(
-        tool,
-        "gateway_status",
-        AsyncMock(
-            return_value=managed.GatewayStatus(
-                gateway=managed.Gateway(id=GATEWAY_ID, name="Eng", tool_count=3),
-                ready=False,
-                missing=missing,
-            )
-        ),
+    post = AsyncMock(
+        return_value={
+            "success": True,
+            "channel_id": "D123",
+            "message_ts": "123.456",
+            "footer": "Open in Robin · $0.02",
+        }
     )
-    post = AsyncMock(return_value={"success": True})
     monkeypatch.setattr(tool, "send_slack_reply", post)
 
-    result = await tool.connect_managed_tools(["linear"], {"reply_surface": "slack"}, "call-1")
+    result = await tool.connect_managed_tools(["notion"], {"reply_surface": "slack"}, "call-1")
 
     assert result["status"] == "connection_required"
-    assert isinstance(offered := result["missing"], list)
-    assert [item["display_name"] for item in offered] == ["Linear"]
+    assert isinstance(missing := result["missing"], list)
+    assert [item["name"] for item in missing] == ["Notion"]
     [button] = post.await_args.kwargs["blocks"][1]["elements"]
     parsed = urlparse(button["url"])
     assert (parsed.netloc, parsed.path) == (
         "api.example",
-        f"/dashboard/api/my-managed-tools/{GATEWAY_ID}/connect/mt-1",
+        f"/dashboard/api/my-managed-tools/connect/{NOTION_ID}",
     )
     assert parse_qs(parsed.query) == {"thread_id": ["t"], "card": ["call-1"]}
-    assert (await cards.ConnectCard.load("t", "call-1", "alice", GATEWAY_ID)).services == ["mt-1"]
+    saved = await cards.ConnectCard.load("t", "call-1", "alice")
+    assert saved.services == [NOTION_ID]
+    assert (saved.slack_channel_id, saved.slack_message_ts) == ("D123", "123.456")
+    assert saved.slack_footer == "Open in Robin · $0.02"
     assert result["continues_automatically"] is True
 
     # The Slack call ends the turn, so "already connected" must still reach the person.
-    tool.gateway_status.return_value = tool.gateway_status.return_value.model_copy(
-        update={"ready": True, "missing": []}
-    )
     post.reset_mock()
-    assert (await tool.connect_managed_tools(None, {"reply_surface": "slack"}, "call-2"))[
+    assert (await tool.connect_managed_tools(["linear"], {"reply_surface": "slack"}, "call-2"))[
         "status"
-    ] == "connected"
+    ] == "nothing_to_connect"
     assert post.await_args.args[1] == "final"
 
 
-async def test_consent_wait_never_busy_polls(monkeypatch):
-    statuses = iter(["pending", "pending", "completed", "pending", "weird"])
-    pauses: list[float] = []
+async def test_a_consent_wait_follows_its_owner_through_a_github_rename(monkeypatch, card_store):
+    """The queued job names the person, not their GitHub login, so a rename while the
+    consent link is open still polls and resumes as them."""
+    scheduled = AsyncMock()
+    monkeypatch.setattr(cards.queue, "schedule", scheduled)
+    await cards.ConsentWait.start("alice", "a1", LINEAR_ID)
+    payload = scheduled.await_args.args[1]
+    await User.sign_in("github", "1", login="alice-renamed")
+    polled_as: list[str] = []
+
+    async def consent_status(self, auth_id):
+        polled_as.append(self.login)
+        return "expired"
+
+    monkeypatch.setattr(managed.PersonalTools, "consent_status", consent_status)
+    await cards.ConsentWait.model_validate(payload).poll()
+    assert polled_as == ["alice-renamed"]
+
+
+async def test_a_pending_consent_polls_again_through_the_queue_until_it_expires(monkeypatch):
+    """Each job long polls once; a pending link queues the next poll, never sooner than
+    the floor, and the wait ends once the link has expired or LangSmith answers."""
+    statuses = iter(["pending", "pending", "completed", "weird"])
 
     def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["wait_seconds"] == "25"
         return httpx.Response(200, json={"status": next(statuses)})
 
     monkeypatch.setattr(
@@ -651,83 +1314,17 @@ async def test_consent_wait_never_busy_polls(monkeypatch):
         "mcp_http_client",
         lambda url, timeout: httpx.AsyncClient(transport=httpx.MockTransport(handle)),
     )
+    monkeypatch.setattr(managed.PersonalTools, "refresh", AsyncMock())
+    scheduled = AsyncMock()
+    monkeypatch.setattr(cards.queue, "schedule", scheduled)
 
-    async def pause(seconds):
-        pauses.append(seconds)
-
-    monkeypatch.setattr(managed.asyncio, "sleep", pause)
-    assert await managed.consent_outcome("alice", "auth-1") == "completed"
-    assert pauses == [1, 1]
+    now = datetime.now(UTC)
+    await cards.ConsentWait(login="alice", auth_id="a", until=now + timedelta(minutes=5)).poll()
+    assert scheduled.await_args.kwargs["due_at"] >= now + timedelta(seconds=1)
+    scheduled.reset_mock()
+    await cards.ConsentWait(login="alice", auth_id="a", until=now - timedelta(seconds=1)).poll()
+    scheduled.assert_not_awaited()
+    await cards.ConsentWait(login="alice", auth_id="a", until=now + timedelta(minutes=5)).poll()
+    scheduled.assert_not_awaited()
     with pytest.raises(managed.ManagedToolsError):
-        await managed.consent_outcome("alice", "auth-2")
-
-
-@pytest.mark.parametrize(
-    ("tenant", "status", "expected"),
-    [
-        ("", 404, "inaccessible in the current LangSmith workspace"),
-        ("pinned", 404, "The tool kit no longer exists"),
-        ("", 403, "LangSmith refused access to this tool kit"),
-        ("", 503, "Managed tools failed (HTTP 503); retry later"),
-    ],
-)
-def test_kit_access_failure_guidance(monkeypatch, tenant, status, expected):
-    monkeypatch.setenv("LMT_TENANT_ID", tenant)
-    error = managed._failure(httpx.Response(status))
-    assert isinstance(error, managed.ManagedToolsError)
-    assert expected in str(error)
-    if status == 404 and not tenant:
-        assert "possible cause" in str(error)
-        assert "Sign in" in str(error)
-        assert "administrator" in str(error)
-        assert "LMT_TENANT_ID" in str(error)
-
-
-@pytest.mark.parametrize("status", [-32601, 404, 503])
-async def test_managed_discovery_backoff_isolated_and_reported(monkeypatch, status):
-    import httpx2
-    from mcp.shared.exceptions import MCPError
-
-    attempts: list[tuple[str, ...]] = []
-    failing = True
-
-    async def discover(record, namespace):
-        attempts.append(namespace)
-        if failing:
-            if status < 0:
-                error = MCPError(status, "secret-token")
-            else:
-                error = httpx2.HTTPStatusError(
-                    "secret-token",
-                    request=httpx2.Request("GET", "https://example.com/secret-token"),
-                    response=httpx2.Response(status),
-                )
-            raise ExceptionGroup("secret-token", [error])
-        return [Tool(name="search", input_schema={"type": "object"})]
-
-    monkeypatch.setattr(runtime, "_discover_tools", discover)
-    private_thread(monkeypatch, "alice")
-    source = managed.managed_mcp_source("alice", GATEWAY_ID)
-    first = await runtime.load_mcp_tools(source)
-    assert first == []
-    assert first.failures
-    reason = first.failures[0]
-    assert first.catalog_note.count(reason) == 1
-    assert "secret-token" not in first.catalog_note
-    assert "workspace mismatch" not in first.catalog_note
-    await runtime.load_mcp_tools(source)
-    with pytest.raises(ValueError):
-        await managed.refresh_tools("alice", GATEWAY_ID)
-    assert len(attempts) == (1 if status != 503 else 3)
-
-    failing = False
-    record = (await source.list_connections())[0]
-    assert await runtime.discover_tools(record, ("managed_tools", "bob", GATEWAY_ID))
-    assert await runtime.discover_tools(record, ("managed_tools", "alice", "other-gateway"))
-
-    if status != 503:
-        now = runtime.time()
-        monkeypatch.setattr(runtime, "time", lambda: now + 61)
-    recovered = await runtime.load_mcp_tools(source)
-    assert [tool.metadata["mcp_tool_name"] for tool in recovered] == ["search"]
-    assert recovered.catalog_note == ""
+        await managed.PersonalTools("alice").consent_status("b")

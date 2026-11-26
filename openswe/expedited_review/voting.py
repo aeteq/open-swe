@@ -57,7 +57,6 @@ async def handle_vote(
     if approval.state != "open":
         return Outcome("This expedited review is no longer accepting votes.")
     if decision == "ready":
-        # The author's own token decides; a fork's author has no write access upstream.
         author = linked_participant(user)
         if isinstance(author, Outcome):
             return author
@@ -102,6 +101,7 @@ async def handle_vote(
             approvers=", ".join(f"@{login}" for login in current.approvers),
         ),
         title=f"Merge {current.pull_request.repo}#{current.pull_request.number}",
+        origin="slack",
     ):
         woken = "Robin could not be woken to merge it; tag it in the thread to try again."
         return Outcome(f"{problem} {woken}" if problem else woken)
@@ -147,11 +147,24 @@ async def _mark_ready(approval: HumanReviewRequest, *, voter: Participant) -> Ou
         return Outcome("This pull request is already ready for review.", dm_card_success=True)
     pr = approval.pull_request
     try:
-        async with GitHubClient.as_user(voter.github_login) as github:
-            await act_on_pull_request(
-                github.repo(pr.owner, pr.repo).pull_request(pr.number),
-                MarkReadyAction(action="mark-ready"),
+        needs_undraft = True
+        try:
+            async with GitHubClient.as_app(pr.owner, pr.repo) as github:
+                pull = await github.repo(pr.owner, pr.repo).pull_request(pr.number).pull()
+        except GitHubAppUnavailable:
+            logger.warning(
+                "App readiness check unavailable; using the author's token", exc_info=True
             )
+        else:
+            if pull.get("state") != "open":
+                return Outcome("This pull request is not open for review.")
+            needs_undraft = pull.get("draft") is not False
+        if needs_undraft:
+            async with GitHubClient.as_user(voter.github_login) as github:
+                await act_on_pull_request(
+                    github.repo(pr.owner, pr.repo).pull_request(pr.number),
+                    MarkReadyAction(action="mark-ready"),
+                )
     except GitHubSignInRequired:
         return Outcome(
             f"Robin has no GitHub token for @{voter.github_login}, so it cannot mark the "
@@ -159,16 +172,12 @@ async def _mark_ready(approval: HumanReviewRequest, *, voter: Participant) -> Ou
         )
     except HTTPException as exc:
         return Outcome(f"GitHub did not mark the pull request ready: {exc.detail}")
-    async with HumanReviewRequest.locked(approval.id) as (_, row):
-        if row is None or row.state != "open":
-            return Outcome("This expedited review closed before it was marked ready.")
-        row.awaiting_ready = False
-    marked = "Marked ready for review. Someone else can approve it now."
-    current = await HumanReviewRequest.get(approval.id)
-    if current is None:
-        return Outcome(marked, dm_card_success=True)
-    await ReviewCard(current).refresh()
-    return Outcome(marked, dm_card_success=True)
+    if not await ReviewCard(approval).mark_ready():
+        return Outcome("This expedited review closed before it was marked ready.")
+    return Outcome(
+        "Confirmed the Slack review request. Someone else can approve it once posted.",
+        dm_card_success=True,
+    )
 
 
 async def request_broadcast(approval: HumanReviewRequest) -> Outcome:
@@ -259,6 +268,15 @@ async def process_vote(
         try:
             outcome = await apply(approval)
             completed = True
+            await approval.log_event(
+                "expedited.click",
+                action=decision,
+                slack_user_id=slack_user_id,
+                slack_channel_id=channel_id,
+                slack_thread_ts=thread_ts,
+                target_channel=target_channel,
+                outcome=outcome.message,
+            )
             return outcome
         finally:
             if message_ts and message_blocks:
@@ -276,11 +294,7 @@ async def process_vote(
                     ):
                         await update(message_blocks)
                     elif current is not None and not completed:
-                        await ReviewCard(current).refresh(
-                            outcome=current.detail or current.state
-                            if current.state != "open"
-                            else None,
-                        )
+                        await ReviewCard(current).refresh()
                 except Exception:
                     logger.warning("Could not restore expedited review click", exc_info=True)
 

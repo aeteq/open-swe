@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import os
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
@@ -16,10 +17,14 @@ import httpx2
 import pytest
 from fastapi import HTTPException
 from langgraph_sdk.errors import NotFoundError
+from pydantic import JsonValue, TypeAdapter
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from openswe.dashboard import langsmith_api_keys
 from openswe.dashboard.github_link import GitHubLink
 from openswe.dashboard.langsmith_login import LangSmithLogin
 from openswe.dashboard.principal import DashboardPrincipal
+from openswe.github.changed_files import CHANGED_FILES
 from openswe.sandboxes.state import SANDBOX_BACKENDS, SANDBOX_CONNECTIONS
 from openswe.slack.allowed_bots import AllowedSlackBot
 from openswe.threads import access, diffs, handlers, index, listing, proxy, runs, summary
@@ -79,11 +84,17 @@ class ThreadStoreOverClient(ThreadStore):
             return None
         if raw is None:
             return None
+        return self.indexed(thread_id, raw)
+
+    @staticmethod
+    def indexed(thread_id: str, raw: Mapping[str, object]) -> IndexedThread:
+        """A fake client's thread as the index keeps it."""
         now = datetime.now(UTC)
+        metadata = raw.get("metadata")
         return IndexedThread(
             thread_id=thread_id,
             runtime="mda",
-            metadata=raw.get("metadata") or {},
+            metadata=dict(metadata) if isinstance(metadata, Mapping) else {},
             status=index.as_status(raw.get("status")) or "idle",
             created_at=now,
             updated_at=now,
@@ -94,16 +105,33 @@ class ThreadStoreOverClient(ThreadStore):
         await proxy.langgraph_client().threads.update(thread_id=thread_id, metadata=dict(metadata))
         return None
 
-    async def state(self, thread_id: str) -> dict[str, Any] | None:
+    async def state(
+        self, thread_id: str, *, select: list[str] | None = None
+    ) -> dict[str, Any] | None:
         return await proxy.langgraph_client().threads.get_state(thread_id)
 
+    async def state_of(
+        self,
+        thread: IndexedThread,
+        *,
+        select: list[str] | None = None,
+        timings: dict[str, float] | None = None,
+    ) -> dict[str, JsonValue]:
+        state = await proxy.langgraph_client().threads.get_state(thread.thread_id)
+        return TypeAdapter(dict[str, JsonValue]).validate_python(dict(state))
+
     async def command(
-        self, thread_id: str, body: bytes, *, user_id: str | None = None
+        self,
+        thread_id: str,
+        body: bytes,
+        *,
+        user_id: str | None = None,
+        trace_headers: Mapping[str, str] | None = None,
     ) -> CommandReply:
         response = await proxy.langgraph_client().http.client.post(
             f"/threads/{thread_id}/commands",
             content=body,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **(trace_headers or {})},
         )
         return CommandReply(
             response.status_code, response.content, response.headers.get("content-type")
@@ -130,16 +158,20 @@ class LangSmithUsers:
         self.people[user.id] = user
         return user
 
-    async def get(self, user_id: UUID) -> User | None:
-        return self.people.get(user_id) or await self.original_get(user_id)
+    async def get(self, user_id: UUID, *, session: AsyncSession | None = None) -> User | None:
+        return self.people.get(user_id) or await self.original_get(user_id, session=session)
 
-    async def for_session(self, user_id: UUID | None, login: str) -> User | None:
+    async def for_session(
+        self, user_id: UUID | None, login: str, *, session: AsyncSession | None = None
+    ) -> User | None:
         if user_id is not None and user_id in self.people:
             return self.people[user_id]
         user = next((user for user in self.people.values() if user.github_login == login), None)
-        return user or await self.original_for_session(user_id, login)
+        return user or await self.original_for_session(user_id, login, session=session)
 
-    async def for_login(self, provider: Provider, login: str) -> User | None:
+    async def for_login(
+        self, provider: Provider, login: str, *, session: AsyncSession | None = None
+    ) -> User | None:
         user = next(
             (
                 user
@@ -150,9 +182,11 @@ class LangSmithUsers:
             ),
             None,
         )
-        return user or await self.original_for_login(provider, login)
+        return user or await self.original_for_login(provider, login, session=session)
 
-    async def for_identity(self, provider: Provider, external_id: str) -> User | None:
+    async def for_identity(
+        self, provider: Provider, external_id: str, *, session: AsyncSession | None = None
+    ) -> User | None:
         user = next(
             (
                 user
@@ -164,9 +198,25 @@ class LangSmithUsers:
             ),
             None,
         )
-        return user or await self.original_for_identity(provider, external_id)
+        return user or await self.original_for_identity(provider, external_id, session=session)
 
-    async def authorize_session(self, principal: DashboardPrincipal) -> str:
+    @asynccontextmanager
+    async def authorized_person(
+        self, principal: DashboardPrincipal
+    ) -> AsyncIterator[tuple[AsyncSession, User]]:
+        from openswe.database import postgres
+
+        user = await principal.user()
+        if user is None:
+            raise HTTPException(401, "Sign in with LangSmith to use Robin")
+        await LangSmithLogin().authorize_user(user)
+        scope = postgres.session() if os.environ.get("POSTGRES_URI") else AsyncSession()
+        async with scope as session:
+            yield session, user
+
+    async def authorize_session(
+        self, principal: DashboardPrincipal, *, user: User | None = None
+    ) -> str:
         user = self.people.get(principal.user_id) if principal.user_id else None
         if (
             user is None
@@ -190,6 +240,7 @@ def langsmith_users(monkeypatch: pytest.MonkeyPatch) -> LangSmithUsers:
     monkeypatch.setattr(User, "for_login", users.for_login)
     monkeypatch.setattr(User, "for_identity", users.for_identity)
     monkeypatch.setattr(LangSmithLogin, "authorize_session", users.authorize_session)
+    monkeypatch.setattr(LangSmithLogin, "authorized_person", users.authorized_person)
     return users
 
 
@@ -214,18 +265,29 @@ def user_records(monkeypatch: pytest.MonkeyPatch) -> FakeUserRecords:
     """Route every ``UserRecords`` access to an in-memory table for this test."""
     fake = FakeUserRecords()
 
-    async def get(self: UserRecords, login: str, key: str = "") -> dict[str, Any] | None:
+    async def get(
+        self: UserRecords, login: str, key: str = "", *, session: AsyncSession | None = None
+    ) -> dict[str, Any] | None:
         value = fake.items.get((self.kind, login.strip().lower(), key))
         return None if value is None else dict(value)
 
-    async def for_keys(self: UserRecords, login: str, keys: list[str]) -> dict[str, JsonObject]:
+    async def for_keys(
+        self: UserRecords, login: str, keys: list[str], *, session: AsyncSession | None = None
+    ) -> dict[str, JsonObject]:
         return {
             key: dict(value)
             for (kind, person, key), value in fake.items.items()
             if kind == self.kind and person == login.strip().lower() and key in keys
         }
 
-    async def put(self: UserRecords, login: str, value: dict[str, Any], key: str = "") -> None:
+    async def put(
+        self: UserRecords,
+        login: str,
+        value: dict[str, Any],
+        key: str = "",
+        *,
+        session: AsyncSession | None = None,
+    ) -> None:
         fake.seed(self.kind, login, value, key)
 
     async def pop(self: UserRecords, login: str, key: str = "") -> dict[str, Any] | None:
@@ -255,19 +317,19 @@ def serve_threads_from(monkeypatch: pytest.MonkeyPatch, get: Any) -> None:
 
     The backend reads a thread's metadata from its index, as its own ``/threads`` routes
     do; a test that fakes a LangGraph client's ``threads.get`` keeps its threads, and its
-    errors, that way.
+    errors, that way, except a ``NotFoundError``: the index answers a missing thread with
+    ``None``.
     """
-    from types import SimpleNamespace  # noqa: PLC0415
-
     from openswe.threads.store import THREADS  # noqa: PLC0415 - imports the app
 
-    async def indexed(thread_id: str) -> SimpleNamespace | None:
-        thread = await get(thread_id)
+    async def indexed(thread_id: str) -> IndexedThread | None:
+        try:
+            thread = await get(thread_id)
+        except NotFoundError:
+            return None
         if not isinstance(thread, dict):
             return None
-        return SimpleNamespace(
-            thread_id=thread_id, runtime="mda", metadata=thread.get("metadata") or {}
-        )
+        return ThreadStoreOverClient.indexed(thread_id, thread)
 
     monkeypatch.setattr(THREADS, "get", indexed)
 
@@ -319,6 +381,20 @@ async def registry_db(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
         pytest.skip(f"{_TEST_POSTGRES_URI_SETTING} is required for PostgreSQL regressions")
     async with isolated_database(uri, monkeypatch):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _execution_defaults(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """DB-less tests use global defaults unless they supply a configuration."""
+    if {"registry_db", "analytics_db", "deployment_db"}.intersection(request.fixturenames):
+        return
+    from openswe.dashboard.execution_defaults import EXECUTION_DEFAULTS, ExecutionDefaults
+    from openswe.execution import SANDBOX_EXECUTION
+    from openswe.execution_images import EXECUTION_IMAGES, ImageState
+
+    monkeypatch.setattr(EXECUTION_DEFAULTS, "load", AsyncMock(return_value=ExecutionDefaults()))
+    monkeypatch.setattr(EXECUTION_IMAGES, "state", AsyncMock(return_value=ImageState()))
+    monkeypatch.setattr(SANDBOX_EXECUTION, "bound", AsyncMock(return_value=None))
 
 
 @pytest.fixture
@@ -441,20 +517,30 @@ async def _close_http_pool() -> AsyncIterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def _reset_ttl_cache() -> Iterator[None]:
-    """Keep the process-global caches from leaking settings and MCP catalogs between tests."""
+def _token_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every deployment has one: it encrypts sign-ins and the cached managed tools listings."""
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+
+@pytest.fixture(autouse=True)
+async def _reset_ttl_cache() -> AsyncIterator[None]:
+    """Keep the process-global caches from leaking settings, MCP catalogs and PR files between tests."""
     from langgraph_api import cache
     from langgraph_api.feature_flags import IS_POSTGRES_OR_GRPC_BACKEND
 
-    def clear() -> None:
+    async def clear() -> None:
         ttl_cache.clear()
+        await CHANGED_FILES.clear()
+        langsmith_api_keys.LANGSMITH_API_KEYS.clear()
         # The postgres edition caches over gRPC and has no in-process store to clear.
         if not IS_POSTGRES_OR_GRPC_BACKEND:
             cache._CACHE.clear()
 
-    clear()
+    await clear()
     yield
-    clear()
+    await clear()
 
 
 @pytest.fixture(autouse=True)
@@ -543,3 +629,11 @@ def memory_event_claims(monkeypatch: pytest.MonkeyPatch) -> MemoryEventClaims:
     monkeypatch.setattr(event_claims, "release", claims.release)
     monkeypatch.setattr(event_claims, "held", claims.is_held)
     return claims
+
+
+@pytest.fixture(autouse=True)
+def _no_dropped_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests see every event; the ones about ``DROPPED_EVENTS`` set it themselves."""
+    from openswe.webhooks import event_log
+
+    monkeypatch.setattr(event_log, "DROPPED_EVENTS", frozenset())

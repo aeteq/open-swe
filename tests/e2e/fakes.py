@@ -29,10 +29,8 @@ from e2e_env import (
 SLACK_MESSAGES: dict[tuple[str, str], list[dict[str, Any]]] = {}
 EPHEMERALS: list[dict[str, Any]] = []
 VIEWS: list[dict[str, Any]] = []
-CODE_CHANNELS: dict[str, dict[str, Any]] = {}
 _slack_seq = [1]
 _slack_epoch = int(time.time())
-_code_channel_seq = [0]
 
 
 def next_slack_ts() -> str:
@@ -131,32 +129,6 @@ def update_slack_message(
                 message["blocks"] = blocks
             return message
     return None
-
-
-def create_code_channel(payload: dict[str, Any]) -> dict[str, Any]:
-    _code_channel_seq[0] += 1
-    channel_id = f"C_CODE_{_code_channel_seq[0]}"
-    channel = {
-        "id": channel_id,
-        "name": str(payload.get("name") or "Robin task"),
-        "session_id": str(payload.get("session_id") or ""),
-        "origin_channel_id": str(payload.get("origin_channel_id") or ""),
-        "origin_message_ts": str(payload.get("origin_message_ts") or ""),
-        "status": "active",
-        "context_bar_items": [],
-        "commands": [],
-        "views": [],
-        "archived": False,
-    }
-    CODE_CHANNELS[channel_id] = channel
-    return channel
-
-
-def update_code_channel(channel_id: str, **values: Any) -> dict[str, Any] | None:
-    channel = CODE_CHANNELS.get(channel_id)
-    if channel is not None:
-        channel.update(values)
-    return channel
 
 
 # --- GitHub ----------------------------------------------------------------
@@ -478,7 +450,7 @@ def create_pull(
         "review_comments": [],
         "standalone_comment_posts": [],
         "issue_comments": [],
-        "review_decision": "REVIEW_REQUIRED",
+        "review_decision": None,
         "requested_reviewers": [],
         "author": author,
         "merge_method": None,
@@ -603,6 +575,39 @@ def check_graphql(check: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def commit_ci_graphql(pull: dict[str, Any]) -> dict[str, Any]:
+    """The pull's head as ``COMMIT_CI_FRAGMENT`` reads it: one check suite per check run."""
+    suites = []
+    for index, check in enumerate(pull["check_runs"], start=1):
+        app = check.get("app") if isinstance(check.get("app"), dict) else {}
+        conclusion = check.get("conclusion")
+        suites.append(
+            {
+                "databaseId": index,
+                "app": {"databaseId": app.get("id"), "slug": app.get("slug")},
+                "workflowRun": None,
+                "checkRuns": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "databaseId": check.get("id", index),
+                            "name": check.get("name", ""),
+                            "status": str(check.get("status", "completed")).upper(),
+                            "conclusion": str(conclusion).upper() if conclusion else None,
+                            "detailsUrl": check.get("details_url"),
+                            "url": check.get("html_url"),
+                        }
+                    ],
+                },
+            }
+        )
+    return {
+        "oid": pull["head_sha"],
+        "status": {"contexts": [status_graphql(status) for status in pull["statuses"]]},
+        "checkSuites": {"pageInfo": {"hasNextPage": False}, "nodes": suites},
+    }
+
+
 def status_graphql(status: dict[str, Any]) -> dict[str, Any]:
     return {
         "__typename": "StatusContext",
@@ -685,7 +690,7 @@ def repo_private() -> bool:
 
 
 # --- LangSmith snapshots ---------------------------------------------------
-# Captures the workspace tools asked for: {"snapshot_id", "name", "sandbox_id"}.
+# Captures the global image lifecycle asked for: {"snapshot_id", "name", "sandbox_id"}.
 # The E2E's sandboxes are stand-ins (sandbox_service.py), so there is no real snapshot service —
 # this store stands in for it and is what the specs assert on.
 SNAPSHOTS: list[dict[str, Any]] = []
@@ -1036,7 +1041,6 @@ def reset() -> None:
     SLACK_MESSAGES.clear()
     EPHEMERALS.clear()
     VIEWS.clear()
-    CODE_CHANNELS.clear()
     PULLS.clear()
     REPO_MERGE_METHODS.clear()
     SNAPSHOTS.clear()

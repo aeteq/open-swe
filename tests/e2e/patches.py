@@ -59,7 +59,7 @@ def apply() -> None:
     # The LLM is the only agent-internal piece we fake, and only by default.
     # Set E2E_REAL_LLM=1 to drive the harness (mock Slack/GitHub, real agent)
     # with a real model — useful for manually exercising plan review etc. The
-    # provider key (e.g. ANTHROPIC_API_KEY) must be in the environment.
+    # LangSmith gateway credential must be in the environment.
     if os.environ.get("E2E_REAL_LLM"):
         logger.warning("E2E_REAL_LLM set — using the real model factory, not the scripted fake")
     else:
@@ -69,10 +69,6 @@ def apply() -> None:
             return FakeScriptedChatModel(script=build_script())
 
         server.make_model = _fake_make_model
-        # The review scout graph binds its own factory by name.
-        from openswe.review_scout import graph as review_scout_graph
-
-        review_scout_graph.__dict__["make_model"] = _fake_make_model
 
     # Callers pass installation ids, repository scopes and permission maps; the
     # fake GitHub does not care, so accept whatever the real signatures take.
@@ -277,6 +273,7 @@ def apply() -> None:
     # Each of these imported GITHUB_API_BASE by name, so the module attribute is
     # the one their calls read.
     pull_request_status.GITHUB_API_BASE = FAKE_GITHUB_API
+    pull_request_status.GITHUB_GRAPHQL = f"{FAKE_GITHUB_API}/graphql"
     pull_request_actions.GITHUB_API_BASE = FAKE_GITHUB_API
     pull_request_context.GITHUB_GRAPHQL = f"{FAKE_GITHUB_API}/graphql"
     pull_request_actions.GITHUB_GRAPHQL = f"{FAKE_GITHUB_API}/graphql"
@@ -295,7 +292,7 @@ def apply() -> None:
     # LangSmith's sandbox service: another external boundary. MDA creates every
     # thread's sandbox (mda_entrypoint.py) and the backend reconnects to it by id, both
     # through the stand-in, which has no proxy to configure. Snapshots are recorded
-    # in the fake store; the workspace tools, store writes, name/tag scheme and
+    # in the fake store; the global image lifecycle, store writes, name/tag scheme and
     # status transitions all still run for real.
     import sandbox_service
 
@@ -304,23 +301,22 @@ def apply() -> None:
 
     langsmith_integration.get_async_sandbox_client = _FakeSandboxClient
     if not sandbox_service.REAL:
-        from openswe.github import proxy as github_proxy
-
         langsmith_integration.create_langsmith_sandbox = _stand_in_sandbox
         langsmith_integration.configure_sandbox_proxy = _configure_no_proxy
-        sandbox_lifecycle.configure_sandbox_proxy = _configure_no_proxy
-        # The token a sandbox's GitHub proxy carries is minted from the App, like the
-        # other App tokens stubbed above; the stand-in has no proxy to carry it.
-        for module in (sandbox_lifecycle, github_proxy):
-            module.__dict__["workspace_token"] = _sandbox_github_access
+        # The config the backend plans for MDA keeps the cloud identity rules read from
+        # the live sandbox, and the same read sets its environment; the stand-in has neither.
+        langsmith_integration.LiveSandboxProxy.live = _no_live_sandbox
+        # The token the proxy callback hands a sandbox's GitHub requests is minted from the
+        # App, like the other App tokens stubbed above; the stand-in never calls back.
+        sandbox_lifecycle.__dict__["sandbox_token"] = _sandbox_github_access
 
     # A refresh boots its own builder to run the scripts in: a stand-in sandbox, of
     # which nothing is reclaimed afterwards; the scripts, the capture and the
     # record all run for real.
-    from openswe.workspaces import refresh as workspace_refresh
+    from openswe.sandboxes.image_build import SnapshotBuild
 
-    workspace_refresh._create_builder_sandbox = _fake_builder_sandbox
-    workspace_refresh._release_builder_sandbox = _release_nothing
+    SnapshotBuild.create_builder_sandbox = staticmethod(_fake_builder_sandbox)
+    SnapshotBuild.release_builder_sandbox = staticmethod(_release_nothing)
 
     # Every MDA run names its thread's browser, so sharing a thread deletes it.
     # No browser exists without LangSmith, so deleting one finds nothing.
@@ -473,6 +469,10 @@ async def _stand_in_sandbox(
 
 async def _configure_no_proxy(*_args: object, **_kwargs: object) -> None:
     return None
+
+
+async def _no_live_sandbox(*_args: object, **_kwargs: object) -> dict[str, object]:
+    return {}
 
 
 async def _sandbox_github_access(*_args: object, **_kwargs: object) -> object:

@@ -1,34 +1,48 @@
 import json
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import UUID, uuid4
 
+import httpx2
 import pytest
 from deepagents.backends.protocol import FileDownloadResponse
 from langchain_core.tools import BaseTool, StructuredTool
 from PIL import Image
-from pydantic import ValidationError
-from runtime_api.catalog import McpServerSpec
-from runtime_api.connections import ConnectionRef
+from pydantic import JsonValue, ValidationError
 
-from openswe import reviewer
+from openswe import event_claims, reviewer
 from openswe.agent_api.reviewer import ReviewerKind
-from openswe.dashboard.workspace_settings import WorkspaceSettings, WorkspaceSettingsUpdate
-from openswe.mcp.models import MCPToolProvenance
+from openswe.dashboard import settings as settings_module
+from openswe.dashboard import settings_cache
+from openswe.dashboard.settings import Settings, SettingsUpdate
+from openswe.github import webhook as github_webhook
+from openswe.github.http import GitHubClient
+from openswe.github.pull_request_status import HeadChecks, PullRequestClient
+from openswe.github.webhook import PreviewReady
+from openswe.jobs import queue as job_queue
+from openswe.jobs.queue import Job
 from openswe.mcp.runtime import MCPTools
 from openswe.plugins.manifest import PluginManifest, ReviewStep
 from openswe.plugins.records import AppVersion, DocumentScope, PluginApps, PluginDocuments
 from openswe.prompts import prompt
+from openswe.review.diff import review_diff_range
 from openswe.review_apps import apps as review_apps_module
 from openswe.review_apps import browser as review_browser_module
+from openswe.review_apps import outcomes as review_outcomes_module
 from openswe.review_apps.apps import ReviewApp, ReviewApps, SandboxFile
 from openswe.review_apps.browser import ReviewBrowser
 from openswe.review_apps.cleanup import ReviewAppData
+from openswe.review_apps.outcomes import ReviewOutcome, ReviewOutcomes
 from openswe.run_config import RunConfig
 from openswe.sandboxes.tool_runtime import ToolSurface
+from openswe.threads import index as thread_index
+from openswe.threads import runtimes as thread_runtimes
+from openswe.threads import succession as thread_succession
 from openswe.tools import review_apps as review_app_tools
 from openswe.users import User
+from openswe.webhooks import common as webhook_common
 from tests.agent.test_agent_assembly_context import _base_config
 from tests.agent.test_agent_assembly_context import saved_thread_scope as saved_thread_scope
 
@@ -100,6 +114,19 @@ def test_a_review_step_writes_only_app_written_collections_and_stays_in_its_bloc
     review = {"instructions": "Capture.", "writes": ["captures"], "browser": True}
     manifest = PluginManifest.model_validate(_manifest(review, {"captures": {"write": "app"}}))
     assert manifest.review is not None and manifest.review.browser
+    for path in (
+        "//evil.test",
+        "/../outside",
+        "/a/./b",
+        "/%2e%2e",
+        "/a\\b",
+        "/{unknown}",
+        "/a?b",
+        "/a#b",
+        "/a\nb",
+    ):
+        with pytest.raises(ValidationError, match="local path"):
+            ReviewStep(instructions="Capture.", path=path)
 
     with pytest.raises(ValidationError, match="app-written"):
         PluginManifest.model_validate(_manifest(review, {}))
@@ -132,6 +159,10 @@ def test_design_qa_declares_a_review_step_the_platform_accepts() -> None:
 
     assert manifest.review is not None
     assert (manifest.review.writes, manifest.review.browser) == (["captures"], True)
+    # Reviews leave Design QA out of pull requests that change no frontend.
+    assert manifest.review.covers(["smith-frontend/src/Settings.tsx", "README.md"])
+    assert not manifest.review.covers(["docs/guide.md", "smith-go/main.go"])
+    assert not manifest.review.covers(["smith-frontend/src/Settings.test.tsx"])
 
 
 def test_a_review_writes_only_under_its_own_pull_request() -> None:
@@ -217,7 +248,7 @@ def test_a_file_webp_would_change_is_kept_as_it_is(content: bytes) -> None:
         (True, True, True, {"pr_number": None}, False),
     ],
 )
-async def test_a_review_of_a_private_repository_works_for_the_apps_its_workspace_added(
+async def test_a_review_of_a_private_repository_works_for_the_apps_the_admin_added(
     monkeypatch: pytest.MonkeyPatch,
     ids: bool,
     private: bool | None,
@@ -227,10 +258,8 @@ async def test_a_review_of_a_private_repository_works_for_the_apps_its_workspace
 ) -> None:
     app, release = uuid4(), uuid4()
     pinned = [{"app": str(app), "release": str(release)}] if ids else []
-    settings = WorkspaceSettings({"review_apps": pinned})
-    monkeypatch.setattr(
-        review_apps_module, "cached_workspace_settings", AsyncMock(return_value=settings)
-    )
+    settings = Settings({"review_apps": pinned})
+    monkeypatch.setattr(review_apps_module, "cached_settings", AsyncMock(return_value=settings))
     stored = None if private is None else Mock(private=private)
     monkeypatch.setattr(review_apps_module.Repository, "get", AsyncMock(return_value=stored))
     review = {"instructions": "Capture.", "writes": ["captures"], "browser": True}
@@ -248,6 +277,42 @@ async def test_a_review_of_a_private_repository_works_for_the_apps_its_workspace
         assert (found.repository, found.number) == ("acme/widgets", 7)
         # The release the admin approved, never whatever the owner released since.
         assert releases.await_args is not None and releases.await_args.args == ({app: release},)
+
+
+@pytest.mark.parametrize(
+    ("files", "works"),
+    [
+        (["web/src/Page.tsx", "docs/guide.md"], True),
+        (["docs/guide.md"], False),
+        # GitHub wouldn't list the files: the app stays out, recorded as a failure to retry.
+        (None, False),
+    ],
+)
+async def test_a_review_leaves_out_an_app_whose_paths_the_pull_request_misses(
+    monkeypatch: pytest.MonkeyPatch, files: list[str] | None, works: bool
+) -> None:
+    app, release = uuid4(), uuid4()
+    settings = Settings({"review_apps": [{"app": str(app), "release": str(release)}]})
+    monkeypatch.setattr(review_apps_module, "cached_settings", AsyncMock(return_value=settings))
+    monkeypatch.setattr(
+        review_apps_module.Repository, "get", AsyncMock(return_value=Mock(private=True))
+    )
+    review = {"instructions": "Capture.", "writes": ["captures"], "paths": ["**/*.tsx"]}
+    manifest = PluginManifest.model_validate(_manifest(review, {"captures": {"write": "app"}}))
+    monkeypatch.setattr(
+        PluginApps,
+        "releases",
+        AsyncMock(return_value=[Mock(app=app, id=release, manifest=manifest)]),
+    )
+    monkeypatch.setattr(ReviewApps, "changed_files", AsyncMock(return_value=files))
+
+    found = await ReviewApps.of(_review())
+    triaged = await ReviewApps.triaged(_review())
+
+    assert (found is not None) is works
+    assert triaged is not None
+    assert [a.id for a in triaged.passed] == ([] if works else [app])
+    assert triaged.files_read is (files is not None)
 
 
 async def test_save_app_document_refuses_other_apps_and_undeclared_collections(
@@ -283,51 +348,40 @@ def _mcp_tool(name: str, server_name: str) -> BaseTool:
 
 def _instance_settings(monkeypatch: pytest.MonkeyPatch, **values: object) -> None:
     """The instance settings the review browser reads, saved as an admin would save them."""
-    record = WorkspaceSettingsUpdate.model_validate(values).model_dump()
+    record = SettingsUpdate.model_validate(values).model_dump()
     monkeypatch.setattr(
         review_browser_module,
         "cached_instance_settings",
-        AsyncMock(return_value=WorkspaceSettings(record)),
+        AsyncMock(return_value=Settings(record)),
     )
 
 
-def _hub() -> McpServerSpec:
-    return McpServerSpec(
-        name="hub",
-        url="https://hub.example.com/mcp",
-        transport="streamable_http",
-        tools={"mint_session": "hub__mint_session", "query": "hub__query"},
-        connection=ConnectionRef(slug="hub", owner="agent"),
-    )
-
-
-async def test_a_review_signs_in_with_the_session_tool_alone(
+async def test_a_review_signs_in_with_the_bot_kits_session_tool_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _instance_settings(monkeypatch, review_browser_session_tool="hub/mint_session")
+    _instance_settings(monkeypatch, review_browser_session_tool="homebase_mint_session")
     loaded = MCPTools(
-        [_mcp_tool("ops__mint_session", "mint_session"), _mcp_tool("ops__query", "query")],
-        runtime_servers=[_hub(), _hub().model_copy(update={"tools": {"query": "x__query"}})],
+        [
+            _mcp_tool("mcp_lmt_homebase_mint_session", "homebase_mint_session"),
+            _mcp_tool("mcp_lmt_homebase_query", "homebase_query"),
+        ]
     )
     load = AsyncMock(return_value=loaded)
     monkeypatch.setattr(review_browser_module, "load_mcp_tools", load)
 
-    tools, servers = await ReviewBrowser.sign_in("design")
+    tools = await ReviewBrowser.sign_in()
 
-    # Only the named connection loads, so another connection's tool of that name never does.
-    assert load.await_args is not None and load.await_args.kwargs == {"connection_name": "hub"}
-    assert [tool.name for tool in tools] == ["ops__mint_session"]
-    assert [s.tools for s in servers] == [{"mint_session": "hub__mint_session"}]
+    assert [tool.name for tool in tools] == ["mcp_lmt_homebase_mint_session"]
 
 
-async def test_without_a_session_tool_a_review_loads_no_mcp_connections(
+async def test_without_a_session_tool_a_review_loads_no_mcp_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _instance_settings(monkeypatch)
-    load = AsyncMock(side_effect=AssertionError("must not load MCP connections"))
+    load = AsyncMock(side_effect=AssertionError("must not load MCP tools"))
     monkeypatch.setattr(review_browser_module, "load_mcp_tools", load)
 
-    assert await ReviewBrowser.sign_in("design") == ([], [])
+    assert await ReviewBrowser.sign_in() == []
 
 
 async def test_a_review_browser_signs_in_only_to_the_instance_domains(
@@ -348,16 +402,870 @@ async def test_a_review_browser_signs_in_only_to_the_instance_domains(
     [
         {"review_browser_domains": ["https://dev.example.com"]},
         {"review_browser_domains": ["localhost"]},
-        {"review_browser_session_tool": "mint_session"},
-        {"review_browser_session_tool": "Hub/mint_session"},
-        {"review_browser_session_tool": "hub/mint session"},
+        {"review_browser_session_tool": "hub/mint_session"},
+        {"review_browser_session_tool": "mint session"},
     ],
 )
-def test_review_browser_settings_take_domains_and_one_connection_tool(
+def test_review_browser_settings_take_domains_and_one_kit_tool(
     values: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError):
-        WorkspaceSettingsUpdate.model_validate(values)
+        SettingsUpdate.model_validate(values)
+
+
+def test_preview_checks_are_kept_whole_once_each() -> None:
+    update = SettingsUpdate.model_validate(
+        {"review_app_preview_checks": [" Deploy Preview ", "Deploy Preview", " "]}
+    )
+    assert update.review_app_preview_checks == ["Deploy Preview"]
+    with pytest.raises(ValidationError):
+        SettingsUpdate.model_validate({"review_app_preview_checks": ["x" * 201]})
+
+
+_PREVIEW_CHECK = "wait-for-dns"
+_BASE, _HEAD = "a" * 40, "b" * 40
+
+
+def _check_passed(
+    *, name: str = _PREVIEW_CHECK, conclusion: str = "success", private: bool = True
+) -> dict[str, object]:
+    """GitHub's ``check_run`` completion for acme/widgets#7 at its head."""
+    return {
+        "action": "completed",
+        "check_run": {
+            "name": name,
+            "conclusion": conclusion,
+            "head_sha": _HEAD,
+            "pull_requests": [{"number": 7, "head": {"sha": _HEAD}}],
+        },
+        "repository": {"id": 1, "owner": {"login": "acme"}, "name": "widgets", "private": private},
+    }
+
+
+class _Preview:
+    """acme/widgets#7, open at ``_HEAD`` and reviewed by Robin, with global reviews that
+    work for an app that browses, with the job queue and the review thread's runs in memory."""
+
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        checks: tuple[str, ...] = (_PREVIEW_CHECK,),
+        apps: bool = True,
+        browses: bool = True,
+        auto_review: bool = True,
+        allowed: bool = True,
+        reviewed: bool = True,
+        review_drafts: bool = False,
+        **pull: object,
+    ) -> None:
+        pinned = [{"app": str(uuid4()), "release": str(uuid4())}] if apps else []
+        # None while the settings can't be read, when the cached read answers the defaults.
+        self.settings: Settings | None = Settings(
+            {"review_apps": pinned, "review_app_preview_checks": list(checks)}
+        )
+        monkeypatch.setattr(
+            settings_cache,
+            "cached_settings",
+            AsyncMock(side_effect=lambda: self.settings or Settings({})),
+        )
+        monkeypatch.setattr(
+            settings_module, "load_instance_settings", AsyncMock(side_effect=self._load)
+        )
+        monkeypatch.setattr(webhook_common, "is_repo_allowed", lambda _repo: allowed)
+        monkeypatch.setattr(
+            webhook_common, "is_repo_auto_review_enabled", AsyncMock(return_value=auto_review)
+        )
+        monkeypatch.setattr(ReviewApps, "triaged", AsyncMock(return_value=_apps(browser=browses)))
+        self.reviewed = reviewed
+        monkeypatch.setattr(
+            webhook_common, "draft_review_enabled_for_author", AsyncMock(return_value=review_drafts)
+        )
+        self.outcomes: dict[tuple[UUID, str], ReviewOutcome] = {}
+        outcomes = self.outcomes
+
+        async def get(store: ReviewOutcomes, run_id: str) -> ReviewOutcome | None:
+            return outcomes.get((store.app, run_id))
+
+        async def put(
+            store: ReviewOutcomes, outcome: ReviewOutcome, *, create: bool = False
+        ) -> ReviewOutcome:
+            key = (store.app, outcome.id)
+            if not create or key not in outcomes:
+                outcomes[key] = outcome
+            return outcomes[key]
+
+        monkeypatch.setattr(ReviewOutcomes, "get", get)
+        monkeypatch.setattr(ReviewOutcomes, "put", put)
+        monkeypatch.setattr(thread_index, "get", self._thread)
+        monkeypatch.setattr(webhook_common, "get_thread_metadata_safe", self._thread_metadata)
+        monkeypatch.setattr(
+            webhook_common, "reviewer_token_for_repo", AsyncMock(return_value=("token", None))
+        )
+        self.pull: dict[str, object] = {
+            "state": "open",
+            "draft": False,
+            "html_url": "https://github.com/acme/widgets/pull/7",
+            "head": {"sha": _HEAD, "ref": "feature"},
+            "base": {"sha": _BASE, "repo": {"private": True}},
+            **pull,
+        }
+        monkeypatch.setattr(
+            webhook_common,
+            "fetch_github_pr_metadata",
+            AsyncMock(side_effect=lambda _ref, *, token: dict(self.pull)),
+        )
+        # The review thread's runs, newest first, as LangGraph lists them.
+        self.runs: list[dict[str, JsonValue]] = []
+        self.cancel_each_run = False
+        runs = Mock()
+        runs.list = AsyncMock(side_effect=self._list)
+        runs.cancel = AsyncMock()
+        self.cancelled = runs.cancel
+        monkeypatch.setattr(
+            thread_runtimes.RUNTIMES, "runs_on", lambda _runtime: Mock(client=Mock(runs=runs))
+        )
+        self.dispatch = AsyncMock(side_effect=self._dispatch)
+        monkeypatch.setattr(webhook_common, "dispatch_agent_run", self.dispatch)
+        self.jobs: dict[str | None, Job] = {}
+        monkeypatch.setattr(job_queue, "schedule", self._schedule)
+        # The clock the jobs read, which moves on to each job as it runs.
+        self.now = datetime.now(UTC)
+        clock = Mock(wraps=datetime)
+        clock.now.side_effect = lambda _tz: self.now
+        monkeypatch.setattr(github_webhook, "datetime", clock)
+        # The checks GitHub lists on the head and the workflow behind each suite, for the
+        # watch; ``overflow`` when a suite holds too many to read over GraphQL.
+        self.head_runs: list[dict[str, object]] = []
+        self.workflows: dict[int, int] = {}
+        self.overflow = False
+        self.repository = Mock(
+            full_name="acme/widgets",
+            check_runs=AsyncMock(side_effect=lambda *_args, **_kwargs: self.head_runs),
+            workflow_ids=AsyncMock(side_effect=lambda _sha: self.workflows),
+        )
+        self.head_checks = AsyncMock(side_effect=self._head_checks)
+        self.repository.pull_request.return_value.head_checks = self.head_checks
+        self.repository.pull_request.return_value.pull = AsyncMock(side_effect=lambda: self.pull)
+        self.repository.open_pull_heads = AsyncMock(side_effect=self._open_heads)
+        github = MagicMock()
+        github.__aenter__.return_value = Mock(repo=Mock(return_value=self.repository))
+        monkeypatch.setattr(GitHubClient, "as_app", Mock(return_value=github))
+
+    async def open(self) -> None:
+        """The pull request opens, so Robin watches its head."""
+        repository = _check_passed()["repository"]
+        await PreviewReady.run(
+            {
+                "action": "opened",
+                "repository": repository,
+                "pull_request": {"number": 7, **self.pull},
+            }
+        )
+
+    async def _open_heads(self, numbers: list[int]) -> dict[int, str]:
+        head = self.pull["head"]
+        assert isinstance(head, dict)
+        return {7: head["sha"]} if 7 in numbers and self.pull["state"] == "open" else {}
+
+    async def _head_checks(self) -> HeadChecks:
+        head = self.pull["head"]
+        assert isinstance(head, dict)
+        return HeadChecks(
+            state=str(self.pull["state"]),
+            sha=head["sha"],
+            runs=None if self.overflow else list(self.head_runs),
+            workflows={} if self.overflow else self.workflows,
+        )
+
+    async def _load(self) -> Settings:
+        if self.settings is None:
+            raise RuntimeError("The settings can't be read")
+        return self.settings
+
+    async def _thread(self, thread_id: str) -> Mock | None:
+        return Mock(runtime="mda") if self.reviewed else None
+
+    async def _thread_metadata(self, thread_id: str) -> dict[str, object] | None:
+        return {"kind": webhook_common.REVIEWER_THREAD_KIND} if self.reviewed else None
+
+    async def _list(
+        self, thread_id: str, *, status: str | None = None, limit: int = 10
+    ) -> list[dict[str, JsonValue]]:
+        return [run for run in self.runs if status is None or run["status"] == status][:limit]
+
+    async def _dispatch(self, *args: object, **kwargs: object) -> dict[str, JsonValue]:
+        metadata = kwargs["metadata"]
+        assert isinstance(metadata, dict)
+        run: dict[str, JsonValue] = {
+            "run_id": f"run-{len(self.runs) + 1}",
+            "status": "interrupted" if self.cancel_each_run else "pending",
+            "metadata": metadata,
+        }
+        self.runs.insert(0, run)
+        return run
+
+    def settle(self, status: str, *, recorded: bool = True) -> None:
+        """The newest run stops, normally after recording a legitimate skip."""
+        self.runs[0]["status"] = status
+        if status == "success" and recorded:
+            for key, outcome in self.outcomes.items():
+                if outcome.id == self.runs[0]["run_id"]:
+                    self.outcomes[key] = outcome.model_copy(
+                        update={"status": "skipped", "reason": "No visual frontend changes."}
+                    )
+
+    async def _schedule(
+        self,
+        kind: str,
+        payload: dict[str, JsonValue] | None = None,
+        *,
+        due_at: datetime | None = None,
+        key: str | None = None,
+        replace: bool = True,
+    ) -> Job:
+        # One job per key, as the queue keeps them.
+        if not replace and key in self.jobs:
+            return self.jobs[key]
+        now = self.now
+        job = Job(
+            id=uuid4(),
+            kind=kind,
+            payload=dict(payload or {}),
+            due_at=due_at or now,
+            cron=None,
+            timezone="UTC",
+            key=key,
+            metadata={},
+            attempts=0,
+            created_at=now,
+        )
+        self.jobs[key] = job
+        return job
+
+    async def work(self) -> None:
+        """Run the job due first, as the worker does."""
+        job = self.jobs.pop(min(self.jobs, key=lambda key: self.jobs[key].due_at))
+        self.now = max(self.now, job.due_at)
+        run = (
+            PreviewReady.reconcile if job.kind == PreviewReady.RECONCILE else PreviewReady.start_job
+        )
+        await run(job)
+
+    async def drain(self) -> None:
+        """Run jobs until none is queued, as a worker would over the following hours."""
+        for _ in range(50):
+            if not self.jobs:
+                return
+            await self.work()
+        raise AssertionError("the job never stopped")
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_deployed_preview_has_the_review_do_its_apps_work_once_per_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+
+    await PreviewReady.run(_check_passed())
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+
+    preview.dispatch.assert_awaited_once()
+    assert preview.dispatch.await_args is not None
+    args, kwargs = preview.dispatch.await_args
+    cfg = RunConfig.parse(args[2])
+    assert cfg.reviewer_event == "preview_ready"
+    # The pull request's own diff, from its merge base.
+    assert review_diff_range(
+        base_sha=cfg.base_sha or "",
+        head_sha=cfg.head_sha or "",
+        last_reviewed_sha=cfg.last_reviewed_sha or "",
+        re_review=bool(cfg.re_review),
+    ) == (_BASE, _HEAD, True)
+    # Behind a review in progress, never in place of it.
+    assert kwargs["multitask_strategy"] == "enqueue"
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+@pytest.mark.parametrize(
+    ("check", "context"),
+    [
+        pytest.param({"name": "lint"}, {}, id="another-check"),
+        pytest.param({"conclusion": "skipped"}, {}, id="no-preview-built"),
+        pytest.param({"private": False}, {}, id="public-repository"),
+        pytest.param({}, {"apps": False}, id="no-apps"),
+        pytest.param({}, {"browses": False}, id="no-app-browses"),
+        pytest.param({}, {"auto_review": False}, id="auto-review-off"),
+        pytest.param({}, {"allowed": False}, id="outside-the-allowlist"),
+        pytest.param({}, {"reviewed": False}, id="never-reviewed"),
+        pytest.param({}, {"head": {"sha": "c" * 40, "ref": "feature"}}, id="pushed-since"),
+        pytest.param({}, {"state": "closed"}, id="closed"),
+        pytest.param({}, {"draft": True}, id="stays-a-draft"),
+    ],
+)
+async def test_a_preview_that_isnt_the_pull_requests_current_one_starts_nothing(
+    monkeypatch: pytest.MonkeyPatch, check: dict[str, object], context: dict[str, object]
+) -> None:
+    preview = _Preview(monkeypatch, **context)
+
+    await PreviewReady.run(_check_passed(**check))
+    await preview.drain()
+
+    preview.dispatch.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_watching_the_head_finds_a_preview_whose_completion_never_came(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    # The settings can't be read as the pull request opens, nor at the watch's first look.
+    configured, preview.settings = preview.settings, None
+    await preview.open()
+    await preview.work()
+    preview.settings = configured
+    read, preview.head_checks.side_effect = (
+        preview.head_checks.side_effect,
+        RuntimeError("GitHub is down"),
+    )
+    await preview.work()
+    preview.head_checks.side_effect = read
+    preview.head_runs = [
+        {"name": f"advisory / frontend-preview / {_PREVIEW_CHECK}", "conclusion": "success"}
+    ]
+    await preview.work()
+    # The queue gives up on the job the watch queued, so the watch queues it again.
+    preview.jobs = {key: job for key, job in preview.jobs.items() if job.kind != PreviewReady.JOB}
+    await preview.work()
+    await preview.work()
+    preview.dispatch.assert_awaited_once()
+    await PreviewReady.run(_check_passed(name=f"advisory / frontend-preview / {_PREVIEW_CHECK}"))
+
+    preview.settle("success")
+    await preview.drain()
+
+    assert not preview.jobs
+    preview.dispatch.assert_awaited_once()
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+@pytest.mark.parametrize(
+    ("workflow", "again", "workflow_error", "starts"),
+    [
+        # Editing or labelling the pull request starts the preview's workflow again, only
+        # to skip its deploy.
+        pytest.param(1, "skipped", None, True, id="rerun-skipped"),
+        pytest.param(1, "failure", None, False, id="redeploy-failed"),
+        # Another workflow reporting a check of the same name.
+        pytest.param(2, "failure", None, True, id="another-workflow-failed"),
+        pytest.param(
+            1, "failure", httpx2.HTTPError("Cannot read Actions"), False, id="actions-unavailable"
+        ),
+        pytest.param(
+            1, "failure", ValueError("Invalid workflow run"), False, id="invalid-workflow"
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "check_name", [_PREVIEW_CHECK, f"advisory / frontend-preview / {_PREVIEW_CHECK}"]
+)
+async def test_the_watch_judges_a_preview_by_each_workflows_latest_deploy_that_ran(
+    monkeypatch: pytest.MonkeyPatch,
+    check_name: str,
+    workflow: int,
+    again: str,
+    workflow_error: Exception | None,
+    starts: bool,
+) -> None:
+    preview = _Preview(monkeypatch)
+    app = {"id": 15368, "slug": "github-actions"}
+    preview.head_runs = [
+        {
+            "id": 2,
+            "name": check_name,
+            "conclusion": again,
+            "app": app,
+            "check_suite": {"id": 20},
+        },
+        {
+            "id": 1,
+            "name": check_name,
+            "conclusion": "success",
+            "app": app,
+            "check_suite": {"id": 10},
+        },
+    ]
+    preview.workflows = {10: 1, 20: workflow}
+    if workflow_error is not None:
+        # Only the REST read, for a suite too large for GraphQL, reads workflows apart.
+        preview.overflow = True
+        preview.repository.workflow_ids.side_effect = workflow_error
+    await preview.open()
+
+    await preview.work()
+    if preview.jobs:
+        await preview.work()
+
+    assert preview.dispatch.await_count == int(starts)
+    if not starts:
+        assert any(job.kind == PreviewReady.RECONCILE for job in preview.jobs.values())
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_the_watch_reads_workflows_only_once_a_preview_check_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A look that falls back to REST spends the GitHub App's hourly quota, so one that finds
+    no passing preview check reads nothing more."""
+    preview = _Preview(monkeypatch)
+    preview.overflow = True
+    app = {"id": 15368, "slug": "github-actions"}
+    preview.head_runs = [
+        {"id": 1, "name": _PREVIEW_CHECK, "conclusion": None, "app": app, "check_suite": {"id": 10}}
+    ]
+    await preview.open()
+
+    await preview.work()
+
+    preview.repository.workflow_ids.assert_not_awaited()
+    preview.dispatch.assert_not_awaited()
+    (watch,) = preview.jobs.values()
+    assert watch.kind == PreviewReady.RECONCILE
+    assert watch.due_at == preview.now + PreviewReady.LOOK
+
+    preview.head_runs = [{**preview.head_runs[0], "conclusion": "success"}]
+    await preview.work()
+
+    preview.repository.workflow_ids.assert_awaited_once_with(_HEAD)
+
+
+@pytest.mark.parametrize("overflow", [False, True])
+async def test_a_pull_requests_head_checks_read_every_suite_or_none(overflow: bool) -> None:
+    """Every page of check suites is read; a suite with more runs than one page holds
+    gives no runs at all rather than some, since a dropped run could hide a failed deploy."""
+
+    def suite(suite_id: int, workflow: int | None, *runs: tuple[int, str | None]) -> object:
+        return {
+            "databaseId": suite_id,
+            "app": {"databaseId": 15368, "slug": "github-actions"},
+            "workflowRun": None if workflow is None else {"workflow": {"databaseId": workflow}},
+            "checkRuns": {
+                "pageInfo": {"hasNextPage": overflow and suite_id == 20},
+                "nodes": [
+                    {"databaseId": run_id, "name": _PREVIEW_CHECK, "conclusion": conclusion}
+                    for run_id, conclusion in runs
+                ],
+            },
+        }
+
+    def page(cursor: str | None, *suites: object) -> dict[str, object]:
+        commit = {
+            "oid": _HEAD,
+            "checkSuites": {
+                "pageInfo": {"hasNextPage": cursor is not None, "endCursor": cursor},
+                "nodes": list(suites),
+            },
+        }
+        return {
+            "repository": {
+                "pullRequest": {
+                    "state": "OPEN",
+                    "headRefOid": _HEAD,
+                    "commits": {"nodes": [{"commit": commit}]},
+                }
+            }
+        }
+
+    repo = Mock(
+        ci_graphql=AsyncMock(
+            side_effect=[
+                (page("next", suite(10, 1, (1, "SUCCESS"))), False),
+                (page(None, suite(20, None, (2, "SKIPPED"), (3, None))), False),
+            ]
+        )
+    )
+
+    head = await PullRequestClient(repo, 7).head_checks()
+
+    assert (head.state, head.sha) == ("open", _HEAD)
+    if overflow:
+        assert head.runs is None
+        return
+    assert head.runs is not None
+    assert [(run["id"], run["conclusion"], run["check_suite"]) for run in head.runs] == [
+        (1, "success", {"id": 10}),
+        (2, "skipped", {"id": 20}),
+        (3, None, {"id": 20}),
+    ]
+    assert head.workflows == {10: 1}
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+@pytest.mark.parametrize("change", [{"state": "closed"}, {"head": {"sha": "c" * 40}}])
+async def test_the_watch_stops_once_the_pull_request_moves_on(
+    monkeypatch: pytest.MonkeyPatch, change: dict[str, object]
+) -> None:
+    preview = _Preview(monkeypatch)
+    await preview.open()
+    preview.pull.update(change)
+
+    await preview.work()
+
+    assert not preview.jobs
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_global_settings_without_preview_checks_starts_no_watch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch, checks=())
+
+    await preview.open()
+
+    assert not preview.jobs
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_preview_up_before_robin_reviews_starts_once_the_review_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch, reviewed=False)
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+    preview.dispatch.assert_not_awaited()
+
+    preview.reviewed = True
+    await preview.work()
+
+    preview.dispatch.assert_awaited_once()
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_pull_request_closed_while_waiting_for_its_review_is_let_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch, reviewed=False)
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+    assert preview.jobs
+
+    preview.pull["state"] = "closed"
+    await preview.work()
+
+    assert not preview.jobs
+    preview.dispatch.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_run_queued_as_its_pull_request_closed_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    queue_run = preview._dispatch
+
+    async def closing(*args: object, **kwargs: object) -> dict[str, JsonValue]:
+        # The close lands while the run is queued, after closing's own cancel looked.
+        preview.pull["state"] = "closed"
+        return await queue_run(*args, **kwargs)
+
+    preview.dispatch.side_effect = closing
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+
+    assert [call.args[1] for call in preview.cancelled.await_args_list] == ["run-1"]
+    assert not preview.jobs
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_run_queued_on_a_successor_thread_is_cancelled_where_it_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    # The review thread is from before Managed Deep Agents: the run goes to its successor.
+    monkeypatch.setattr(
+        thread_succession,
+        "succeed",
+        AsyncMock(
+            side_effect=lambda thread_id, *, restart_deleted=False: (
+                "successor" if restart_deleted else thread_id
+            )
+        ),
+    )
+    mda_runs = Mock(cancel=AsyncMock())
+    monkeypatch.setattr(
+        type(thread_runtimes.RUNTIMES),
+        "mda",
+        property(lambda _runtimes: Mock(client=Mock(runs=mda_runs))),
+    )
+    queue_run = preview._dispatch
+
+    async def closing(*args: object, **kwargs: object) -> dict[str, JsonValue]:
+        preview.pull["state"] = "closed"
+        return await queue_run(*args, **kwargs)
+
+    preview.dispatch.side_effect = closing
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+
+    mda_runs.cancel.assert_awaited_once_with("successor", "run-1")
+    preview.cancelled.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+@pytest.mark.parametrize(
+    ("watch", "workflow_error"),
+    [
+        pytest.param(False, None, id="webhook"),
+        pytest.param(True, None, id="watch"),
+        pytest.param(True, httpx2.HTTPError("Cannot read Actions"), id="actions-unavailable"),
+        pytest.param(True, ValueError("Invalid workflow run"), id="invalid-workflow"),
+    ],
+)
+async def test_each_named_check_starts_its_own_run_once_its_preview_is_up(
+    monkeypatch: pytest.MonkeyPatch, watch: bool, workflow_error: Exception | None
+) -> None:
+    preview = _Preview(monkeypatch, checks=("wait-for-dns", "wait-for-api"))
+
+    if watch:
+        if workflow_error is not None:
+            preview.overflow = True
+            preview.repository.workflow_ids.side_effect = workflow_error
+        preview.head_runs = [
+            {
+                "id": index,
+                "name": name,
+                "conclusion": "success",
+                "app": {"id": 1, "slug": "preview-provider"},
+                "check_suite": {"id": 10},
+            }
+            for index, name in enumerate(
+                ("advisory / frontend-preview / wait-for-dns", "wait-for-api"), start=1
+            )
+        ]
+        await preview.open()
+        await preview.work()
+        if workflow_error is not None:
+            preview.repository.workflow_ids.assert_awaited_once_with(_HEAD)
+    else:
+        await PreviewReady.run(_check_passed(name="advisory / frontend-preview / wait-for-dns"))
+        await PreviewReady.run(_check_passed(name="wait-for-api"))
+        await PreviewReady.run(_check_passed(name="wait-for-api"))
+    await preview.work()
+    await preview.work()
+
+    assert preview.dispatch.await_count == 2
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_closing_a_pull_request_stops_its_preview_runs_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+    preview.runs.append({"run_id": "review", "status": "pending", "metadata": {}})
+
+    await PreviewReady.stop_on_close(
+        {
+            "action": "closed",
+            "repository": {"full_name": "acme/widgets"},
+            "pull_request": {"number": 7},
+        }
+    )
+
+    assert [call.args[1] for call in preview.cancelled.await_args_list] == ["run-1"]
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_preview_run_another_reviewer_run_cancelled_starts_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+
+    preview.settle("running")
+    await preview.work()
+    assert preview.dispatch.await_count == 1
+    # A finding reply interrupted it.
+    preview.settle("interrupted")
+    await preview.work()
+    assert preview.dispatch.await_count == 2
+    preview.settle("success")
+    await preview.work()
+
+    assert preview.dispatch.await_count == 2
+    assert not preview.jobs
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_commit_gets_a_bounded_number_of_preview_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    preview.cancel_each_run = True
+
+    await PreviewReady.run(_check_passed())
+    await preview.drain()
+
+    assert preview.dispatch.await_count == PreviewReady.MOST_RUNS
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+@pytest.mark.parametrize("retryable", [True, False])
+async def test_a_temporary_block_uses_only_the_existing_preview_retry_budget(
+    monkeypatch: pytest.MonkeyPatch, retryable: bool
+) -> None:
+    preview = _Preview(monkeypatch)
+    await PreviewReady.run(_check_passed())
+    count = PreviewReady.MOST_RUNS if retryable else 1
+    for _ in range(count):
+        await preview.work()
+        preview.settle("success", recorded=False)
+        for app, run_id in tuple(preview.outcomes):
+            if run_id == preview.runs[0]["run_id"]:
+                await ReviewOutcomes(app, "acme/widgets", 7).finish(
+                    run_id,
+                    _HEAD,
+                    "blocked",
+                    "Preview pending: deployment propagation.",
+                    retryable=retryable,
+                )
+    await preview.drain()
+    assert preview.dispatch.await_count == count
+    assert all(outcome.status == "blocked" for outcome in preview.outcomes.values())
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_success_without_a_saved_result_is_failed_and_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    await PreviewReady.run(_check_passed())
+    for _ in range(PreviewReady.MOST_RUNS):
+        await preview.work()
+        preview.settle("success", recorded=False)
+    await preview.drain()
+    assert preview.dispatch.await_count == PreviewReady.MOST_RUNS
+    assert all(
+        outcome.status == "failed" and outcome.reason for outcome in preview.outcomes.values()
+    )
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_recovery_does_not_restart_an_expired_watch(monkeypatch: pytest.MonkeyPatch) -> None:
+    preview = _Preview(monkeypatch)
+    pull = Mock(id=uuid4(), owner="acme", repo="widgets", number=7)
+    monkeypatch.setattr(
+        github_webhook.PullRequest, "preview_candidates", AsyncMock(return_value=[pull])
+    )
+    monkeypatch.setattr(event_claims, "defer", AsyncMock())
+    await preview.open()
+    await PreviewReady.recover(Mock(payload={}))
+    await preview.drain()
+    assert not await event_claims.held(PreviewReady.RECOVER, str(pull.id))
+
+    await PreviewReady.recover(Mock(payload={}))
+    watch = next(iter(preview.jobs.values()))
+    assert datetime.fromisoformat(str(watch.payload["deadline"])) == (
+        preview.now + PreviewReady.WINDOW
+    )
+    await preview.drain()
+    requests = preview.repository.open_pull_heads.await_count
+
+    await PreviewReady.recover(Mock(payload={}))
+
+    assert not preview.jobs
+    assert preview.repository.open_pull_heads.await_count == requests
+    preview.dispatch.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_recovery_reads_a_repositorys_heads_in_one_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    pulls = [Mock(id=uuid4(), owner="acme", repo="widgets", number=n) for n in (7, 8, 9)]
+    monkeypatch.setattr(
+        github_webhook.PullRequest, "preview_candidates", AsyncMock(return_value=pulls)
+    )
+
+    await PreviewReady.recover(Mock(payload={}))
+
+    preview.repository.open_pull_heads.assert_awaited_once_with([7, 8, 9])
+    preview.repository.pull_request.return_value.pull.assert_not_awaited()
+    assert [(job.payload["number"], job.payload["head_sha"]) for job in preview.jobs.values()] == [
+        (7, _HEAD)
+    ]
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_recovery_waits_when_its_capture_budget_is_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch)
+    monkeypatch.setattr(event_claims, "claim_within_limit", AsyncMock(return_value="limited"))
+    await PreviewReady.enqueue("acme", "widgets", 7, _HEAD, _PREVIEW_CHECK, None, recovery=True)
+    await preview.work()
+    preview.dispatch.assert_not_awaited()
+    assert len(preview.jobs) == 1
+    assert next(iter(preview.jobs.values())).due_at > preview.now
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_preview_capture_honors_enabled_draft_reviews(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preview = _Preview(monkeypatch, draft=True, review_drafts=True)
+    await PreviewReady.run(_check_passed())
+    await preview.work()
+    assert preview.dispatch.await_count == 1
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+async def test_a_retried_job_never_starts_a_second_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    preview = _Preview(monkeypatch)
+    await PreviewReady.run(_check_passed())
+    job = preview.jobs.pop(next(iter(preview.jobs)))
+    queued = preview._schedule
+    # The run starts, but queuing the look after it fails, so the queue retries the job.
+    monkeypatch.setattr(job_queue, "schedule", AsyncMock(side_effect=RuntimeError("down")))
+    with pytest.raises(RuntimeError):
+        await PreviewReady.start_job(job)
+    monkeypatch.setattr(job_queue, "schedule", queued)
+
+    await PreviewReady.start_job(job)
+
+    preview.dispatch.assert_awaited_once()
+    assert preview.jobs
+
+
+@pytest.mark.usefixtures("no_local_threads", "memory_event_claims")
+@pytest.mark.parametrize("failure", ["dispatch", "files"])
+async def test_a_preview_run_that_failed_to_start_is_retried_by_the_queue(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    preview = _Preview(monkeypatch)
+    dispatch = preview._dispatch
+    working = _apps()
+    if failure == "dispatch":
+        preview.dispatch.side_effect = RuntimeError("LangGraph is down")
+    else:
+        # GitHub wouldn't list the files, so the browsing app's paths couldn't be checked.
+        unread = ReviewApps((), "acme/widgets", 7, working.apps, files_read=False)
+        monkeypatch.setattr(ReviewApps, "triaged", AsyncMock(return_value=unread))
+    await PreviewReady.run(_check_passed())
+    job = preview.jobs.pop(next(iter(preview.jobs)))
+
+    # The job raises, so the queue runs it again later rather than mark the commit done.
+    with pytest.raises(Exception):  # noqa: B017, PT011 - each failure raises its own kind
+        await PreviewReady.start_job(job)
+    preview.dispatch.side_effect = dispatch
+    monkeypatch.setattr(ReviewApps, "triaged", AsyncMock(return_value=working))
+    await PreviewReady.start_job(job)
+
+    assert len(preview.runs) == 1
 
 
 async def _published(
@@ -369,30 +1277,82 @@ async def _published(
     return await PluginApps.publish(owner.id, html, origin={})
 
 
-async def _reviewing(monkeypatch: pytest.MonkeyPatch, files: dict[str, bytes]) -> UUID:
+async def _reviewing(
+    monkeypatch: pytest.MonkeyPatch, files: dict[str, bytes], *, writes: list[str] | None = None
+) -> UUID:
     """A review of acme/widgets#7 working for a published Design QA; returns the app's id."""
     monkeypatch.setenv("ALLOWED_GITHUB_USERS", "ada")
     monkeypatch.setenv("ALLOWED_GITHUB_ORGS", "")
     release = await _published(
-        {"instructions": "Capture.", "writes": ["captures"], "browser": True}
+        {
+            "instructions": "Capture.",
+            "writes": ["captures"] if writes is None else writes,
+            "browser": True,
+            "path": "/{repository}/{number}",
+        }
     )
     pinned = {"app": str(release.app), "release": str(release.id)}
-    settings = WorkspaceSettings({"review_apps": [pinned]})
-    monkeypatch.setattr(
-        review_apps_module, "cached_workspace_settings", AsyncMock(return_value=settings)
-    )
+    settings = Settings({"review_apps": [pinned]})
+    monkeypatch.setattr(review_apps_module, "cached_settings", AsyncMock(return_value=settings))
     monkeypatch.setattr(
         review_apps_module.Repository, "get", AsyncMock(return_value=Mock(private=True))
     )
-    monkeypatch.setattr(RunConfig, "from_runtime", lambda: _review())
+    monkeypatch.setattr(RunConfig, "from_runtime", lambda: _review(run_id="capture-run"))
     _Sandbox(monkeypatch, files)
     return release.app
+
+
+@pytest.mark.usefixtures("registry_db")
+@pytest.mark.parametrize("writes", [[], ["captures"]])
+async def test_app_completion_honors_its_write_contract(
+    monkeypatch: pytest.MonkeyPatch, writes: list[str]
+) -> None:
+    app = await _reviewing(monkeypatch, {}, writes=writes)
+    result = await review_app_tools.record_app_review_outcome(
+        str(app), "complete", "Checked keyboard navigation. No issues found."
+    )
+    assert result["success"] is (not writes)
+    if not writes:
+        assert await ReviewOutcomes(app, "acme/widgets", 7).settled("capture-run", _HEAD, "")
+
+
+@pytest.mark.usefixtures("registry_db")
+@pytest.mark.parametrize("status", ["success", "error", "interrupted"])
+async def test_regular_review_completion_settles_unfinished_saved_work(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    app = await _reviewing(monkeypatch, {})
+    result = await review_app_tools.save_app_document(
+        str(app), "captures", "pulls/7/latest", {"status": "complete"}
+    )
+    assert result["success"] is True
+    monkeypatch.setattr(
+        review_outcomes_module.THREADS,
+        "get",
+        AsyncMock(
+            return_value=Mock(
+                metadata={
+                    "kind": "reviewer",
+                    "pr": {"owner": "acme", "name": "widgets", "number": 7},
+                }
+            )
+        ),
+    )
+    await ReviewOutcomes.completed("review-thread", "capture-run", status)
+    outcomes = ReviewOutcomes(app, "acme/widgets", 7)
+    outcome = await outcomes.get("capture-run")
+    assert outcome is not None and outcome.status == "failed"
+    await outcomes.finish("capture-run", _HEAD, "blocked", "The comparison base is unavailable.")
+    await ReviewOutcomes.completed("review-thread", "capture-run", status)
+    outcome = await outcomes.get("capture-run")
+    assert outcome is not None and outcome.status == "blocked"
 
 
 @pytest.mark.usefixtures("registry_db")
 async def test_a_review_saves_a_document_and_its_files_to_an_app(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("DASHBOARD_BASE_URL", "https://robin.example")
     before = _png((40, 30))
     app = await _reviewing(monkeypatch, {"/workspace/shots/home-before.png": before})
 
@@ -405,6 +1365,10 @@ async def test_a_review_saves_a_document_and_its_files_to_an_app(
     )
 
     assert result["success"] is True, result
+    assert result["url"] == "https://robin.example/agents/plugins/design-qa/acme/widgets/7"
+    apps = await ReviewApps.of(_review(run_id="capture-run"))
+    assert apps is not None
+    assert not await apps.results("capture-run", _HEAD)
     key = str(result["key"])
     # Read as the app reads it: its repository-shared captures, by key.
     documents = PluginDocuments(app)
@@ -414,6 +1378,18 @@ async def test_a_review_saves_a_document_and_its_files_to_an_app(
     saved = await documents.attachment("captures", scope, key, "home-before.png")
     assert saved is not None and saved.content_type == "image/webp"
     assert _pixels(saved.content) == _pixels(before)
+    outcomes = ReviewOutcomes(app, "acme/widgets", 7)
+    await outcomes.finish("capture-run", _HEAD, "complete", "")
+    assert await outcomes.settled("capture-run", _HEAD, _PREVIEW_CHECK)
+    results = await apps.results("capture-run", _HEAD)
+    assert len(results) == 1 and results[0].url == result["url"]
+    assert not await apps.results("capture-run", "c" * 40)
+    assert not await apps.results("another-run", _HEAD)
+    await documents.delete("captures", scope, key)
+    assert not await apps.results("capture-run", _HEAD)
+    assert not await outcomes.settled("capture-run", _HEAD, _PREVIEW_CHECK)
+    outcome = await outcomes.get("capture-run")
+    assert outcome is not None and outcome.status == "failed"
 
 
 @pytest.mark.usefixtures("registry_db")
@@ -445,6 +1421,10 @@ async def test_a_save_that_cannot_finish_keeps_nothing(
         "captures", DocumentScope(repository="acme/widgets"), "pulls/7/latest"
     )
     assert stored is None
+    if failure == "closed":
+        outcome = await review_app_tools.record_app_review_outcome(str(app), "blocked", "PR closed")
+        assert outcome["success"] is False
+        assert await ReviewOutcomes(app, "acme/widgets", 7).get("capture-run") is None
 
 
 @pytest.mark.usefixtures("registry_db", "saved_thread_scope")
@@ -452,12 +1432,15 @@ async def test_a_save_that_cannot_finish_keeps_nothing(
 async def test_only_a_review_that_works_for_apps_gets_their_tools_and_browser(
     monkeypatch: pytest.MonkeyPatch, works: bool
 ) -> None:
-    _instance_settings(monkeypatch, review_browser_session_tool="hub/mint_session")
+    _instance_settings(monkeypatch, review_browser_session_tool="hub_mint_session")
     monkeypatch.setattr(ReviewApps, "of", AsyncMock(return_value=_apps() if works else None))
-    monkeypatch.setattr(
-        reviewer, "cached_workspace_settings", AsyncMock(return_value=WorkspaceSettings({}))
+    monkeypatch.setattr(reviewer, "cached_settings", AsyncMock(return_value=Settings({})))
+    loaded = MCPTools(
+        [
+            _mcp_tool("mcp_lmt_hub_mint_session", "hub_mint_session"),
+            _mcp_tool("mcp_lmt_hub_query", "hub_query"),
+        ]
     )
-    loaded = MCPTools([_mcp_tool("ops__query", "query")], runtime_servers=[_hub()])
     monkeypatch.setattr(review_browser_module, "load_mcp_tools", AsyncMock(return_value=loaded))
     config = _base_config()
     config["configurable"].update(
@@ -470,48 +1453,60 @@ async def test_only_a_review_that_works_for_apps_gets_their_tools_and_browser(
     names = {getattr(tool, "name", "") for tool in surface.base_tools}
     assert (surface.browser is not None) is works
     assert ("save_app_document" in names) is works
-    assert "ops__query" not in names
-    expected = [{"mint_session": "hub__mint_session"}] if works else []
-    assert [server.tools for server in surface.mcp_servers] == expected
-    # The run's calls find the tools its catalog offered, and no other tool of that server.
+    assert ("mcp_lmt_hub_mint_session" in names) is works
+    assert "mcp_lmt_hub_query" not in names
+    # The run's calls find the tools its catalog offered, and no other tool of the kit.
     kind = ReviewerKind()
     assert (await kind.tool(config, "save_app_document") is not None) is works
-    assert await kind.tool(config, "ops__query") is None
+    assert (await kind.tool(config, "mcp_lmt_hub_mint_session") is not None) is works
+    assert await kind.tool(config, "mcp_lmt_hub_query") is None
     assert await kind.tool(config, "add_finding") is not None
 
 
 @pytest.mark.usefixtures("registry_db", "saved_thread_scope")
+@pytest.mark.parametrize("event", [None, "preview_ready"])
+async def test_a_run_for_a_deployed_preview_cannot_change_the_reviews_findings(
+    monkeypatch: pytest.MonkeyPatch, event: str | None
+) -> None:
+    _instance_settings(monkeypatch)
+    monkeypatch.setattr(ReviewApps, "of", AsyncMock(return_value=_apps(browser=False)))
+    monkeypatch.setattr(reviewer, "cached_settings", AsyncMock(return_value=Settings({})))
+    config = _base_config()
+    config["configurable"].update(
+        {
+            "repo": {"owner": "acme", "name": "widgets"},
+            "pr_number": 7,
+            "head_sha": "b" * 40,
+            "reviewer_event": event,
+        }
+    )
+    surface = ToolSurface()
+
+    await reviewer.reviewer_catalog(config, surface)
+    await surface.prepare()
+
+    assert {"save_app_document", "add_finding", "publish_review"} <= surface.tools.keys()
+    # It can add what its apps' work turns up, but not change the review's findings.
+    changes_findings = {"update_finding", "resolve_finding_thread", "reply_to_finding_thread"}
+    assert changes_findings.isdisjoint(surface.tools) is (event == "preview_ready")
+
+
+@pytest.mark.usefixtures("registry_db", "saved_thread_scope")
 @pytest.mark.parametrize("private", [True, False])
-async def test_a_private_review_reads_notion_through_either_connection_but_never_writes(
+async def test_a_private_review_reads_notion_from_the_bot_kit_but_never_writes(
     monkeypatch: pytest.MonkeyPatch, private: bool
 ) -> None:
-    _instance_settings(monkeypatch, review_browser_session_tool="hub/mint_session")
-    monkeypatch.setattr(ReviewApps, "of", AsyncMock(return_value=_apps()))
-    monkeypatch.setattr(
-        reviewer, "cached_workspace_settings", AsyncMock(return_value=WorkspaceSettings({}))
-    )
-    signed_in = MCPTools(runtime_servers=[_hub()])
-    monkeypatch.setattr(review_browser_module, "load_mcp_tools", AsyncMock(return_value=signed_in))
-    provenance = MCPToolProvenance(connection_name="notion", scope="instance", overridden_scopes=[])
-
-    def served(name: str, server_name: str) -> BaseTool:
-        tool = _mcp_tool(name, server_name)
-        tool.metadata = {**(tool.metadata or {}), "mcp_provenance": provenance}
-        return tool
-
-    # One Notion server the backend serves, one on an MDA connection that the run calls.
-    notion = McpServerSpec(
-        name="notion",
-        url="https://mcp.notion.com/mcp",
-        transport="streamable_http",
-        tools={"fetch": "notion__fetch", "update-page": "notion__update_page"},
-        connection=ConnectionRef(slug="open-swe-mcp-notion", owner="agent"),
-    )
+    _instance_settings(monkeypatch)
+    monkeypatch.setattr(ReviewApps, "of", AsyncMock(return_value=_apps(browser=False)))
+    monkeypatch.setattr(reviewer, "cached_settings", AsyncMock(return_value=Settings({})))
+    monkeypatch.setattr(reviewer.BotTools, "configured", lambda _self: True)
     loaded = MCPTools(
-        [served("notion__search", "search"), served("notion__create", "create-pages")],
-        runtime_servers=[notion],
+        [
+            _mcp_tool("mcp_lmt_notion_search", "notion_search"),
+            _mcp_tool("mcp_lmt_notion_create_pages", "notion_create_pages"),
+        ]
     )
-    monkeypatch.setattr(reviewer, "mcp_tools_for", AsyncMock(return_value=loaded))
+    monkeypatch.setattr(reviewer, "load_mcp_tools", AsyncMock(return_value=loaded))
     config = _base_config()
     config["configurable"].update(
         {
@@ -526,15 +1521,11 @@ async def test_a_private_review_reads_notion_through_either_connection_but_never
     await reviewer.reviewer_catalog(config, surface)
 
     names = {getattr(tool, "name", "") for tool in surface.base_tools}
-    assert ("notion__search" in names) is private
-    assert "notion__create" not in names
-    # The app's sign-in server joins Notion's rather than replacing it.
-    notion_tools = [{"fetch": "notion__fetch"}] if private else []
-    expected = [*notion_tools, {"mint_session": "hub__mint_session"}]
-    assert [server.tools for server in surface.mcp_servers] == expected
+    assert ("mcp_lmt_notion_search" in names) is private
+    assert "mcp_lmt_notion_create_pages" not in names
     kind = ReviewerKind()
-    assert (await kind.tool(config, "notion__search") is not None) is private
-    assert await kind.tool(config, "notion__create") is None
+    assert (await kind.tool(config, "mcp_lmt_notion_search") is not None) is private
+    assert await kind.tool(config, "mcp_lmt_notion_create_pages") is None
 
 
 @pytest.mark.usefixtures("registry_db")
@@ -567,7 +1558,7 @@ async def test_closing_a_pull_request_deletes_what_reviews_saved_for_it(
     await documents.attach(
         "captures", reviewed, "pulls/7/a", "a.png", "image/png", _png((2, 2)), by=None
     )
-    # The owner's next release drops the step; workspaces that added the app before still
+    # The owner's next release drops the step; admins who added the app before still
     # have reviews follow the release that saved these.
     await _published(None, collections)
 

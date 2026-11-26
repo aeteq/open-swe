@@ -20,7 +20,6 @@ from e2e_env import (
     BASE_BRANCH,
     BASE_URL,
     DEMO_CHANNEL,
-    FAKE_GITHUB_API,
     FEATURE_BRANCH,
     FEATURE_FILE,
     OWNER,
@@ -43,6 +42,7 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from runtime_api.provenance import Provenance
 
 
 def _slack_thread_ts(messages: list[BaseMessage]) -> str:
@@ -201,6 +201,126 @@ git push origin {FEATURE_BRANCH}
 echo PUSHED_OK
 """.strip()
 
+FILE_PREVIEWS_MARKER = "E2E_FILE_PREVIEWS"
+_FILE_PREVIEWS_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAACXBIWXMAAAABAAAAAQBPJcTWAAAATElEQVR4nO3OMR"
+    "HAIAAAMbjDVLWhGQ/du/xIh0RB5n7O+JN1O/AlVISKUBEqQkWoCBWhIlSEilARKkJFqAgVoSJUhIpQESpCRagIlRd6"
+    "pgJfMNIJbQAAAABJRU5ErkJggg=="
+)
+
+# A checkout named after the thread's repository, which the Files panel opens at,
+# holding one file of each kind file_previews.spec.ts renders.
+_FILE_PREVIEWS_SCRIPT = f"""
+set -e
+rm -rf demo
+git clone "$E2E_REMOTE" demo
+cd demo
+mkdir -p docs/img site/css site/js data
+echo '{_FILE_PREVIEWS_PNG}' | base64 -d > docs/img/badge.png
+cat > docs/guide.md <<'MD'
+# Preview guide
+
+A rendered **Markdown** file with an image beside it.
+
+![Badge](img/badge.png)
+
+Open [the deck](../site/index.html) or the [scores](../data/scores.csv).
+MD
+cat > site/index.html <<'HTML'
+<!doctype html>
+<html>
+<head>
+  <link rel="stylesheet" href="css/deck.css">
+  <script type="module" src="js/deck.mjs"></script>
+</head>
+<body><h1>Quarterly deck</h1><p id="status">waiting</p></body>
+</html>
+HTML
+cat > site/css/deck.css <<'CSS'
+h1 {{ color: rgb(124, 58, 237); }}
+CSS
+cat > site/js/deck.mjs <<'JS'
+document.getElementById("status").textContent = "module loaded";
+JS
+printf 'region,revenue\\nEMEA,120\\nAPAC,"95,5"\\n' > data/scores.csv
+python3 - data <<'XLSX'
+import sys
+import zipfile
+
+NS = "http://schemas.openxmlformats.org"
+PARTS = [
+    ("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="' + NS + '/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'),
+    ("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="' + NS + '/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + '/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'),
+    ("xl/workbook.xml", '<?xml version="1.0"?><workbook xmlns="' + NS + '/spreadsheetml/2006/main" xmlns:r="' + NS + '/officeDocument/2006/relationships"><sheets><sheet name="Summary" sheetId="1" r:id="rId1"/></sheets></workbook>'),
+    ("xl/_rels/workbook.xml.rels", '<?xml version="1.0"?><Relationships xmlns="' + NS + '/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + '/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'),
+]
+
+
+def book(path, rows):
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, text in PARTS:
+            archive.writestr(name, text)
+        archive.writestr("xl/worksheets/sheet1.xml", '<?xml version="1.0"?><worksheet xmlns="' + NS + '/spreadsheetml/2006/main"><sheetData>' + rows + '</sheetData></worksheet>')
+
+
+def text(ref, value):
+    return '<c r="' + ref + '" t="inlineStr"><is><t>' + value + '</t></is></c>'
+
+
+out = sys.argv[1]
+book(out + "/book.xlsx", '<row r="1">' + text("A1", "region") + text("B1", "revenue") + '</row><row r="2">' + text("A2", "EMEA") + '<c r="B2"><v>120</v></c></row>')
+book(out + "/bomb.xlsx", '<row r="100000000"><c r="A100000000"><v>1</v></c></row>')
+XLSX
+echo PREVIEW_FILES_OK
+""".strip()
+
+SCREENSHOTS_MARKER = "E2E_SCREENSHOTS"
+SCREENSHOT_PATHS = tuple(f"/screenshots/page-{page}.png" for page in range(1, 6))
+# Five PNGs of about 300 KB, as a browser screenshot of a page is, drawn from fixed
+# seeds so every run reads the same bytes: a sidebar, lines of text and a photo.
+_SCREENSHOTS_SCRIPT = """
+set -e
+mkdir -p screenshots
+python3 - <<'PY'
+import random
+import struct
+import zlib
+
+
+def chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+
+def png(width, rows):
+    header = struct.pack(">IIBBBBB", width, len(rows), 8, 2, 0, 0, 0)
+    pixels = zlib.compress(b"".join(b"\\0" + bytes(row) for row in rows), 9)
+    return b"\\x89PNG\\r\\n\\x1a\\n" + chunk(b"IHDR", header) + chunk(b"IDAT", pixels) + chunk(b"IEND", b"")
+
+
+for page in range(1, 6):
+    rng = random.Random(page)
+    rows = []
+    for y in range(600):
+        row = bytearray(b"\\x1b\\x1c\\x20" * 960)
+        row[: 220 * 3] = b"\\x26\\x27\\x2c" * 220
+        if y < 44:
+            row[:] = b"\\x31\\x33\\x3a" * 960
+        elif 80 <= y < 280 and y % 24 < 10:
+            length = 260 + (y * 37 + page * 53) % 420
+            row[260 * 3 : (260 + length) * 3] = bytes(rng.choice((150, 170, 190)) for _ in range(length * 3))
+        elif 300 <= y < 500:
+            noise = rng.randbytes(520 * 3)
+            row[260 * 3 : 780 * 3] = bytes(
+                (value >> 1) + (40 if i % 3 == page % 3 else 0) + (y - 300) // 4
+                for i, value in enumerate(noise)
+            )
+        rows.append(row)
+    with open(f"screenshots/page-{page}.png", "wb") as shot:
+        shot.write(png(960, rows))
+PY
+echo SCREENSHOTS_OK
+""".strip()
+
 _IFRAME_HTML_PATH = "/workspace/iframe-output.html"
 _IFRAME_HTML = """<!doctype html>
 <html>
@@ -218,36 +338,10 @@ _IFRAME_HTML = """<!doctype html>
 </html>
 """
 
-_DESKTOP_PR_PAYLOAD = json.dumps(
-    {
-        "head": FEATURE_BRANCH,
-        "base": BASE_BRANCH,
-        "title": PR_TITLE,
-        "body": "Adds a `greet()` helper as requested.",
-        "draft": True,
-    }
-)
-_DESKTOP_IMPLEMENT_SCRIPT = f"""
-set -e
-git checkout -b {FEATURE_BRANCH}
-cat > {FEATURE_FILE} <<'EOF'
-def greet(name):
-    return f"Hello, {{name}}!"
-EOF
-git add {FEATURE_FILE}
-git -c "user.email=dev@example.com" -c "user.name=Dev User" commit -m "{PR_TITLE}"
-git push origin {FEATURE_BRANCH}
-curl --fail --silent --show-error \
-  --request POST \
-  --header 'content-type: application/json' \
-  --data '{_DESKTOP_PR_PAYLOAD}' \
-  "{FAKE_GITHUB_API}/repos/{OWNER}/{REPO}/pulls"
-""".strip()
-
 
 class SystemPromptRecord:
     """The system prompt of the most recent model call, so specs can assert what the
-    agent was actually told (e.g. the workspace section) rather than infer it.
+    agent was actually told (e.g. shared instructions) rather than infer it.
 
     The harness serves it. A model running in another process, as on the Managed
     Deep Agents server, sends each prompt there through ``report_to``.
@@ -266,14 +360,14 @@ class SystemPromptRecord:
 LAST_SYSTEM_PROMPT = SystemPromptRecord()
 
 # Opening line of openswe/resources/prompts/thread-title.md. Title calls get an
-# empty reply so background titling never renames threads or code channels mid-spec.
-_THREAD_TITLE_PROMPT_PREFIX = "Generate a title that will help the user recognize"
+# empty reply so background titling never renames threads mid-spec.
+_THREAD_TITLE_PROMPT_PREFIX = "Generate a terse title that will help the user recognize"
 
 # Gives every reply of the run a thought, as a reasoning model's would carry.
 THOUGHT_MARKER = "E2E_THOUGHT"
 THOUGHT_TEXT = (
     "**Checking the snapshot status**\n\n"
-    "The workspace image looks stale, so I will compare it with the latest capture."
+    "The sandbox image looks stale, so I will compare it with the latest capture."
 )
 _BUSY_HOLD_RE = re.compile(r"E2E_BUSY_HOLD(?::(\d+(?:\.\d+)?))?")
 _PLAN_URL_RE = re.compile(r"https?://[^\s\"'<>)\]|]+/plan\b")
@@ -723,15 +817,6 @@ def _multi_pr_reply_step(messages: list[BaseMessage]) -> AIMessage:
     )
 
 
-def _desktop_reply_step(messages: list[BaseMessage]) -> AIMessage:
-    url = _pr_url_from_messages(messages) or "(PR url unavailable)"
-    return AIMessage(
-        content=(
-            f"Done! I added `{FEATURE_FILE}` and opened [{PR_TITLE}]({url}) on the fake GitHub."
-        )
-    )
-
-
 PLAN_FILE_PATH = "/workspace/plans/2026-06-29-greet-helper.html"
 
 PLAN_HTML = """<!doctype html>
@@ -875,15 +960,6 @@ def _plan_complete_step(messages: list[BaseMessage]) -> AIMessage:
     )
 
 
-WORKSPACE_NAME = "default"
-WORKSPACE_PROMPT = (
-    "Checkouts live in /workspace/repos. Build with `make build`, test with `make test`."
-)
-WORKSPACE_SETUP_SCRIPT = (
-    "set -euo pipefail\nmkdir -p repos && echo provisioned > repos/.provisioned && ls -a repos"
-)
-WORKSPACE_UPDATE_SCRIPT = "echo refreshed >> repos/.provisioned"
-
 FOLLOW_UP_REPLY = "Thanks! The PR is ready for review — anything else you'd like changed?"
 
 
@@ -1002,23 +1078,6 @@ def _inspected_thread_id(messages: list[BaseMessage]) -> str:
     if not isinstance(thread_id, str):
         raise ValueError("get_thread did not return the target thread")
     return thread_id
-
-
-def _workspace_poll_step(messages: list[BaseMessage]) -> AIMessage:
-    """Follow the reproducibility rebuild through the one poll tool."""
-    task_id = _tool_payload(messages, "snapshotctl").get("task_id")
-    if not isinstance(task_id, str):
-        raise ValueError("snapshotctl did not return a task id")
-    return AIMessage(
-        content="Following the rebuild.",
-        tool_calls=[
-            {
-                "name": "background_task",
-                "args": {"action": "status", "task_id": task_id},
-                "id": "call-env-poll",
-            }
-        ],
-    )
 
 
 def _list_threads_step(_messages: list[BaseMessage]) -> AIMessage:
@@ -1305,38 +1364,6 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
         _dynamic_step(_resolve_thread_step),
         StepSpec(content="Resolved the target thread through the thread tools."),
     ),
-    "code_channel": (
-        _tool_step(
-            "This task warrants a dedicated Slack code channel.",
-            "manage_code_channel",
-            {"action": "create", "title": "Investigate flaky CI failures"},
-            "call-code-channel-create",
-        ),
-        _tool_step(
-            "Continuing the task in its dedicated code channel.",
-            "slack_reply",
-            {
-                "message": "I created this code channel for the investigation. All updates and follow-ups stay in this one Open SWE session."
-            },
-            "call-code-channel-reply",
-        ),
-        _tool_step(
-            "Marking the code-channel session active.",
-            "manage_code_channel",
-            {"action": "status", "status": "active"},
-            "call-code-channel-active",
-        ),
-    ),
-    "code_channel_followup": (
-        _tool_step(
-            "Replying to the unmentioned code-channel follow-up.",
-            "slack_reply",
-            {
-                "message": "Status: the investigation is active, and this unmentioned follow-up reached the same Open SWE session."
-            },
-            "call-code-channel-followup",
-        ),
-    ),
     "inbox": tuple(_dynamic_step(_inbox_step) for _ in range(6)),
     "background_work": (
         _tool_step(
@@ -1370,11 +1397,27 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
                 "action": "subscribe",
                 "timeout_seconds": 300,
                 "event_types": ["check_suite.completed"],
+                "repo": f"{OWNER}/{REPO}",
                 "instructions": BACKGROUND_WORK_LISTENER_INSTRUCTIONS,
             },
             "call-background-work-listen",
         ),
         StepSpec(content="Started the build, the log monitor and a CI listener."),
+    ),
+    "file_previews": (
+        _tool_step(
+            "Writing the preview files.",
+            "execute",
+            {"command": _FILE_PREVIEWS_SCRIPT},
+            "call-file-previews",
+        ),
+        _tool_step(
+            "Telling the thread the files are ready.",
+            "slack_reply",
+            {"message": "The preview files are ready."},
+            "call-file-previews-reply",
+        ),
+        StepSpec(content="Wrote the preview files."),
     ),
     "iframe": (
         _tool_step(
@@ -1400,14 +1443,21 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
         ),
         StepSpec(content="Rendered the iframe preview."),
     ),
-    "desktop": (
+    "screenshots": (
         _tool_step(
-            "Implementing the change in the selected local project.",
+            "Taking screenshots of the pages.",
             "execute",
-            {"command": _DESKTOP_IMPLEMENT_SCRIPT},
-            "call-desktop-impl",
+            {"command": _SCREENSHOTS_SCRIPT},
+            "call-screenshots",
         ),
-        _dynamic_step(_desktop_reply_step),
+        StepSpec(
+            content="Reading the screenshots.",
+            tool_calls=tuple(
+                _tool_call("read_file", {"file_path": path}, f"call-read-screenshot-{page}")
+                for page, path in enumerate(SCREENSHOT_PATHS, start=1)
+            ),
+        ),
+        StepSpec(content="The screenshots are above."),
     ),
     # Code-mode calls, each labeled with the description the dashboard shows.
     "eval_description": (
@@ -1536,7 +1586,7 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
             "call-expedite-push",
         ),
         _tool_step(
-            "Opening a pull request that is ready for review.",
+            "Opening a draft pull request.",
             "open_pull_request",
             {
                 "owner": OWNER,
@@ -1545,8 +1595,7 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
                 "base": BASE_BRANCH,
                 "title": EXPEDITE_PR_TITLE,
                 "body": "Restores the single exclamation mark in the greeting.",
-                "draft": False,
-                "resolves_thread": True,
+                "draft": True,
             },
             "call-expedite-pr",
         ),
@@ -1731,36 +1780,6 @@ SCRIPT_LIBRARY: dict[str, tuple[StepSpec, ...]] = {
         _dynamic_step(_plan_complete_step),
         StepSpec(content="The requested plan is published as an HTML artifact."),
     ),
-    "workspace": (
-        # Build here, with ordinary tools, then publish this sandbox as the image.
-        _tool_step(
-            "Provisioning this sandbox.",
-            "execute",
-            {"command": WORKSPACE_SETUP_SCRIPT},
-            "call-env-provision",
-        ),
-        _tool_step(
-            "Publishing this sandbox as the workspace image.",
-            "publish_workspace",
-            {
-                "name": WORKSPACE_NAME,
-                "prompt": WORKSPACE_PROMPT,
-                "setup_script": WORKSPACE_SETUP_SCRIPT,
-                "update_script": WORKSPACE_UPDATE_SCRIPT,
-                "repos": [f"{OWNER}/{REPO}"],
-            },
-            "call-env-publish",
-        ),
-        # Then prove the script reproduces it, the way the nightly cron will.
-        _tool_step(
-            "Checking the setup script reproduces the image.",
-            "snapshotctl",
-            {"action": "rebuild", "workspace": WORKSPACE_NAME},
-            "call-env-refresh",
-        ),
-        _dynamic_step(_workspace_poll_step),
-        StepSpec(content=f"The `{WORKSPACE_NAME}` workspace is captured and live."),
-    ),
     "followup": (_dynamic_step(_followup_step),),
 }
 
@@ -1775,11 +1794,6 @@ def _is_iframe_request(text: str) -> bool:
 
 def _is_plan_request(text: str) -> bool:
     return "plan" in text.lower()
-
-
-def _is_workspace_request(text: str) -> bool:
-    lowered = text.lower()
-    return "workspace" in lowered or "environment" in lowered
 
 
 def _is_breakout_request(text: str) -> bool:
@@ -1833,25 +1847,14 @@ SCRIPT_RULES: tuple[ScriptRule, ...] = (
         lambda ctx: ctx.human_count <= 1 and _is_thread_tools_request(ctx.first_text),
     ),
     ScriptRule(
-        "code_channel_followup",
-        lambda ctx: "E2E_CODE_CHANNEL_FOLLOWUP" in ctx.last_text,
-    ),
-    ScriptRule(
-        "code_channel",
-        lambda ctx: ctx.human_count <= 1 and "E2E_CODE_CHANNEL" in ctx.first_text,
-    ),
-    ScriptRule(
         "background_work",
         lambda ctx: ctx.human_count <= 1 and BACKGROUND_WORK_MARKER in ctx.first_text,
     ),
+    ScriptRule(
+        "file_previews",
+        lambda ctx: ctx.human_count <= 1 and FILE_PREVIEWS_MARKER in ctx.first_text,
+    ),
     ScriptRule("iframe", lambda ctx: ctx.human_count <= 1 and _is_iframe_request(ctx.first_text)),
-    ScriptRule(
-        "desktop",
-        lambda ctx: ctx.human_count <= 1 and "E2E_DESKTOP_LOCAL" in ctx.first_text,
-    ),
-    ScriptRule(
-        "workspace", lambda ctx: ctx.human_count <= 1 and _is_workspace_request(ctx.first_text)
-    ),
     ScriptRule(
         "expedite_fix",
         lambda ctx: EXPEDITE_MARKER in ctx.first_text and "/baby-sit --continue" in ctx.last_text,
@@ -1897,6 +1900,9 @@ SCRIPT_RULES: tuple[ScriptRule, ...] = (
     ScriptRule(
         "many_files", lambda ctx: ctx.human_count <= 1 and "E2E_MANY_FILES" in ctx.first_text
     ),
+    ScriptRule(
+        "screenshots", lambda ctx: ctx.human_count <= 1 and SCREENSHOTS_MARKER in ctx.first_text
+    ),
     ScriptRule("move", lambda ctx: ctx.human_count <= 1 and _is_move_request(ctx.first_text)),
     ScriptRule("followup", lambda ctx: _is_pull_request_fix(ctx.first_text)),
     ScriptRule("implement", lambda ctx: ctx.human_count <= 1),
@@ -1938,6 +1944,87 @@ class FakeScriptedChatModel(BaseChatModel):
             and "display_description" in spec["function"].get("parameters", {}).get("required", [])
         ]
         return self
+
+    async def _memory_reply(self, messages: list[BaseMessage], context: ScriptContext) -> AIMessage:
+        if any(
+            isinstance(message, ToolMessage) and message.tool_call_id == "call-memory-reply"
+            for message in messages
+        ):
+            return AIMessage(content="")
+        if "E2E_MEMORY_SAVE" in context.last_text:
+            saved = next(
+                (
+                    message
+                    for message in reversed(messages)
+                    if isinstance(message, ToolMessage)
+                    and message.tool_call_id == "call-memory-save"
+                ),
+                None,
+            )
+            if saved is None:
+                number = re.search(r"E2E_MEMORY_SAVE (\d+)", context.last_text)
+                assert number is not None
+                return AIMessage(
+                    content="Saving your number in user memory.",
+                    tool_calls=[
+                        {
+                            "name": "write_file",
+                            "args": {
+                                "file_path": "/memories/user/AGENTS.md",
+                                "content": f"Remembered number: {number.group(1)}\n",
+                            },
+                            "id": "call-memory-save",
+                        }
+                    ],
+                )
+            assert saved.status != "error", saved.content
+            answer = "Your number is saved."
+        else:
+            assert not any(
+                "E2E_MEMORY_SAVE" in _text(message.content)
+                for message in messages
+                if isinstance(message, HumanMessage)
+                and (provenance := Provenance.of(message)) is not None
+                and provenance.kind == "human"
+            ), "Recall must not receive the original conversation"
+            prompt = "\n".join(
+                _text(message.content) for message in messages if isinstance(message, SystemMessage)
+            )
+            number = re.search(r"Remembered number: (\d+)", prompt)
+            answer = (
+                f"Your remembered number is {number.group(1)}."
+                if number
+                else "No remembered number found."
+            )
+        return AIMessage(
+            content="Replying about user memory.",
+            tool_calls=[
+                {
+                    "name": "slack_reply",
+                    "args": {"message": answer, "response_type": "final"},
+                    "id": "call-memory-reply",
+                }
+            ],
+        )
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: object = None,
+        **kwargs: object,
+    ) -> ChatResult:
+        humans = _script_humans(messages)
+        context = ScriptContext(
+            first_text=_text(humans[0].content) if humans else "",
+            last_text=_text(humans[-1].content) if humans else "",
+            human_count=len(humans),
+            pending_text=_latest_turn_text(messages),
+        )
+        if "E2E_MEMORY_SAVE" in context.last_text or "E2E_MEMORY_RECALL" in context.last_text:
+            reply = await self._memory_reply(messages, context)
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+        return await super()._agenerate(messages, stop=stop, **kwargs)
 
     def _generate(
         self,

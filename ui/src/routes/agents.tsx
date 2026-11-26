@@ -6,13 +6,15 @@ import {
   useMatch,
   useRouterState,
 } from "@tanstack/react-router"
+import { ThreadCacheProvider } from "@langchain/react"
 
 import { AgentsShell } from "@/features/agents/components/AgentsSidebar"
 import { PluginTabs } from "@/features/plugins/components/PluginTabs"
-import { reviewChatQuery } from "@/features/agents/lib/queries"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { parsePullRequestSelection } from "@/features/reviews/search"
+import { reviewChatQuery } from "@/features/reviews/lib/reviewKeys"
+import { AppLoading } from "@/components/AppLoading"
 import { RequireLogin } from "@/lib/auth-redirect"
-import { useSession } from "@/lib/session"
+import { useSession, useSessionPending } from "@/lib/session"
 import { rememberAppLocation } from "@/lib/appLocation"
 import { pageTitle } from "@/lib/pageTitle"
 
@@ -23,26 +25,24 @@ export const Route = createFileRoute("/agents")({
 
 function AgentsLayout() {
   const session = useSession()
+  const sessionPending = useSessionPending()
   const threadMatch = useMatch({
     from: "/agents/$threadId",
     shouldThrow: false,
   })
   const reviewMatch = useMatch({
-    from: "/agents/reviews/$owner/$repo/$number",
+    from: "/agents/reviews/",
     shouldThrow: false,
   })
+  const selectedReview = parsePullRequestSelection(reviewMatch?.search.pr)
   const activeThreadId = threadMatch?.params.threadId
   // A review page's sidebar row is the user's review chat thread. The page
   // loads it; the layout only reads it, so off a review page it asks for nothing.
   const reviewChat = useQuery({
-    ...reviewChatQuery({
-      owner: reviewMatch?.params.owner ?? "",
-      repo: reviewMatch?.params.repo ?? "",
-      number: Number(reviewMatch?.params.number),
-    }),
+    ...reviewChatQuery(selectedReview ?? { owner: "", repo: "", number: 0 }),
     enabled: false,
   })
-  const activeReviewThreadId = reviewMatch
+  const activeReviewThreadId = selectedReview
     ? reviewChat.data?.thread_id
     : undefined
   const location = useRouterState({
@@ -52,12 +52,8 @@ function AgentsLayout() {
     rememberAppLocation(location.href)
   }, [location.href])
 
-  if (session.isLoading) {
-    return (
-      <main className="agents-ui flex h-svh items-center justify-center bg-surface-level-1 p-space-5">
-        <Skeleton className="h-40 w-full max-w-md" />
-      </main>
-    )
+  if (sessionPending) {
+    return <AppLoading />
   }
 
   if (!session.data) return <RequireLogin />
@@ -66,8 +62,12 @@ function AgentsLayout() {
     <AgentsShell
       user={session.data}
       activeThreadId={activeThreadId ?? activeReviewThreadId}
+      hideThreadSidebar={Boolean(reviewMatch)}
     >
-      <Outlet />
+      {/* Keyed by user, so a new sign-in starts with nothing another user read. */}
+      <ThreadCacheProvider key={session.data.user_id}>
+        <Outlet />
+      </ThreadCacheProvider>
       <PluginTabs />
     </AgentsShell>
   )

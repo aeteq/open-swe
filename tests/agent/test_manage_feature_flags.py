@@ -1,20 +1,20 @@
 from collections.abc import Callable
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from openswe.audit_logs import tools as audit_tools
 from openswe.audit_logs.context import current_audit_log
 from openswe.audit_logs.models import AuditLog
-from openswe.dashboard.settings_records import WORKSPACE_SETTINGS
-from openswe.dashboard.workspace_settings import (
-    WorkspaceSettingsUpdate,
-    get_workspace_settings,
+from openswe.dashboard.settings import (
+    SettingsUpdate,
+    get_settings,
+    instance_record,
     upsert_instance_settings,
 )
+from openswe.dashboard.settings_records import INSTANCE_SETTINGS
 from openswe.tools import access as tool_access
 from openswe.tools.manage_feature_flags import manage_feature_flags
-from openswe.workspaces.store import WORKSPACES, Workspace
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
@@ -30,52 +30,36 @@ def private_admin(grant_tool_access: Callable[..., None]) -> None:
 @pytest.mark.usefixtures("registry_db")
 async def test_instance_flags_keep_unrelated_settings_and_reset() -> None:
     await upsert_instance_settings(
-        WorkspaceSettingsUpdate(
-            review_trace_links=False, org_guidelines="Keep me", gateway_enabled=True
-        )
+        SettingsUpdate(pr_summaries=False, org_guidelines="Keep me", model_selection_enabled=True)
     )
     set_result = await manage_feature_flags(
-        "set", {"review_trace_links": True, "gateway_enabled": False}
+        "set", {"pr_summaries": True, "model_selection_enabled": False}
     )
-    assert set_result["effective"]["gateway_enabled"] is False
-    assert set_result["effective"]["review_trace_links"] is True
-    assert (await get_workspace_settings())["org_guidelines"] == "Keep me"
-    await manage_feature_flags("set", {"review_trace_links": None})
-    assert (await get_workspace_settings())["review_trace_links"] is True
-    assert (await get_workspace_settings())["gateway_enabled"] is False
+    assert set_result["effective"]["model_selection_enabled"] is False
+    assert set_result["effective"]["pr_summaries"] is True
+    assert (await get_settings())["org_guidelines"] == "Keep me"
+    await manage_feature_flags("set", {"pr_summaries": None})
+    assert (await get_settings())["pr_summaries"] is True
+    assert (await get_settings())["model_selection_enabled"] is False
 
 
-@pytest.mark.usefixtures("registry_db")
-@pytest.mark.parametrize(
-    "flag",
-    ["review_trace_links", "human_review_auto_merge_enabled", "implementation_walkthrough_enabled"],
-)
-async def test_workspace_flags_inherit_and_keep_other_overrides(flag: str) -> None:
-    await WORKSPACE_SETTINGS.put("team", {"org_guidelines": "Keep me", flag: False})
-    with (
-        patch.object(
-            WORKSPACES,
-            "get",
-            AsyncMock(return_value=Workspace(name="team", slug="team", prompt="")),
-        ),
-    ):
-        assert (await manage_feature_flags("read", workspace="team"))["overrides"] == {flag: False}
-        await manage_feature_flags("set", {flag: True}, workspace="team")
-        assert (await get_workspace_settings("team"))[flag] is True
-        await manage_feature_flags("set", {flag: False})
-        result = await manage_feature_flags("set", {flag: None}, workspace="team")
-        assert result["overrides"] == {}
-        assert (await get_workspace_settings("team"))[flag] is False
-        await manage_feature_flags("set", {flag: None})
-        assert (await get_workspace_settings("team"))[flag] is (
-            flag != "implementation_walkthrough_enabled"
-        )
-        assert (await WORKSPACE_SETTINGS.get("team") or {})["org_guidelines"] == "Keep me"
+async def test_retired_gateway_override_is_not_returned() -> None:
+    await INSTANCE_SETTINGS.put("", {"gateway_enabled": False, "pr_summaries": False})
+    settings = await get_settings()
+    assert "gateway_enabled" not in settings
+    assert "gateway_enabled" not in await instance_record()
+    assert settings["pr_summaries"] is False
 
 
 @pytest.mark.parametrize(
     "flags",
-    [{"review_auto_approve": True}, {"org_guidelines": True}, {"review_trace_links": "yes"}, {}],
+    [
+        {"gateway_enabled": False},
+        {"review_auto_approve": True},
+        {"org_guidelines": True},
+        {"pr_summaries": "yes"},
+        {},
+    ],
 )
 async def test_invalid_flags_are_refused(flags: dict[str, object]) -> None:
     with pytest.raises(ValueError):
@@ -107,7 +91,7 @@ async def test_private_admin_gate_rejects_other_surfaces(
     monkeypatch.setenv("CONFIGURED_ADMINS", "admin")
     monkeypatch.setattr(tool_access, "resolve_access", real_resolve_access)
     with patch("openswe.run_config.get_config", return_value={"configurable": config}):
-        result = await manage_feature_flags("set", {"gateway_enabled": True})
+        result = await manage_feature_flags("set", {"model_selection_enabled": True})
     assert "not available in this thread" in str(result["error"])
 
 
@@ -122,17 +106,47 @@ async def test_sole_writer_sets_flags_but_cannot_read_them(
 
     monkeypatch.setattr(audit_tools, "append_safely", append)
     grant_tool_access(admin=True, sole=True)
-    assert await manage_feature_flags("set", {"gateway_enabled": True}) == {
+    assert await manage_feature_flags("set", {"model_selection_enabled": True}) == {
         "ok": True,
         "scope": "instance",
     }
-    assert (await get_workspace_settings())["gateway_enabled"] is True
+    assert (await get_settings())["model_selection_enabled"] is True
     assert "not available in this thread" in str((await manage_feature_flags("read"))["error"])
     (entry,) = entries
     assert entry.operation_succeeded is True
     assert entry.enrichments.source == "tool"
     assert entry.enrichments.settings_scope == "instance"
     assert entry.enrichments.settings_changes == {
-        "gateway_enabled": {"before": None, "after": True}
+        "model_selection_enabled": {"before": None, "after": True}
     }
     assert current_audit_log.get() is None
+
+
+@pytest.mark.parametrize("mode", ["mentions", "true", "false"])
+async def test_global_bot_trigger_mode_preserves_other_settings(mode: str) -> None:
+    await upsert_instance_settings(SettingsUpdate(org_guidelines="Keep me"))
+    assert (await get_settings())["slack_bot_trigger_mode"] == "mentions"
+    result = await manage_feature_flags("set", slack_bot_trigger_mode=mode)
+    assert result["scope"] == "instance"
+    assert result["effective"]["slack_bot_trigger_mode"] == mode
+    assert (await instance_record())["slack_bot_trigger_mode"] == mode
+    assert (await get_settings())["org_guidelines"] == "Keep me"
+    await manage_feature_flags("set", {"pr_summaries": True})
+    assert (await get_settings())["slack_bot_trigger_mode"] == mode
+
+
+@pytest.mark.parametrize("mode", [True, False, "all", ""])
+async def test_invalid_bot_trigger_modes_are_refused(mode: object) -> None:
+    with pytest.raises(ValueError):
+        await manage_feature_flags("set", slack_bot_trigger_mode=mode)
+    with pytest.raises(ValueError):
+        SettingsUpdate.model_validate({"slack_bot_trigger_mode": mode})
+
+
+async def test_non_admin_cannot_set_bot_trigger_mode(
+    grant_tool_access: Callable[..., None],
+) -> None:
+    grant_tool_access(admin=False, admin_surface=True)
+    result = await manage_feature_flags("set", slack_bot_trigger_mode="true")
+    assert "error" in result
+    assert (await get_settings())["slack_bot_trigger_mode"] == "mentions"

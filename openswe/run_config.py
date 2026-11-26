@@ -27,13 +27,22 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Self
 from uuid import UUID
 
 from langgraph.config import get_config
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationError,
+    model_validator,
+)
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
+from openswe.client_tools import ClientToolSpec
 from openswe.invocation import resolve_invocation_id
-from openswe.openai_responses.client_tools import ClientToolSpec
 from openswe.page_commands.offers import PageSession
 from openswe.source_context import GitHubIssueRef, LinearIssueRef, NotionPageRef, SlackThreadRef
+from openswe.trace_metadata import RunOrigin
 
 if TYPE_CHECKING:
     from openswe.users import User
@@ -106,6 +115,7 @@ type ReviewDestination = Literal["github", "eval", "shadow"]
 
 _WAKE_KEYS = (
     "source",
+    "origin",
     "slack_thread",
     "linear_issue",
     "notion_page",
@@ -113,13 +123,19 @@ _WAKE_KEYS = (
     "pr_number",
     "github_login",
     "user_email",
-    "workspace",
-    # `environment` is the pre-workspaces spelling; a watch started before
-    # the rename still carries it, and both keys mean the same workspace.
-    "environment",
     "agent_model_id",
     "agent_effort",
 )
+
+
+class AutomationSlackReply(BaseModel):
+    """The immutable reply destination of a verified Slack automation event."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    channel_id: str = Field(pattern=r"^[CG][A-Z0-9]{8,}$", max_length=40)
+    thread_ts: str = Field(pattern=r"^[0-9]+\.[0-9]+$", max_length=40)
+    triggering_user_id: str | None = Field(default=None, pattern=r"^[UW][A-Z0-9]+$", max_length=40)
 
 
 class RunConfig(BaseModel):
@@ -132,14 +148,17 @@ class RunConfig(BaseModel):
     prepare_run_id: str | None = None
     invocation_started_at: str | None = None
     offload_conversation: bool = False
+    local_access_bridge_id: str | None = None
     client_tools: list[ClientToolSpec] = Field(default_factory=list)
     plugin_chat: PluginChatConfig | None = None
     # The dashboard page the message came from, which the run queues page commands for.
     page: PageSession | None = None
+    # Where the thread lives, set when it is created (a Slack thread stays "slack").
     source: str | None = None
+    # What started this run, which can differ from source; see RunOrigin.
+    origin: RunOrigin | None = None
     task: str | None = None
-    environment: str | None = None
-    workspace: str | None = None
+    execution: str | None = None
 
     # Actor
     user_id: str | None = None
@@ -178,7 +197,6 @@ class RunConfig(BaseModel):
     diff_line_set: dict[str, Any] | None = None
 
     # The review guide message whose "Next" this run records before the model runs.
-    review_guide_approve_ts: str = ""
 
     # Reviewer run shape
     reviewer_event: str | None = None
@@ -204,6 +222,7 @@ class RunConfig(BaseModel):
     # Behavior toggles
     draft_prs: bool | None = None
     admin_thread: bool | None = None
+    personal_settings_tools_enabled: StrictBool = False
     slack_ask: bool | None = None
     slack_kickoff_eligible: bool | None = None
     # First run of a thread broken out from another Slack thread.
@@ -230,6 +249,7 @@ class RunConfig(BaseModel):
     # Background jobs
     watch_key: str | None = None
     schedule_id: str | None = None
+    automation_slack_reply: AutomationSlackReply | None = None
     background_task_completion: bool | None = None
 
     @model_validator(mode="before")
@@ -370,8 +390,20 @@ class RunConfig(BaseModel):
         return None
 
     @property
+    def unattended(self) -> bool:
+        """Whether an automation started the run, so no one waits on its start."""
+        return self.source == "schedule" or self.schedule_id is not None
+
+    @property
     def is_eval(self) -> bool:
         return self.eval is True or self.reviewer_eval is True
+
+    @property
+    def posts_only_new_findings(self) -> bool:
+        """Whether a review run's ``publish_review`` posts only the findings first seen at its
+        head: a re-review, or a run for a newly deployed preview, which adds what its apps'
+        work turns up to the commit's review."""
+        return bool(self.re_review) or self.reviewer_event == "preview_ready"
 
     @property
     def review_destination(self) -> ReviewDestination:
@@ -408,26 +440,19 @@ class RunConfig(BaseModel):
             return bool(self.slack_thread.channel_id.strip())
         return bool(self.slack_thread.channel_id.strip() and self.slack_thread.thread_ts.strip())
 
-    @property
-    def workspace_slug(self) -> str | None:
-        for value in (self.workspace, self.environment):
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return None
-
     async def automation_creator(self) -> User | None:
-        """Who created the automation this run executes on its own thread, to credit its spend to.
-
-        Only for attribution: an automation run never acts as, or with the credentials
-        of, its creator.
-        """
+        """Resolve the saved personal automation creator for spend attribution."""
         from openswe.schedules.store import get_agent_schedule, schedule_thread_metadata
         from openswe.users import User
 
         if not self.schedule_id:
             return None
         metadata = await schedule_thread_metadata(self)
-        if metadata is None or metadata.get("schedule_id") != self.schedule_id:
+        if (
+            metadata is None
+            or metadata.get("schedule_id") != self.schedule_id
+            or metadata.get("automation_system") is True
+        ):
             return None
         if creator_id := metadata.get("automation_creator_user_id"):
             try:
@@ -435,4 +460,6 @@ class RunConfig(BaseModel):
             except ValueError:
                 return None
         record = await get_agent_schedule(self.schedule_id)
-        return await User.automation_creator(record) if record is not None else None
+        if record is None or record.get("system") is True:
+            return None
+        return await User.automation_creator(record)

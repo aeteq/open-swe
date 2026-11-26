@@ -106,10 +106,7 @@ describe("product analytics", () => {
     vi.useFakeTimers()
     const started = new Date("2026-11-04T12:00:00Z")
     vi.setSystemTime(started)
-    analytics.track("agents_thread_created", {
-      run_target: "cloud",
-      has_attachments: true,
-    })
+    analytics.track("agents_thread_created", { has_attachments: true })
     const initializing = analytics.initialize(() => deferred.load())
     analytics.page("/usage", "/usage")
     deferred.resolve(await deferred.client.load())
@@ -123,7 +120,7 @@ describe("product analytics", () => {
     )
     expect(deferred.client.track).toHaveBeenCalledWith(
       "agents_thread_created",
-      expect.objectContaining({ run_target: "cloud", has_attachments: true }),
+      expect.objectContaining({ has_attachments: true }),
       expect.objectContaining({
         timestamp: expect.any(Date),
         context: { page: { path: "/agents/:id" } },
@@ -158,10 +155,7 @@ describe("product analytics", () => {
     })
     analytics.track(
       "agents_thread_created",
-      {
-        run_target: "cloud",
-        has_attachments: false,
-      },
+      { has_attachments: false },
       alice.user_id
     )
     deferred.resolve(await deferred.client.load())
@@ -253,7 +247,7 @@ describe("product analytics", () => {
         projectsApi.setMember("private-project", "private email", "member")
       ).rejects.toMatchObject({ status: 403 })
       await expect(
-        api.disconnectManagedTool("private-gateway", "private-service")
+        api.disconnectManagedTool("private-service")
       ).rejects.toMatchObject({ status: 0 })
       await agentsApi.triggerSchedule("private-automation")
       expect(client.track.mock.calls).toHaveLength(8)
@@ -370,6 +364,11 @@ describe("product analytics", () => {
       "private event name",
       { prompt: "private prompt" },
     ])
+    analytics.track("apps_app_opened", { app: "design-qa" })
+    analytics.track("apps_app_action", {
+      app: "design-qa",
+      action: "private app text",
+    })
     await vi.advanceTimersByTimeAsync(6000)
     const serialized = JSON.stringify(network.requests)
     expect(network.requests).toHaveLength(1)
@@ -388,8 +387,11 @@ describe("product analytics", () => {
       "private filename",
       "private mode",
       "private event name",
+      "private app text",
     ])
       expect(serialized).not.toContain(forbidden)
+    expect(serialized).toContain('"event":"apps_app_opened"')
+    expect(serialized).toContain('"app":"design-qa"')
     expect(serialized).toContain('"path":"/agents/:id"')
     expect(serialized).toContain('"ip":"0.0.0.0"')
     expect(serialized).toContain('"product":"open-swe"')

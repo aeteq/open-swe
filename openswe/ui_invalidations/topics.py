@@ -11,17 +11,19 @@ import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
+from openswe.database import postgres
 from openswe.github.pull_request_key import PullRequestKey
 from openswe.ui_invalidations import outbox
 
 if TYPE_CHECKING:
     from openswe.github.repo_names import RepoFullName
-    from openswe.incidents.models import IncidentId
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,8 @@ type KeysAuthorizer = Callable[[Session, set[str]], Awaitable[set[str]]]
 
 # GitHub deliveries that name a pull request only through its checks.
 _CHECK_EVENTS = frozenset({"check_run", "check_suite", "workflow_run"})
+# GitHub deliveries about a pull request's conversation, which its status doesn't show.
+_CONVERSATION_EVENTS = frozenset({"issue_comment"})
 _CHECKS_MIN_INTERVAL_SECONDS = 15.0
 
 # Keys carry GitHub names, and a repository's may hold "_".
@@ -59,6 +63,17 @@ class BaseTopic(ABC):
         return kind.min_interval_seconds if kind is not None else 0.0
 
     @staticmethod
+    async def last_changed(*topics: str) -> tuple[datetime | None, datetime]:
+        """When any of ``topics`` last changed (``None`` within retention if never), and now.
+
+        Both by the database's clock, so a read stamped with ``now`` is current until
+        one of ``topics`` changes after it.
+        """
+        async with postgres.connection() as conn:
+            row = (await conn.execute(outbox.LAST_INVALIDATED, {"topics": list(topics)})).one()
+        return row.changed_at, row.now
+
+    @staticmethod
     def well_formed(topic: str) -> bool:
         return len(topic) <= _MAX_LENGTH and _WELL_FORMED.fullmatch(topic) is not None
 
@@ -70,13 +85,30 @@ class BaseTopic(ABC):
             name, _, key = topic.partition("/")
             if name in cls._by_name:
                 keys_by_kind.setdefault(cls._by_name[name], set()).add(key)
-        allowed = await asyncio.gather(
-            *(kind.authorize(session, keys) for kind, keys in keys_by_kind.items())
+        # Several topics protect the same records (queues, browsers, workers).
+        # Authorize their union once so startup does not fetch each thread again.
+        grouped: dict[KeysAuthorizer, set[str]] = {}
+        callbacks: dict[BaseTopic, KeysAuthorizer] = {}
+        for kind, keys in keys_by_kind.items():
+            if (
+                isinstance(kind, KeyedTopic)
+                and keys - {""}
+                and (callback := kind.batch_authorizer) is not None
+            ):
+                callbacks[kind] = callback
+                grouped.setdefault(callback, set()).update(keys - {""})
+        checked = await asyncio.gather(*(check(session, keys) for check, keys in grouped.items()))
+        shared = dict(zip(grouped, checked, strict=True))
+        remaining = {kind: keys for kind, keys in keys_by_kind.items() if kind not in callbacks}
+        checked_remaining = await asyncio.gather(
+            *(kind.authorize(session, keys) for kind, keys in remaining.items())
         )
+        allowed = dict(zip(remaining, checked_remaining, strict=True))
+        for kind, callback in callbacks.items():
+            keys = keys_by_kind[kind]
+            allowed[kind] = (keys & {""}) | (keys & shared[callback])
         return {
-            f"{kind}/{key}" if key else kind.name
-            for kind, keys in zip(keys_by_kind, allowed, strict=True)
-            for key in keys
+            f"{kind}/{key}" if key else kind.name for kind, keys in allowed.items() for key in keys
         }
 
     @abstractmethod
@@ -94,18 +126,14 @@ class BaseTopic(ABC):
 class Topic(BaseTopic):
     """Data any signed-in session may read, invalidated as a whole."""
 
-    WORKSPACES: ClassVar[Topic]
-    """Any workspace's definition, bindings, settings, snapshot or refresh state."""
+    SETTINGS: ClassVar[Topic]
+    """Global defaults and execution image state."""
+
+    ROUTING: ClassVar[Topic]
+    """Repository and Slack channel integration bindings."""
 
     REVIEW_STYLES: ClassVar[KeyedTopic[RepoFullName]]
     """Any repository's review style, including its analysis status."""
-
-    INCIDENTS: ClassVar[KeyedTopic[IncidentId]]
-    """Any incident's listing entry. Keyed: that incident's detail and documents,
-    including whether a run is investigating it."""
-
-    INCIDENT_SETTINGS: ClassVar[Topic]
-    """The incident policy, which decides which incidents anyone can see."""
 
     REQUIRED_CHECKS: ClassVar[KeyedTopic[str]]
 
@@ -113,9 +141,17 @@ class Topic(BaseTopic):
     """Keyed: one pull request's live state and review page, from its GitHub
     reviews and comments to the reviewer's findings and the walkthrough."""
 
+    PULL_REQUEST_STATE: ClassVar[KeyedTopic[PullRequestKey]]
+    """Keyed: one pull request's state on GitHub, as its deliveries and Robin's own writes
+    there report it. Its shared status (``SharedPullRequestStatus``) is read again only
+    when this fires, not for Robin's own records of it, such as its reviewer's findings,
+    which fire ``PULL_REQUESTS`` many times a minute."""
+
     PULL_REQUEST_CHECKS: ClassVar[KeyedTopic[PullRequestKey]]
     """Keyed: one pull request's check runs, check suites and workflow runs. A CI
     run changes them many times a second, so a stream sends this at most every 15s."""
+
+    THREADS: ClassVar[ThreadListsTopic]
 
     THREAD_QUEUES: ClassVar[KeyedTopic[str]]
     """Keyed by thread id: the messages waiting in that thread's queue for its agent."""
@@ -162,9 +198,28 @@ class Topic(BaseTopic):
         await self._publish(conn, self.name)
 
     @staticmethod
-    def for_pull_request_event(github_event: str) -> KeyedTopic[PullRequestKey]:
-        """The topic a GitHub delivery about a pull request makes stale."""
-        return Topic.PULL_REQUEST_CHECKS if github_event in _CHECK_EVENTS else Topic.PULL_REQUESTS
+    async def invalidate_pull_request(
+        key: PullRequestKey, *topics: KeyedTopic[PullRequestKey]
+    ) -> None:
+        """Mark ``topics`` stale for one pull request, in one write. Never raises."""
+        await outbox.invalidate_standalone(
+            *(name for topic in topics for name in (topic.name, topic.keyed(key)))
+        )
+
+    @staticmethod
+    async def wrote_to_github(key: PullRequestKey) -> None:
+        """Mark stale a pull request Robin just changed on GitHub: its views and its status,
+        without waiting on GitHub's webhook. Every dashboard write to GitHub calls this."""
+        await Topic.invalidate_pull_request(key, Topic.PULL_REQUESTS, Topic.PULL_REQUEST_STATE)
+
+    @staticmethod
+    def for_pull_request_event(github_event: str) -> tuple[KeyedTopic[PullRequestKey], ...]:
+        """The topics a GitHub delivery about a pull request makes stale."""
+        if github_event in _CHECK_EVENTS:
+            return (Topic.PULL_REQUEST_CHECKS,)
+        if github_event in _CONVERSATION_EVENTS:
+            return (Topic.PULL_REQUESTS,)
+        return (Topic.PULL_REQUESTS, Topic.PULL_REQUEST_STATE)
 
     async def authorize(self, session: Session, keys: set[str]) -> set[str]:
         return keys & {""}
@@ -193,6 +248,11 @@ class KeyedTopic[K: str](BaseTopic):
         super().__init__(name, min_interval_seconds=min_interval_seconds)
         self._authorize_keys = authorize_keys
 
+    @property
+    def batch_authorizer(self) -> KeysAuthorizer | None:
+        """Only the standard authorization policy can share checks across topics."""
+        return self._authorize_keys if type(self).authorize is KeyedTopic.authorize else None
+
     async def invalidate(self, conn: Connection | None = None, *, key: K | None = None) -> None:
         """Mark this topic stale, and with ``key`` that one record's topic too.
 
@@ -213,20 +273,26 @@ class KeyedTopic[K: str](BaseTopic):
         return (keys & {""}) | await self._authorize_keys(session, records)
 
 
-async def _readable_incidents(session: Session, incident_ids: set[str]) -> set[str]:
-    # The incident service invalidates through this module.
-    from openswe.dashboard.deps import session_is_admin
-    from openswe.incidents import service
-    from openswe.incidents.models import IncidentId
+class ThreadListsTopic(KeyedTopic[str]):
+    async def activity(self, conn: Connection, metadata: Mapping[str, JsonValue]) -> None:
+        from openswe.threads.identity import ThreadIdentity
+        from openswe.threads.summary import thread_is_private
 
-    if session.get("provider", "github") != "github":
-        return set()
-    admin = session_is_admin(session)
-    ordered = sorted(incident_ids)
-    visible = await asyncio.gather(
-        *(service.visible(IncidentId(key), include_setup=admin) for key in ordered)
-    )
-    return {key for key, ok in zip(ordered, visible, strict=True) if ok}
+        topics = [] if thread_is_private(metadata) else [self.keyed("public")]
+        if isinstance(owner := metadata.get("owner_login"), str) and owner:
+            user = await ThreadIdentity(owner).user()
+            if user is not None:
+                topics.append(self.keyed(str(user.id)))
+        if topics:
+            await self._publish(conn, *topics)
+
+    async def authorize(self, session: Session, keys: set[str]) -> set[str]:
+        from openswe.dashboard.oauth import session_user_id
+
+        allowed = {"public"} if session.get("provider", "github") == "github" else set()
+        if (user_id := session_user_id(session)) is not None:
+            allowed.add(str(user_id))
+        return keys & allowed
 
 
 async def _readable_required_checks(session: Session, keys: set[str]) -> set[str]:
@@ -259,12 +325,11 @@ async def _readable_pull_requests(session: Session, keys: set[str]) -> set[str]:
 
 async def _readable_plugin_documents(session: Session, keys: set[str]) -> set[str]:
     # Imported on use: most of the app imports this module, which stays light.
-    from openswe.dashboard.oauth import session_user_id
-    from openswe.users.models import User
+    from openswe.dashboard.principal import DashboardPrincipal
 
     # A key is "<digest>/<scope>"; the scope is "user/<id>" or "owner/repo".
     scopes = {key: parts[1] for key in keys if len(parts := key.split("/", 1)) == 2}
-    user = await User.for_session(session_user_id(session), session["sub"]) if scopes else None
+    user = await DashboardPrincipal.from_session(session).user() if scopes else None
     if user is None:
         return set()
     readable = {key for key, scope in scopes.items() if scope == f"user/{user.id}"}
@@ -280,35 +345,30 @@ async def _readable_plugin_documents(session: Session, keys: set[str]) -> set[st
 
 async def _readable_threads(session: Session, thread_ids: set[str]) -> set[str]:
     # Thread summaries import this module.
+    from openswe.threads.store import THREADS
     from openswe.threads.summary import thread_is_readable
-    from openswe.utils.json_types import thread_metadata
-    from openswe.utils.thread_ops import langgraph_client
 
-    client = langgraph_client()
-    ordered = sorted(thread_ids)
-    threads = await asyncio.gather(
-        *(client.threads.get(thread_id) for thread_id in ordered), return_exceptions=True
-    )
-    readable: set[str] = set()
-    for thread_id, thread in zip(ordered, threads, strict=True):
-        if isinstance(thread, BaseException):
-            logger.warning(
-                "Could not read thread for queue invalidations",
-                exc_info=thread,
-                extra={"agent_thread_id": thread_id},
-            )
-            continue
-        if thread_is_readable(thread_metadata(thread), session.get("sub"), session.get("email")):
-            readable.add(thread_id)
-    return readable
+    if not thread_ids:
+        return set()
+    sub = session.get("sub")
+    email = session.get("email")
+    login = sub.strip() if isinstance(sub, str) and sub.strip() else None
+    viewer_email = email if isinstance(email, str) else None
+    threads = await THREADS.get_many(sorted(thread_ids))
+    return {
+        thread_id
+        for thread_id, thread in threads.items()
+        if thread_is_readable(thread.metadata, login, viewer_email)
+    }
 
 
-Topic.WORKSPACES = Topic("workspaces")
+Topic.SETTINGS = Topic("settings")
+Topic.ROUTING = Topic("routing")
 Topic.REVIEW_STYLES = KeyedTopic("review-styles")
-Topic.INCIDENTS = KeyedTopic("incidents", authorize_keys=_readable_incidents)
-Topic.INCIDENT_SETTINGS = Topic("incident-settings")
 Topic.REQUIRED_CHECKS = KeyedTopic("required-checks", authorize_keys=_readable_required_checks)
 Topic.PULL_REQUESTS = KeyedTopic("pull-requests", authorize_keys=_readable_pull_requests)
+Topic.PULL_REQUEST_STATE = KeyedTopic("pull-request-state", authorize_keys=_readable_pull_requests)
+Topic.THREADS = ThreadListsTopic("threads", min_interval_seconds=5.0)
 Topic.PULL_REQUEST_CHECKS = KeyedTopic(
     "pull-request-checks",
     authorize_keys=_readable_pull_requests,

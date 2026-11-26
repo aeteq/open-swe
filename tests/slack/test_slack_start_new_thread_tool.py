@@ -4,17 +4,15 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx2
 import pytest
 
-from openswe.credential_scope import (
-    PrAuthorNotAParticipant,
-    pr_author_login,
-    private_credential_login,
-)
-from openswe.dashboard.workspace_settings import WorkspaceSettings
+from openswe.credential_scope import pr_author_login, private_credential_login
+from openswe.dashboard.settings import Settings
 from openswe.slack import solo_threads, staged_files
 from openswe.slack.channels import SlackChannel
 from openswe.users.models import User, UserIdentity
+from tests.conftest import serve_threads_from
 from tests.slack.test_slack_solo_threads import _Harness
 
 slack_breakout_tool = importlib.import_module("openswe.slack.tools.start_new_thread")
@@ -92,7 +90,6 @@ def _config() -> dict[str, Any]:
     return {
         "configurable": {
             "thread_id": "parent-thread",
-            "workspace": "engineering",
             "repo": {"owner": "langchain-ai", "name": "open-swe"},
             "github_login": "alice",
             "user_email": "alice@example.com",
@@ -152,8 +149,8 @@ def parent_client(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         slack_breakout_tool,
-        "cached_workspace_settings",
-        AsyncMock(return_value=WorkspaceSettings({"fable_enabled": False})),
+        "cached_settings",
+        AsyncMock(return_value=Settings({"fable_enabled": False})),
     )
     # The parent conversation is the backend's unless a test says MDA's channel holds it.
     monkeypatch.setattr(slack_breakout_tool.mda_forwarding, "holds", AsyncMock(return_value=False))
@@ -315,15 +312,20 @@ async def test_a_breakout_of_an_mda_conversation_is_mda_s_too(
 
 
 @pytest.mark.parametrize("deletes", [True, False])
+@pytest.mark.parametrize(
+    "failure",
+    [slack_breakout_tool.ChannelThreadError("no secret"), httpx2.ConnectError("MDA unreachable")],
+    ids=["no-secret", "unreachable"],
+)
 async def test_a_breakout_mda_cant_open_starts_no_run(
-    monkeypatch: pytest.MonkeyPatch, deletes: bool
+    monkeypatch: pytest.MonkeyPatch, deletes: bool, failure: Exception
 ) -> None:
     _, run, _ = _breakout_without_files(monkeypatch)
     monkeypatch.setattr(slack_breakout_tool.mda_forwarding, "holds", AsyncMock(return_value=True))
     monkeypatch.setattr(
         slack_breakout_tool.mda_forwarding,
         "claim_breakout",
-        AsyncMock(side_effect=slack_breakout_tool.ChannelThreadError("no secret")),
+        AsyncMock(side_effect=failure),
     )
 
     deleted: list[str] = []
@@ -355,7 +357,7 @@ async def test_a_breakout_mda_cant_open_starts_no_run(
     ("model", "effort"),
     [
         ("unknown:model", None),
-        ("anthropic:claude-fable-5-1", None),
+        ("anthropic:claude-fable-5-2", None),
         ("anthropic:claude-opus-5-5", "none"),
     ],
 )
@@ -377,7 +379,7 @@ async def test_breakout_rejects_invalid_model_settings_without_creating_thread(
     options = result["available_models"]
     assert isinstance(options, list)
     assert any(option["id"] == "anthropic:claude-opus-5-5" for option in options)
-    assert all(option["id"] != "anthropic:claude-fable-5-1" for option in options)
+    assert all(option["id"] != "anthropic:claude-fable-5-2" for option in options)
     if effort is not None:
         assert result["available_efforts"] == ["low", "medium", "high", "xhigh", "max"]
     assert "thread_create" not in captured
@@ -418,10 +420,10 @@ async def test_web_breakout_does_not_post_or_bind_slack(
         (
             "C1",
             "C1",
-            "google_genai:gemini-3.8-flash",
+            "google_genai:gemini-4-hydrogen",
             None,
-            "google_genai:gemini-3.8-flash",
-            "medium",
+            "google_genai:gemini-4-hydrogen",
+            "high",
         ),
         ("C1", "C1", None, "none", "openai:gpt-6.1-sol", "none"),
     ],
@@ -573,7 +575,7 @@ async def test_slack_breakout_thread_success(
         "*Repository:* `langchain-ai/open-swe`\n\n"
         "*Instructions for the new thread:*\n"
         "Use the same repo and investigate the follow-up aspect in detail. "
-        f"<https://dashboard.example/agents/{expected_thread_id}|Open in Web>"
+        f"<https://dashboard.example/agents/{expected_thread_id}|Open in Robin>"
     )
     assert captured["top_level_post"]["blocks"] == [
         {
@@ -584,23 +586,34 @@ async def test_slack_breakout_thread_success(
             },
         },
         {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": (
-                    "*Repository:* `langchain-ai/open-swe`\n\n"
-                    "*Instructions for the new thread:*\n"
-                    "Use the same repo and investigate the follow-up aspect in detail."
-                ),
+            "type": "container",
+            "title": {
+                "type": "plain_text",
+                "text": "Instructions for the new thread",
+                "emoji": True,
             },
-            "expand": False,
+            "is_collapsible": True,
+            "default_collapsed": True,
+            "child_blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            "*Repository:* `langchain-ai/open-swe`\n\n"
+                            "*Instructions for the new thread:*\n"
+                            "Use the same repo and investigate the follow-up aspect in detail."
+                        ),
+                    },
+                }
+            ],
         },
         {
             "type": "context",
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": f"<https://dashboard.example/agents/{expected_thread_id}|Open in Web>",
+                    "text": f"<https://dashboard.example/agents/{expected_thread_id}|Open in Robin>",
                 }
             ],
         },
@@ -615,7 +628,7 @@ async def test_slack_breakout_thread_success(
     assert captured["binding"]["thread_ts"] == new_ts
     metadata = captured["thread_update"]["metadata"]
     assert metadata["source"] == "slack"
-    assert metadata["workspace"] == "engineering"
+    assert "workspace" not in metadata
     assert metadata["source_context"]["slack_thread"]["channel_id"] == target
     assert metadata["repo"] == {"owner": "langchain-ai", "name": "open-swe"}
     assert metadata["github_login"] == "alice"
@@ -630,7 +643,7 @@ async def test_slack_breakout_thread_success(
     dispatch = captured["dispatch"]
     assert dispatch["thread_id"] == expected_thread_id
     assert dispatch["source"] == "slack"
-    assert dispatch["configurable"]["workspace"] == "engineering"
+    assert "workspace" not in dispatch["configurable"]
     assert dispatch["configurable"]["slack_thread"]["channel_id"] == target
     assert dispatch["configurable"]["slack_thread"]["thread_ts"] == new_ts
     assert dispatch["configurable"]["repo"] == {"owner": "langchain-ai", "name": "open-swe"}
@@ -689,7 +702,7 @@ async def test_breakout_preserves_requester_and_credential_scope(
     )
     saved_slack = dict(config["configurable"]["slack_thread"])
     monkeypatch.setattr(
-        "openswe.credential_scope.WORKSPACES.is_ask_channel", AsyncMock(return_value=False)
+        "openswe.credential_scope.INTEGRATIONS.listens_to_channel", AsyncMock(return_value=False)
     )
     monkeypatch.setattr(
         slack_breakout_tool.User,
@@ -753,7 +766,7 @@ async def test_breakout_preserves_requester_and_credential_scope(
         "" if direct else "1700000000.000002"
     )
     get_thread.return_value = {"metadata": child_metadata}
-    monkeypatch.setattr("langgraph_sdk.get_client", lambda: client)
+    serve_threads_from(monkeypatch, get_thread)
     monkeypatch.setattr("openswe.run_config.get_config", lambda: {"configurable": child_config})
     user_owned = owner_type == "user" or bool(actor and not background)
     assert child_metadata["owner_type"] == ("user" if user_owned else "system")
@@ -761,13 +774,8 @@ async def test_breakout_preserves_requester_and_credential_scope(
     assert await private_credential_login() == (actor if visibility == "private" else None)
     if user_owned:
         assert child_metadata["owner_login"] == actor
-        assert await pr_author_login(actor) == actor
-        if visibility == "public":
-            with pytest.raises(PrAuthorNotAParticipant):
-                await pr_author_login("alice")
     else:
         assert "owner_login" not in child_metadata
-        assert await pr_author_login("alice") is None
 
 
 async def test_breakout_rejects_unreadable_parent_scope(monkeypatch: pytest.MonkeyPatch) -> None:

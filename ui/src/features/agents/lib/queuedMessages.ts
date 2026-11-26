@@ -1,21 +1,14 @@
 import type { SubmissionQueueEntry } from "@langchain/react"
 
 import type { QueuedTurn } from "@/features/agents/lib/transcript/reducer"
+import type { PassageReply } from "@/features/agents/utils/passageReply"
 import type {
   AnyImageChunk,
   Chunk,
   ImageChunk,
   Message,
   PendingThreadMessage,
-  QueuedThreadMessage,
 } from "@/features/agents/lib/types"
-
-function messageText(message: Message): string {
-  return message.chunks
-    .map((chunk) => (chunk.kind === "text" ? chunk.text : ""))
-    .join("\n")
-    .trim()
-}
 
 function messageIds(messages: Array<Message>): Set<string> {
   return new Set(messages.map((message) => message.id))
@@ -57,8 +50,12 @@ export function visiblePendingMessages(
       author: "user",
       ...(senderName ? { structuredSenderName: senderName } : {}),
       timestamp: new Date(message.createdAt).toISOString(),
-      timestampIsFallback: true,
-      ...(message.status !== "sent" ? { deliveryStatus: message.status } : {}),
+      // A sent message shows when it was sent, so its row keeps its height
+      // when the transcript's own row takes over; until then the delivery
+      // status holds that line.
+      ...(message.status !== "sent"
+        ? { timestampIsFallback: true, deliveryStatus: message.status }
+        : {}),
       deliveryError: message.error,
       optimistic: true,
       ...(message.replies ? { replies: message.replies } : {}),
@@ -71,40 +68,6 @@ export function visiblePendingMessages(
     }))
 }
 
-export function visibleQueuedMessages(
-  queuedMessages: Array<QueuedThreadMessage> | undefined,
-  messages: Array<Message>
-): Array<QueuedThreadMessage> {
-  const queued = queuedMessages ?? []
-  if (queued.length === 0) return queued
-
-  const persistedIds = messageIds(messages)
-  const userMessages = messages
-    .filter((message) => message.author === "user")
-    .map((message) => ({
-      text: messageText(message),
-      timestamp: Date.parse(message.timestamp),
-      consumed: false,
-    }))
-
-  return queued.filter((queuedMessage) => {
-    if (persistedIds.has(queuedMessage.id)) return false
-    if (!queuedMessage.id.startsWith("queued-")) return true
-    const queuedText = queuedMessage.content.trim()
-    if (!queuedText) return true
-
-    const match = userMessages.find((message) => {
-      if (message.consumed || !message.text.includes(queuedText)) return false
-      if (!Number.isFinite(message.timestamp)) return true
-      return message.timestamp >= queuedMessage.createdAt - 1000
-    })
-    if (!match) return true
-
-    match.consumed = true
-    return false
-  })
-}
-
 interface QueuedSubmitContentBlock {
   type?: string
   text?: string
@@ -115,6 +78,7 @@ interface QueuedSubmitContentBlock {
 interface QueuedSubmitMessage {
   id?: string
   content?: string | Array<QueuedSubmitContentBlock>
+  additional_kwargs?: { replies?: Array<PassageReply> }
 }
 interface QueuedSubmitValues {
   messages?: Array<QueuedSubmitMessage>
@@ -127,7 +91,7 @@ interface QueuedSubmitValues {
  */
 function queuedEntryChunks(
   entry: SubmissionQueueEntry
-): { id: string; chunks: Array<Chunk> } | null {
+): { id: string; chunks: Array<Chunk>; replies?: Array<PassageReply> } | null {
   const messages = (entry.values as QueuedSubmitValues | null | undefined)
     ?.messages
   const raw = messages?.[messages.length - 1]
@@ -150,7 +114,7 @@ function queuedEntryChunks(
       }
     }
   }
-  return { id: raw.id, chunks }
+  return { id: raw.id, chunks, replies: raw.additional_kwargs?.replies }
 }
 
 /**
@@ -165,7 +129,7 @@ export function queueEntryToTurn(
 ): QueuedTurn | null {
   const found = queuedEntryChunks(entry)
   if (!found) return null
-  const { id, chunks } = found
+  const { id, chunks, replies } = found
 
   return {
     turnId: entry.id,
@@ -175,6 +139,7 @@ export function queueEntryToTurn(
       author: "user",
       timestamp: entry.createdAt.toISOString(),
       chunks,
+      ...(replies?.length ? { replies } : {}),
     },
     senderLogin: login ?? null,
     requestedAt: entry.createdAt.toISOString(),

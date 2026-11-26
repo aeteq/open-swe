@@ -5,7 +5,7 @@ import { useId, useState } from "react"
 import { parsePullRequestInput } from "../lib/pullRequest"
 import { useRouter } from "../lib/router"
 
-/** Opens the Design QA page of a pull request someone types or pastes. */
+/** Opens the Design QA page of a pull request someone types or pastes, once they submit it. */
 export function OpenPullRequestInput({
   shared,
 }: {
@@ -38,31 +38,22 @@ export function OpenPullRequestInput({
     >
       <div className="flex items-start gap-space-2">
         <Input
-          size="md"
+          size="sm"
           className="min-w-0 flex-1"
           debounceMs={0}
           aria-label="Open Design QA for a pull request"
           isError={invalid}
           aria-describedby={invalid ? hintId : undefined}
           placeholder={
-            numbers
-              ? "PR number, owner/repo#123, or GitHub link"
-              : "owner/repo#123 or GitHub link"
+            numbers ? "PR number or link" : "owner/repo#123 or PR link"
           }
           value={value}
           onChange={(next) => {
             setValue(next)
             setInvalid(false)
           }}
-          onPaste={(event) => {
-            const text = event.clipboardData.getData("text")
-            if (parsePullRequestInput(text, shared)) {
-              event.preventDefault()
-              open(text)
-            }
-          }}
         />
-        <Button size="md" type="submit">
+        <Button size="sm" type="submit">
           Open PR
         </Button>
       </div>

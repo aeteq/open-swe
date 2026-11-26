@@ -55,7 +55,7 @@ _DEFAULTS = {
     # Sandboxes: the stand-in for LangSmith's sandbox service (sandbox_service.py)
     # roots every sandbox MDA or the backend opens in this throwaway temp dir.
     "E2E_SANDBOX_ROOT": str(_WORK_DIR),
-    # Workspace scripts write themselves and their logs here. The default,
+    # Sandbox scripts write themselves and their logs here. The default,
     # /open-swe/environment, assumes a sandbox where the agent is root; the
     # stand-in runs on the developer's own machine, whose root is not writable.
     "OPENSWE_SCRIPT_ROOT": str(TMP / "open-swe" / "environment"),
@@ -91,13 +91,12 @@ _DEFAULTS = {
     "LANGGRAPH_URL": BASE_URL,
     "MDA_RUNTIME_URL": f"http://127.0.0.1:{MDA_PORT}",
     "REMOTE_RUNTIME_TOKEN_SECRET": "test-remote-runtime-token-secret",
-    # Dashboard: the "Open in Web" link target + session-cookie signing. Use
-    # 127.0.0.1 (not localhost) so the local-dev LLM-key check stays skipped.
+    # Dashboard: the "Open in Web" link target + session-cookie signing.
     # The link points at the app server, so following it lands the browser on
     # the origin a real user is on rather than on the backend.
     "DASHBOARD_BASE_URL": APP_URL,
     "DASHBOARD_API_BASE_URL": BASE_URL,
-    "DASHBOARD_ALLOWED_ORIGINS": f"{APP_URL},{BASE_URL},open-swe://app",
+    "DASHBOARD_ALLOWED_ORIGINS": f"{APP_URL},{BASE_URL},robin://app",
     # At least 32 bytes: a shorter key makes PyJWT warn on every session decode
     # from a worker thread, which holds the warnings lock while logging. The dev
     # log renderer warns from inside its handler, so the two lock orders cross
@@ -136,7 +135,7 @@ TEST_USERS = [
     },
 ]
 
-# Alice is the workspace admin (so admin threads + the workspaces dashboard are
+# Alice is the instance admin (so admin threads + the Defaults dashboard are
 # reachable); Bob is a plain member, which is what the deny-side assertions use.
 ADMIN_USER = TEST_USERS[0]
 _DEFAULTS["ALLOWED_GITHUB_USERS"] = ",".join(

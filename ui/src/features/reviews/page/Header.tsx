@@ -1,6 +1,6 @@
 import { Link as MacawLink } from "@langchain/macaw-components/Link"
 import { CircularProgress } from "@langchain/macaw-components/CircularProgress"
-import { ArrowLeftIcon, ArrowUpIcon } from "@langchain/macaw-components/icons"
+import { ArrowUpIcon } from "@langchain/macaw-components/icons"
 import { Badge, type BadgeProps } from "@langchain/macaw-components/Badge"
 import { Button } from "@langchain/macaw-components/Button"
 import {
@@ -10,7 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@langchain/macaw-components/DropdownMenu"
 import { IconButton } from "@langchain/macaw-components/IconButton"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Skeleton } from "@/components/Skeleton"
+import { ArrowSquareOutIcon } from "@phosphor-icons/react/dist/ssr/ArrowSquareOut"
 import { ChatsCircleIcon } from "@phosphor-icons/react/dist/ssr/ChatsCircle"
 import { CopyIcon } from "@phosphor-icons/react/dist/ssr/Copy"
 import { DotsThreeIcon } from "@phosphor-icons/react/dist/ssr/DotsThree"
@@ -20,27 +21,32 @@ import { GithubLogoIcon } from "@phosphor-icons/react/dist/ssr/GithubLogo"
 import { KeyboardIcon } from "@phosphor-icons/react/dist/ssr/Keyboard"
 import { LinkIcon } from "@phosphor-icons/react/dist/ssr/Link"
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/ssr/TreeStructure"
-import { TreeViewIcon } from "@phosphor-icons/react/dist/ssr/TreeView"
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
+import type { ReactNode } from "react"
 
 import { DropdownMenuItem } from "@/components/MenuItem"
 import type { ReviewDetail } from "@/lib/api"
 import { cn, INHERITED_LINK } from "@/lib/utils"
+import { reportError } from "@/lib/errorReporting"
 import { useAppCommandControls } from "@/lib/appCommands"
 import { StatusPill } from "@/features/reviews/components/StatusPill"
+import { ClosePullRequest } from "@/features/reviews/components/ClosePullRequest"
 import { ReviewButton } from "@/features/reviews/components/ReviewButton"
 import { copyPageLink, copyText } from "@/features/reviews/lib/copyText"
 import { githubUrls } from "@/features/reviews/lib/githubUrls"
 import { statusLabels } from "@/features/reviews/lib/status"
 import { ProfileLink } from "./notes/Byline"
-import { reviewQueries, type PullRequestRef } from "./queries"
+import {
+  reviewQueries,
+  useRefreshPullRequest,
+  type PullRequestRef,
+} from "./queries"
 import { isLive } from "./pullRequestStanding"
-import { RecentReviewPagesMenu } from "./RecentReviewPagesMenu"
+import { PullRequestTitle } from "./PullRequestTitle"
 import { RelativeTimestamp } from "./RelativeTimestamp"
 import { ReviewQueueControls, useReviewQueue } from "./ReviewQueue"
 import { NextStepAction, StandingDot, usePullRequestStanding } from "./Standing"
-import { useReviewPage } from "./store"
+import { INLINE_NAVIGATOR_QUERY, useReviewPage } from "./store"
 
 type PillState = ReviewDetail["pr"]["state"]
 
@@ -64,14 +70,17 @@ function pillState(
 export function Header({
   pr,
   leftInset,
-  compactRail,
-  navigatorShown,
+  titleBar = false,
+  leading,
+  trailing,
 }: {
   pr: PullRequestRef
   leftInset: string
-  compactRail: boolean
-  navigatorShown: boolean
+  titleBar?: boolean
+  leading?: ReactNode
+  trailing?: ReactNode
 }) {
+  const refresh = useRefreshPullRequest(pr)
   const detailQuery = useQuery(reviewQueries.detail(pr))
   const detail = detailQuery.data
   const diff = useQuery(reviewQueries.diff(pr)).data
@@ -84,12 +93,21 @@ export function Header({
   const reviewVerdict = useReviewPage((state) => state.reviewVerdict)
   const setReviewOpen = useReviewPage((state) => state.setReviewOpen)
   const openReview = useReviewPage((state) => state.openReview)
-  const toggleNavigator = useReviewPage((state) => state.toggleNavigator)
   const setRailTab = useReviewPage((state) => state.setRailTab)
   const jumpTo = useReviewPage((state) => state.jumpTo)
   const jumpToUnviewed = useReviewPage((state) => state.jumpToUnviewed)
+  const setNavigatorOpen = useReviewPage((state) => state.setNavigatorOpen)
+  // Below the inline breakpoint the desktop sidebar covers the PR, so actions that show PR content dismiss it.
+  const revealPullRequest = () => {
+    if (titleBar && !window.matchMedia?.(INLINE_NAVIGATOR_QUERY)?.matches)
+      setNavigatorOpen(false)
+  }
   const { openShortcutReference } = useAppCommandControls()
   const githubUrl = githubUrls.pullRequest(pr)
+  const openInBrowser =
+    typeof window !== "undefined"
+      ? window.openSweDesktop?.openInBrowser
+      : undefined
   const current = usePullRequestStanding(pr)
   const queue = useReviewQueue(pr)
   const status = current?.status
@@ -105,33 +123,22 @@ export function Header({
     <header
       data-desktop-drag-region=""
       className={cn(
-        // Top-aligned at 8px so the first row lines up with the app's floating sidebar button.
-        "flex shrink-0 items-start gap-space-3 border-b border-default bg-surface-level-1 pt-space-2 pr-space-3 pb-space-2",
+        "flex shrink-0 bg-surface-level-1 pr-space-3",
+        titleBar
+          ? "h-11 items-center gap-space-2 overflow-hidden border-b border-muted"
+          : // Top-aligned at 8px so the first row lines up with the app's floating sidebar button.
+            "flex-wrap items-start gap-space-3 border-b border-default pt-space-2 pb-space-2",
         leftInset
       )}
     >
-      <IconButton
-        asChild
-        icon={ArrowLeftIcon}
-        label="Back to reviews"
-        size="md"
-        color="secondary"
-        variant="plain"
-        className="max-sm:hidden"
-      >
-        <Link to="/agents/reviews" search={queue ? { tab: "to-review" } : {}} />
-      </IconButton>
-      <IconButton
-        icon={TreeViewIcon}
-        label={navigatorShown ? "Hide files" : "Show files"}
-        aria-pressed={navigatorShown}
-        size="md"
-        color="secondary"
-        variant="plain"
-        onClick={toggleNavigator}
-      />
+      {leading}
       <div className="min-w-0 flex-1">
-        <div className="flex min-h-7 min-w-0 items-center gap-space-2">
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-space-2",
+            titleBar ? "h-5" : "min-h-7"
+          )}
+        >
           {/* An open PR shows where it stands, in the PR list's own pills; GitHub's lifecycle only once it's settled. */}
           {live && status ? (
             <span className="flex shrink-0 items-center gap-space-1 max-sm:[&>*:not(:first-child)]:hidden">
@@ -157,7 +164,12 @@ export function Header({
               <Skeleton className="h-5 w-14 shrink-0 rounded-full" />
             )
           )}
-          <h1 className="flex min-w-0 items-center gap-space-1 text-sm leading-6 font-semibold tracking-[-0.01em] max-sm:text-sm max-sm:leading-5">
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-space-1 text-sm font-semibold tracking-[-0.01em] max-sm:text-sm max-sm:leading-5",
+              titleBar ? "leading-5" : "leading-6"
+            )}
+          >
             <a
               href={githubUrl}
               target="_blank"
@@ -167,15 +179,20 @@ export function Header({
             >
               <GithubLogoIcon aria-hidden size={16} weight="regular" />
             </a>
-            <RecentReviewPagesMenu pr={pr}>
-              {detail?.pr.title ?? `${pr.owner}/${pr.repo}`}
-              <span className="font-normal text-secondary"> #{pr.number}</span>
-            </RecentReviewPagesMenu>
-          </h1>
+            <PullRequestTitle
+              key={`${pr.owner}/${pr.repo}/${pr.number}`}
+              pr={pr}
+            />
+          </div>
         </div>
         {detail ? (
           // The meta line and the status sentence share one slot and cross-fade.
-          <div className="mt-0.5 grid min-w-0 max-sm:hidden">
+          <div
+            className={cn(
+              "grid min-w-0 max-sm:hidden",
+              titleBar ? "h-[18px] [&_p>*]:py-0!" : "mt-0.5"
+            )}
+          >
             <p
               inert={carrying}
               className={cn(
@@ -307,7 +324,12 @@ export function Header({
           <Skeleton className="mt-space-1 h-3.5 w-80 max-w-full max-sm:hidden" />
         )}
       </div>
-      <div className="flex h-7 shrink-0 items-center gap-space-3">
+      <div
+        className={cn(
+          "flex min-h-7 shrink-0 items-center",
+          titleBar ? "gap-space-2" : "max-w-full flex-wrap gap-space-3"
+        )}
+      >
         {carrying && current?.status && (
           <div className="max-lg:hidden">
             <NextStepAction
@@ -325,7 +347,10 @@ export function Header({
             size="sm"
             aria-label={`${viewedCount} / ${files.length} viewed`}
             type="button"
-            onClick={jumpToUnviewed}
+            onClick={() => {
+              revealPullRequest()
+              jumpToUnviewed()
+            }}
             title="Go to the next file you haven't viewed"
             className="hidden shrink-0 gap-space-2 px-space-2 py-space-1 text-secondary tabular-nums hover:bg-surface-level-1-hover hover:text-primary md:flex"
           >
@@ -340,18 +365,19 @@ export function Header({
           </Button>
         )}
         {queue && <ReviewQueueControls queue={queue} />}
-        {compactRail && (
-          <Button
-            size="sm"
-            color="secondary"
-            variant="outlined"
-            leftDecorator={ChatsCircleIcon}
-            aria-label="Chat"
-            onClick={() => setRailTab("chat")}
-          >
-            <span className="max-sm:hidden">Chat</span>
-          </Button>
-        )}
+        <Button
+          size="sm"
+          color="secondary"
+          variant="outlined"
+          leftDecorator={ChatsCircleIcon}
+          aria-label="Chat"
+          onClick={() => {
+            revealPullRequest()
+            setRailTab("chat")
+          }}
+        >
+          <span className="max-sm:hidden">Chat</span>
+        </Button>
         {detail && !isLive(detail) && queue && (
           <Button size="sm" onClick={queue.advance}>
             {queue.next ? "Next" : "Finish"}
@@ -378,6 +404,9 @@ export function Header({
             onNext={queue?.advance}
           />
         )}
+        {live && status && (
+          <ClosePullRequest pr={status} onClosed={refresh.merged} />
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <IconButton
@@ -391,6 +420,22 @@ export function Header({
             />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
+            {openInBrowser && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  void openInBrowser(
+                    window.location.pathname +
+                      window.location.search +
+                      window.location.hash
+                  ).catch((error: unknown) =>
+                    reportError({ title: "Couldn't open the browser", error })
+                  )
+                }}
+              >
+                <ArrowSquareOutIcon aria-hidden size={16} weight="regular" />
+                Open in Browser
+              </DropdownMenuItem>
+            )}
             {detail?.trace_url && (
               <DropdownMenuItem asChild>
                 <a href={detail.trace_url} target="_blank" rel="noreferrer">
@@ -418,6 +463,7 @@ export function Header({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {trailing}
       </div>
     </header>
   )

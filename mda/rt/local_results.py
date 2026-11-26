@@ -14,7 +14,6 @@ ReviewEvent = Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"]
 
 MAX_BODY_CHARS: Final = 10_000
 MAX_SUMMARY_CHARS: Final = 2_000
-MAX_EXIT_CODE: Final = 255
 MAX_INLINE_CHARS: Final = 100_000
 OUTPUT_CHUNK_CHARS: Final = 500
 REQUIRED_CONFIRMATION: Final = "The user cannot see anything I do not send to Slack."
@@ -42,12 +41,6 @@ def slack_no_reply_needed(reason: str, confirmation: str, *, next_step: str) -> 
             ),
         }
     return {"success": True, "turn_closed": True, "next_step": next_step}
-
-
-def cli_result(stdout: str, exit_code: int, unchanged: bool = False) -> dict[str, bool | str]:  # noqa: ARG001, FBT001, FBT002
-    if not 0 <= exit_code <= MAX_EXIT_CODE:
-        return {"success": False, "error": f"exit_code must be between 0 and {MAX_EXIT_CODE}"}
-    return {"success": True}
 
 
 def record_human_input(summary: str) -> tuple[str, str]:
@@ -128,17 +121,6 @@ def chunk_output_as_jsonl(content: str) -> str:
         for index, offset in enumerate(range(0, max(len(content), 1), OUTPUT_CHUNK_CHARS), start=1)
     )
     return "\n".join(json.dumps(record, ensure_ascii=False) for record in records)
-
-
-def bounded_inline_results(results: str) -> str:
-    """Search results too large to keep inline, cut to what is."""
-    if len(results) <= MAX_INLINE_CHARS:
-        return results
-    return (
-        results[:MAX_INLINE_CHARS]
-        + "\n... [results truncated: "
-        + f"{MAX_INLINE_CHARS}/{len(results)} chars]\n"
-    )
 
 
 def truncated_markdown(markdown: str) -> str:

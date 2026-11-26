@@ -10,18 +10,17 @@ _TOOL_MODULES = {
     "unshare_project": ".projects",
     "move_thread_to_project": ".projects",
     "add_finding": ".add_finding",
+    "add_managed_tools_server": ".add_managed_tools_server",
     "assign_human_reviewer": ".request_human_review",
     "auto_assign_human_reviewer": ".request_human_review",
     "background_execute": ".background_execute",
     "background_task": ".background_task",
-    "code_channel_set_view": ".code_channel_set_view",
     "connect_managed_tools": ".connect_managed_tools",
     "comment_on_notion_task": ".comment_on_notion_task",
     "create_automation": ".automations",
     "create_notion_design": ".notion_designs",
     "create_sandbox_file_download_url": ".create_sandbox_file_download_url",
     "delete_automation": ".automations",
-    "delete_workspace": ".workspaces",
     "discover_managed_tools": ".discover_managed_tools",
     "dismiss_human_review_request": ".request_human_review",
     "expedite_pr_approval": ".expedite_pr_approval",
@@ -32,20 +31,16 @@ _TOOL_MODULES = {
     "get_notion_design_template": ".notion_designs",
     "get_thread": ".threads",
     "http_request": ".http_request",
-    "classify": ".classify",
     "list_automations": ".automations",
     "list_event_types": ".listen_events",
     "listen_events": ".listen_events",
     "monitor": ".monitor",
-    "list_workspaces": ".workspaces",
     "list_findings": ".list_findings",
     "list_review_findings": ".list_review_findings",
     "link_pull_request": ".open_pull_request",
     "list_threads": ".threads",
     "manage_baby_sit": ".manage_baby_sit",
     "switch_to_performance_model": ".switch_to_performance_model",
-    "manage_code_channel": "openswe.slack.tools.manage_code_channel",
-    "manage_incident": "openswe.incidents.tools",
     "manage_thread": ".threads",
     "reorder_thread_pins": ".threads",
     "reorder_sidebar_threads": ".threads",
@@ -57,18 +52,19 @@ _TOOL_MODULES = {
     "write_database_rows": ".repair_data",
     "read_only_sql": ".read_only_sql",
     "read_user_settings": ".read_user_settings",
+    "read_settings": ".settings",
+    "patch_settings": ".settings",
+    "read_usage": ".usage",
     "record_human_input": ".record_human_input",
-    "recreate_sandbox": ".recreate_sandbox",
-    "configure_repository": ".workspaces",
-    "configure_workspace": ".workspaces",
     "report_platform_issue": ".report_platform_issue",
+    "upload_session": ".upload_session",
     "request_human_review": ".request_human_review",
     "request_pr_review": "openswe.slack.tools.request_pr_review",
     "request_rollout_check": ".request_rollout_check",
+    "recheck_pr_approval": ".recheck_pr_approval",
     "reply_to_finding_thread": ".reply_to_finding_thread",
     "resolve_finding_thread": ".resolve_finding_thread",
     "delete_organization_skill": ".organization_skills",
-    "publish_workspace": ".workspaces",
     "save_organization_skill": ".organization_skills",
     "preview_app": ".apps",
     "save_app_document": ".review_apps",
@@ -76,17 +72,26 @@ _TOOL_MODULES = {
     "publish_artifact": ".publish_artifact",
     "save_user_instructions": ".save_user_instructions",
     "save_user_settings": ".save_user_settings",
+    "accept_proactive_offer": ".proactivity",
     "save_user_skill": ".user_skills",
     "delete_user_skill": ".user_skills",
     "schedule_thread_wakeup": ".schedule_thread_wakeup",
     "search_pull_requests": ".search_pull_requests",
-    "snapshotctl": ".workspaces",
+    "snapshotctl": ".snapshotctl",
+    "list_integration_bindings": "openswe.routing.tools",
+    "bind_repository": "openswe.routing.tools",
+    "unbind_repository": "openswe.routing.tools",
+    "bind_slack_channel": "openswe.routing.tools",
+    "unbind_slack_channel": "openswe.routing.tools",
+    "bind_slack_channel_prefix": "openswe.routing.tools",
+    "unbind_slack_channel_prefix": "openswe.routing.tools",
     "send_announcement": ".send_announcement",
     "start_thread": ".threads",
     "slack_add_reaction": "openswe.slack.tools.add_reaction",
     "slack_attach_html": "openswe.slack.tools.attach_html",
     "slack_list_channel_members": "openswe.slack.tools.channels",
     "slack_list_channels": "openswe.slack.tools.channels",
+    "slack_search_channel_directory": "openswe.slack.tools.channels",
     "slack_move_thread": "openswe.slack.tools.move_thread",
     "slack_no_reply_needed": "openswe.slack.tools.no_reply_needed",
     "slack_post_message": "openswe.slack.tools.channels",
@@ -95,29 +100,27 @@ _TOOL_MODULES = {
     "slack_reply": "openswe.slack.tools.reply",
     "slack_search": "openswe.slack.tools.search",
     "slack_breakout_thread": "openswe.slack.tools.start_new_thread",
-    "slack_start_review_channel": "openswe.slack.tools.start_review_channel",
     "submit_thread_feedback": ".submit_thread_feedback",
     "suggest_task": ".suggest_task",
     "trigger_automation": ".automations",
     "update_automation": ".automations",
     "update_finding": ".update_finding",
-    "web_search": ".web_search",
+    "transcribe_audio": ".transcribe_audio",
 }
 
 __all__ = [
     "add_finding",
+    "add_managed_tools_server",
     "assign_human_reviewer",
     "auto_assign_human_reviewer",
     "background_execute",
     "background_task",
-    "code_channel_set_view",
     "connect_managed_tools",
     "comment_on_notion_task",
     "create_automation",
     "create_notion_design",
     "create_sandbox_file_download_url",
     "delete_automation",
-    "delete_workspace",
     "discover_managed_tools",
     "dismiss_human_review_request",
     "expedite_pr_approval",
@@ -128,20 +131,16 @@ __all__ = [
     "get_notion_design_template",
     "get_thread",
     "http_request",
-    "classify",
     "list_automations",
     "list_event_types",
     "listen_events",
     "monitor",
-    "list_workspaces",
     "list_findings",
     "list_review_findings",
     "link_pull_request",
     "list_threads",
     "manage_baby_sit",
     "switch_to_performance_model",
-    "manage_code_channel",
-    "manage_incident",
     "manage_thread",
     "reorder_thread_pins",
     "reorder_sidebar_threads",
@@ -153,17 +152,18 @@ __all__ = [
     "write_database_rows",
     "read_only_sql",
     "read_user_settings",
+    "read_settings",
+    "patch_settings",
+    "read_usage",
     "record_human_input",
-    "recreate_sandbox",
-    "configure_repository",
-    "configure_workspace",
     "report_platform_issue",
+    "upload_session",
     "request_human_review",
     "request_pr_review",
     "request_rollout_check",
+    "recheck_pr_approval",
     "reply_to_finding_thread",
     "resolve_finding_thread",
-    "publish_workspace",
     "save_organization_skill",
     "delete_organization_skill",
     "preview_app",
@@ -172,6 +172,7 @@ __all__ = [
     "publish_artifact",
     "save_user_instructions",
     "save_user_settings",
+    "accept_proactive_offer",
     "list_projects",
     "create_project",
     "update_project",
@@ -183,12 +184,20 @@ __all__ = [
     "schedule_thread_wakeup",
     "search_pull_requests",
     "snapshotctl",
+    "list_integration_bindings",
+    "bind_repository",
+    "unbind_repository",
+    "bind_slack_channel",
+    "unbind_slack_channel",
+    "bind_slack_channel_prefix",
+    "unbind_slack_channel_prefix",
     "send_announcement",
     "start_thread",
     "slack_add_reaction",
     "slack_attach_html",
     "slack_list_channel_members",
     "slack_list_channels",
+    "slack_search_channel_directory",
     "slack_move_thread",
     "slack_no_reply_needed",
     "slack_post_message",
@@ -197,25 +206,32 @@ __all__ = [
     "slack_reply",
     "slack_search",
     "slack_breakout_thread",
-    "slack_start_review_channel",
     "submit_thread_feedback",
     "suggest_task",
     "trigger_automation",
     "update_automation",
     "update_finding",
-    "web_search",
+    "transcribe_audio",
 ]
 
 if TYPE_CHECKING:
-    from openswe.incidents.tools import manage_incident
+    from openswe.routing.tools import (
+        bind_repository,
+        bind_slack_channel,
+        bind_slack_channel_prefix,
+        list_integration_bindings,
+        unbind_repository,
+        unbind_slack_channel,
+        unbind_slack_channel_prefix,
+    )
     from openswe.slack.tools.add_reaction import slack_add_reaction
     from openswe.slack.tools.attach_html import slack_attach_html
     from openswe.slack.tools.channels import (
         slack_list_channel_members,
         slack_list_channels,
         slack_post_message,
+        slack_search_channel_directory,
     )
-    from openswe.slack.tools.manage_code_channel import manage_code_channel
     from openswe.slack.tools.move_thread import slack_move_thread
     from openswe.slack.tools.no_reply_needed import slack_no_reply_needed
     from openswe.slack.tools.read_channel_messages import slack_read_channel_messages
@@ -224,8 +240,8 @@ if TYPE_CHECKING:
     from openswe.slack.tools.request_pr_review import request_pr_review
     from openswe.slack.tools.search import slack_search
     from openswe.slack.tools.start_new_thread import slack_breakout_thread
-    from openswe.slack.tools.start_review_channel import slack_start_review_channel
     from openswe.tools.add_finding import add_finding
+    from openswe.tools.add_managed_tools_server import add_managed_tools_server
     from openswe.tools.apps import preview_app, publish_app
     from openswe.tools.automations import (
         create_automation,
@@ -236,8 +252,6 @@ if TYPE_CHECKING:
     )
     from openswe.tools.background_execute import background_execute
     from openswe.tools.background_task import background_task
-    from openswe.tools.classify import classify
-    from openswe.tools.code_channel_set_view import code_channel_set_view
     from openswe.tools.comment_on_notion_task import comment_on_notion_task
     from openswe.tools.connect_managed_tools import connect_managed_tools
     from openswe.tools.create_sandbox_file_download_url import create_sandbox_file_download_url
@@ -257,6 +271,7 @@ if TYPE_CHECKING:
     from openswe.tools.open_pull_request import link_pull_request, open_pull_request
     from openswe.tools.organization_skills import delete_organization_skill, save_organization_skill
     from openswe.tools.output_iframe import output_iframe
+    from openswe.tools.proactivity import accept_proactive_offer
     from openswe.tools.projects import (
         create_project,
         list_projects,
@@ -269,8 +284,8 @@ if TYPE_CHECKING:
     from openswe.tools.publish_review import publish_review
     from openswe.tools.read_only_sql import read_only_sql
     from openswe.tools.read_user_settings import read_user_settings
+    from openswe.tools.recheck_pr_approval import recheck_pr_approval
     from openswe.tools.record_human_input import record_human_input
-    from openswe.tools.recreate_sandbox import recreate_sandbox
     from openswe.tools.repair_data import execute_database_sql, write_database_rows
     from openswe.tools.reply_to_finding_thread import reply_to_finding_thread
     from openswe.tools.report_platform_issue import report_platform_issue
@@ -289,6 +304,8 @@ if TYPE_CHECKING:
     from openswe.tools.schedule_thread_wakeup import schedule_thread_wakeup
     from openswe.tools.search_pull_requests import search_pull_requests
     from openswe.tools.send_announcement import send_announcement
+    from openswe.tools.settings import patch_settings, read_settings
+    from openswe.tools.snapshotctl import snapshotctl
     from openswe.tools.submit_thread_feedback import submit_thread_feedback
     from openswe.tools.suggest_task import suggest_task
     from openswe.tools.switch_to_performance_model import switch_to_performance_model
@@ -300,17 +317,11 @@ if TYPE_CHECKING:
         reorder_thread_pins,
         start_thread,
     )
+    from openswe.tools.transcribe_audio import transcribe_audio
     from openswe.tools.update_finding import update_finding
+    from openswe.tools.upload_session import upload_session
+    from openswe.tools.usage import read_usage
     from openswe.tools.user_skills import delete_user_skill, save_user_skill
-    from openswe.tools.web_search import web_search
-    from openswe.tools.workspaces import (
-        configure_repository,
-        configure_workspace,
-        delete_workspace,
-        list_workspaces,
-        publish_workspace,
-        snapshotctl,
-    )
 
 
 def _load_export(name: str) -> Any:

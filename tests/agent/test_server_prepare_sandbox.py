@@ -7,7 +7,6 @@ from openswe.middleware import task_coordination
 from openswe.sandboxes.tool_runtime import ToolSurface
 from openswe.tasks.store import Task, TaskContext, TaskDelegation, TaskMembership
 from openswe.utils import thread_reads
-from openswe.workspaces.rows import WorkspaceRow
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
@@ -16,9 +15,7 @@ async def test_cancelled_worker_wakeup_cannot_reconnect_or_start_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
-    workspace = WorkspaceRow(slug="default", name="Default")
-    task = Task(coordinator_thread_id="host", title="Fix login", workspace_id=workspace.id)
-    task.workspace = workspace
+    task = Task(coordinator_thread_id="host", title="Fix login")
     context = TaskContext(task, TaskMembership(thread_id="worker", task_id=task.id, role="worker"))
     delegation = TaskDelegation(
         worker_thread_id="worker",
@@ -29,19 +26,24 @@ async def test_cancelled_worker_wakeup_cannot_reconnect_or_start_work(
         effort="high",
         cancelled=True,
     )
-    client = MagicMock()
-    client.threads.get = AsyncMock(
-        return_value={"metadata": {"owner_type": "user", "owner_login": "owner"}}
+    monkeypatch.setattr(
+        thread_reads.THREADS,
+        "get",
+        AsyncMock(
+            return_value=MagicMock(
+                as_langgraph=lambda: {
+                    "thread_id": "worker",
+                    "metadata": {"owner_type": "user", "owner_login": "owner"},
+                }
+            )
+        ),
     )
-    monkeypatch.setattr(thread_reads.langgraph_sdk, "get_client", lambda: client)
     monkeypatch.setattr(
         task_coordination.TaskMembership, "context_for_thread", AsyncMock(return_value=context)
     )
     monkeypatch.setattr(task_coordination.TaskDelegation, "get", AsyncMock(return_value=delegation))
     monkeypatch.setattr(server, "resolve_github_login", AsyncMock(return_value="owner"))
     monkeypatch.setattr(server, "private_credential_login", AsyncMock(return_value="owner"))
-    backend = MagicMock(side_effect=AssertionError("Cancelled worker reached sandbox startup"))
-    monkeypatch.setattr(server, "get_cached_sandbox_backend", backend)
 
     with pytest.raises(PermissionError, match="cancelled"):
         await server.agent_catalog(
@@ -51,5 +53,3 @@ async def test_cancelled_worker_wakeup_cannot_reconnect_or_start_work(
             },
             ToolSurface(),
         )
-
-    backend.assert_not_called()

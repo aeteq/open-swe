@@ -2,7 +2,6 @@
 
 from functools import cache
 
-from deepagents.backends.protocol import BackendProtocol
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -12,7 +11,6 @@ from openswe.agent_api.tokens import RunSettings
 from openswe.review_scout.graph import (
     PrepareReviewScoutRunMiddleware,
     review_scout_catalog,
-    scout_sandbox,
     scout_tools,
 )
 from openswe.run_config import RunConfig
@@ -41,13 +39,15 @@ class ReviewScoutKind(RunKind):
         await review_scout_catalog(config, surface)
 
     async def preparation(
-        self, config: RunnableConfig, settings: RunSettings, *, sandbox_id: str | None
+        self,
+        config: RunnableConfig,
+        settings: RunSettings,
+        *,
+        sandbox_id: str | None,
+        sandbox_pending: bool = False,
     ) -> list[AgentMiddleware]:
-        del settings, sandbox_id
+        del settings, sandbox_id, sandbox_pending
         return [PrepareReviewScoutRunMiddleware(thread_id=_thread_id(config), config=config)]
-
-    async def files(self, config: RunnableConfig) -> BackendProtocol:
-        return scout_sandbox(_thread_id(config), RunConfig.from_config(config))
 
     async def tool(self, config: RunnableConfig, name: str) -> BaseTool | None:  # noqa: ARG002
         return _tools_by_name().get(name)

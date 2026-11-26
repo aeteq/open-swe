@@ -32,12 +32,13 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from contextvars import ContextVar
+from functools import partial
 from typing import Annotated, Final, NotRequired, cast
 
 import httpx
-from deepagents.backends.protocol import BackendProtocol, SandboxBackendProtocol
+from deepagents.backends.protocol import BackendProtocol
 from deepagents.middleware import async_subagents
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -66,6 +67,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest, ToolRuntime
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 from langgraph_sdk.errors import APIConnectionError, APIStatusError
+from langsmith import trace
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from runtime_api.catalog import JOINED_TASK_CONTEXT, InboxSpec
 from runtime_api.endpoint import call
@@ -85,15 +87,14 @@ from runtime_api.loop import (
     Prepared,
     RunStarted,
 )
-from runtime_api.model_errors import classify_exception
+from runtime_api.model_errors import classify_exception, is_model_failure_reply
 from runtime_api.workers import LAUNCH_WORKER, WORKER_LAUNCHED, Launch, Launched
 
 from rt.backend import (
     BackendCallError,
     OpenSweBackend,
-    Run,
+    RunContext,
     RunLocal,
-    harness_message,
     human_messages,
     namespace,
     reporting,
@@ -101,6 +102,8 @@ from rt.backend import (
     since_last_reply,
     subagent_of,
 )
+from rt.first_output import FirstOutput
+from rt.gateway import RUN_GATEWAY
 from rt.git_evidence import turn_git
 from rt.loop import RunLoop
 from rt.managed_sandbox import OpenedSandbox
@@ -108,10 +111,10 @@ from rt.model_calls import call_with_fallback
 from rt.models import build_model
 from rt.offload import OFFLOADING_KEY, RequestedOffload
 from rt.outbox import OUTBOX_KEY, carry
-from rt.remote_files import RemoteFiles, RunArtifacts
+from rt.sandbox_binding import SandboxBinding
 from rt.sandbox_setup import sandbox_setup
-from rt.tools import STATE_KEY, cited, run_id, tool_report
-from rt.tracing import MIDDLEWARE_TRACE_POLICY, TurnTrace
+from rt.tools import STATE_KEY, run_id, tool_report
+from rt.tracing import MIDDLEWARE_TRACE_POLICY
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +155,8 @@ class RunState(AgentState):
     open_swe_outbox: NotRequired[Annotated[dict[str, JsonValue], OmitFromOutput, carry]]
     open_swe_call: NotRequired[Annotated[dict[str, JsonValue], OmitFromOutput]]
     open_swe_prepared_for: NotRequired[Annotated[str, OmitFromOutput]]
+    # The thread the state was prepared on: a Slack branch starts with its source's.
+    open_swe_thread: NotRequired[Annotated[str, OmitFromOutput]]
 
 
 class _RunConfigurable(BaseModel):
@@ -265,12 +270,28 @@ class DescribedToolsMiddleware(AgentMiddleware):
         return await handler(request.override(tool_call={**tool_call, "args": args}))
 
 
-_TRACES: Final = RunLocal(TurnTrace)
+class _Answered:
+    """Whether the run's model has answered yet, which makes a later follow-up a steer."""
+
+    def __init__(self) -> None:
+        self.yet = False
 
 
-def turn_trace(run: Run) -> TurnTrace:
-    """The trace of the turn ``run`` is playing."""
-    return _TRACES.get(run)
+_ANSWERED: Final = RunLocal(_Answered)
+
+
+class _PreparedInbox:
+    """The inbox read the run's preparation answered with, for its first model call alone."""
+
+    def __init__(self) -> None:
+        self._read: Inbox | None = None
+
+    def keep(self, read: Inbox | None) -> None:
+        self._read = read
+
+    def take(self) -> Inbox | None:
+        read, self._read = self._read, None
+        return read
 
 
 class BackendRunMiddleware(AgentMiddleware[RunState]):
@@ -284,19 +305,24 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         self,
         backend: OpenSweBackend,
         open_sandbox: Callable[[Runtime], Awaitable[OpenedSandbox]] | None = None,
-        boot_sandbox: Callable[[SandboxBackendProtocol], Awaitable[OpenedSandbox]] | None = None,
+        boot_sandbox: Callable[[Runtime], Awaitable[OpenedSandbox]] | None = None,
         read_ahead: Sequence[Callable[[], None]] = (),
     ) -> None:
         self._backend = backend
         self._run_loop = RunLoop(backend)
+        # Reports the answers this layer writes for calls it could not make, which never
+        # pass through the inner ``ReportRepliesMiddleware``.
+        self._replies = ReportRepliesMiddleware(backend)
         # Each run's own model, built from its catalog.
         self._models = RunLocal(self._build_model)
         # Asks for the thread's sandbox before preparing, so the backend binds the thread to it,
-        # and waits for it to boot behind the run's other work.
+        # or behind preparing where the catalog lets the run report it afterwards, and waits
+        # for it to boot behind the run's other work, its first model call included.
         self._open_sandbox = open_sandbox
         self._boot_sandbox = boot_sandbox
         # What later hooks read from the backend, started while the run prepares.
         self._read_ahead = read_ahead
+        self._prepared_inbox = RunLocal(_PreparedInbox)
 
     @property
     def _inbox(self) -> InboxSpec | None:
@@ -324,10 +350,10 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         models = self._backend.run.catalog.models
         if models is None:
             raise BackendCallError("The run has no model configuration")
-        return build_model(models.model, use_gateway=models.use_gateway)
+        return build_model(models.model)
 
     def _trace_metadata(self) -> dict[str, JsonValue]:
-        """Who the run acts for."""
+        """The person the run works for and the thread's repo."""
         return {**self._backend.run.catalog.trace_metadata}
 
     def _carrying(
@@ -352,31 +378,58 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         update, opened = await self._before_agent(state, runtime)
         held = {**state.get(STATE_KEY, {}), **_held(update)}
         run = self._backend.run
-        if self._in_sandbox:
-            # A sandbox MDA could not open is not asked for again here: the run's first tool
-            # call opens it, or says why it cannot.
-            files = getattr(runtime, "backend", None) if opened else None
-            sandbox_setup(run).start(files, self._boot_sandbox)
-        else:
-            # Without a sandbox of MDA's, the thread's files are the backend's to reach.
-            files = RemoteFiles(self._backend, run_id)
-        turn_git(run).start(files, held.get("work_dir"), sandbox_setup(run).done)
+        external = run.sandbox.external
+        # A sandbox MDA could not open is not asked for again here: the run's first tool
+        # call opens it, or says why it cannot.
+        files = getattr(runtime, "backend", None) if opened else None
+        boot = self._boot_sandbox
+        sandbox_setup(run).start(
+            files,
+            run.git_identity,
+            None if boot is None else partial(boot, runtime),
+            skip_setup=external,
+        )
+        if not external:
+            turn_git(run).start(files, held.get("work_dir"), sandbox_setup(run).done)
         return self._carrying(state, update)
 
     @property
-    def _in_sandbox(self) -> bool:
-        """Whether the run's files are in MDA's sandbox, which it asks for before preparing."""
-        return self._open_sandbox is not None and self._backend.run.planned.sandbox is not None
+    def _binds_later(self) -> bool:
+        """Whether the run prepares while its sandbox is opened, and reports it afterwards."""
+        return self._backend.run.sandbox.bind_after_prepare and self._open_sandbox is not None
+
+    @staticmethod
+    def _thread_id() -> str | None:
+        thread_id = get_config().get("configurable", {}).get("thread_id")
+        return thread_id if isinstance(thread_id, str) and thread_id else None
+
+    def _starts_thread(self, state: RunState) -> bool:
+        """Whether this is the first run on its thread.
+
+        A Slack branch starts with its source thread's state, which names the source as
+        the thread it was prepared on. State prepared before threads were named names
+        none, and was prepared at all only if its thread had run.
+        """
+        prepared_on = state.get("open_swe_thread")
+        if prepared_on is None:
+            return "open_swe_prepared_for" not in state
+        return prepared_on != self._thread_id()
 
     async def _before_agent(
         self, state: RunState, runtime: Runtime
     ) -> tuple[dict[str, object] | None, bool]:
         """The update preparing the run makes, and whether the sandbox is open, as far as
         this run tried."""
-        trace = turn_trace(self._backend.run)
+        trace = self._backend.run.trace
         trace.start()
         trace.update(self._trace_metadata())
+        if self._starts_thread(state):
+            # Charts count threads by their first run, since they can count runs but not
+            # the distinct threads they belong to.
+            trace.update({"thread_start": True})
         trace.tag(self._backend.run.catalog.trace_tags)
+        # A run whose catalog names no sandbox ends here, on its trace, before it does anything.
+        binds_later = self._binds_later
         if self._backend.awaiting_adoption:
             # A worker never acts on its grant: it has no identity until it adopts one.
             thread_id = _RunConfigurable.model_validate(get_config().get("configurable", {}))
@@ -391,15 +444,22 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         self._backend.outbox.adopt(state)
         invocation = self._invocation()
         if state.get("open_swe_prepared_for") == invocation:
-            await self._backend.run.load_tool_specs(run_id())
+            await self._load_tool_specs()
             return None, True
         # Asking for the sandbox takes a round trip; reading the tool specs needs none of
-        # it, and classifying the thread's route neither, which goes on while it prepares.
+        # it, nor does preparing need them, and classifying the thread's route neither,
+        # which goes on while it prepares.
         opening = asyncio.create_task(self._opened(runtime))
-        classifying = self._loop.classify_ahead(state)
+        loading = asyncio.create_task(self._load_tool_specs())
+        with self._labeled():
+            classifying = self._loop.classify_ahead(state)
+        binding = SandboxBinding.of(self._backend.run)
+        if binds_later:
+            # Neither preparing nor the first model call needs the sandbox: the backend hears
+            # of it once it is open, and the run's first tool call waits for that.
+            binding.start(self._backend, run_id(), opening)
         try:
-            await self._backend.run.load_tool_specs(run_id())
-            opened = await opening
+            opened = OpenedSandbox() if binds_later else await self._proxied(runtime, await opening)
             # Not behind the outbox: what an earlier run left unsent changes nothing here.
             prepared = await call(
                 self._backend,
@@ -408,39 +468,45 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
                     Prepare,
                     run_id(),
                     state,
-                    in_sandbox=self._in_sandbox,
+                    in_sandbox=True,
                     sandbox_id=opened.sandbox_id,
                     sandbox_error=opened.error,
+                    # What the first model call would ask next comes back with the preparation.
+                    inbox=self._inbox_read().model_dump(mode="json")
+                    if self._inbox is not None
+                    else None,
+                    bind_later=binds_later,
                 ),
             )
+            await loading
+            self._prepared_inbox.get(self._backend.run).keep(prepared.inbox)
             # What the backend's preparation writes wins over where a turn starts from.
             starting = self._loop.starting()
-            prepared.update.update(self._loop.prepared(prepared))
             held = {**state.get(STATE_KEY, {}), **prepared.update}
-            prepared.update.update(await self._loop.routed(held, state["messages"], classifying))
+            with self._labeled():
+                routed = await self._loop.routed(held, state["messages"], classifying)
+            prepared.update.update(routed)
             # The route the classifier chose, next to the model a person picked on the trace.
             if (route := self._backend.run.route) not in (None, "default"):
                 trace.update({"model_route": route})
+            # What Jev said the request is, on both arms of the routing experiment.
+            if classified := self._backend.run.classified:
+                trace.update(classified)
+        except BaseException:
+            # The run ends here, so nothing waits for the sandbox it was reporting.
+            binding.abandon()
+            raise
         finally:
-            opening.cancel()
+            if not binds_later:
+                opening.cancel()
+            loading.cancel()
             if classifying is not None:
                 classifying.cancel()
         update = _apply(prepared.model_copy(update={"update": {**starting, **prepared.update}}))
         self._backend.outbox.notify(RUN_STARTED, self._started(state, prepared))
         update = {**update, "open_swe_prepared_for": invocation}
-        if opened.workspace_lost:
-            messages = update.get("messages", [])
-            update["messages"] = [
-                *(messages if isinstance(messages, list) else []),
-                harness_message(
-                    "The sandbox provider confirmed that this thread's bound workspace "
-                    "was deleted. A fresh workspace was created under the same name. "
-                    "Tell the user that local files and unpushed work from the deleted "
-                    "workspace are unavailable; do not claim they were recovered.",
-                    message_id=f"run-guidance:workspace-lost:{invocation}",
-                    source="run_guidance",
-                ),
-            ]
+        if (thread_id := self._thread_id()) is not None:
+            update["open_swe_thread"] = thread_id
         return update, opened.error is None
 
     def _started(self, state: RunState, prepared: Prepared) -> RunStarted:
@@ -462,10 +528,34 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
             sender=prepared.sender,
         )
 
+    async def _load_tool_specs(self) -> None:
+        async with trace("tool_specs.load", run_type="chain"):
+            await self._backend.run.load_tool_specs(run_id())
+
+    async def _proxied(self, runtime: Runtime, opened: OpenedSandbox) -> OpenedSandbox:
+        """``opened``, once it has booted with the run's proxy config written there; or why it
+        could not be. An external sandbox keeps its own.
+
+        Preparing works in the sandbox here (a review fetches its pull request there, a task
+        worker attaches to its coordinator's), through the backend's commands, which MDA
+        writes no proxy config before.
+        """
+        if (
+            opened.sandbox_id is None
+            or self._boot_sandbox is None
+            or self._backend.run.sandbox.proxy_config is None
+        ):
+            return opened
+        async with trace("sandbox.proxy_first_write", run_type="chain"):
+            booted = await self._boot_sandbox(runtime)
+        return opened if booted.error is None else booted
+
     async def _opened(self, runtime: Runtime) -> OpenedSandbox:
-        if self._open_sandbox is None or not self._in_sandbox:
+        if self._open_sandbox is None:
             return OpenedSandbox()
-        return await self._open_sandbox(runtime)
+        # The run's first model call waits on this, and nothing else in the trace shows it.
+        async with trace("sandbox.open", run_type="chain"):
+            return await self._open_sandbox(runtime)
 
     @hook_config(can_jump_to=["end"])
     async def abefore_model(self, state: RunState, runtime: Runtime) -> dict[str, object] | None:
@@ -476,15 +566,8 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
 
     async def _offload(self, state: RunState, runtime: Runtime) -> dict[str, object]:
         """Summarize the conversation now, as the run was asked to, and end the run."""
-        # Where MDA's own summarization keeps the history: the sandbox, or else the run's
-        # artifacts root on the backend, never the root of a person's machine.
-        files = (
-            getattr(runtime, "backend", None)
-            if self._in_sandbox
-            else RunArtifacts(
-                self._backend, run_id, lambda: self._backend.run.catalog.files.artifacts_root
-            )
-        )
+        # Where MDA's own summarization keeps the history: the sandbox.
+        files = getattr(runtime, "backend", None)
         if not isinstance(files, BackendProtocol):
             raise BackendCallError("The run has no files to offload the conversation to")
         update, outcome = await RequestedOffload(
@@ -497,20 +580,14 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         }
 
     async def _before_model(self, state: RunState) -> dict[str, object] | None:
-        # What the loop asks the backend that the inbox does not change goes alongside it.
-        asked = self._loop.ask(state)
-        try:
-            inbox = await self._read_inbox()
-            # The phase sees what the inbox brought, as the model will.
-            with_inbox = {
-                **state,
-                "messages": [*state["messages"], *messages_from_dict(inbox.messages)],
-                STATE_KEY: {**state.get(STATE_KEY, {}), **inbox.update},
-            }
-            planned = await self._loop.before_model(with_inbox, asked)
-        finally:
-            if asked is not None:
-                await asked.close()
+        inbox = await self._read_inbox()
+        # The phase sees what the inbox brought, as the model will.
+        with_inbox = {
+            **state,
+            "messages": [*state["messages"], *messages_from_dict(inbox.messages)],
+            STATE_KEY: {**state.get(STATE_KEY, {}), **inbox.update},
+        }
+        planned = await self._loop.before_model(with_inbox)
         if planned.jump_to is not None:
             # No model call answers the inbox now: it stays for the run that comes next.
             return _apply(planned)
@@ -530,20 +607,25 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         return update
 
     async def _read_inbox(self) -> Inbox:
+        if (prepared := self._prepared_inbox.get(self._backend.run).take()) is not None:
+            return prepared
         if self._inbox is None:
             return Inbox()
+        return await call(self._backend, INBOX, self._inbox_read())
+
+    def _inbox_read(self) -> InboxRead:
         # With what earlier calls received, so none of it comes again.
-        read = InboxRead(
+        return InboxRead(
             run_id=run_id(), spec=self._inbox, received=self._backend.outbox.receiving()
         )
-        return await call(self._backend, INBOX, read)
 
     async def awrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse | ExtendedModelResponse:
-        response = await self._call_model(request, handler)
+        with self._labeled():
+            response = await self._call_model(request, handler)
         # The reply's report rides with the reply into the run's checkpoint.
         carried = self._backend.outbox.carried(request.state)
         if carried is None:
@@ -557,7 +639,8 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
     ) -> ToolMessage | Command:
-        result = await handler(request)
+        with self._labeled():
+            result = await handler(request)
         # The call's reports, and its subagent's, ride with its result into the checkpoint.
         messages = (
             [result]
@@ -577,13 +660,18 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
             return dataclasses.replace(result, update={**result.update, OUTBOX_KEY: carried})
         return result
 
+    def _labeled(self) -> AbstractContextManager[None]:
+        """Tag the call made inside with the person, repo and branch."""
+        run = self._backend.run
+        return run.trace.labeled({**self._trace_metadata(), **turn_git(run).known()})
+
     async def _call_model(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         try:
-            return await self._call_planned(request, handler)
+            response = await self._call_planned(request, handler)
         except GraphBubbleUp:
             # Paused before the call for an MCP server's connection the person has not
             # granted; another model would be paused alike.
@@ -591,13 +679,16 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
         except Exception as exc:
             await self._report_failure(exc)
             raise
+        if any(is_model_failure_reply(message) for message in response.result):
+            self._replies.report(request, response)
+        return response
 
     async def _call_planned(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        trace = turn_trace(self._backend.run)
+        trace = self._backend.run.trace
         own = self._own_model()
         if own is not None:
             # The run's own model, unless the loop names another for this call.
@@ -613,11 +704,9 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
             planned.vision if planned.vision is not None and _has_image(request) else planned.model
         )
         if model is not None:
-            request = request.override(model=build_model(model, use_gateway=planned.use_gateway))
+            request = request.override(model=build_model(model))
             trace.record_model(model.model_id)
         fallback = planned.fallback
-        if fallback is None:
-            return await handler(request)
 
         def attempting(on_fallback: bool) -> None:
             attempted = fallback if on_fallback else model
@@ -625,11 +714,17 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
                 trace.record_model(attempted.model_id)
 
         # As the in-process graph did: another provider, and this one again, before
-        # failing the run.
+        # failing the run. Without a fallback the call is made once, but still through
+        # here, which first checks the run may call models as whoever it acts for.
         return await call_with_fallback(
             request,
-            handler,
-            lambda: build_model(fallback, use_gateway=planned.use_gateway),
+            partial(
+                RUN_GATEWAY.call,
+                handler=handler,
+                run=self._backend.run,
+                routed_model=request.model if model is planned.model else None,
+            ),
+            None if fallback is None else lambda: build_model(fallback),
             attempting=attempting,
         )
 
@@ -680,7 +775,22 @@ class BackendRunMiddleware(AgentMiddleware[RunState]):
             logger.warning("The backend's end-of-run hooks failed", exc_info=True)
             return None
         finally:
-            turn_trace(run).end(self._trace_metadata(), turn_git(run).metadata)
+            try:
+                await self._bound_at_end()
+            finally:
+                run.trace.end(self._trace_metadata(), turn_git(run).metadata)
+
+    async def _bound_at_end(self) -> None:
+        """Let a sandbox the run opened behind its preparation be bound to the thread before
+        the run ends, so the thread is never left with a sandbox it is not bound to.
+
+        A run that called no tool ends as it would have with a sandbox it could not open.
+        """
+        bound = await SandboxBinding.of(self._backend.run).settled()
+        if bound is not None and bound.error is not None:
+            logger.warning(
+                "The run ended without a sandbox it never needed", extra={"cause": bound.error}
+            )
 
 
 class ReportRepliesMiddleware(AgentMiddleware):
@@ -700,7 +810,19 @@ class ReportRepliesMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        response = await handler(request)
+        if namespace():
+            response = await handler(request)
+        else:
+            # Only the agent's own replies time a send; a subagent's come after them.
+            first = FirstOutput()
+            with first.watching():
+                response = await handler(request)
+            first.stamp(response.result)
+        self.report(request, response)
+        return response
+
+    def report(self, request: ModelRequest, response: ModelResponse) -> None:
+        """Stamp ``response``'s replies and queue them for the backend."""
         held = request.state.get(STATE_KEY)
         held = held if isinstance(held, Mapping) else {}
         route = held.get("model_route")
@@ -723,6 +845,7 @@ class ReportRepliesMiddleware(AgentMiddleware):
                 }
         offloading = held.get("conversation_offloading")
         inside = namespace()
+        answered = _ANSWERED.get(self._backend.run)
         self._backend.outbox.replied(
             ModelResult(
                 run_id=run_id(),
@@ -730,13 +853,29 @@ class ReportRepliesMiddleware(AgentMiddleware):
                 response=_json_dicts.validate_python(messages_to_dict(response.result)),
                 # A subagent's own messages are its task, never something a person said.
                 humans=[] if inside else human_messages(since_last_reply(request.messages)),
+                mid_turn=not inside and answered.yet,
+                first_in_thread=not inside and self._first_in_thread(request.state),
                 model_route=route,
                 offloading=_json_object.validate_python(offloading)
                 if isinstance(offloading, Mapping)
                 else None,
             )
         )
-        return response
+        if not inside:
+            answered.yet = True
+
+    @staticmethod
+    def _first_in_thread(state: Mapping[str, object]) -> bool:
+        """Whether no model has answered on the thread yet, in any of its runs.
+
+        Only a provider's reply carries usage: a failed call's stand-in leaves the next
+        call first. Summarization keeps the messages it hides in state.
+        """
+        messages = state.get("messages")
+        return not any(
+            isinstance(message, AIMessage) and message.usage_metadata
+            for message in (messages if isinstance(messages, list) else [])
+        )
 
 
 async def reported(
@@ -770,9 +909,9 @@ async def reported(
         failure = ToolMessage(
             content=f"{type(exc).__name__}: {exc}", tool_call_id=tool_call_id, status="error"
         )
-        backend.outbox.finished(report, failure)
+        backend.run.tool_finished(report, failure)
         raise
-    backend.outbox.finished(report, _tool_message(result, tool_call_id))
+    backend.run.tool_finished(report, _tool_message(result, tool_call_id))
     return result
 
 
@@ -797,44 +936,6 @@ class RuntimeToolsMiddleware(AgentMiddleware):
         if request.tool_call["name"] in self._served:
             return await handler(request)
         return await reported(self._backend, request, handler)
-
-
-class IncidentEvidenceMiddleware(AgentMiddleware):
-    """Record each tool result of an incident run as evidence, which the result then cites.
-
-    The report the run writes cites what it found by evidence id, so each result
-    carries the id the backend recorded it under.
-    """
-
-    trace_policy = MIDDLEWARE_TRACE_POLICY
-
-    def __init__(self, backend: OpenSweBackend) -> None:
-        self._backend = backend
-
-    async def awrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
-    ) -> ToolMessage | Command:
-        result = await handler(request)
-        if not self._backend.run.catalog.incident_evidence:
-            return result
-        if isinstance(result, ToolMessage):
-            return await self._cited(request, result)
-        if isinstance(result, Command) and isinstance(result.update, dict):
-            messages = result.update.get("messages")
-            if isinstance(messages, list):
-                cited = [
-                    await self._cited(request, m) if isinstance(m, ToolMessage) else m
-                    for m in messages
-                ]
-                return dataclasses.replace(result, update={**result.update, "messages": cited})
-        return result
-
-    async def _cited(self, request: ToolCallRequest, result: ToolMessage) -> ToolMessage:
-        return await cited(
-            self._backend, request.tool_call["name"], request.tool_call["args"], result
-        )
 
 
 class _Launched(BaseModel):
@@ -1008,8 +1109,17 @@ class AsyncWorkerLaunchMiddleware(AgentMiddleware):
 
 def _launch_runtime(runtime: ToolRuntime, grant: str, catalog: dict[str, JsonValue]) -> ToolRuntime:
     """The tool runtime the launch sees: a worker grant for context, in place of the run's."""
+    context = RunContext.model_validate(runtime.context or {})
     return dataclasses.replace(
-        runtime, context={"graph": "agent", WORKER_GRANT_KEY: grant, CATALOG_KEY: catalog}
+        runtime,
+        context={
+            "graph": "agent",
+            WORKER_GRANT_KEY: grant,
+            CATALOG_KEY: catalog,
+            "origin": context.origin or "automation",
+            "owner_ls_user_id": context.owner_ls_user_id,
+            "visibility": context.visibility,
+        },
     )
 
 

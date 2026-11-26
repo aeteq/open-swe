@@ -66,14 +66,32 @@ test.describe("thread sandbox id (real dashboard UI)", () => {
     const row = page.locator(`a[href$="/agents/${threadId}"]`).first();
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
-    await page
-      .getByRole("menuitem", { name: "Diagnostics", exact: true })
-      .click();
-
+    const diagnostics = page.getByRole("menuitem", {
+      name: "Diagnostics",
+      exact: true,
+    });
+    await diagnostics.click();
     await expect(copyItem(page)).toBeEnabled();
     const sandboxId = await getSandboxId(page, threadId);
     await copyItem(page).click();
 
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(sandboxId);
+
+    const rowContainer = row.locator(
+      "xpath=ancestor::*[@data-sidebar-thread-row][1]",
+    );
+    await rowContainer.hover();
+    await rowContainer.getByRole("button", { name: "Thread actions" }).click();
+    await diagnostics.hover();
+    await expect(copyItem(page)).toBeEnabled();
+    await expect(diagnostics).toBeVisible();
+    await page.mouse.move(10, 100);
+    await page.getByRole("menuitem", { name: "Archive", exact: true }).hover();
+    await expect(copyItem(page)).not.toBeVisible();
+    await diagnostics.hover();
+    await copyItem(page).click();
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe(sandboxId);
@@ -83,8 +101,8 @@ test.describe("thread sandbox id (real dashboard UI)", () => {
     browser,
     baseURL,
   }) => {
-    // 834px is wider than the 767px mobile breakpoint, so the sidebar renders
-    // inline while Chromium still emits touch events for the long press.
+    // At tablet width the sidebar starts collapsed but opens inline, while
+    // Chromium still emits touch events for the long press.
     const context = await browser.newContext({
       baseURL,
       viewport: { width: 834, height: 1112 },
@@ -102,6 +120,10 @@ test.describe("thread sandbox id (real dashboard UI)", () => {
     const threadA = await createThreadWithSandbox(page);
     const threadB = await createThreadWithSandbox(page);
     await expect(page).toHaveURL(new RegExp(`/agents/${threadB}$`));
+
+    await page
+      .getByRole("button", { name: "Expand sidebar", exact: true })
+      .tap();
 
     const rowA = page.locator(`a[href$="/agents/${threadA}"]`).first();
     await expect(rowA).toBeVisible();

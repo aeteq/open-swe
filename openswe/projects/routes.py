@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from openswe.audit_logs.middleware import audit_endpoint
-from openswe.dashboard.deps import SESSION_DEP
+from openswe.dashboard.deps import SESSION_DEP, DashboardReadDep
 from openswe.dashboard.principal import DashboardPrincipal
 from openswe.projects.store import (
     NAME_MAX_CHARS,
@@ -35,7 +35,6 @@ Viewer = Annotated[User, Depends(require_viewer)]
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=NAME_MAX_CHARS)
-    workspace: str | None = None
     repo_full_name: str | None = None
 
 
@@ -46,17 +45,15 @@ class MemberSet(BaseModel):
 
 
 @router.get("/projects")
-async def api_list_projects(viewer: Viewer) -> dict[str, list[Project]]:
-    return {"projects": await PROJECTS.for_member(viewer)}
+async def api_list_projects(reader: DashboardReadDep) -> dict[str, list[Project]]:
+    return {"projects": await PROJECTS.for_member(reader.user, session=reader.session)}
 
 
 @router.post("/projects")
 @audit_endpoint
 async def api_create_project(body: ProjectCreate, request: Request, viewer: Viewer) -> Project:
     try:
-        return await PROJECTS.create(
-            viewer, body.name, workspace=body.workspace, repo_full_name=body.repo_full_name
-        )
+        return await PROJECTS.create(viewer, body.name, repo_full_name=body.repo_full_name)
     except ProjectError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 

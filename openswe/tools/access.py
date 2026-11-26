@@ -21,6 +21,7 @@ from openswe.schedules.store import ScheduleTrigger, authorized_schedule_run
 from openswe.slack.client import SLACK_THREAD_MAX_MESSAGES, fetch_slack_thread_messages
 from openswe.source_context import SourceContext
 from openswe.tools.admin_gate import actor_is_admin, configurable, is_private_admin_surface
+from openswe.trace_metadata import RunOrigin
 from openswe.users import User
 from openswe.utils.json_types import thread_metadata
 from openswe.utils.thread_participants import (
@@ -39,6 +40,7 @@ Place = Literal[
     "anywhere",
     "private",
     "admin_thread",
+    "automation_management",
     "admin_surface",
     "channel_history",
     "thread_history",
@@ -123,7 +125,9 @@ class Access:
     admin_surface: bool = False
     sole: bool = False
     direct: bool = False
-    slack_bot_channel: str | None = None
+    # A system thread a bot or a channel rule started reads only its own channel.
+    slack_own_channel: str | None = None
+    slack_public_channel: str | None = None
     # Public channels the automation running this names for its runs to read.
     slack_read_channels: frozenset[str] = frozenset()
     # The run was started from a Slack thread; the bot's own reach applies there.
@@ -132,7 +136,7 @@ class Access:
     @property
     def channel_history(self) -> bool:
         """Whether public channels the bot is in may be read on the asker's behalf."""
-        return self.private or bool(self.slack_bot_channel)
+        return self.private or bool(self.slack_own_channel)
 
     def mode(self, policy: Policy) -> Mode | None:
         if policy.direct and not self.direct:
@@ -141,6 +145,7 @@ class Access:
             "anywhere": True,
             "private": self.private,
             "admin_thread": self.admin_thread,
+            "automation_management": (self.private and self.owner) or self.admin_thread,
             "admin_surface": self.admin_surface,
             "channel_history": self.channel_history,
             "thread_history": self.slack_context or self.channel_history,
@@ -270,18 +275,44 @@ async def resolve_access(cfg: RunConfig | None = None, *, login: str | None = No
     admin = await actor_is_admin(cfg, login=login)
     slack = SourceContext.from_metadata(metadata).slack_thread
     current_slack = cfg.slack_thread
-    slack_bot_channel = (
+    slack_own_channel = (
         slack.channel_id
         if (
             scope.owner_type == "system"
             and scope.visibility == "public"
+            and slack is not None
+            and slack.location is not None
+            and current_slack is not None
+            and current_slack.location == slack.location
+            and current_slack.team_id == slack.team_id
+            and (
+                (
+                    cfg.source == "slack"
+                    and bool(slack.triggering_bot_id)
+                    and (
+                        current_slack.triggering_bot_id == slack.triggering_bot_id
+                        or (not current_slack.triggering_bot_id and bool(cfg.user_id or login))
+                    )
+                )
+                or (
+                    cfg.source == RunOrigin.INCIDENTS_AGENT
+                    and metadata.get("source") == RunOrigin.INCIDENTS_AGENT
+                )
+            )
+        )
+        else None
+    )
+    slack_public_channel = (
+        slack.channel_id
+        if (
+            scope.owner_type == "user"
+            and scope.visibility == "public"
             and cfg.source == "slack"
             and slack is not None
             and slack.location is not None
-            and slack.triggering_bot_id
             and current_slack is not None
+            and not current_slack.triggering_bot_id
             and current_slack.location == slack.location
-            and current_slack.triggering_bot_id == slack.triggering_bot_id
             and current_slack.team_id == slack.team_id
         )
         else None
@@ -295,7 +326,8 @@ async def resolve_access(cfg: RunConfig | None = None, *, login: str | None = No
         admin_surface=admin and private and is_private_admin_surface(cfg),
         sole=await sole_writer(cfg, metadata, login),
         direct=direct_user_run(cfg),
-        slack_bot_channel=slack_bot_channel,
+        slack_own_channel=slack_own_channel,
+        slack_public_channel=slack_public_channel,
         slack_read_channels=(
             ScheduleTrigger.slack_channels_of(automation) if automation else frozenset()
         ),
@@ -317,6 +349,7 @@ def access(
     policy: Policy,
     *,
     per_call: Callable[[Mapping[str, object]], Policy | None] | None = None,
+    validation_error: str | None = None,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Gate a tool by ``policy``; ``per_call`` may pick a different policy, or none, per call."""
 
@@ -335,7 +368,15 @@ def access(
             mode = (await resolve_access()).mode(applied)
             if mode is None:
                 return cast(R, {"ok": False, "error": _REFUSED})
-            result = await fn(*args, **kwargs)
+            try:
+                result = await fn(*args, **kwargs)
+            except ValidationError as exc:
+                if validation_error is None:
+                    raise
+                if mode != "full":
+                    raise ValueError(validation_error) from None
+                details = exc.json(include_input=False, include_context=False, include_url=False)
+                raise ValueError(f"{validation_error}: {details}") from None
             if mode == "full" or applied.sole is None:
                 return result
             if not isinstance(result, Mapping):

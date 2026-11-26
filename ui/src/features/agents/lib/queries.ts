@@ -15,12 +15,16 @@ import { useNavigate } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
 
 import { agentsApi } from "./api"
-import { localThreadKeys } from "./desktopLocal"
-import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query"
+import { pendingThreadStarts } from "./pendingThreadStarts"
+import type {
+  InfiniteData,
+  QueryCache,
+  QueryClient,
+  QueryKey,
+} from "@tanstack/react-query"
 import type {
   ScheduleUpdateRequest,
   ThreadBrowser,
-  ThreadMoveDestination,
   ThreadsPage,
   ThreadsPageParams,
 } from "./api"
@@ -36,15 +40,14 @@ import type {
   WorkflowPushApprovalsResponse,
 } from "./types"
 import { pendingSenderName } from "./queuedMessages"
-import { CLAUDE_CODE_SOURCE } from "./sidebarFilter"
 import type { PassageReply } from "@/features/agents/utils/passageReply"
 import { useSidebarPrefsHydrated } from "./sidebarPrefs"
 import type { ChatSort } from "./sidebarPrefs"
 import type { SessionUser, Skill, SkillInput } from "@/lib/api"
 import { invalidationTopic } from "@/lib/invalidations/topics"
 import { api } from "@/lib/api"
+import { useSession } from "@/lib/session"
 import { optimisticUpdate } from "@/lib/optimistic"
-import { reportError } from "@/lib/errorReporting"
 import { useThreadListLoad } from "@/lib/perf/threadListLoad"
 
 export const agentThreadKeys = {
@@ -54,7 +57,6 @@ export const agentThreadKeys = {
     includeResolved: boolean
     includeAutomations: boolean
     owned: boolean
-    includeClaudeCode: boolean
     includeSlack: boolean
   }) => ["agent-threads", "lists", "repos", params] as const,
   sidebarActive: (threadId: string) =>
@@ -89,11 +91,15 @@ export function invalidateAgentThreadLists(queryClient: QueryClient): void {
 function patchAgentThread(
   queryClient: QueryClient,
   threadId: string,
-  patch: Partial<AgentThread>
+  patch: Partial<AgentThread>,
+  responseId?: string | null
 ): void {
   const update = (thread: AgentThread): AgentThread =>
     thread.id === threadId
-      ? { ...thread, ...patch }
+      ? responseId === undefined ||
+        (thread.unreadResponseId ?? null) === responseId
+        ? { ...thread, ...patch }
+        : thread
       : thread.taskWorkers
         ? { ...thread, taskWorkers: thread.taskWorkers.map(update) }
         : thread
@@ -139,6 +145,30 @@ export class ThreadSummaryCache {
       exact: true,
     })
     invalidateAgentThreadLists(this.queryClient)
+  }
+
+  /**
+   * A thread page's summary. As a thread opens, its sidebar row asks for the
+   * same summary under a key of its own, just before the page does. Until the
+   * page holds a summary it takes that request rather than sending a copy, so
+   * the response can't predate a change made since. A shared request that
+   * fails or is cancelled is retried as the page's own. The sidebar never waits
+   * for the page, so neither can end up waiting on the other.
+   */
+  static fetchForPage(
+    queries: QueryCache,
+    threadId: string,
+    held: boolean
+  ): Promise<AgentThread> {
+    const sidebar = held
+      ? undefined
+      : queries.find<AgentThread>({
+          queryKey: agentThreadKeys.sidebarActive(threadId),
+          exact: true,
+        })
+    return sidebar && sidebar.state.fetchStatus !== "idle"
+      ? sidebar.fetch().catch(() => agentsApi.getThread(threadId))
+      : agentsApi.getThread(threadId)
   }
 }
 
@@ -346,20 +376,58 @@ export function useSetAgentThreadViewed() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey: ["agent-thread-read-state"],
-    mutationFn: (vars: { threadId: string; viewed: boolean }) =>
-      agentsApi.setThreadViewed(vars.threadId, vars.viewed),
+    mutationFn: (vars: {
+      threadId: string
+      viewed: boolean
+      responseId?: string | null
+    }) =>
+      agentsApi.setThreadViewed(vars.threadId, vars.viewed, vars.responseId),
     meta: { errorTitle: "Couldn't update thread read state" },
     onMutate: (vars) =>
       beginAgentThreadUpdate(queryClient, vars.threadId, () =>
-        patchAgentThread(queryClient, vars.threadId, {
-          viewed: vars.viewed,
-          viewedAt: vars.viewed ? Date.now() : null,
-        })
+        patchAgentThread(
+          queryClient,
+          vars.threadId,
+          {
+            viewed: vars.viewed,
+            viewedAt: vars.viewed ? Date.now() : null,
+          },
+          vars.responseId
+        )
       ),
+    onSuccess: (result, vars) => {
+      patchAgentThread(
+        queryClient,
+        vars.threadId,
+        { viewed: result.viewed },
+        vars.responseId
+      )
+      if (vars.viewed && !result.viewed) {
+        void queryClient.invalidateQueries({
+          queryKey: agentThreadKeys.detail(vars.threadId),
+          exact: true,
+        })
+      }
+    },
     onError: (_error, _vars, context) => {
       if (context) restoreAgentThreadQueries(queryClient, context)
     },
-    onSettled: () => invalidateAgentThreadLists(queryClient),
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: agentThreadKeys.lists,
+        predicate: (query) => {
+          const kind = query.queryKey[2]
+          const params = query.queryKey[3]
+          return (
+            (kind === "page" || kind === "infinite-pages") &&
+            typeof params === "object" &&
+            params !== null &&
+            "viewed" in params &&
+            params.viewed != null
+          )
+        },
+      })
+    },
   })
 }
 
@@ -375,13 +443,6 @@ export function markReviewViewed(
     .catch((error: unknown) =>
       console.warn("Could not mark the review read", { review, error })
     )
-}
-
-export function reviewChatQuery(review: ReviewPageRef) {
-  return {
-    queryKey: ["review-chat", review.owner, review.repo, review.number],
-    queryFn: () => api.getReviewChat(review.owner, review.repo, review.number),
-  } as const
 }
 
 export function setAgentThreadResolved(
@@ -445,6 +506,8 @@ export function seedAgentThreadLists(
 
 export const agentScheduleKeys = {
   all: ["agent-schedules"] as const,
+  list: (allUsers: boolean) =>
+    [...agentScheduleKeys.all, { allUsers }] as const,
 }
 
 export const agentMutationKeys = {
@@ -469,21 +532,6 @@ const BUNDLED_SKILLS: Array<Skill> = [
     instructions: "",
   },
 ]
-
-export const workspaceOptionKeys = {
-  all: ["workspace-options"] as const,
-}
-
-/** Workspaces a new thread can boot from. Empty when none are configured. */
-export function useWorkspaceOptions(enabled = true) {
-  return useQuery({
-    queryKey: workspaceOptionKeys.all,
-    queryFn: api.listWorkspaceOptions,
-    staleTime: 60_000,
-    enabled,
-    meta: { invalidatedBy: [invalidationTopic("workspaces")] },
-  })
-}
 
 async function listPersonalSkills() {
   const items = []
@@ -511,6 +559,7 @@ export function usePersonalAgentSkills(enabled = true) {
   return useQuery({
     queryKey: agentSkillKeys.personal,
     queryFn: listPersonalSkills,
+    staleTime: 60_000,
     enabled,
   })
 }
@@ -519,6 +568,7 @@ export function useOrganizationAgentSkills(enabled = true) {
   return useQuery({
     queryKey: agentSkillKeys.organization,
     queryFn: listOrganizationSkills,
+    staleTime: 60_000,
     enabled,
   })
 }
@@ -632,38 +682,36 @@ export function useSeedAgentThreadDetails(
       // Seed as already-stale: the detail GET is what marks a thread viewed
       // server-side, so opening a seeded entry must still refetch despite the
       // detail query's `staleTime` (which exists for the optimistic seed).
-      queryClient.setQueryData(agentThreadKeys.detail(thread.id), thread, {
-        updatedAt: 0,
-      })
+      const key = agentThreadKeys.detail(thread.id)
+      const detail = queryClient.getQueryData<AgentThread>(key)
+      if (
+        thread.threadCategory === "automation" &&
+        thread.automationCanPost == null &&
+        detail?.automationCanPost != null
+      ) {
+        queryClient.setQueryData(
+          key,
+          { ...thread, automationCanPost: detail.automationCanPost },
+          { updatedAt: 0 }
+        )
+      } else {
+        queryClient.setQueryData(key, thread, { updatedAt: 0 })
+      }
     }
   }, [activeThreadId, queryClient, threads])
 }
 
-export const SIDEBAR_PAGE_SIZE = 10
-
-/** The sources the sidebar asks the server to leave out. */
-function excludedSources(
-  includeClaudeCode: boolean,
-  includeSlack: boolean
-): Pick<ThreadsPageParams, "excludeSources"> {
-  const excludeSources = [
-    ...(!includeClaudeCode ? [CLAUDE_CODE_SOURCE] : []),
-    ...(!includeSlack ? ["slack" as const] : []),
-  ]
-  return excludeSources.length ? { excludeSources } : {}
-}
+export const SIDEBAR_PAGE_SIZE = 25
 
 function sidebarPageParams({
   includeAutomations,
   includeResolved,
   owned,
-  includeClaudeCode,
   includeSlack,
 }: {
   includeAutomations: boolean
   includeResolved: boolean
   owned: boolean
-  includeClaudeCode: boolean
   includeSlack: boolean
 }): Omit<ThreadsPageParams, "offset"> {
   return {
@@ -672,19 +720,28 @@ function sidebarPageParams({
     ...(includeResolved ? {} : { resolved: false }),
     scope: includeAutomations ? "all" : "interactive",
     ...(owned ? { owned } : {}),
-    ...excludedSources(includeClaudeCode, includeSlack),
+    ...(!includeSlack ? { excludeSources: ["slack"] } : {}),
   }
 }
 
 export function useSidebarPinnedThreads({
   enabled = true,
   measure = false,
+  refetchOnMount = "always",
+}: {
+  enabled?: boolean
+  measure?: boolean
+  refetchOnMount?: boolean | "always"
 } = {}) {
+  const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: agentThreadKeys.pinned,
-    queryFn: () => agentsApi.listPinnedThreads(),
+    queryFn: () =>
+      agentsApi.listPinnedThreads(
+        !queryClient.getQueryState(agentThreadKeys.pinned)?.dataUpdatedAt
+      ),
     enabled,
-    refetchOnMount: "always",
+    refetchOnMount,
     refetchOnWindowFocus: "always",
     refetchInterval: (current) => sidebarRefreshInterval(current.state.data),
     meta: {
@@ -708,7 +765,6 @@ export function useSidebarRepos({
   includeAutomations = false,
   includeResolved = false,
   owned = false,
-  includeClaudeCode = true,
   includeSlack = true,
   enabled = true,
 }: {
@@ -716,30 +772,42 @@ export function useSidebarRepos({
   includeAutomations?: boolean
   includeResolved?: boolean
   owned?: boolean
-  includeClaudeCode?: boolean
   includeSlack?: boolean
   enabled?: boolean
 }) {
+  const { data: user } = useSession()
   const params = { includeAutomations, includeResolved, owned }
   const hydrated = useSidebarPrefsHydrated()
+  const queryClient = useQueryClient()
+  const reposKey = agentThreadKeys.repos({
+    ...params,
+    includeSlack,
+  })
   const query = useQuery({
-    queryKey: agentThreadKeys.repos({
-      ...params,
-      includeClaudeCode,
-      includeSlack,
-    }),
-    queryFn: () =>
-      agentsApi.listThreadRepos({
-        ...params,
-        ...excludedSources(includeClaudeCode, includeSlack),
-      }),
+    queryKey: reposKey,
+    meta: {
+      invalidatedBy: [
+        ...(user?.user_id ? [invalidationTopic("threads", user.user_id)] : []),
+        ...(!owned && user && user.auth_provider !== "langsmith"
+          ? [invalidationTopic("threads", "public")]
+          : []),
+      ],
+    },
+    queryFn: ({ queryKey }) =>
+      agentsApi.listThreadRepos(
+        {
+          ...params,
+          ...(!includeSlack ? { excludeSources: ["slack"] } : {}),
+        },
+        !queryClient.getQueryState(queryKey)?.dataUpdatedAt
+      ),
     enabled: enabled && hydrated,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   })
   useThreadListLoad({
     scope: "repositories",
-    identity: JSON.stringify({ ...params, includeClaudeCode, includeSlack }),
+    identity: JSON.stringify({ ...params, includeSlack }),
     enabled: enabled && measure,
     pending: query.isPending,
     failed: query.isError,
@@ -777,14 +845,20 @@ function useFetchedSidebarThread(
   }).data
 }
 
-/** The open thread itself, for commands that act on it. */
+/**
+ * The open thread itself, for commands that act on it. It shares the page's
+ * summary query, so with the page open there is one request between them.
+ * With no page, such as a review chat in a closed side sheet, it loads the
+ * thread itself and polls a live run as the page would.
+ */
 export function useActiveAgentThread(
-  threadId: string | undefined,
-  { enabled = true } = {}
+  threadId: string | undefined
 ): AgentThread | undefined {
-  const detail = useCachedAgentThread(threadId)
-  const fetched = useFetchedSidebarThread(threadId, enabled && !detail)
-  return detail ?? fetched
+  const queryClient = useQueryClient()
+  return useQuery({
+    ...agentThreadDetailOptions(threadId ?? "", queryClient),
+    enabled: Boolean(threadId),
+  }).data
 }
 
 /**
@@ -862,7 +936,6 @@ export function sidebarRecentsParams({
   includeAutomations = false,
   includeResolved = false,
   owned = false,
-  includeClaudeCode = true,
   includeSlack = true,
   sort = "created",
 }: {
@@ -870,7 +943,6 @@ export function sidebarRecentsParams({
   includeAutomations?: boolean
   includeResolved?: boolean
   owned?: boolean
-  includeClaudeCode?: boolean
   includeSlack?: boolean
   sort?: ChatSort
 }): Omit<ThreadsPageParams, "offset"> {
@@ -879,7 +951,6 @@ export function sidebarRecentsParams({
       includeAutomations,
       includeResolved,
       owned,
-      includeClaudeCode,
       includeSlack,
     }),
     ...(repoMode ? { ownerless: true } : {}),
@@ -892,7 +963,6 @@ export function useSidebarRecents({
   includeAutomations = false,
   includeResolved = false,
   owned = false,
-  includeClaudeCode = true,
   includeSlack = true,
   sort = "created",
   enabled = true,
@@ -901,7 +971,6 @@ export function useSidebarRecents({
   includeAutomations?: boolean
   includeResolved?: boolean
   owned?: boolean
-  includeClaudeCode?: boolean
   includeSlack?: boolean
   sort?: ChatSort
   enabled?: boolean
@@ -912,7 +981,6 @@ export function useSidebarRecents({
       includeAutomations,
       includeResolved,
       owned,
-      includeClaudeCode,
       includeSlack,
       sort,
     }),
@@ -926,7 +994,6 @@ export function useSidebarRepoThreads({
   includeAutomations = false,
   includeResolved = false,
   owned = false,
-  includeClaudeCode = true,
   includeSlack = true,
   sort = "created",
   enabled = true,
@@ -937,7 +1004,6 @@ export function useSidebarRepoThreads({
   includeAutomations?: boolean
   includeResolved?: boolean
   owned?: boolean
-  includeClaudeCode?: boolean
   includeSlack?: boolean
   sort?: ChatSort
   enabled?: boolean
@@ -948,7 +1014,6 @@ export function useSidebarRepoThreads({
         includeAutomations,
         includeResolved,
         owned,
-        includeClaudeCode,
         includeSlack,
       }),
       ...(projectId
@@ -970,23 +1035,22 @@ function agentThreadDetailOptions(threadId: string, queryClient: QueryClient) {
   return queryOptions({
     queryKey: agentThreadKeys.detail(threadId),
     queryFn: async ({ queryKey }) => {
-      const thread = await agentsApi.getThread(threadId)
+      const thread = await ThreadSummaryCache.fetchForPage(
+        queryClient.getQueryCache(),
+        threadId,
+        queryClient.getQueryData(queryKey) !== undefined
+      )
       const cached = queryClient.getQueryData<AgentThread>(queryKey)
       const pendingMessages = cached?.pendingMessages
       if (!pendingMessages?.length) return thread
       return { ...thread, pendingMessages }
     },
-  })
-}
-
-export function useAgentThread(threadId: string, active = true) {
-  const queryClient = useQueryClient()
-  const query = useQuery({
-    ...agentThreadDetailOptions(threadId, queryClient),
     // Server truth heartbeat while a run is live. The SDK's SSE transport does
     // not reconnect once a custom `fetch` is supplied (it needs the dashboard
-    // session cookie), so a dropped event stream must not leave the view — and
-    // its stop button — believing the run already ended.
+    // session cookie), so a dropped event stream must not leave the view, or
+    // its stop button, believing the run already ended. With no page open, the
+    // shell's observer is what keeps the sidebar row fresh. Every fetch
+    // restarts each observer's timer, so the page and the shell poll as one.
     refetchInterval: (current) =>
       current.state.data?.status === "running" ||
       current.state.data?.waitingForDelegatedWork
@@ -999,12 +1063,17 @@ export function useAgentThread(threadId: string, active = true) {
     // would 404 and replace the seeded view with a load error.
     staleTime: 30_000,
   })
+}
+
+export function useAgentThread(threadId: string, active = true) {
+  const queryClient = useQueryClient()
+  const query = useQuery(agentThreadDetailOptions(threadId, queryClient))
 
   const { mutate: setViewed } = useSetAgentThreadViewed()
   const readVisit = useRef<{
     threadId: string
     status: string
-    runId?: string | null
+    responseId: string | null
   } | null>(null)
   useEffect(() => {
     const readVisibleThread = () => {
@@ -1018,7 +1087,7 @@ export function useAgentThread(threadId: string, active = true) {
       readVisit.current = {
         threadId,
         status: thread.status,
-        runId: thread.latestRunId,
+        responseId: thread.unreadResponseId ?? null,
       }
       const opened = previous?.threadId !== threadId
       const completed =
@@ -1026,12 +1095,15 @@ export function useAgentThread(threadId: string, active = true) {
       if (
         (opened ||
           completed ||
-          (Boolean(thread.latestRunId) &&
-            previous?.runId !== thread.latestRunId)) &&
+          previous?.responseId !== (thread.unreadResponseId ?? null)) &&
         thread.status !== "running" &&
         !thread.viewed
       ) {
-        setViewed({ threadId, viewed: true })
+        setViewed({
+          threadId,
+          viewed: true,
+          responseId: thread.unreadResponseId ?? null,
+        })
       }
     }
     readVisibleThread()
@@ -1226,6 +1298,13 @@ export function useWorkflowApprovals(
     queryKey: agentThreadKeys.workflowApprovals(threadId),
     queryFn: () => agentsApi.listWorkflowApprovals(threadId),
     enabled: Boolean(threadId),
+    staleTime: (current) =>
+      pollWhileActive ||
+      current.state.data?.approvals.some(
+        (approval) => approval.status === "pending"
+      )
+        ? 0
+        : 60_000,
     refetchInterval: (current) =>
       pollWhileActive
         ? 3000
@@ -1290,10 +1369,11 @@ export function useWorkflowApprovalDecision(threadId: string) {
   })
 }
 
-export function useAgentSchedules() {
+/** The viewer's automations and admins' ones; `allUsers` (admins only) adds every member's. */
+export function useAgentSchedules({ allUsers = false } = {}) {
   return useQuery({
-    queryKey: agentScheduleKeys.all,
-    queryFn: () => agentsApi.listSchedules(),
+    queryKey: agentScheduleKeys.list(allUsers),
+    queryFn: () => agentsApi.listSchedules(allUsers),
   })
 }
 
@@ -1320,18 +1400,25 @@ export function useUpdateAgentSchedule() {
     onMutate: async (vars) => {
       const { enabled } = vars.body
       if (enabled == null) return undefined
-      return {
-        undo: await optimisticUpdate<Array<AgentSchedule>>(
-          queryClient,
-          agentScheduleKeys.all,
-          (prev) =>
-            prev.map((schedule) =>
-              schedule.id === vars.scheduleId
-                ? { ...schedule, enabled }
-                : schedule
+      const undos = await Promise.all(
+        queryClient
+          .getQueriesData<Array<AgentSchedule>>({
+            queryKey: agentScheduleKeys.all,
+          })
+          .map(([queryKey]) =>
+            optimisticUpdate<Array<AgentSchedule>>(
+              queryClient,
+              queryKey,
+              (prev) =>
+                prev.map((schedule) =>
+                  schedule.id === vars.scheduleId
+                    ? { ...schedule, enabled }
+                    : schedule
+                )
             )
-        ),
-      }
+          )
+      )
+      return { undo: () => undos.forEach((undo) => undo()) }
     },
     onError: (_error, _vars, context) => context?.undo(),
     onSettled: () => {
@@ -1421,7 +1508,7 @@ export function optimisticThread(
   }
   return {
     id: threadId,
-    ...(owner ? { ownerLogin: owner.login } : {}),
+    ...(owner ? { ownerLogin: owner.login, ownerId: owner.user_id } : {}),
     visibility: vars.visibility ?? "public",
     ...(options.recorded ? { transcript: "v2" as const } : {}),
     title: text.slice(0, 80) || "New agent",
@@ -1459,6 +1546,7 @@ export function optimisticThread(
 }
 
 export interface SendAgentMessageVariables {
+  local_access_bridge_id?: string
   content: string
   images?: Array<ImageChunk>
   /** Passages the person replied to, each with its context and their comment. */
@@ -1466,6 +1554,7 @@ export interface SendAgentMessageVariables {
   model_id?: string | null
   effort?: string | null
   model_selection_changed?: boolean
+  inherit_model_selection?: boolean
   client_message_id?: string
   /** Queue behind the live run instead of steering it. */
   enqueue?: boolean
@@ -1505,25 +1594,9 @@ export function useDeleteAgentThread() {
     mutationFn: (threadId: string) => agentsApi.deleteThread(threadId),
     meta: { errorTitle: "Couldn't delete thread" },
     onSuccess: (_, threadId) => {
+      pendingThreadStarts.remove(threadId)
       queryClient.removeQueries({ queryKey: agentThreadKeys.detail(threadId) })
       invalidateAgentThreadLists(queryClient)
-      // A "This Mac" thread also leaves a worktree and a bridge on this machine.
-      const desktop = window.openSweDesktop
-      if (desktop)
-        void desktop
-          .discardLocalThread(threadId)
-          .then((discarded) => {
-            if (discarded)
-              void queryClient.invalidateQueries({
-                queryKey: localThreadKeys.all,
-              })
-          })
-          .catch((error: unknown) =>
-            reportError({
-              title: "Couldn't clean up the thread's local worktree",
-              error,
-            })
-          )
       const path = window.location.pathname
       if (path === `/agents/${threadId}`) {
         navigate({ to: "/agents" })
@@ -1532,48 +1605,26 @@ export function useDeleteAgentThread() {
   })
 }
 
-export function useShareThreadWithWorkspace() {
+export function useShareThread() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (threadId: string) =>
-      agentsApi.shareThreadWithWorkspace(threadId),
-    meta: { errorTitle: "Couldn't share thread with workspace" },
-    onSuccess: (thread) => {
+    mutationFn: (threadId: string) => agentsApi.shareThread(threadId),
+    meta: { errorTitle: "Couldn't share thread" },
+    onSuccess: async (thread) => {
+      await Promise.all([
+        queryClient.cancelQueries({
+          queryKey: agentThreadKeys.detail(thread.id),
+          exact: true,
+        }),
+        queryClient.cancelQueries({
+          queryKey: agentThreadKeys.sidebarActive(thread.id),
+          exact: true,
+        }),
+      ])
       storeAgentThread(queryClient, thread)
       invalidateAgentThreadLists(queryClient)
     },
-  })
-}
-
-/** Move a thread to the cloud, or onto a fresh checkout on this Mac, before its next message. */
-export function useMoveThread(
-  thread: Pick<AgentThread, "id" | "repoFullName">
-) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (to: "cloud" | "local") => {
-      let destination: ThreadMoveDestination = { target: "cloud" }
-      if (to === "local") {
-        if (!window.openSweDesktop)
-          throw new Error("Open this thread in the Robin app to move it here")
-        destination = {
-          sandbox_bridge_id: await window.openSweDesktop.takeOverThread({
-            threadId: thread.id,
-            repo: thread.repoFullName,
-          }),
-        }
-      }
-      return agentsApi.moveThread(thread.id, destination)
-    },
-    meta: { errorTitle: "Couldn't move thread" },
-    onSuccess: (moved) => {
-      storeAgentThread(queryClient, moved)
-      invalidateAgentThreadLists(queryClient)
-    },
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: localThreadKeys.all }),
   })
 }
 
@@ -1763,18 +1814,27 @@ export function useInfiniteThreadsPages(
   } = {}
 ) {
   const queryClient = useQueryClient()
-  const queryKey = agentThreadKeys.infinitePages(params)
+  const { data: user } = useSession()
+  const pagesKey = agentThreadKeys.infinitePages(params)
   const pagesQuery = useInfiniteQuery({
-    queryKey,
-    queryFn: ({ pageParam }) =>
-      agentsApi.listThreadsPage({ ...params, offset: pageParam }),
+    queryKey: pagesKey,
+    queryFn: ({ pageParam, queryKey }) =>
+      agentsApi.listThreadsPage(
+        { ...params, offset: pageParam },
+        !queryClient.getQueryState(queryKey)?.dataUpdatedAt
+      ),
     meta: {
-      invalidatedBy: (data) =>
-        taskWorkerTopics(
+      invalidatedBy: (data) => [
+        ...(user?.user_id ? [invalidationTopic("threads", user.user_id)] : []),
+        ...(!params.owned && user && user.auth_provider !== "langsmith"
+          ? [invalidationTopic("threads", "public")]
+          : []),
+        ...taskWorkerTopics(
           (data as InfiniteData<ThreadsPage> | undefined)?.pages.flatMap(
             (page) => page.items
           )
         ),
+      ],
     },
     initialPageParam: 0,
     getNextPageParam: (page) =>

@@ -17,7 +17,6 @@ from openswe.threads.workflow_review import WorkflowReview
         ("rejected", None, "rejected"),
         ("pending", None, "pending"),
         ("approved", "owner", "pending"),
-        ("approved", "workspace", "pending"),
         ("approved", "private", "pending"),
         ("approved", "branch", "pending"),
         ("approved", "repo", "pending"),
@@ -37,7 +36,6 @@ async def test_worker_review_reflects_only_readable_coordinator_decision(
     }
     metadata = {
         "owner_login": "alice",
-        "workspace": "workspace",
         "workflow_push_approvals": {"fp": record},
     }
     if mismatch == "retried":
@@ -62,8 +60,6 @@ async def test_worker_review_reflects_only_readable_coordinator_decision(
         coordinator["workflow_push_approvals"] = {"different": decision}
     if mismatch == "owner":
         coordinator["owner_login"] = "bob"
-    if mismatch == "workspace":
-        coordinator["workspace"] = "other"
     if mismatch == "private":
         coordinator["visibility"] = "private"
     context = SimpleNamespace(
@@ -104,7 +100,6 @@ async def test_finished_thread_summary_still_reports_outstanding_review(
             "metadata": {"workflow_push_approvals": {"fp": {"status": "pending"}}},
         },
         latest_run_status="success",
-        bridge_status=False,
     )
     assert summary["status"] == "finished"
     assert summary["pendingWorkflowApproval"] is True

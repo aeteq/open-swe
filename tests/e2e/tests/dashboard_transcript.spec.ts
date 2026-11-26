@@ -13,6 +13,11 @@ import {
   waitForThreadNotBusy,
 } from "./helpers/dashboard";
 
+// A route handler still reading a response when the test ends must not fail it.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 // Rendering a finished Slack thread in the real dashboard. Driving the whole
 // Slack → implement → PR flow once per assertion dominated the suite, so the
 // tests below share one fixture thread and run in order — the two read-only
@@ -62,7 +67,10 @@ test.describe("finished transcript (shared fixture thread)", () => {
       name: /^Worked(?: for .+)? · \d+ actions?$/,
     });
     const acknowledgement = page.getByText("On it!", { exact: true });
-    const edit = page.getByRole("button", { name: "Edited greet.py" });
+    const editCall = page
+      .getByRole("group", { name: "Edited tool call" })
+      .filter({ hasText: "greet.py" });
+    const edit = editCall.getByRole("button", { name: "Details for Edited" });
 
     // Folded: the acknowledgement shows, the individual tool calls do not.
     await expect(worked.first()).toBeVisible();
@@ -87,7 +95,7 @@ test.describe("finished transcript (shared fixture thread)", () => {
     await edit.click();
     await expect(edit).toHaveAttribute("aria-expanded", "true");
 
-    const inlineDiff = edit.locator("[data-diff]");
+    const inlineDiff = editCall.locator("[data-diff]");
     await expect(inlineDiff).toBeVisible();
     await expect(
       inlineDiff.locator('[data-line][data-line-type="change-deletion"]'),
@@ -137,6 +145,76 @@ test.describe("finished transcript (shared fixture thread)", () => {
 });
 
 test.describe("transcript rendering", () => {
+  test("opens loaded branch changes after editing, but not after a chat reply", async ({
+    page,
+  }) => {
+    await loginAs(page, SAME_USER);
+    await page.request.post("/control/reset");
+    const sent = await page.request.post("/mock/slack/send", {
+      data: {
+        text: "<@U0BOT> E2E_BUSY_HOLD:30 please add a greet() helper and open a PR",
+      },
+    });
+    expect(sent.ok()).toBeTruthy();
+    const { thread_id: threadId } = (await sent.json()) as {
+      thread_id: string;
+    };
+    await page.addInitScript((id) => {
+      localStorage.setItem(`open-swe.gitpanel.collapsed.${id}`, "1");
+      localStorage.setItem(
+        "open-swe:diff-panel-state",
+        JSON.stringify({
+          state: { byThreadKey: { [`cloud:${id}`]: { kind: "working-tree" } } },
+          version: 2,
+        }),
+      );
+    }, threadId);
+
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let requested: () => void = () => {};
+    const branchRequested = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    await page.route(
+      `**/dashboard/api/threads/${threadId}/branch-diff`,
+      async (route) => {
+        requested();
+        await released;
+        await route.continue();
+      },
+    );
+    await page.goto(`/agents/${threadId}`);
+    await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+    await branchRequested;
+    await expect(
+      page.getByRole("button", { name: "Show panel" }),
+    ).toBeVisible();
+    release();
+    await expect(
+      page.getByRole("button", { name: "Diff scope: Branch changes" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^greet\.py \+8 -0$/ }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Hide panel" }).click();
+    await waitForThreadNotBusy(page, threadId);
+    await typeIntoComposer(page, "Can you also add a docstring?");
+    await expect(page.getByRole("button", { name: "Stop run" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop run" })).toBeHidden();
+    await waitForThreadIdle(page, threadId);
+    await expect(
+      page.getByRole("button", { name: "Show panel" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Show panel" }).click();
+    await expect(
+      page.getByRole("button", { name: "Diff scope: Branch changes" }),
+    ).toBeVisible();
+  });
+
   test("renders Slack mrkdwn and identifies the Slack sender", async ({
     page,
   }) => {
@@ -300,7 +378,33 @@ test.describe("transcript rendering", () => {
       page.getByRole("list", { name: "Replies in your next message" }),
     ).toContainText("Which branch?");
 
-    await typeIntoComposer(page, "Thanks!");
+    let rejectSend: () => void = () => {};
+    const sendRejected = new Promise<void>((resolve) => {
+      rejectSend = resolve;
+    });
+    let sendStarted: () => void = () => {};
+    const sendReceived = new Promise<void>((resolve) => {
+      sendStarted = resolve;
+    });
+    const commands = `**/dashboard/api/threads/${threadId}/commands`;
+    await page.route(commands, async (route) => {
+      sendStarted();
+      await sendRejected;
+      await route.fulfill({ status: 503, json: { detail: "Try again" } });
+    });
+    const editor = page.getByTestId("composer-editor");
+    await editor.press("Enter");
+    await sendReceived;
+    await editor.pressSequentially("Thanks!");
+    rejectSend();
+    const restoredReplies = page.getByRole("list", {
+      name: "Replies in your next message",
+    });
+    await expect(restoredReplies).toContainText("Which branch?");
+    await expect(restoredReplies.getByRole("listitem")).toHaveCount(1);
+    await expect(editor).toHaveText("Thanks!");
+    await page.unroute(commands);
+    await editor.press("Enter");
     // The agent gets the selection with a line of context on each side.
     await waitForStateToContain(
       page,
@@ -312,6 +416,7 @@ test.describe("transcript rendering", () => {
     expect(state).toContain("comment: Which branch?\\n</reply>");
     const sent = page
       .getByTestId("user-message")
+      .filter({ hasText: "Thanks!" })
       .filter({ hasText: "Which branch?" });
     await expect(sent.locator("blockquote")).toHaveText(
       "Opening a pull request.",
@@ -322,17 +427,67 @@ test.describe("transcript rendering", () => {
     page,
   }) => {
     await loginAs(page, SAME_USER);
+    await page.route("**/dashboard/api/options", async (route) => {
+      const response = await route.fetch();
+      const options = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        json: { ...options, model_selection_enabled: true },
+      });
+    });
     await openThreadViaSlackLink(page);
     const threadId = threadIdFromUrl(page);
     await waitForThreadIdle(page, threadId);
     await waitForThreadNotBusy(page, threadId);
 
-    await page.getByRole("button", { name: /GPT-6\.1 Sol/ }).click();
-    await page.getByText("GPT-6.1 Sol", { exact: true }).last().hover();
+    const modelPicker = page.getByRole("combobox", {
+      name: "Model",
+      exact: true,
+    });
+    await modelPicker.click();
     await page.getByRole("option", { name: /Opus 5\.5/ }).click();
     await typeIntoComposer(page, "Use Opus for this thread");
+    await waitForStateToContain(page, threadId, "Use Opus for this thread");
     await waitForThreadIdle(page, threadId);
     await waitForThreadNotBusy(page, threadId);
+    await expect
+      .poll(async () => {
+        const thread = (await (
+          await page.request.get(`/threads/${threadId}`)
+        ).json()) as {
+          metadata?: { agent_settings?: { model_id?: string } };
+        };
+        return thread.metadata?.agent_settings?.model_id;
+      })
+      .toBe("anthropic:claude-opus-5-5");
+
+    await page.unroute("**/dashboard/api/options");
+    await page.route("**/dashboard/api/options", (route) =>
+      route.fulfill({ status: 503, json: { detail: "Options unavailable" } }),
+    );
+    await page.reload();
+    await expect(
+      page.getByText("Could not load model settings. Reload to try again."),
+    ).toBeVisible();
+    await expect(modelPicker).toHaveCount(0);
+    const followUp = "Keep Opus with model settings unavailable";
+    await typeIntoComposer(page, followUp);
+    await waitForStateToContain(page, threadId, followUp);
+    await waitForThreadIdle(page, threadId);
+    await waitForThreadNotBusy(page, threadId);
+    const webThread = (await (
+      await page.request.get(`/threads/${threadId}`)
+    ).json()) as {
+      metadata?: {
+        model_selection?: string;
+        agent_settings?: { model_id?: string; effort?: string };
+      };
+    };
+    expect(webThread.metadata?.model_selection).toBe("explicit");
+    expect(webThread.metadata?.agent_settings).toMatchObject({
+      model_id: "anthropic:claude-opus-5-5",
+      effort: "high",
+    });
 
     const slackState = (await (
       await page.request.get("/control/state")
@@ -427,10 +582,9 @@ test.describe("transcript rendering", () => {
     ).toBeVisible();
     await expect(page.locator("img[data-e2e-injected]")).toHaveCount(0);
     await expect(page.getByText("Automation checks CI")).toHaveCount(0);
-    const systemChip = page.getByRole("button", { name: "Scheduler" });
-    await expect(systemChip).toBeVisible();
-    await systemChip.click();
-    await expect(page.getByText("Automation checks CI")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Scheduler" })).toHaveCount(
+      0,
+    );
     await expect(page.getByText("Legacy stays visible")).toBeVisible();
     await expect(page.getByText("github:alice", { exact: false })).toHaveCount(
       0,
@@ -447,6 +601,6 @@ test.describe("transcript rendering", () => {
       page
         .locator('[data-message-sender-kind="system"]')
         .filter({ hasText: "Automation checks CI" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
   });
 });

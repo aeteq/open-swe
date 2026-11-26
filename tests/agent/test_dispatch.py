@@ -6,11 +6,16 @@ from uuid import uuid7
 from xml.etree import ElementTree
 
 import pytest
+from pydantic import JsonValue
+from sqlalchemy import text
 
-from openswe.agent_api.connections import ACTING_USER_KEY
+from openswe import completion
+from openswe.agent_api.connections import ACTING_USER_KEY, SENDER_USER_KEY
+from openswe.database import postgres
 from openswe.github.pull_requests import PullRequest
 from openswe.slack import thinking as slack_thinking
 from openswe.threads import runtimes
+from openswe.ui_invalidations import Topic, outbox
 from openswe.users import User
 from openswe.users.models import UserIdentity
 from tests.conftest import serve_runs_from
@@ -53,8 +58,30 @@ class _FakeClient:
         self.threads = _FakeThreads()
 
 
-@pytest.mark.asyncio
-async def test_create_durable_run_applies_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("source", "captured", "override", "expected"),
+    [
+        ("slack", None, None, "slack"),
+        ("github_review_reply", "slack", None, "github"),
+        ("dashboard", "slack", None, "dashboard"),
+        ("schedule", "github", None, "schedule"),
+        ("api", "slack", None, "api"),
+        ("claude_code", None, None, "claude_code"),
+        ("incidents_agent", None, None, "incidents_agent"),
+        ("eval", None, None, "eval"),
+        ("task", "github", None, "github"),
+        ("wakeup", "dashboard", None, "dashboard"),
+        ("sandbox", None, None, "automation"),
+        ("slack", "slack", "github", "github"),
+    ],
+)
+async def test_create_durable_run_applies_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    captured: str | None,
+    override: str | None,
+    expected: str,
+) -> None:
     client = _FakeClient()
     monkeypatch.setattr(dispatch, "COMPLETION_WEBHOOK_URL", "https://app/webhooks/run-complete")
 
@@ -62,17 +89,20 @@ async def test_create_durable_run_applies_defaults(monkeypatch: pytest.MonkeyPat
         "thread-1",
         "agent",
         input={"messages": [{"role": "user", "content": "hi"}]},
-        source="test",
+        source=source,
+        origin=override,
         thread_title=None,
         config={
             "configurable": {
                 "thread_id": "thread-1",
+                "source": "slack",
+                "origin": captured,
                 "slack_thread": {
                     "channel_id": "C123",
                     "channel_context": {"name": "team-openswe"},
                 },
             },
-            "metadata": {"kind": "test"},
+            "metadata": {"kind": "test", "channel": "slack"},
         },
         client=client,
     )
@@ -83,19 +113,17 @@ async def test_create_durable_run_applies_defaults(monkeypatch: pytest.MonkeyPat
     assert created["multitask_strategy"] == "interrupt"
     assert created["if_not_exists"] == "create"
     assert created["webhook"] == "https://app/webhooks/run-complete"
-    assert created["stream_resumable"] is False
-    # The v3 run shape, so the dashboard gets `tools` events and subagent
-    # namespaces from runs it did not start — exactly what its own `run.start` sends.
+    # Old-format, in the modes a thread view joins any run in, kept for that join.
+    assert created["config"]["configurable"]["__event_streaming_v2"] is False
     assert created["stream_mode"] == [
-        "values",
         "updates",
-        "messages",
+        "messages-tuple",
         "custom",
-        "tasks",
-        "checkpoints",
+        "tools",
+        "lifecycle",
     ]
     assert created["stream_subgraphs"] is True
-    assert created["config"]["configurable"]["__event_streaming_v2"] is True
+    assert created["stream_resumable"] is True
     invocation_id = created["config"]["configurable"]["invocation_id"]
     assert (
         created["config"]["metadata"].items()
@@ -108,10 +136,41 @@ async def test_create_durable_run_applies_defaults(monkeypatch: pytest.MonkeyPat
         }.items()
     )
     assert created["metadata"] == created["config"]["metadata"]
+    assert created["metadata"]["origin"] == expected
+    assert created["config"]["configurable"]["origin"] == expected
+    assert created["config"]["configurable"]["source"] == "slack"
+    assert created["metadata"]["channel"] == "slack"
     assert created["config"]["configurable"]["thread_id"] == "thread-1"
     assert "prepare_run_id" not in created["config"]["configurable"]
     assert "prepare_run_id" not in created["metadata"]
     assert isinstance(invocation_id, str)
+
+
+async def test_a_runs_api_run_streams_as_its_client_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run the runs routes queue keeps its client's stream, and its marker is sent off:
+    its thread may keep it on from an earlier run."""
+    client = _FakeClient()
+    stream = {"stream_mode": ["values", "messages-tuple"], "stream_resumable": True}
+
+    await dispatch.create_durable_run(
+        "thread-1",
+        "agent",
+        input={"messages": [{"role": "user", "content": "hi"}]},
+        source="dashboard",
+        thread_title=None,
+        config={"configurable": {"thread_id": "thread-1"}},
+        client=client,
+        multitask_strategy="enqueue",
+        run_format=dispatch.RunFormat.of(stream),
+    )
+
+    [created] = client.runs.created
+    assert created["config"]["configurable"]["__event_streaming_v2"] is False
+    assert created["stream_mode"] == ["values", "messages-tuple"]
+    assert created["stream_resumable"] is True
+    assert "stream_subgraphs" not in created
 
 
 async def test_run_metadata_uses_users_id_across_slack_and_github(
@@ -128,7 +187,14 @@ async def test_run_metadata_uses_users_id_across_slack_and_github(
         ],
     )
 
+    without_github = User(
+        id=uuid7(),
+        identities=[UserIdentity(provider="slack", external_id="U456", email="ana@example.com")],
+    )
+
     async def by_identity(provider: str, external_id: str) -> User | None:
+        if (provider, external_id) == ("slack", "U456"):
+            return without_github
         return user if (provider, external_id) in {("slack", "U123"), ("github", "2001")} else None
 
     async def by_login(provider: str, login: str) -> User | None:
@@ -162,8 +228,21 @@ async def test_run_metadata_uses_users_id_across_slack_and_github(
         assert created["metadata"]["user_email"] == "mason@example.com"
         assert created["metadata"]["ls_repo_provider"] == "github"
         assert created["metadata"]["ls_attribution_identifier"] == "mason-gh"
-        # Attributed to the person, but a run the backend starts acts as no one.
+        # Attributed to the person, but a run the backend starts acts as no one, and bills
+        # no one.
         assert ACTING_USER_KEY not in created["metadata"]
+        assert SENDER_USER_KEY not in created["metadata"]
+
+    await dispatch.create_durable_run(
+        "thread-1",
+        "agent",
+        input={"messages": []},
+        source="slack",
+        thread_title=None,
+        config={"configurable": {"slack_thread": {"triggering_user_id": "U456"}}},
+        client=client,
+    )
+    assert "ls_attribution_identifier" not in client.runs.created[-1]["metadata"]
 
     # A follow-up the person sent themselves acts as them.
     await dispatch.create_durable_run(
@@ -179,6 +258,7 @@ async def test_run_metadata_uses_users_id_across_slack_and_github(
     sent = client.runs.created[-1]
     assert sent["metadata"][ACTING_USER_KEY] == str(user_id)
     assert sent["config"]["metadata"][ACTING_USER_KEY] == str(user_id)
+    assert sent["config"]["metadata"][SENDER_USER_KEY] == str(user_id)
 
     await dispatch.create_durable_run(
         "thread-1",
@@ -196,9 +276,11 @@ async def test_run_metadata_uses_users_id_across_slack_and_github(
             "billing_bucket": "user",
             "channel": "slack",
             ACTING_USER_KEY: str(user_id),
+            SENDER_USER_KEY: str(user_id),
             "ls_attribution_identifier": "previous-person",
             "ls_git_repo": "wrong/default",
             "ls_git_branch": "main",
+            "open_swe_git_commits": [{"repo": "wrong/default", "commit": "a" * 40}],
         },
         client=client,
     )
@@ -211,9 +293,11 @@ async def test_run_metadata_uses_users_id_across_slack_and_github(
     assert "billed_user_email" not in unknown
     # Only the backend says whom a run acts as, never its caller.
     assert ACTING_USER_KEY not in unknown
+    assert SENDER_USER_KEY not in unknown
     assert "ls_attribution_identifier" not in unknown
     assert "ls_git_repo" not in unknown
     assert "ls_git_branch" not in unknown
+    assert "open_swe_git_commits" not in unknown
 
     await dispatch.create_durable_run(
         "thread-1",
@@ -279,11 +363,15 @@ async def test_billing_survives_service_principal_and_failed_run(
     assert metadata["billed_robin_user_id"] == str(actor_id)
     assert metadata["user_id"] == str(actor_id)
     assert metadata["created_by"] is None
+    assert metadata["kind"] == "preserved"
     assert rewritten["config"] == {
         "metadata": {
             **actor.billing_trace_metadata(),
             "created_by": None,
+            "owner_ls_user_id": None,
+            "visibility": "private",
             "kind": "preserved",
+            "origin": "automation",
         }
     }
 
@@ -299,8 +387,12 @@ async def test_billing_survives_service_principal_and_failed_run(
         thread_metadata={"channel": channel} if channel else {},
     )
     assert unattributed["metadata"] == {
+        "kind": "agent",
+        "origin": "automation",
         "billing_bucket": "channel" if channel else "system",
         "created_by": None,
+        "owner_ls_user_id": None,
+        "visibility": "private",
     }
     assert unattributed["config"] == {"metadata": unattributed["metadata"]}
     assert "user_id" not in context.call_args.kwargs["metadata"]
@@ -309,6 +401,52 @@ async def test_billing_survives_service_principal_and_failed_run(
     with pytest.raises(RuntimeError, match="catalog failed"):
         await runtime.run_payload("thread-1", rewritten, thread_metadata={})
     assert context.call_args.kwargs["metadata"]["user_id"] == str(actor_id)
+
+
+async def test_run_token_names_only_the_sender_the_run_is_billed_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    person, other = User(id=uuid7()), User(id=uuid7())
+    monkeypatch.setattr(User, "get", AsyncMock(return_value=person))
+    context = AsyncMock(return_value={"graph": "agent"})
+    monkeypatch.setattr(runtimes, "remote_run_context", context)
+    runtime = runtimes.MdaRuntime("http://mda.test")
+
+    async def token_sender(assistant_id: str, metadata: dict[str, JsonValue]) -> JsonValue:
+        rewritten = await runtime.run_payload(
+            "thread-1",
+            {"assistant_id": assistant_id, "metadata": metadata, "config": {"metadata": metadata}},
+            thread_metadata={},
+        )
+        config, run_metadata = rewritten["config"], rewritten["metadata"]
+        assert isinstance(config, dict) and isinstance(config["metadata"], dict)
+        assert isinstance(run_metadata, dict)
+        # Neither the run nor its traces keep a sender the token drops.
+        assert config["metadata"].get(SENDER_USER_KEY) == run_metadata.get(SENDER_USER_KEY)
+        return context.call_args.kwargs["metadata"].get(SENDER_USER_KEY)
+
+    mine, theirs = str(person.id), str(other.id)
+    billed_to_me, billed_to_them = person.billing_trace_metadata(), other.billing_trace_metadata()
+    assert await token_sender("agent", {**billed_to_me, SENDER_USER_KEY: mine}) == mine
+    assert (
+        await token_sender("agent", {**billed_to_me, ACTING_USER_KEY: mine, SENDER_USER_KEY: mine})
+        == mine
+    )
+    # A caller naming someone else is never trusted to spend their budget.
+    assert await token_sender("agent", {**billed_to_me, SENDER_USER_KEY: theirs}) is None
+    assert await token_sender("agent", {SENDER_USER_KEY: theirs}) is None
+    assert (
+        await token_sender(
+            "agent", {**billed_to_them, ACTING_USER_KEY: mine, SENDER_USER_KEY: theirs}
+        )
+        is None
+    )
+    assert (
+        await token_sender(
+            "reviewer", {**billed_to_them, ACTING_USER_KEY: mine, SENDER_USER_KEY: theirs}
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize("kind", ["reviewer", "review-scout"])
@@ -323,7 +461,10 @@ async def test_review_billing_uses_pr_author_not_requester(
         if linked
         else [],
     )
-    requester = User(id=requester_id)
+    requester = User(
+        id=requester_id,
+        identities=[UserIdentity(provider="github", external_id="3001", login="requester")],
+    )
     monkeypatch.setattr(
         PullRequest,
         "get",
@@ -352,6 +493,7 @@ async def test_review_billing_uses_pr_author_not_requester(
     assert metadata["billing_bucket"] == "user"
     assert metadata["billed_robin_user_id"] == str(author_id)
     assert metadata["user_id"] == str(author_id)
+    assert "ls_attribution_identifier" not in metadata
     assert prepared["configurable"]["user_id"] == str(requester_id)
     assert metadata[ACTING_USER_KEY] == str(requester_id)
 
@@ -364,6 +506,51 @@ async def test_review_billing_uses_pr_author_not_requester(
     assert unresolved["metadata"][ACTING_USER_KEY] == str(requester_id)
     assert unresolved["configurable"]["user_id"] == str(requester_id)
     assert "billed_robin_user_id" not in unresolved["metadata"]
+    assert "ls_attribution_identifier" not in unresolved["metadata"]
+
+
+@pytest.mark.parametrize("status", ["success", "error", "timeout", "interrupted"])
+async def test_pr_agent_completion_invalidates_review_without_a_github_event(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    client = _FakeClient()
+    monkeypatch.setattr(completion, "langgraph_client", lambda: client)
+    requester = User(id=uuid7())
+    monkeypatch.setattr(User, "for_login", AsyncMock(return_value=requester))
+    await dispatch.create_durable_run(
+        "thread-1",
+        "agent",
+        input={"messages": []},
+        source="dashboard",
+        thread_title=None,
+        config={
+            "configurable": {
+                "github_login": "requester",
+                "repo": {"owner": "org", "name": "repo"},
+                "pr_number": 1,
+            }
+        },
+        client=client,
+    )
+    created = client.runs.created[-1]
+    assert created["metadata"]["billed_robin_user_id"] == str(requester.id)
+    topic = Topic.PULL_REQUESTS.keyed("org/repo/1")
+    assert await outbox.invalidated_since({topic: 60}) == {topic}
+    async with postgres.transaction() as conn:
+        await conn.execute(
+            text("DELETE FROM ui_invalidation WHERE topic = :topic"), {"topic": topic}
+        )
+
+    await completion.handle_run_completion(
+        {
+            "thread_id": "thread-1",
+            "run_id": "run-1",
+            "status": status,
+            "metadata": created["metadata"],
+        }
+    )
+
+    assert await outbox.invalidated_since({topic: 60}) == {topic}
 
 
 @pytest.mark.asyncio
@@ -388,7 +575,6 @@ async def test_create_durable_run_preserves_existing_prepare_id(
     assert created["config"]["configurable"]["invocation_id"] == "existing"
     assert "prepare_run_id" not in created["config"]["configurable"]
     assert "prepare_run_id" not in created["metadata"]
-    assert created["config"]["configurable"]["__event_streaming_v2"] is True
 
 
 def test_langsmith_system_followup_runs_without_github() -> None:
@@ -432,11 +618,23 @@ async def test_dispatch_keys_a_linked_slack_sender_on_their_person(
     run_input = await dispatch.dispatch_input(
         "hello",
         "slack",
-        {"slack_thread": {"triggering_user_id": "U123", "channel_id": "C123"}},
+        {
+            "slack_thread": {
+                "triggering_user_id": "U123",
+                "channel_id": "C123",
+                "channel_context": {
+                    "name": "eng",
+                    "topic": "description-only-routing topic",
+                    "purpose": "description-only-routing purpose",
+                    "description": "description-only-routing description",
+                },
+            }
+        },
     )
 
     envelope = ElementTree.fromstring(run_input["messages"][-1]["content"])
     assert envelope.attrib["sender"] == f"user:{user.id}"
+    assert "description-only-routing" not in str(run_input)
 
 
 async def test_dispatch_uses_moved_slack_destination_from_metadata(

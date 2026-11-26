@@ -21,6 +21,7 @@ import {
   type PRMergeRateResponse,
   type UsageLeaderboardPayload,
   type UsageLeaderboardRow,
+  type UsageHealthPayload,
 } from "@/lib/api"
 import { TooltipProvider } from "@langchain/macaw-components/Tooltip"
 import { makeQueryClient } from "@/lib/query"
@@ -63,6 +64,15 @@ const emptyUsage: UsageLeaderboardPayload = {
   total_members: 0,
   current_user_rank: null,
   generated_at_ms: null,
+  bot_activity: {
+    accounts: 0,
+    invocations: 0,
+    threads: 0,
+    total_tokens: 0,
+    total_cost_usd: 0,
+    invocations_without_cost: 0,
+    invocations_with_partial_cost: 0,
+  },
   reviewer_stats: {
     period: "30d",
     reviewed_prs: 0,
@@ -81,8 +91,24 @@ const emptyUsage: UsageLeaderboardPayload = {
   },
 }
 
+const emptyHealth: UsageHealthPayload = {
+  ...emptyUsage,
+  cache: {
+    hit_rate: null,
+    prompt_tokens: null,
+    cache_read_tokens: null,
+    preservation_added_at: "2026-11-10T03:09:59Z",
+    period_predates_fix: true,
+    missing_usage_runs: 0,
+    observed_runs: 0,
+    data_note:
+      "Older runs may not contain cache counters. Only runs reporting both counters are included.",
+  },
+}
+
 beforeEach(() => {
   vi.spyOn(api, "usageLeaderboard").mockResolvedValue(emptyUsage)
+  vi.spyOn(api, "usageHealth").mockResolvedValue(emptyHealth)
 })
 
 function mountReport(onPeriodChange = (_period: string) => {}) {
@@ -131,10 +157,139 @@ it("labels the shared date range and changes it independently of usage scope", a
   ).toBe(false)
   fireEvent.click(range)
   const option = await screen.findByRole("option", { name: "Last 24h" })
-  fireEvent.keyDown(option, { key: "Enter" })
+  fireEvent.click(option)
   expect(onPeriodChange).toHaveBeenCalledWith("24h")
   fireEvent.click(screen.getByRole("button", { name: "threads" }))
   expect(onPeriodChange).toHaveBeenCalledTimes(1)
+})
+
+it("shows org-wide cache usage independently of leaderboard scope", async () => {
+  vi.spyOn(api, "prMergeRateByModel").mockResolvedValue(report(captured))
+  vi.mocked(api.usageHealth).mockResolvedValue({
+    ...emptyHealth,
+    cache: {
+      ...emptyHealth.cache,
+      hit_rate: 0.75,
+      prompt_tokens: 4000,
+      cache_read_tokens: 3000,
+      observed_runs: 2,
+      missing_usage_runs: 1,
+    },
+  })
+  const client = mountReport()
+  const cache = await screen.findByLabelText("Prompt cache hit rate")
+  expect(
+    screen
+      .getByRole("heading", { name: "Reviewer Stats" })
+      .compareDocumentPosition(
+        screen.getByRole("heading", { name: "Usage Health" })
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
+  expect(within(cache).getByText("75%")).toBeTruthy()
+  expect(
+    within(cache).getByText("3,000 cached / 4,000 prompt tokens")
+  ).toBeTruthy()
+  expect(
+    within(cache).getByText(
+      /Runs with both counters: 2. Excluded for missing or inconsistent counters: 1./
+    )
+  ).toBeTruthy()
+  expect(
+    screen.getByText("Historical cache coverage is incomplete")
+  ).toBeTruthy()
+  expect(screen.getByText(emptyHealth.cache.data_note)).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "invocations" }))
+  expect(within(cache).getByText("75%")).toBeTruthy()
+  client.clear()
+})
+
+it("distinguishes missing cache counters from a measured zero hit rate and recovers from refresh failure", async () => {
+  vi.spyOn(api, "prMergeRateByModel").mockResolvedValue(report(captured))
+  const client = mountReport()
+  expect(await screen.findByLabelText("Prompt cache hit rate")).toBeTruthy()
+  expect(
+    within(screen.getByLabelText("Prompt cache hit rate")).getByText("No data")
+  ).toBeTruthy()
+  expect(screen.queryByText("0%")).toBeNull()
+  vi.mocked(api.usageHealth).mockResolvedValue({
+    ...emptyHealth,
+    cache: {
+      ...emptyHealth.cache,
+      hit_rate: 0,
+      prompt_tokens: 100,
+      cache_read_tokens: 0,
+      observed_runs: 1,
+      period_predates_fix: false,
+    },
+  })
+  await act(() => client.invalidateQueries({ queryKey: ["usageHealth"] }))
+  expect(
+    await within(screen.getByLabelText("Prompt cache hit rate")).findByText(
+      "0%"
+    )
+  ).toBeTruthy()
+  expect(
+    screen.queryByText("Historical cache coverage is incomplete")
+  ).toBeNull()
+  expect(screen.getByText(emptyHealth.cache.data_note)).toBeTruthy()
+  vi.mocked(api.usageHealth).mockRejectedValue(new ApiError(503, "unavailable"))
+  await act(() => client.invalidateQueries({ queryKey: ["usageHealth"] }))
+  expect(await screen.findByText("Usage health is unavailable")).toBeTruthy()
+  expect(screen.queryByLabelText("Prompt cache hit rate")).toBeNull()
+  vi.mocked(api.usageHealth).mockResolvedValue(emptyHealth)
+  fireEvent.click(screen.getByRole("button", { name: "Retry usage health" }))
+  expect(await screen.findByLabelText("Prompt cache hit rate")).toBeTruthy()
+  client.clear()
+})
+
+it("does not retain health metrics across date ranges or signed-in identities", async () => {
+  vi.spyOn(api, "prMergeRateByModel").mockResolvedValue(report(captured))
+  vi.mocked(api.usageHealth)
+    .mockResolvedValueOnce({
+      ...emptyHealth,
+      cache: {
+        ...emptyHealth.cache,
+        hit_rate: 0.75,
+        prompt_tokens: 4000,
+        cache_read_tokens: 3000,
+      },
+    })
+    .mockImplementation(() => new Promise(() => {}))
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  })
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <UsageAnalytics period="30d" login="reader" isAdmin={false} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText("75%")).toBeTruthy()
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <UsageAnalytics period="7d" login="reader" isAdmin={false} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
+  expect(screen.queryByText("75%")).toBeNull()
+  expect(screen.getByLabelText("Loading usage health")).toBeTruthy()
+  expect(api.usageHealth).toHaveBeenLastCalledWith("7d")
+  await act(() =>
+    client.setQueryData(["usageHealth", "7d", "reader", false], emptyHealth)
+  )
+  expect(await screen.findByLabelText("Prompt cache hit rate")).toBeTruthy()
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <UsageAnalytics period="7d" login="other-reader" isAdmin={false} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
+  expect(screen.queryByLabelText("Prompt cache hit rate")).toBeNull()
+  expect(screen.getByLabelText("Loading usage health")).toBeTruthy()
+  client.clear()
 })
 
 it("shows delivery lag separately from suppression, then refreshes to a populated report", async () => {
@@ -160,6 +315,7 @@ it("shows delivery lag separately from suppression, then refreshes to a populate
     report({
       ...captured,
       status: "ready",
+      as_of: "2026-09-11T12:02:00Z",
       last_processed_at: "2026-09-11T12:02:00Z",
       has_pending_events: false,
       cohorts: [
@@ -827,7 +983,7 @@ it("offers recovery from unavailability without claiming an empty or suppressed 
   client.clear()
 })
 
-it("refreshes the usage leaderboard and merge rate report from the coverage footer", async () => {
+it("refreshes usage health, leaderboard and merge rate report from the coverage footer", async () => {
   let pendingReport: () => void = () => {}
   vi.spyOn(api, "prMergeRateByModel")
     .mockResolvedValueOnce(report(captured))
@@ -843,6 +999,7 @@ it("refreshes the usage leaderboard and merge rate report from the coverage foot
 
   const beforeUsage = vi.mocked(api.usageLeaderboard).mock.calls.length
   const beforeReport = vi.mocked(api.prMergeRateByModel).mock.calls.length
+  const beforeHealth = vi.mocked(api.usageHealth).mock.calls.length
   const button = screen.getByRole("button", { name: "Refresh now" })
   fireEvent.click(button)
   expect(vi.mocked(api.usageLeaderboard).mock.calls.length).toBe(
@@ -852,6 +1009,7 @@ it("refreshes the usage leaderboard and merge rate report from the coverage foot
     beforeReport + 1
   )
 
+  expect(vi.mocked(api.usageHealth).mock.calls.length).toBe(beforeHealth + 1)
   const refreshing = await screen.findByRole("button", {
     name: "Refreshing…",
   })
@@ -955,8 +1113,31 @@ it("keeps failed delivery visible when all PR groups are suppressed", async () =
   client.clear()
 })
 
-it("resets leaderboard pagination when the period changes outside the selector", async () => {
-  vi.spyOn(api, "prMergeRateByModel").mockResolvedValue(report(captured))
+it("preserves table sorting and scope while resetting pagination when the period changes", async () => {
+  vi.spyOn(api, "prMergeRateByModel").mockImplementation(async (period) =>
+    report({
+      ...captured,
+      period: period ?? "30d",
+      status: "ready",
+      cohorts: [
+        {
+          model_id: "sample-model",
+          model_attribution_quality: "configured",
+          merged: 8,
+          closed_without_merge: 0,
+          mature_pending: 0,
+          waiting: 0,
+          cohort_size: 8,
+          decided_denominator: 8,
+          decided_merge_rate: 1,
+          mature_denominator: 8,
+          mature_cohort_merge_share: 1,
+          efforts: [],
+          avg_merge_seconds: null,
+        },
+      ],
+    })
+  )
   vi.mocked(api.usageLeaderboard).mockImplementation(
     async (period, _limit, cursor) => ({
       ...emptyUsage,
@@ -976,7 +1157,22 @@ it("resets leaderboard pagination when the period changes outside the selector",
       </TooltipProvider>
     </QueryClientProvider>
   )
-  fireEvent.click(await screen.findByRole("button", { name: "Next" }))
+  await screen.findByText("sample-model")
+  fireEvent.click(screen.getByRole("button", { name: "Opening model" }))
+  fireEvent.click(screen.getByRole("button", { name: "Opening model" }))
+  fireEvent.click(screen.getByRole("button", { name: "invocations" }))
+  fireEvent.click(
+    screen.getByRole("button", { name: "Avg Invocation Duration" })
+  )
+  fireEvent.click(
+    screen.getByRole("button", { name: "Avg Invocation Duration" })
+  )
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Next" }).hasAttribute("disabled")
+    ).toBe(false)
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Next" }))
   expect(await screen.findByText("Page 2 of 2")).toBeTruthy()
 
   view.rerender(
@@ -991,9 +1187,25 @@ it("resets leaderboard pagination when the period changes outside the selector",
     "7d",
     10,
     undefined,
-    "rank",
+    "avg_invocation_seconds",
     "asc"
   )
+  expect(
+    screen
+      .getByRole("columnheader", { name: "Avg Invocation Duration" })
+      .getAttribute("aria-sort")
+  ).toBe("ascending")
+  expect(
+    screen
+      .getByRole("button", { name: "invocations" })
+      .getAttribute("aria-pressed")
+  ).toBe("true")
+  await screen.findByText("sample-model")
+  expect(
+    screen
+      .getByRole("columnheader", { name: "Opening model" })
+      .getAttribute("aria-sort")
+  ).toBe("descending")
   client.clear()
 })
 
@@ -1037,7 +1249,32 @@ it("defaults usage counts and duration to threads and can switch to invocations"
   client.clear()
 })
 
+it("keeps bot usage visible when the people's leaderboard is empty", async () => {
+  vi.spyOn(api, "prMergeRateByModel").mockResolvedValue(report(captured))
+  vi.mocked(api.usageLeaderboard).mockResolvedValue({
+    ...emptyUsage,
+    bot_activity: {
+      accounts: 1,
+      invocations: 4,
+      threads: 2,
+      total_tokens: 109461393,
+      total_cost_usd: 820.86,
+      invocations_without_cost: 1,
+      invocations_with_partial_cost: 0,
+    },
+  })
+  const client = mountReport()
+  expect(await screen.findByText("109,461,393")).toBeTruthy()
+  expect(screen.getByText("$820.86")).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Cost incomplete" })).toBeTruthy()
+  expect(screen.getByText("Bot Activity")).toBeTruthy()
+  expect(screen.getByText(/No Robin Agent usage/)).toBeTruthy()
+  expect(screen.queryByRole("columnheader", { name: "PRs Opened" })).toBeNull()
+  client.clear()
+})
+
 it("distinguishes unavailable usage from empty usage and recovers without duplicate coverage notices", async () => {
+  vi.mocked(api.usageHealth).mockRejectedValue(new ApiError(503, "unavailable"))
   vi.mocked(api.usageLeaderboard).mockRejectedValue(
     new ApiError(503, "unavailable")
   )
@@ -1068,6 +1305,7 @@ it("distinguishes unavailable usage from empty usage and recovers without duplic
     screen.getAllByText(/still waiting to be processed/).length
   ).toBeGreaterThan(0)
   expect(screen.getByText("Reviewed PRs")).toBeTruthy()
+  expect(screen.queryByText("Bot Activity")).toBeNull()
   expect(
     screen.queryByText("Usage analytics is unavailable on this deployment.")
   ).toBeNull()

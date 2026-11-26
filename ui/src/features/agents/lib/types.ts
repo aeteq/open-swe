@@ -60,6 +60,8 @@ export type AcpToolKind =
   | "move"
   | "search"
   | "execute"
+  /** `background_execute` — a shell command started in the background. */
+  | "background"
   | "think"
   | "fetch"
   | "slack"
@@ -215,7 +217,15 @@ export interface RemoteImageChunk {
 /** Either image form, as a renderer receives it from `Chunk`. */
 export type AnyImageChunk = ImageChunk | RemoteImageChunk
 
+export interface TaskEventChunk {
+  kind: "task-event"
+  messageId: string
+  event: TaskEventMetadata
+  timestamp?: string
+}
+
 export type Chunk =
+  | TaskEventChunk
   | TextChunk
   | ReasoningChunk
   | CodeChunk
@@ -243,6 +253,7 @@ export interface Message {
   structuredSenderIsBot?: boolean
   structuredSurface?: string
   slackMessageUrl?: string
+  slackOccurredAt?: number
   /** Passages the sender selected and replied to, carried in the message's envelope. */
   replies?: Array<PassageReply>
   taskEvent?: TaskEventMetadata
@@ -251,12 +262,15 @@ export interface Message {
    * open page; the agent read the context itself, which the thread never shows.
    */
   contextLabel?: string
+  turnId?: string
   /** Id of the user message that opened this agent run and keys its diff artifact. */
   turnKey?: string
   /** Invocations an agent turn's model calls ran under; key their costs in `AgentThread.runCosts`. */
   invocationIds?: Array<string>
   /** Timestamp of the first message in an agent turn; used to derive work duration. */
   startedAt?: string
+  runStartedAt?: string
+  completedAt?: string
   timestampIsFallback?: boolean
   chunks: Array<Chunk>
   hidden?: boolean
@@ -279,17 +293,31 @@ export type GitHubTriggerEvent =
 
 export type SlackTriggerEvent = "message.posted"
 export type SlackTriggerSenders = "anyone" | "people" | "bots"
-export type LinearTriggerEvent = "issue.created" | "issue.labeled"
+export type LinearTriggerEvent =
+  | "issue.created"
+  | "issue.labeled"
+  | "issue.accepted"
 
 /** One way an automation fires; `kind` names the provider, the rest are its filters. */
 export type AutomationTriggerConfig =
   | {
       kind: "schedule"
       cron: string
+      timezone?: string
       /** Public Slack channels the automation's runs may read. */
       slack_channels?: Array<string>
     }
-  | { kind: "github"; repo: string; events: Array<GitHubTriggerEvent> }
+  | {
+      kind: "github"
+      repo: string
+      events: Array<GitHubTriggerEvent>
+      /** Globs on a pull request's head branch that skip it, e.g. `actions/*`. */
+      head_branches_exclude?: Array<string>
+      /** Globs the pull request's base branch must match, when any are listed. */
+      base_branches?: Array<string>
+      /** Its creator confirmed it may fire on a public repository. */
+      allow_public_repo?: boolean
+    }
   | {
       kind: "slack"
       channel: string
@@ -333,6 +361,7 @@ export const AUTOMATION_EVENT_PROVIDERS = {
     events: {
       "issue.created": "Issue created",
       "issue.labeled": "Label added",
+      "issue.accepted": "Accepted from Triage",
     } satisfies Record<LinearTriggerEvent, string>,
   },
 } as const
@@ -343,9 +372,7 @@ export interface AgentSchedule {
   prompt: string
   schedule: string | null
   triggers: Array<AutomationTriggerConfig & { id: string }>
-  scope: "workspace"
-  /** Slug of the workspace every run launches in. */
-  workspace: string
+  scope: "system"
   adminThread: boolean
   model: string
   effort?: string | null
@@ -356,6 +383,9 @@ export interface AgentSchedule {
   lastTriggeredAt?: string | null
   lastError?: string | null
   lastErrorAt?: string | null
+  ownerId?: string | null
+  /** Robin's, not its creator's: only admins manage it. */
+  system?: boolean
   createdBy?: string | null
   updatedBy?: string | null
   createdAt?: string | null
@@ -400,7 +430,7 @@ export interface AgentThreadMonitor {
 /** An event subscription that wakes the thread when a matching event arrives. */
 export interface AgentEventListener {
   subscription_id: string
-  /** The pull request URL, repository, or "workspace" it listens on. */
+  /** The pull request URL, repository, or "Robin events" it listens on. */
   target: string
   sources: Array<string>
   event_types: Array<string>
@@ -605,6 +635,7 @@ export interface AgentThread {
   taskMembership?: TaskMembership
   taskWorkers?: Array<AgentThread>
   ownerLogin?: string | null
+  ownerId?: string | null
   visibility?: "public" | "private"
   id: string
   /** Set on a PR review listed in the sidebar: its row opens this review page. */
@@ -638,13 +669,14 @@ export interface AgentThread {
   automationId?: string | null
   automationName?: string | null
   automationActionPosted?: boolean
+  automationCanPost?: boolean | null
   status: AgentStatus
   viewed: boolean
   latestRunId?: string | null
+  unreadResponseId?: string | null
   viewedAt?: number | null
   resolved?: boolean
   resolvedAt?: number | null
-  attentionReason?: string | null
   createdAt: number
   updatedAt: number
   traceUrl?: string | null
@@ -654,12 +686,7 @@ export interface AgentThread {
   runCosts?: Record<string, number>
   sourceUrl?: string | null
   sourceAppUrl?: string | null
-  codeChannelUrl?: string | null
   sandboxId?: string | null
-  /** For a thread bridged to someone's machine: which app serves it. */
-  sandboxBridgeClient?: "cli" | "desktop" | null
-  /** Whether that machine is serving the thread's checkout right now; null in lists. */
-  sandboxBridgeOnline?: boolean | null
   /**
    * The thread's LangSmith browser: "opened" once the agent or a person has
    * opened it, "available" while it can be opened, null before the agent's

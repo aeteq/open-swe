@@ -3,7 +3,6 @@
 import logging
 from functools import cache
 
-from deepagents.backends.protocol import BackendProtocol
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -16,13 +15,14 @@ from openswe.middleware.record_run_usage import record_run_usage
 from openswe.middleware.transcript import TranscriptMiddleware
 from openswe.review.diff import compute_diff_line_set
 from openswe.review.events import ReviewEvents
+from openswe.review_apps.apps import ReviewApps
+from openswe.review_apps.outcomes import ReviewOutcomes
 from openswe.reviewer import (
     PrepareReviewerRunMiddleware,
     ReviewerMCP,
     ensure_reviewer_github_token,
     resolve_reviewer_models,
     reviewer_catalog,
-    reviewer_sandbox,
     reviewer_tools,
 )
 from openswe.run_config import RunConfig
@@ -48,9 +48,14 @@ class ReviewerKind(RunKind):
         await reviewer_catalog(config, surface)
 
     async def preparation(
-        self, config: RunnableConfig, settings: RunSettings, *, sandbox_id: str | None
+        self,
+        config: RunnableConfig,
+        settings: RunSettings,
+        *,
+        sandbox_id: str | None,
+        sandbox_pending: bool = False,
     ) -> list[AgentMiddleware]:
-        del settings, sandbox_id
+        del settings, sandbox_id, sandbox_pending
         cfg = RunConfig.from_config(config)
         if cfg.thread_id is None:
             raise ValueError("A review run needs a thread")
@@ -59,7 +64,6 @@ class ReviewerKind(RunKind):
             PrepareReviewerRunMiddleware(
                 thread_id=cfg.thread_id,
                 config=config,
-                use_gateway=models.use_gateway,
                 model=models.main,
             )
         ]
@@ -75,6 +79,27 @@ class ReviewerKind(RunKind):
     ) -> None:
         del settings, carried
         cfg = RunConfig.from_config(config)
+        try:
+            if (
+                started.run_id
+                and cfg.head_sha
+                and (apps := await ReviewApps.triaged(cfg)) is not None
+            ):
+                for app in apps.apps:
+                    outcomes = ReviewOutcomes(app.id, apps.repository, apps.number)
+                    if not await outcomes.closed():
+                        await outcomes.queued(started.run_id, cfg.head_sha, "")
+                for app in apps.passed:
+                    outcomes = ReviewOutcomes(app.id, apps.repository, apps.number)
+                    if not await outcomes.closed():
+                        await outcomes.passed(
+                            started.run_id, cfg.head_sha, files_read=apps.files_read
+                        )
+        except Exception:
+            logger.exception(
+                "Could not record pending review app work",
+                extra={"thread_id": cfg.thread_id, "run_id": started.run_id},
+            )
         events = ReviewEvents.from_config(cfg)
         if events is not None and started.run_id:
             run_id = started.run_id
@@ -97,10 +122,6 @@ class ReviewerKind(RunKind):
         except Exception:
             # A tool that needs the token says so itself; settling the check must still run.
             logger.warning("Minting the reviewer's GitHub token failed", exc_info=True)
-
-    async def files(self, config: RunnableConfig) -> BackendProtocol | None:
-        cfg = RunConfig.from_config(config)
-        return None if cfg.thread_id is None else reviewer_sandbox(cfg.thread_id, cfg)
 
     async def tool(self, config: RunnableConfig, name: str) -> BaseTool | None:
         static = _tools_by_name().get(name)

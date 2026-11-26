@@ -10,7 +10,6 @@ from collections import Counter
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
-from functools import partial
 from time import time
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
@@ -20,15 +19,15 @@ from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 from langchain.mcp import as_langchain_tool
 from langchain_core.tools import BaseTool, StructuredTool, ToolException
 from langsmith import tracing_context
-from runtime_api.catalog import McpServerSpec
+from pydantic import ValidationError
 from runtime_api.mcp_secrets import HELD_SESSIONS, McpResult
 
 from mcp.shared.exceptions import MCPError
 from mcp.types import Tool
 from openswe.analytics.posthog import record_mcp_tool
-from openswe.mcp.models import CONNECTION_OWNERS, MCPConnection, MCPScope, MCPToolProvenance
-from openswe.mcp.oauth import MCPOAuthError, connection_auth
-from openswe.mcp.transport import MCPDiscoveryError, mcp_http_client
+from openswe.mcp.models import MCPConnection, MCPScope, MCPToolProvenance
+from openswe.mcp.sealed import SealedListing
+from openswe.mcp.transport import MCPCredentialMissing, MCPDiscoveryError, mcp_http_client
 from openswe.prompts import prompt
 from openswe.utils.startup_trace import asubphase
 
@@ -42,35 +41,63 @@ _DISCOVERY_SLOTS: weakref.WeakValueDictionary[asyncio.AbstractEventLoop, asyncio
     weakref.WeakValueDictionary()
 )
 
-type CatalogOutcome = Literal["hit", "stale", "miss", "expired", "failed"]
+type CatalogOutcome = Literal["hit", "stale", "miss", "expired", "deferred", "failed"]
 
-_CATALOG_TTL = timedelta(minutes=10)
+_MAX_TOOL_PAGES = 50
+# A listing older than this is still served, and listed again in the background.
+_CATALOG_TTL = timedelta(minutes=5)
 _CATALOG_MAX_AGE = timedelta(hours=24)
 _MANAGED_FAILURE_BACKOFF = timedelta(minutes=1)
+# How long a run's start waits to read a connection's cached listing.
+_CATALOG_GRACE = 1.0
+# How long it then waits on LangSmith when nothing was cached. A kit's listing takes
+# seconds (none of 289 in prod on 2026-11-18 took under one), so a run starts without
+# waiting on it, and the listing finishes for the next run.
+LISTING_GRACE = 0.1
+# The same wait for a run no one watches start (an automation), which needs the tools more
+# than a fast start.
+UNATTENDED_LISTING_GRACE = 5.0
+# Listings that outlasted a run's grace, finishing so the next run finds them.
+_DEFERRED_LISTINGS: set[asyncio.Task[SWRResult[object]] | asyncio.Task[object]] = set()
 
 
 class MCPTools(list[BaseTool]):
-    """The tools of the MCP servers the backend serves, and the servers only an MDA run reaches."""
+    """The tools of the MCP servers the backend serves."""
 
-    def __init__(
-        self, tools: Iterable[BaseTool] = (), runtime_servers: Iterable[McpServerSpec] = ()
-    ) -> None:
+    def __init__(self, tools: Iterable[BaseTool] = ()) -> None:
         super().__init__(tools)
         self.failures: list[str] = []
-        # Servers whose credential is an MDA connection, which the run reads and connects with.
-        self.runtime_servers = list(runtime_servers)
+        # Managed tools services the private thread's owner could connect, which the prompt names.
+        self.connectable: list[str] = []
+        # Connections whose listing outlasted the run's start, which the next run will have.
+        self.loading: list[str] = []
 
     @property
     def catalog_note(self) -> str:
-        return catalog_note(self.failures)
+        return catalog_note(self.failures, self.connectable, self.loading)
+
+    def without(self, tool_name: str) -> MCPTools:
+        """These tools less every one named ``tool_name`` on its server."""
+        kept = MCPTools(t for t in self if (t.metadata or {}).get("mcp_tool_name") != tool_name)
+        kept.failures = list(self.failures)
+        kept.connectable = list(self.connectable)
+        kept.loading = list(self.loading)
+        return kept
 
 
-def catalog_note(failures: Sequence[str]) -> str:
-    """What the system prompt says of managed tool discovery that ``failures`` broke."""
-    return (
-        "\n\n" + prompt("tools/mcp-catalog-note", failures=list(dict.fromkeys(failures)))
-        if failures
-        else ""
+def catalog_note(
+    failures: Sequence[str], connectable: Sequence[str] = (), loading: Sequence[str] = ()
+) -> str:
+    """What the system prompt says of managed tool discovery that ``failures`` broke, of
+    the ``connectable`` services the requester has yet to connect, and of the connections
+    still ``loading``."""
+    if not failures and not connectable and not loading:
+        return ""
+    return "\n\n" + prompt(
+        "tools/mcp-catalog-note",
+        failures=list(dict.fromkeys(failures)),
+        connectable=list(dict.fromkeys(connectable)),
+        loading=list(dict.fromkeys(loading)),
     )
 
 
@@ -99,6 +126,32 @@ class MCPSource:
     get_connection: Callable[[str], Awaitable[MCPConnection | None]]
     authorize: Callable[[], Awaitable[None]] | None = None
 
+    async def catalog(
+        self, record: MCPConnection, *, listing: Callable[[], None] | None = None
+    ) -> SealedListing:
+        """Where ``record``'s tool list is cached: under this owner's namespace, so one
+        person's list (LangSmith builds the ``me`` kit per caller) never reaches another's
+        run. It holds the tools' definitions, encrypted, never the connection's headers.
+        ``listing`` is called if a lookup lists the connection, as the request goes out."""
+        caller = asyncio.current_task()
+        namespace = self.namespace
+
+        async def discover() -> object:
+            async with asubphase(
+                "mcp.discover",
+                mcp_name=record.name,
+                background=asyncio.current_task() is not caller,
+            ):
+                definitions = await discover_tools(record, namespace, listing=listing)
+            return [tool.model_dump(mode="json", exclude_none=True) for tool in definitions]
+
+        digest = hashlib.sha256(
+            json.dumps((namespace, record.name, record.revision)).encode()
+        ).hexdigest()
+        return SealedListing(
+            f"mcp:{digest}", discover, fresh_for=_CATALOG_TTL, max_age=_CATALOG_MAX_AGE
+        )
+
 
 async def _resolve_connection(
     name: str, sources: tuple[MCPSource, ...]
@@ -121,31 +174,47 @@ class _MCPTool(StructuredTool):
         return await self.coroutine(*args, **kwargs)
 
 
-def _client(
-    record: MCPConnection, namespace: tuple[str, ...]
-) -> Client[SSETransport | StreamableHttpTransport]:
+def _client(record: MCPConnection) -> Client[SSETransport | StreamableHttpTransport]:
     headers = record.connection_headers()
-    auth = connection_auth(record, namespace)
-    factory = partial(mcp_http_client, record.url)
+
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx2.Timeout | None = None,
+        auth: httpx2.Auth | None = None,
+        follow_redirects: bool = False,
+    ) -> httpx2.AsyncClient:
+        client = mcp_http_client(record.url, headers, timeout, auth, follow_redirects)
+        client.event_hooks["response"].append(record.check_response)
+        return client
+
     transport: SSETransport | StreamableHttpTransport
     if record.transport == "sse":
         transport = SSETransport(
             record.url,
             headers=headers,
-            auth=auth,
             sse_read_timeout=_TIMEOUT_SECONDS,
             httpx_client_factory=factory,
         )
     else:
         transport = StreamableHttpTransport(
-            record.url, headers=headers, auth=auth, httpx_client_factory=factory
+            record.url, headers=headers, httpx_client_factory=factory
         )
     return Client(transport, timeout=_TIMEOUT_SECONDS)
 
 
-async def _discover_tools(record: MCPConnection, namespace: tuple[str, ...]) -> list[Tool]:
-    async with _client(record, namespace) as client:
-        tools = await client.list_tools(cache_mode="bypass")
+async def _discover_tools(record: MCPConnection) -> list[Tool]:
+    tools: list[Tool] = []
+    async with _client(record) as client:
+        cursor: str | None = None
+        for _ in range(_MAX_TOOL_PAGES):
+            page = await client.list_tools_mcp(cursor=cursor)
+            tools.extend(page.tools)
+            if (cursor := page.next_cursor) is None:
+                break
+        else:
+            raise MCPDiscoveryError("MCP server returned too many pages of tools")
+    unusable = await record.unusable_tools()
+    tools = [tool for tool in tools if tool.name not in unusable]
     if len({tool.name for tool in tools}) != len(tools):
         raise MCPDiscoveryError("MCP server returned duplicate tool names")
     return tools
@@ -159,7 +228,7 @@ def _discovery_error(error: Exception) -> str:
         current = pending.pop()
         if isinstance(current, BaseExceptionGroup):
             pending.extend(reversed(current.exceptions))
-        elif isinstance(current, (MCPOAuthError, MCPDiscoveryError)):
+        elif isinstance(current, MCPDiscoveryError):
             return str(current)
         elif isinstance(current, MCPError):
             return f"MCP server returned error {current.code} while listing tools"
@@ -184,6 +253,22 @@ def _discovery_error(error: Exception) -> str:
     return f"Could not discover MCP tools ({unknown[0]}); check the URL and authentication headers"
 
 
+def _call_failure(error: BaseException) -> str:
+    """What the model should do about a failed call, from the HTTP status inside it."""
+    pending: list[BaseException] = [error]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, BaseExceptionGroup):
+            pending.extend(current.exceptions)
+        elif isinstance(current, MCPCredentialMissing):
+            if current.admin_only:
+                return prompt("tools/managed-tools-bot-not-connected")
+            return prompt("tools/managed-tools-requester-not-connected")
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+    return "MCP call failed; check its connection and credentials"
+
+
 def _discovery_slots() -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
     slots = _DISCOVERY_SLOTS.get(loop)
@@ -192,13 +277,14 @@ def _discovery_slots() -> asyncio.Semaphore:
     return slots
 
 
-async def discover_tools(record: MCPConnection, namespace: tuple[str, ...]) -> list[Tool]:
-    if record.connection is not None:
-        raise MCPDiscoveryError(
-            "Only an MDA run reads this server's connection, so Robin cannot list its "
-            "tools; enter the names of the tools to allow"
-        )
-
+async def discover_tools(
+    record: MCPConnection,
+    namespace: tuple[str, ...],
+    *,
+    listing: Callable[[], None] | None = None,
+) -> list[Tool]:
+    """The connection's tools, listed now; ``listing`` is called as the request goes out,
+    after a failure that is backing off has had its chance to raise."""
     from langgraph_api.cache import cache_get, cache_set
 
     key: str | None = None
@@ -218,9 +304,11 @@ async def discover_tools(record: MCPConnection, namespace: tuple[str, ...]) -> l
             and time() < failure[1]
         ):
             raise MCPDiscoveryError(failure[0])
+    if listing is not None:
+        listing()
     try:
         async with asyncio.timeout(_TIMEOUT_SECONDS), _discovery_slots():
-            tools = await _discover_tools(record, namespace)
+            tools = await _discover_tools(record)
     except Exception as exc:
         reason = _discovery_error(exc)
         if key is not None and _backoff_failure(exc):
@@ -272,13 +360,21 @@ def _wrap_tool(
                 raise ToolException("MCP connection scope changed; start a new run")
             if not record.enabled:
                 raise ToolException("MCP is disabled or disconnected")
-            if record.url != url or record.transport != transport or record.connection is not None:
+            if record.url != url or record.transport != transport:
                 raise ToolException("MCP connection changed; start a new run")
             if not record.allows_tool(definition.name):
                 raise ToolException("This tool is no longer allowed by the MCP connection settings")
-            fresh = await as_langchain_tool(definition, _client(record, namespace))
+            fresh = await as_langchain_tool(definition, _client(record))
             if not isinstance(fresh, StructuredTool) or fresh.coroutine is None:
                 raise ToolException("MCP tool has no async implementation")
+            if (
+                namespace[:1] == ("managed_tools",)
+                and definition.name == "slack_user_slack_search_public_and_private"
+                and arguments.get("context_channel_id") == ""
+                and "context_channel_id" not in definition.input_schema.get("required", ())
+                and "allOf" not in definition.input_schema
+            ):
+                del arguments["context_channel_id"]
             # Call the coroutine directly so remote arguments LangChain reserves pass through.
             with tracing_context(enabled=False):
                 try:
@@ -293,10 +389,10 @@ def _wrap_tool(
         except ToolException:
             is_error = True
             raise
-        except Exception:
+        except Exception as exc:
             is_error = True
             logger.warning("MCP call failed", extra={"mcp_name": name})
-            raise ToolException("MCP call failed; check its connection and credentials") from None
+            raise ToolException(_call_failure(exc)) from None
         finally:
             await record_mcp_tool(definition.name, is_error)
 
@@ -311,34 +407,60 @@ def _wrap_tool(
     )
 
 
-async def _catalog(source: MCPSource, record: MCPConnection) -> SWRResult[list[dict[str, Any]]]:
-    key = (
-        "mcp:"
-        + hashlib.sha256(
-            json.dumps((source.namespace, record.name, record.revision)).encode()
-        ).hexdigest()
-    )
-    caller = asyncio.current_task()
+def _keep_listing(task: asyncio.Task[SWRResult[object]] | asyncio.Task[object]) -> None:
+    _DEFERRED_LISTINGS.add(task)
 
-    async def discover() -> list[dict[str, Any]]:
-        async with asubphase(
-            "mcp.discover", mcp_name=record.name, background=asyncio.current_task() is not caller
-        ):
-            definitions = await discover_tools(record, source.namespace)
-        return [tool.model_dump(mode="json", exclude_none=True) for tool in definitions]
+    def finished(done: asyncio.Task[SWRResult[object]] | asyncio.Task[object]) -> None:
+        _DEFERRED_LISTINGS.discard(done)
+        if not done.cancelled() and (error := done.exception()) is not None:
+            logger.warning("Deferred MCP discovery failed", exc_info=error)
 
-    from langgraph_api.cache import swr
-
-    return await swr(key, discover, fresh_for=_CATALOG_TTL, max_age=_CATALOG_MAX_AGE)
+    task.add_done_callback(finished)
 
 
 async def _cached_definitions(
-    source: MCPSource, record: MCPConnection
+    source: MCPSource, record: MCPConnection, listing_grace: float
 ) -> tuple[list[Tool], CatalogOutcome]:
-    result = await _catalog(source, record)
-    return [Tool.model_validate(tool) for tool in result.value], (
-        "hit" if result.status == "fresh" else result.status
-    )
+    """The connection's tools for a run. A cached listing comes back at once, fresh or
+    stale (a stale one is listed again in the background). With none cached, the run waits
+    only until the listing goes to LangSmith (a kit LangSmith builds per caller takes
+    seconds), and starts without the connection's tools while the listing finishes for the
+    next run; a slow cache read is waited on for at most a second. A ``listing_grace``
+    longer than that second (an automation's) is waited out whatever the lookup waits on,
+    including another run's listing of the same connection, which this lookup joins
+    without listing it itself."""
+    # Set only when this lookup found nothing cached and lists the connection itself: a
+    # stale hit's background listing starts after the lookup has already returned.
+    listing = asyncio.Event()
+    catalog = await source.catalog(record, listing=listing.set)
+    lookup = asyncio.ensure_future(catalog.lookup())
+    listed = asyncio.ensure_future(listing.wait())
+    try:
+        await asyncio.wait(
+            (lookup, listed), timeout=_CATALOG_GRACE, return_when=asyncio.FIRST_COMPLETED
+        )
+        if not lookup.done() and (listing.is_set() or listing_grace > _CATALOG_GRACE):
+            await asyncio.wait((lookup,), timeout=listing_grace)
+    finally:
+        listed.cancel()
+    if not lookup.done():
+        _keep_listing(lookup)
+        logger.info("MCP catalog deferred past a run's start", extra={"mcp_name": record.name})
+        return [], "deferred"
+    result = lookup.result()
+    stored = await SealedListing.open(result.value)
+    try:
+        definitions = (
+            [Tool.model_validate(tool) for tool in stored] if isinstance(stored, list) else None
+        )
+    except ValidationError:
+        definitions = None
+    if definitions is None:
+        # Unreadable (a retired key, a damaged entry): as if nothing were cached.
+        _keep_listing(asyncio.ensure_future(result.mutate()))
+        logger.info("MCP catalog unreadable; listing it again", extra={"mcp_name": record.name})
+        return [], "deferred"
+    return definitions, "hit" if result.status == "fresh" else result.status
 
 
 async def refresh_mcp_catalog(source: MCPSource, name: str) -> None:
@@ -346,9 +468,7 @@ async def refresh_mcp_catalog(source: MCPSource, name: str) -> None:
     record = await source.get_connection(name)
     if record is None:
         return
-    result = await _catalog(source, record)
-    if result.status != "miss":
-        await result.mutate()
+    await (await source.catalog(record)).refresh()
 
 
 async def _load_tools(
@@ -357,9 +477,10 @@ async def _load_tools(
     sources: tuple[MCPSource, ...],
     overridden_scopes: list[MCPScope],
     failures: list[str],
+    listing_grace: float,
 ) -> tuple[list[BaseTool], CatalogOutcome]:
     try:
-        definitions, outcome = await _cached_definitions(source, record)
+        definitions, outcome = await _cached_definitions(source, record, listing_grace)
         tools = [
             _wrap_tool(
                 record.name,
@@ -385,36 +506,13 @@ async def _load_tools(
         return [], "failed"
 
 
-def _runtime_server(
-    source: MCPSource, record: MCPConnection, overridden_scopes: list[MCPScope]
-) -> McpServerSpec | None:
-    """``record`` as the MDA run connects to it, if its tier may read its connection."""
-    connection = record.connection
-    if (
-        connection is None
-        or not connection.for_mcp_server(record.url)
-        or connection.owner != CONNECTION_OWNERS.get(source.scope)
-    ):
-        logger.warning(
-            "Skipping an MCP server whose connection its tier may not read",
-            extra={"mcp_name": record.name, "mcp_scope": source.scope},
-        )
-        return None
-    return McpServerSpec(
-        name=record.name,
-        url=record.url,
-        transport=record.transport,
-        tools={tool: _tool_name(record.name, tool) for tool in record.allowed_tools},
-        connection=connection,
-        header=record.connection_header,
-        provenance=MCPToolProvenance(
-            connection_name=record.name, scope=source.scope, overridden_scopes=overridden_scopes
-        ).note(),
-    )
-
-
-async def load_mcp_tools(*sources: MCPSource, connection_name: str | None = None) -> MCPTools:
-    """Combine sources in precedence order; later connections replace earlier names entirely."""
+async def load_mcp_tools(
+    *sources: MCPSource,
+    connection_name: str | None = None,
+    listing_grace: float = LISTING_GRACE,
+) -> MCPTools:
+    """Combine sources in precedence order; later connections replace earlier names entirely.
+    ``listing_grace`` is how long a connection with nothing cached is waited on."""
     result = MCPTools()
     try:
         catalogs = await asyncio.gather(*(source.list_connections() for source in sources))
@@ -443,9 +541,9 @@ async def load_mcp_tools(*sources: MCPSource, connection_name: str | None = None
                 sources,
                 scopes[record.name][:-1],
                 result.failures,
+                listing_grace,
             )
             for source, record in connections
-            if record.connection is None
         )
     )
     outcomes = Counter(outcome for _, outcome in groups)
@@ -457,10 +555,9 @@ async def load_mcp_tools(*sources: MCPSource, connection_name: str | None = None
         },
     )
     result.extend(tool for tools, _ in groups for tool in tools)
-    runtime_servers = [
-        _runtime_server(source, record, scopes[record.name][:-1])
-        for source, record in connections
-        if record.connection is not None
+    result.loading = [
+        record.name
+        for (_, record), (_, outcome) in zip(connections, groups, strict=True)
+        if outcome == "deferred"
     ]
-    result.runtime_servers = [server for server in runtime_servers if server is not None]
     return result

@@ -1,7 +1,6 @@
+import { useRightPanelStore } from "@/features/agents/lib/rightPanelStore"
 import { productAnalytics } from "@/lib/analytics"
-import { LogoMark } from "@/components/Branding"
-import { CopyErrorButton } from "@/components/CopyErrorButton"
-import { LaptopRegularIcon } from "@langchain/macaw-components/icons"
+import { RunErrorBanner } from "@/features/agents/components/RunErrorBanner"
 import {
   ReviewChatActionsContext,
   ReviewExcerptChips,
@@ -14,18 +13,12 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
 import { Banner } from "@langchain/macaw-components/Banner"
-import { Button } from "@langchain/macaw-components/Button"
-import { Text } from "@langchain/macaw-components/Text"
-import { Icon } from "@langchain/macaw-components/Icon"
-import { ArrowUpRightIcon } from "@phosphor-icons/react/dist/ssr/ArrowUpRight"
-import { GitMergeIcon } from "@phosphor-icons/react/dist/ssr/GitMerge"
-import { SlackLogoIcon } from "@phosphor-icons/react/dist/ssr/SlackLogo"
+import { ConversationLoading } from "@/features/agents/components/ConversationLoading"
 import { LoadError, useLoadTimedOut } from "@/components/LoadError"
 
 import type {
@@ -35,11 +28,12 @@ import type {
   ImageChunk,
   Message,
   ThreadFixScope,
-  ToolExecutionChunk,
 } from "@/features/agents/lib/types"
 import type { ModelSelection } from "@/features/agents/lib/provider/useModelOptions"
 import { AgentGitPanel } from "@/features/agents/components/AgentGitPanel"
 import { AgentThreadHeader } from "@/features/agents/components/AgentThreadHeader"
+import { LocalAccessGrantBanner } from "@/features/agents/components/LocalAccessGrantBanner"
+import { LocalAccessRequests } from "@/features/agents/components/LocalAccessRequests"
 import { SIBLING_COLUMN_MIN_WIDTH } from "@/features/agents/components/panel/RightPanelShell"
 import { AgentPromptBar } from "@/features/agents/components/AgentPromptBar"
 import { AgentComposerDock } from "@/features/agents/components/composer/AgentComposerDock"
@@ -50,22 +44,22 @@ import {
   writeStoredPanelCollapsed,
 } from "@/features/agents/lib/gitPanelPreferences"
 import { Messages } from "@/features/agents/components/messages"
+import { resolveContextModel } from "@/features/agents/lib/contextUsage"
 import type {
   LoadEarlier,
   MessagesScrollControl,
 } from "@/features/agents/components/messages"
 import { useSubmitAgentMessage } from "@/features/agents/lib/provider/useSubmitAgentMessage"
 import { useModelOptions } from "@/features/agents/lib/provider/useModelOptions"
-import { createAutoSelectionIntent } from "@/features/agents/lib/autoSelectionIntent"
+import { createSelectionIntent } from "@/features/agents/lib/selectionIntent"
 import {
   agentThreadKeys,
   useAgentSkills,
   useRenameAgentThread,
   useAgentThreadPullRequestStatus,
   useAgentThreadQueuedMessages,
-  useMoveThread,
 } from "@/features/agents/lib/queries"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
   materializeImages,
@@ -78,15 +72,7 @@ import type {
   RestoredDraft,
   SubmitOptions,
 } from "@/features/agents/components/composer/ChatComposer"
-import type { RunTarget } from "@/features/agents/components/composer/RunTargetSelector"
 import { agentsApi } from "@/features/agents/lib/api"
-import {
-  localThreadKeys,
-  runsOnAMac,
-  useLocalRepoRefs,
-  useLocalThread,
-  useLocalThreadPr,
-} from "@/features/agents/lib/desktopLocal"
 import { reportError } from "@/lib/errorReporting"
 import { useSession } from "@/lib/session"
 import { useIsMobile } from "@/lib/useIsMobile"
@@ -97,7 +83,7 @@ import { ReplyOptionContext } from "@/features/agents/components/chat/ReplyCard"
 import {
   threadHydrated,
   threadHydrationFailed,
-  threadTranscriptPainted,
+  useThreadTranscriptPaint,
 } from "@/lib/perf/threadLoad"
 
 /**
@@ -110,29 +96,11 @@ const appliedComposerDrafts = new WeakSet<ComposerDraft>()
 interface AgentThreadViewProps {
   thread: AgentThread
   composerDraft?: ComposerDraft
+  retry: () => void
 }
 
 function plainSubmission(text: string): ComposerSubmission {
   return { text, images: [], replies: [] }
-}
-
-/** Completed file edits in a thread, including those an `eval` call's code made. */
-function completedEdits(messages: Array<Message>): number {
-  const count = (calls: Array<ToolExecutionChunk>): number =>
-    calls.reduce(
-      (total, call) =>
-        total +
-        (call.toolKind === "edit" && call.status === "completed" ? 1 : 0) +
-        count(call.calls ?? []),
-      0
-    )
-  return count(
-    messages.flatMap((message) =>
-      message.chunks.filter(
-        (chunk): chunk is ToolExecutionChunk => chunk.kind === "tool-execution"
-      )
-    )
-  )
 }
 
 /** Paths the agent has edited this thread, newest last, for `@file` mentions. */
@@ -148,25 +116,10 @@ function editedPaths(messages: Array<Message>): Array<string> {
   return [...paths]
 }
 
-function CodeChannelLink({ url }: { url?: string | null }) {
-  if (!url) return null
-  return (
-    <Button
-      as={<a href={url} target="_blank" rel="noreferrer" />}
-      color="secondary"
-      variant="plain"
-      leftDecorator={SlackLogoIcon}
-      rightDecorator={ArrowUpRightIcon}
-      className="mb-space-2 w-fit"
-    >
-      Open in Slack
-    </Button>
-  )
-}
-
 export function AgentThreadView({
   thread,
   composerDraft,
+  retry,
 }: AgentThreadViewProps) {
   const reviewChat = useContext(ReviewChatActionsContext)
   const embedded = useContext(EmbeddedThreadContext)
@@ -176,96 +129,21 @@ export function AgentThreadView({
   const isMobile = useIsMobile()
   const skills = useAgentSkills()
   const session = useSession()
-  // A "This Mac" thread runs in its checkout on the Mac whose app started it,
-  // so elsewhere it is read-only while that Mac is not serving it.
-  const localRecord = useLocalThread(thread.id)
-  const localThread = runsOnAMac(thread) ? localRecord : null
-  const runsElsewhere =
-    runsOnAMac(thread) && !localThread && !thread.sandboxBridgeOnline
-  // A move carries the checkout across before the thread takes another message.
-  const moveThread = useMoveThread(thread)
-  const moving = moveThread.isPending ? moveThread.variables : null
+  const queryClient = useQueryClient()
   // A Slack bot's thread is steered from its Slack thread, never from here.
   const botThread = thread.triggerKind === "slack_bot"
-  // A mirrored Claude Code session runs in Claude Code; this is a window onto it.
-  const mirroredSession = thread.source === "claude_code"
+  const historicalSession = thread.source === "claude_code"
   const ownsThread = Boolean(
     thread.ownerLogin &&
     session.data &&
     thread.ownerLogin.toLowerCase() === session.data.login.toLowerCase()
   )
   const canPost =
-    !runsElsewhere &&
-    moving === null &&
     !botThread &&
-    !mirroredSession &&
-    // Whoever posts in a thread on someone's machine runs commands there.
-    (!thread.sandboxBridgeClient || ownsThread) &&
-    ((thread.threadCategory !== "automation" && !thread.adminThread) ||
-      session.data?.is_admin === true)
-  // The bridge outlives a thread view but not the app; serve the checkout
-  // again for whatever this thread runs next, wherever that run is started.
-  const localBridge = useQuery({
-    queryKey: ["local-bridge", thread.id],
-    queryFn: async () =>
-      (await window.openSweDesktop?.ensureLocalBridge(thread.id)) ?? false,
-    enabled: Boolean(localThread),
-    retry: false,
-    refetchOnWindowFocus: "always",
-  })
-  const refetchLocalBridge = localBridge.refetch
-  const ensureLocalBridge = useCallback(async () => {
-    if (!localThread) return
-    const result = await refetchLocalBridge({ throwOnError: true })
-    if (result.isError) throw result.error
-  }, [localThread, refetchLocalBridge])
-  // A "This Mac" thread works in a checkout other threads on this machine may
-  // share, so its branch and worktree are shown, and switched, from here.
-  const localRefsQuery = useLocalRepoRefs(
-    localThread?.managedTaskFolder ? undefined : localThread?.cwd
-  )
-  const localRepoRefs = localRefsQuery.data
-  const refetchLocalRepoRefs = localRefsQuery.refetch
-  const localWorktreePath = localThread?.worktreePath ?? null
-  const localBranch = localThread
-    ? (localRepoRefs.find((candidate) =>
-        localWorktreePath
-          ? candidate.worktreePath === localWorktreePath
-          : candidate.current
-      )?.name ?? null)
-    : null
-  const localPr = useLocalThreadPr(thread.id, Boolean(localThread)).data ?? null
-  const queryClient = useQueryClient()
-  const selectLocalBranch = useCallback(
-    async (branch: string) => {
-      try {
-        await window.openSweDesktop?.setLocalBranch({
-          threadId: thread.id,
-          branch,
-        })
-      } catch (error) {
-        reportError({ title: "Couldn't switch the thread's branch", error })
-      }
-      void queryClient.invalidateQueries({ queryKey: localThreadKeys.all })
-      void queryClient.invalidateQueries({
-        queryKey: localThreadKeys.pr(thread.id),
-      })
-      await refetchLocalRepoRefs()
-    },
-    [queryClient, refetchLocalRepoRefs, thread.id]
-  )
-  const bridgeError =
-    localThread && localBridge.error
-      ? localBridge.error instanceof Error
-        ? localBridge.error.message
-        : "This Mac could not be reached"
-      : null
-  const runsHere: RunTarget = runsOnAMac(thread) ? "local" : "cloud"
-  const canMove =
-    (runsElsewhere || Boolean(window.openSweDesktop)) &&
-    thread.sandboxBridgeClient !== "cli" &&
-    thread.visibility === "private" &&
-    ownsThread
+    !historicalSession &&
+    (thread.threadCategory !== "automation" ||
+      thread.automationCanPost === true) &&
+    (!thread.adminThread || session.data?.is_admin === true)
   // The review page shows its PR's status itself; don't poll it a second time here.
   const pullRequestStatus = useAgentThreadPullRequestStatus(
     thread.id,
@@ -275,7 +153,13 @@ export function AgentThreadView({
     ? undefined
     : pullRequestStatus.data?.pullRequests
 
-  const { models, defaultSelection } = useModelOptions()
+  const {
+    models,
+    defaultSelection,
+    modelSelectionEnabled,
+    isLoading: modelsLoading,
+    isError: modelsError,
+  } = useModelOptions()
   const threadSelection = useMemo<ModelSelection | null>(() => {
     if (!thread.model || !thread.effort) return null
     const supported = models.some(
@@ -286,23 +170,21 @@ export function AgentThreadView({
   }, [models, thread.model, thread.effort])
   const [selection, setSelection] = useState<ModelSelection | null>(null)
   const [autoSelected, setAutoSelected] = useState(false)
-  const [autoIntent] = useState(createAutoSelectionIntent)
-  const activeSelection = autoSelected
-    ? null
-    : (selection ??
-      (thread.modelSelection === "auto"
-        ? null
-        : (threadSelection ?? defaultSelection)))
+  const [selectionIntent] = useState(createSelectionIntent)
+  const activeSelection =
+    !modelSelectionEnabled || autoSelected
+      ? null
+      : (selection ??
+        (thread.modelSelection === "auto"
+          ? null
+          : (threadSelection ?? defaultSelection)))
   const handleSelectionChange = (next: ModelSelection | null) => {
     setAutoSelected(next === null)
     setSelection(next)
-    autoIntent.select(next === null)
+    selectionIntent.select()
   }
   const scrollControlRef = useRef<MessagesScrollControl | null>(null)
   const routed = source.routed
-  const activeModel = models.find(
-    (model) => model.id === activeSelection?.modelId
-  )
   const login = session.data?.login
   const displayName = session.data?.display_name || undefined
   // A message sent from here keeps the label it showed while pending until the
@@ -350,12 +232,15 @@ export function AgentThreadView({
     [login]
   )
 
+  const [restoreDraft, setRestoreDraft] = useState<RestoredDraft | null>(null)
   const followUpBehavior = session.data?.follow_up_behavior ?? "steer"
   const submitMessage = useCallback(
     async (
       { text: content, images, replies }: ComposerSubmission,
-      options?: SubmitOptions
+      options?: SubmitOptions,
+      onStartError?: () => void
     ) => {
+      if (modelsLoading) throw new Error("Could not load model settings")
       // While a run is live the message either waits for it as a queued run of
       // its own, or goes straight in and steers it. The preference sets the
       // default; ⌘↵ flips it for one message.
@@ -380,14 +265,31 @@ export function AgentThreadView({
       // run starts, and an offload sends no message at all.
       if (offload) scrollControlRef.current?.scrollToBottom()
       else if (!enqueue) scrollControlRef.current?.pinMessage(messageId)
-      const carriesAutoSelection = autoIntent.claim(
+      const carriesSelection = selectionIntent.claim(
         messageId,
-        !offload && (!isStreaming || queue)
+        modelSelectionEnabled && !offload && (!isStreaming || queue)
       )
-      const restoreAutoSelection = () => autoIntent.restore(messageId)
+      const restoreSelection = () => selectionIntent.restore(messageId)
       try {
-        await ensureLocalBridge()
+        // The owner's private thread may ask to act on this Mac, each action approved here.
+        let localAccessBridgeId: string | undefined
+        if (
+          thread.visibility === "private" &&
+          ownsThread &&
+          window.openSweDesktop?.ensureLocalAccessBridge
+        ) {
+          try {
+            localAccessBridgeId =
+              await window.openSweDesktop.ensureLocalAccessBridge()
+          } catch (error) {
+            console.warn("Local access unavailable", error)
+            toast.warning(
+              "Local access is unavailable; continuing in the cloud."
+            )
+          }
+        }
         await sendMessage.mutateAsync({
+          local_access_bridge_id: localAccessBridgeId,
           content,
           images,
           replies,
@@ -396,24 +298,29 @@ export function AgentThreadView({
           analyticsAction,
           model_id: activeSelection?.modelId ?? null,
           effort: activeSelection?.effort ?? null,
-          model_selection_changed: carriesAutoSelection,
+          model_selection_changed: carriesSelection,
+          inherit_model_selection: !modelSelectionEnabled,
           enqueue,
-          ...(carriesAutoSelection
-            ? { onStartError: restoreAutoSelection }
-            : {}),
+          onStartError: () => {
+            restoreSelection()
+            onStartError?.()
+          },
         })
       } catch (error) {
         analyticsAction.failed(error)
-        restoreAutoSelection()
+        restoreSelection()
         throw error
       }
     },
     [
       activeSelection,
-      autoIntent,
-      ensureLocalBridge,
+      thread.visibility,
+      ownsThread,
+      selectionIntent,
       followUpBehavior,
       isStreaming,
+      modelSelectionEnabled,
+      modelsLoading,
       sendMessage,
       session.data?.user_id,
     ]
@@ -423,16 +330,33 @@ export function AgentThreadView({
   const submitWithExcerpts = useCallback(
     async (submission: ComposerSubmission, options?: SubmitOptions) => {
       const excerpts = reviewChat?.excerpts ?? []
-      await submitMessage(
-        excerpts.length
-          ? {
-              ...submission,
-              text: serializeExcerpts(submission.text, excerpts),
-            }
-          : submission,
-        options
-      )
-      if (excerpts.length) reviewChat?.clearExcerpts?.()
+      let restored = false
+      const restoreReplies = () => {
+        if (restored || submission.replies.length === 0) return
+        restored = true
+        setRestoreDraft((previous) => ({
+          key: (previous?.key ?? 0) + 1,
+          text: "",
+          images: [],
+          replies: submission.replies,
+        }))
+      }
+      try {
+        await submitMessage(
+          excerpts.length
+            ? {
+                ...submission,
+                text: serializeExcerpts(submission.text, excerpts),
+              }
+            : submission,
+          options,
+          restoreReplies
+        )
+        if (excerpts.length) reviewChat?.clearExcerpts?.()
+      } catch (error) {
+        restoreReplies()
+        throw error
+      }
     },
     [reviewChat, submitMessage]
   )
@@ -442,7 +366,7 @@ export function AgentThreadView({
     [submitMessage]
   )
 
-  const restoreQueuedAutoSelection = autoIntent.restore
+  const restoreQueuedSelection = selectionIntent.restore
 
   const queuedText = (entry: QueuedTurn) =>
     entry.message.chunks
@@ -452,7 +376,6 @@ export function AgentThreadView({
   const queuedImages = (entry: QueuedTurn) =>
     entry.message.chunks.filter((chunk) => chunk.kind === "image")
 
-  const [restoreDraft, setRestoreDraft] = useState<RestoredDraft | null>(null)
   useEffect(() => {
     if (!composerDraft || appliedComposerDrafts.has(composerDraft)) return
     appliedComposerDrafts.add(composerDraft)
@@ -481,10 +404,6 @@ export function AgentThreadView({
     })
   }, [question, canPost, clearQuestion, submitWithExcerpts])
 
-  const [droppedFiles, setDroppedFiles] = useState<{
-    key: number
-    files: Array<File>
-  } | null>(null)
   const [addedReply, setAddedReply] = useState<{
     key: number
     reply: PassageReply
@@ -553,9 +472,9 @@ export function AgentThreadView({
         action.failed(error)
         throw error
       }
-      restoreQueuedAutoSelection(entry.message.id)
+      restoreQueuedSelection(entry.message.id)
     },
-    [restoreQueuedAutoSelection, source, thread.id]
+    [restoreQueuedSelection, source, thread.id]
   )
   const removeQueuedMessage = useCallback(
     (id: string) => {
@@ -594,8 +513,8 @@ export function AgentThreadView({
       ...unacknowledged.flatMap((message) => message.images ?? []),
     ])
     if (!(await source.stop())) return
-    for (const entry of pending) restoreQueuedAutoSelection(entry.message.id)
-    for (const message of unacknowledged) restoreQueuedAutoSelection(message.id)
+    for (const entry of pending) restoreQueuedSelection(entry.message.id)
+    for (const message of unacknowledged) restoreQueuedSelection(message.id)
     if (source.kind === "stream" && pending.length > 0) {
       // Same reasoning as withdrawQueued: syncs the adapter's queue store.
       await Promise.allSettled(
@@ -638,7 +557,7 @@ export function AgentThreadView({
     isOwnQueued,
     queryClient,
     queued,
-    restoreQueuedAutoSelection,
+    restoreQueuedSelection,
     restoreQueuedToComposer,
     source,
     thread.id,
@@ -657,6 +576,12 @@ export function AgentThreadView({
     [submitMessage, thread.id]
   )
   const contextUsage = source.contextUsage
+  const usageModel = resolveContextModel(
+    models,
+    contextUsage?.model,
+    routed?.modelId,
+    thread.model
+  )
 
   // Own the git panel's collapsed state so file links can reveal the panel.
   const [panelCollapsed, setPanelCollapsed] = useState(() =>
@@ -679,63 +604,35 @@ export function AgentThreadView({
     },
     [handlePanelCollapsedChange]
   )
-  // Show the Changes panel when the thread settles after editing files in view.
-  // Edits are counted from when streaming started, not from the last user
-  // message, so steered messages and queued follow-ups don't hide them. The
-  // baseline keeps moving until the transcript has hydrated, so earlier runs'
-  // edits never count toward a run that was already live when the view opened.
-  const autoShowChanges = session.data?.auto_show_changes ?? true
-  const lastSeenRun = useRef({
-    threadId: thread.id,
-    streaming: isStreaming,
-    hydrating: true,
-    editsAtStart: 0,
-  })
-  const hydrating = source.isHydrating
-  useEffect(() => {
-    const previous = lastSeenRun.current
-    const edits = completedEdits(baseMessages)
-    const tracking =
-      previous.threadId === thread.id &&
-      previous.streaming &&
-      !previous.hydrating
-    lastSeenRun.current = {
-      threadId: thread.id,
-      streaming: isStreaming,
-      hydrating,
-      editsAtStart: tracking ? previous.editsAtStart : edits,
-    }
-    const finished = tracking && !isStreaming
-    if (!finished || !autoShowChanges || edits <= previous.editsAtStart) return
-    setRevealChangesKey((key) => key + 1)
-    handlePanelCollapsedChange(false)
-  }, [
-    autoShowChanges,
-    baseMessages,
-    handlePanelCollapsedChange,
-    hydrating,
-    isStreaming,
-    thread.id,
-  ])
-
   const activeRun = useMemo(
     () => ({ threadId: thread.id, running: thread.status === "running" }),
     [thread.id, thread.status]
+  )
+  const agentQueue = useAgentThreadQueuedMessages(thread.id).data
+  const inboxIds = useMemo(
+    () => new Set(agentQueue?.map((message) => message.id)),
+    [agentQueue]
   )
   // An optimistic row sent to queue renders as a queued row from the start,
   // so it never flashes as a sent message before the server confirms it.
   const pendingMessages = useMemo(
     () =>
       visiblePendingMessages(
-        thread.pendingMessages?.filter((message) => !message.queued),
+        thread.pendingMessages?.filter(
+          (message) => !message.queued && !inboxIds.has(message.id)
+        ),
         [...baseMessages, ...queued.map((entry) => entry.message)],
         senderName
       ),
-    [baseMessages, queued, senderName, thread.pendingMessages]
+    [baseMessages, inboxIds, queued, senderName, thread.pendingMessages]
   )
   const visibleMessages = useMemo(
     () => [...baseMessages, ...pendingMessages],
     [baseMessages, pendingMessages]
+  )
+  const shownMessages = useMemo(
+    () => visibleMessages.slice(source.shownFrom),
+    [source.shownFrom, visibleMessages]
   )
   // An optimistic row has done its job once the transcript or the queue holds
   // its id. Dropping it then keeps a withdrawn queued turn from resurfacing it
@@ -743,11 +640,11 @@ export function AgentThreadView({
   useEffect(() => {
     const pending = thread.pendingMessages
     if (!pending?.length) return
-    const persisted = new Set(
-      [...baseMessages, ...queued.map((entry) => entry.message)].map(
-        (message) => message.id
-      )
-    )
+    const persisted = new Set([
+      ...baseMessages.map((message) => message.id),
+      ...queued.map((entry) => entry.message.id),
+      ...inboxIds,
+    ])
     if (!pending.some((message) => persisted.has(message.id))) return
     queryClient.setQueryData<AgentThread>(
       agentThreadKeys.detail(thread.id),
@@ -759,9 +656,15 @@ export function AgentThreadView({
           ),
         }
     )
-  }, [baseMessages, queryClient, queued, thread.id, thread.pendingMessages])
+  }, [
+    baseMessages,
+    inboxIds,
+    queryClient,
+    queued,
+    thread.id,
+    thread.pendingMessages,
+  ])
 
-  const agentQueue = useAgentThreadQueuedMessages(thread.id).data
   const queuedRows = useMemo(() => {
     const known = new Set(queued.map((entry) => entry.message.id))
     // A steered follow-up is already on the transcript under the same id.
@@ -780,7 +683,12 @@ export function AgentThreadView({
         mine: isOwnQueued(entry),
       })),
       ...(thread.pendingMessages ?? [])
-        .filter((message) => message.queued && !known.has(message.id))
+        .filter(
+          (message) =>
+            message.queued &&
+            !shown.has(message.id) &&
+            !inboxIds.has(message.id)
+        )
         .map((message) => ({
           id: message.id,
           content: message.content,
@@ -799,7 +707,14 @@ export function AgentThreadView({
           sender: message.sender,
         })),
     ]
-  }, [agentQueue, baseMessages, isOwnQueued, queued, thread.pendingMessages])
+  }, [
+    agentQueue,
+    baseMessages,
+    inboxIds,
+    isOwnQueued,
+    queued,
+    thread.pendingMessages,
+  ])
 
   const hasMessages = visibleMessages.length > 0
   const hasConversation = hasMessages || queuedRows.length > 0
@@ -809,9 +724,18 @@ export function AgentThreadView({
   const loadEarlier = useMemo<LoadEarlier | null>(
     () =>
       source.hasOlder
-        ? { loading: source.isLoadingOlder, onLoadEarlier: source.loadOlder }
+        ? {
+            loading: source.isLoadingOlder,
+            onLoadEarlier: source.loadOlder,
+            onLoadAll: source.loadAllOlder,
+          }
         : null,
-    [source.hasOlder, source.isLoadingOlder, source.loadOlder]
+    [
+      source.hasOlder,
+      source.isLoadingOlder,
+      source.loadOlder,
+      source.loadAllOlder,
+    ]
   )
   const isThinking = sourceRunning
   const settingUpSandbox = source.isRunning && baseMessages.length === 0
@@ -843,148 +767,55 @@ export function AgentThreadView({
     if (!source.isHydrating) threadHydrated(thread.id)
   }, [source.isHydrating, thread.id])
 
-  // The transcript's first frame: one rAF after the commit that replaced the
-  // hydration placeholder. A commit before the frame fires cancels and
-  // reschedules it, so the frame recorded is the one that actually reached the
-  // screen; the ref is only set once it has.
-  const paintedThreadId = useRef<string | null>(null)
-  useLayoutEffect(() => {
-    if (isHydrating || paintedThreadId.current === thread.id) return
-    const messages = visibleMessages.length
-    const chunks = visibleMessages.reduce((sum, m) => sum + m.chunks.length, 0)
-    const frame = requestAnimationFrame(() => {
-      paintedThreadId.current = thread.id
-      threadTranscriptPainted(thread.id, { messages, chunks })
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [isHydrating, thread.id, visibleMessages])
+  useThreadTranscriptPaint(
+    thread.id,
+    isHydrating ? null : shownMessages,
+    source
+  )
 
   return (
     <div className="flex min-w-0 flex-1">
       <div
-        className="flex min-w-0 flex-1 flex-col"
+        data-chat-drop-zone
+        className="relative flex min-w-0 flex-1 flex-col"
         style={isMobile ? undefined : { minWidth: SIBLING_COLUMN_MIN_WIDTH }}
       >
         {/* The page around an embedded thread is its header. */}
         {!embedded && (
           <AgentThreadHeader
             key={thread.id}
-            title={thread.title}
             onRename={(title) =>
               renameThread.mutateAsync({ threadId: thread.id, title })
-            }
-            target={
-              localThread || thread.sandboxBridgeClient === "desktop"
-                ? "This Mac"
-                : thread.sandboxBridgeClient === "cli"
-                  ? "Local CLI"
-                  : "Cloud"
             }
             panelCollapsed={panelCollapsed}
             thread={thread}
           />
         )}
-        {(runsElsewhere || bridgeError) && (
-          <div className="mx-auto w-full max-w-3xl shrink-0 px-space-4 pt-space-3">
-            <Banner
-              intent={bridgeError ? "error" : "info"}
-              icon={
-                <Icon
-                  icon={LaptopRegularIcon}
-                  size="md"
-                  className={
-                    bridgeError ? "text-icon-error" : "text-icon-brand"
-                  }
-                />
-              }
-            >
-              {bridgeError
-                ? `This thread's checkout on This Mac can't be served: ${bridgeError}`
-                : `This thread runs in a checkout on another Mac that isn't serving it right now. Open it in the Robin app there to continue it${canMove ? ", or move it to Cloud" : ""}.`}
-            </Banner>
-          </div>
-        )}
+        <LocalAccessRequests threadId={thread.id} />
+        <LocalAccessGrantBanner threadId={thread.id} />
         {thread.status === "error" && !reconnect.label && (
-          <div className="mx-auto w-full max-w-3xl shrink-0 px-space-4 pt-space-3">
-            <Banner
-              intent="error"
-              action={
-                thread.traceUrl ? (
-                  <Button
-                    as={
-                      <a
-                        href={thread.traceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      />
-                    }
-                    color="secondary"
-                    variant="underlined"
-                    size="md"
-                  >
-                    Open trace
-                  </Button>
-                ) : undefined
+          <div className="mx-auto w-full max-w-3xl shrink-0 px-space-4 pt-space-3 empty:hidden">
+            <RunErrorBanner
+              key={`${thread.id}:${thread.latestRunId ?? ""}`}
+              threadId={thread.id}
+              traceUrl={thread.traceUrl}
+              retry={
+                canPost
+                  ? () =>
+                      submitText(
+                        "Retry the failed run. Continue from where you left off."
+                      )
+                  : undefined
               }
-            >
-              <Text as="span" variant="sm" color="secondary">
-                The last run hit an error before it could finish. Send another
-                message to retry.
-              </Text>{" "}
-              <CopyErrorButton
-                error="The last run hit an error before it could finish."
-                details={{ Thread: thread.id, Trace: thread.traceUrl }}
-                className="-my-space-1 align-middle"
-              />
-            </Banner>
+              disabled={isStreaming || modelsLoading || source.isHydrating}
+            />
           </div>
         )}
-        {thread.attentionReason === "prs_closed" && !thread.resolved && (
-          <div className="mx-auto w-full max-w-3xl shrink-0 px-space-4 pt-space-3">
-            <Banner
-              intent="info"
-              icon={
-                <Icon
-                  icon={GitMergeIcon}
-                  size="md"
-                  className="text-icon-brand"
-                />
-              }
-            >
-              Every pull request from this thread is merged or closed.
-            </Banner>
-          </div>
-        )}
-        <div
-          className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-          onDragOver={(event) => {
-            if (canPost && event.dataTransfer.types.includes("Files"))
-              event.preventDefault()
-          }}
-          onDrop={(event) => {
-            if (
-              !canPost ||
-              !event.dataTransfer.types.includes("Files") ||
-              (event.target instanceof Element &&
-                event.target.closest("[data-chat-composer]"))
-            )
-              return
-            event.preventDefault()
-            const files = Array.from(event.dataTransfer.files).filter((file) =>
-              ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(
-                file.type
-              )
-            )
-            if (files.length)
-              setDroppedFiles((previous) => ({
-                key: (previous?.key ?? 0) + 1,
-                files,
-              }))
-          }}
-        >
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {hydrationFailed || hydrationTimedOut ? (
             <LoadError
               title="Unable to load messages"
+              retry={retry}
               context={`Thread: ${thread.id}`}
               error={
                 hydrateError !== null
@@ -993,13 +824,7 @@ export function AgentThreadView({
               }
             />
           ) : isHydrating ? (
-            <div
-              role="status"
-              aria-label="Loading conversation"
-              className="flex flex-1 items-center justify-center px-space-5"
-            >
-              <LogoMark alt="" className="size-12 animate-pulse" />
-            </div>
+            <ConversationLoading />
           ) : (
             <ReplyOptionContext.Provider
               value={canPost ? submitText : undefined}
@@ -1016,10 +841,24 @@ export function AgentThreadView({
                   }
                 >
                   <Messages
-                    messages={visibleMessages}
+                    messages={shownMessages}
+                    transcript={visibleMessages}
                     threadId={thread.id}
                     scrollKey={thread.id}
                     showPlanArtifact={Boolean(thread.planStatus)}
+                    onOpenArtifact={
+                      !embedded
+                        ? () => {
+                            useRightPanelStore
+                              .getState()
+                              .open(
+                                { scope: "cloud", threadId: thread.id },
+                                "artifact"
+                              )
+                            handlePanelCollapsedChange(false)
+                          }
+                        : undefined
+                    }
                     runCosts={thread.runCosts}
                     emptyState={
                       <div className="flex min-h-60 items-center justify-center">
@@ -1063,18 +902,9 @@ export function AgentThreadView({
           )}
           {!isHydrating && (
             <AgentComposerDock>
-              <CodeChannelLink url={thread.codeChannelUrl} />
               {!embedded && (
                 <ThreadPullRequests
-                  pullRequests={
-                    // A local branch's PR may come from `gh`, which the thread
-                    // record never hears about.
-                    thread.pullRequests?.length
-                      ? thread.pullRequests
-                      : localPr
-                        ? [localPr]
-                        : []
-                  }
+                  pullRequests={thread.pullRequests ?? []}
                   health={pullRequestHealth}
                   healthUnavailable={pullRequestStatus.isError}
                   onFix={fixPullRequest}
@@ -1082,6 +912,11 @@ export function AgentThreadView({
                 />
               )}
               {reviewChat && <ReviewExcerptChips />}
+              {modelsError && (
+                <Banner intent="error" className="mb-space-3 w-full">
+                  Could not load model settings. Reload to try again.
+                </Banner>
+              )}
               <AgentPromptBar
                 key={`${session.data?.user_id}:${thread.id}`}
                 draftKey={
@@ -1090,72 +925,43 @@ export function AgentThreadView({
                     : undefined
                 }
                 placeholder={
-                  moving
-                    ? `Moving this thread to ${moving === "local" ? "This Mac" : "Cloud"}…`
-                    : runsElsewhere
-                      ? "This thread's Mac isn't serving it right now"
-                      : botThread
-                        ? `Started by ${thread.triggeringBot?.name ?? "a Slack bot"}. Reply in Slack to steer it`
-                        : mirroredSession
-                          ? "Mirrored from Claude Code. Continue this session there"
-                          : canPost
-                            ? hasConversation
-                              ? "Work with Robin"
-                              : "Send the first message"
-                            : "Only workspace admins can send messages in this thread"
+                  botThread
+                    ? `Started by ${thread.triggeringBot?.name ?? "a Slack bot"}. Reply in Slack to steer it`
+                    : historicalSession
+                      ? "This historical Claude Code session is read-only"
+                      : canPost
+                        ? reviewChat
+                          ? "Review with Robin"
+                          : hasConversation
+                            ? "Work with Robin"
+                            : "Send the first message"
+                        : thread.adminThread
+                          ? "Only Robin admins can send messages in this thread"
+                          : "You can't send messages in this thread"
                 }
+                autoFocus={canPost && !embedded}
                 canOffload={!isStreaming}
                 compact
-                disabled={!canPost}
+                disabled={!canPost || modelsLoading}
                 busy={isStreaming}
                 activeRun={activeRun}
                 onStop={stopRun}
-                stoppable={!mirroredSession}
+                stoppable={!historicalSession}
                 onSubmit={submitWithExcerpts}
                 followUpBehavior={followUpBehavior}
                 restoreDraft={restoreDraft}
-                droppedFiles={droppedFiles}
                 addedReply={addedReply}
                 models={models}
+                modelSelectionEnabled={modelSelectionEnabled}
                 routed={routed}
                 selection={activeSelection}
                 onSelectionChange={handleSelectionChange}
                 mentionPaths={mentionPaths}
                 skills={skills.data}
-                {...(localThread
-                  ? {
-                      runTarget: "local" as const,
-                      // A task folder is the thread's own, not a project.
-                      selectedLocalRepoPath: localThread.managedTaskFolder
-                        ? null
-                        : localThread.cwd,
-                      localRepoBranches: localRepoRefs,
-                      selectedLocalRepoBranch: localBranch,
-                      onRefreshLocalRepoBranch: () =>
-                        void refetchLocalRepoRefs(),
-                      onSelectLocalRepoBranch: localRepoRefs.length
-                        ? (branch: string) => void selectLocalBranch(branch)
-                        : undefined,
-                      localWorkspaceMode: localWorktreePath
-                        ? ("worktree" as const)
-                        : ("local" as const),
-                      localWorktreeLabel: "Worktree",
-                    }
-                  : {})}
-                {...(canMove && {
-                  runTarget: moving ?? runsHere,
-                  runTargetPending: moving !== null,
-                  onRunTargetChange:
-                    isStreaming || moving
-                      ? undefined
-                      : (next: RunTarget) => {
-                          if (next !== runsHere) moveThread.mutate(next)
-                        },
-                })}
                 contextUsage={{
                   usedTokens: contextUsage?.tokens,
-                  contextWindow: activeModel?.context_window ?? null,
-                  model: contextUsage?.model,
+                  contextWindow: usageModel?.context_window,
+                  model: usageModel?.label ?? contextUsage?.model,
                   costUsd: thread.costUsd,
                 }}
               />

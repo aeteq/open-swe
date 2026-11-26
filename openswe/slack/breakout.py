@@ -53,7 +53,6 @@ class BreakoutCommand:
     channel_id: str = ""
     prior_text: str = ""
     options: str = ""
-    workspace: str | None = None
 
     @classmethod
     def from_message(cls, message: ParsedSlackMessage) -> BreakoutCommand:
@@ -61,10 +60,9 @@ class BreakoutCommand:
             instruction=message.argument,
             prior_text=message.prior_text,
             options=message.options,
-            workspace=message.workspace,
         )
         parts = message.argument.split(maxsplit=1)
-        if parts and parts[0].lower() == "in" and len(parts) > 1:
+        if parts and parts[0].lower() in {"in", "to"} and len(parts) > 1:
             destination = parts[1].split(maxsplit=1)
             if destination[0].startswith(("#", "<#")):
                 parts = destination
@@ -173,7 +171,6 @@ async def _start(
     target: str,
     repo: common.SlackRepoResolution | None,
     *,
-    inherited_workspace: str | None = None,
     hand_to_mda: HandToMda | None = None,
     branches: bool = False,
     tell: Tell,
@@ -251,7 +248,6 @@ async def _start(
             "context_thread_ts": request.thread_ts,
             "breakout_root_suffix": root_text[len(heading) :],
             "prior_message_text": command.prior_text,
-            "inherited_workspace": inherited_workspace,
             **(
                 {"channel_context": None, "concierge_mode": False, "reply_thread_ts": ""}
                 if moved_channel
@@ -262,14 +258,14 @@ async def _start(
     if hand_to_mda is not None:
         await hand_to_mda(opening, repo)
         return
-    await service.process_slack_mention(opening, repo, inherited_workspace=inherited_workspace)
+    await service.process_slack_mention(opening, repo)
 
 
 async def web_opening(
     request: SlackRequest, command: BreakoutCommand, thread_id: str
 ) -> SlackRequest:
     """The first turn of the web conversation a ``/breakout:web`` starts on ``thread_id``,
-    seeded with the Slack thread it came from and that thread's workspace."""
+    seeded with the Slack thread it came from."""
     return request.model_copy(
         update={
             "thread_id": thread_id,
@@ -278,12 +274,8 @@ async def web_opening(
             "context_thread_ts": request.thread_ts,
             "prior_message_text": command.prior_text,
             "web_only": True,
-            "code_channel": False,
             "concierge_mode": False,
             "reply_thread_ts": "",
-            "inherited_workspace": (
-                await common.get_thread_workspace(request.thread_id) if request.thread_id else None
-            ),
         }
     )
 
@@ -298,9 +290,7 @@ async def process_slack_web(
     thread_id = str(uuid4())
     try:
         opening = await web_opening(request, command, thread_id)
-        started = await service.process_slack_web_mention(
-            opening, repo, inherited_workspace=opening.inherited_workspace
-        )
+        started = await service.process_slack_web_mention(opening, repo)
         if started:
             await notify_web_breakout(opening)
     except Exception:
@@ -332,16 +322,9 @@ async def process_slack_breakout(
                 "autocomplete: `/breakout #channel`.",
             )
             return
-        workspace = (
-            await common.get_thread_workspace(request.thread_id) if request.thread_id else None
-        )
         destination = await resolve_breakout_destination(
             request.channel_id,
             command.channel_id,
-            workspace=workspace,
-            repo=repo.routing_repo if repo else None,
-            tag=command.workspace,
-            login=await service.slack_login(request.user_id) if request.user_id else None,
         )
         target = destination.channel_id
         if error := await destination.channel_error(request.channel_id):
@@ -353,7 +336,6 @@ async def process_slack_breakout(
                 command,
                 target,
                 repo,
-                inherited_workspace=destination.workspace if not command.channel_id else None,
                 hand_to_mda=hand_to_mda,
                 branches=branches,
                 tell=tell,

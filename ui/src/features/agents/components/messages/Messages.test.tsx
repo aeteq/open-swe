@@ -1,6 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
@@ -15,8 +22,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 
 import { Messages } from "./Messages"
+import { BackgroundEvent } from "@/features/agents/lib/backgroundEvent"
 import { streamMessagesToUi } from "@/features/agents/lib/streamMessagesToUi"
+import { attachmentUrl } from "@/features/agents/lib/transcript/api"
 import type { TaskEventMetadata } from "@/features/agents/lib/structuredInputMessages"
+import type { Message, ToolExecutionChunk } from "@/features/agents/lib/types"
 
 vi.mock("@/lib/appCommands", () => ({
   useAppCommand: () => undefined,
@@ -32,8 +42,19 @@ vi.stubGlobal(
 )
 
 vi.mock("@/features/agents/components/WorkflowApprovalCard", () => ({
-  WorkflowApprovalCard: ({ threadId }: { threadId: string }) => (
-    <div data-testid="workflow-approval-card">Approval for {threadId}</div>
+  WorkflowApprovalCard: ({
+    threadId,
+    latestUserMessageAt,
+  }: {
+    threadId: string
+    latestUserMessageAt?: string
+  }) => (
+    <div
+      data-testid="workflow-approval-card"
+      data-latest-user-message-at={latestUserMessageAt}
+    >
+      Approval for {threadId}
+    </div>
   ),
 }))
 
@@ -49,6 +70,64 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 )
 
 describe("Messages", () => {
+  it("hides system message pills while preserving human messages", () => {
+    const messages = streamMessagesToUi([
+      new HumanMessage({
+        id: "listener",
+        content:
+          '<dynamic-context kind="system" id="system:event-subscription">\ndisplay_name: Event listener\n</dynamic-context>',
+      }),
+      ...["Build completed", "Review posted", "Checks passed"].map(
+        (text, index) =>
+          new HumanMessage({
+            id: `event-${index}`,
+            content: `<input-message sender="system:event-subscription" kind="system" surface="github">${text}</input-message>`,
+          })
+      ),
+      new HumanMessage({
+        id: "pull-request-notice",
+        content:
+          '<input-message sender="system:pull-request-thread" kind="system" surface="automation">Pull request context</input-message>',
+      }),
+      ...[
+        [
+          "system:sandbox-handoff",
+          "Moved to the cloud. Continuing from the branch as pushed.",
+        ],
+        ["system:api_key/key-1", "Investigate the nightly job failure"],
+        ["system:github_actions/org/repo", "Fix the deployment check"],
+      ].map(
+        ([sender, text]) =>
+          new HumanMessage({
+            id: sender,
+            content: `<input-message sender="${sender}" kind="system" surface="automation">${text}</input-message>`,
+          })
+      ),
+      new HumanMessage({ id: "human", content: "Please continue" }),
+      new HumanMessage({
+        id: "separate-event",
+        content:
+          '<input-message sender="system:event-subscription" kind="system" surface="github">New commit</input-message>',
+      }),
+    ])
+    render(<Messages messages={messages} isStreaming={false} />, { wrapper })
+
+    expect(screen.getByText("Please continue")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /event listener/i })).toBeNull()
+    expect(screen.queryByText("Build completed")).toBeNull()
+    expect(screen.queryByText("New commit")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Context" })).toBeNull()
+    expect(screen.queryByText("Pull request context")).toBeNull()
+    expect(
+      screen.getByText(
+        "Moved to the cloud. Continuing from the branch as pushed."
+      )
+    ).toBeTruthy()
+    expect(screen.getByText("Investigate the nightly job failure")).toBeTruthy()
+    expect(screen.getByText("Fix the deployment check")).toBeTruthy()
+    expect(screen.queryByTestId("system-message-toggle")).toBeNull()
+  })
+
   it("copies the displayed thread URL with the dashboard base path on another page", async () => {
     vi.stubEnv("BASE_URL", "/robin/")
     const writeText = vi.fn().mockResolvedValue(undefined)
@@ -99,6 +178,85 @@ describe("Messages", () => {
       )
     )
     Reflect.deleteProperty(navigator, "clipboard")
+  })
+
+  it("copies a user's full message and passage replies without metadata", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    Object.defineProperty(window, "isSecureContext", {
+      configurable: true,
+      value: true,
+    })
+    const content = "Please investigate this.\n".repeat(30)
+    render(
+      <Messages
+        messages={[
+          {
+            id: "user-copy",
+            author: "user",
+            timestamp: "2026-11-06T20:18:00Z",
+            timestampIsFallback: true,
+            structuredSenderName: "Alice",
+            contextLabel: "Private context, not part of the message",
+            chunks: [
+              { kind: "text", text: content.slice(0, 100) },
+              { kind: "text", text: content.slice(100) },
+            ],
+            replies: [
+              {
+                source: "conversation",
+                before: "Hidden preceding context",
+                selection: "The selected passage",
+                after: "Hidden following context",
+                comment: "Explain this too.",
+              },
+            ],
+          },
+        ]}
+        isStreaming={false}
+      />,
+      { wrapper }
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy message" }))
+    await vi.waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        `The selected passage\n\nExplain this too.\n\n${content}`
+      )
+    )
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy()
+    Reflect.deleteProperty(navigator, "clipboard")
+  })
+
+  it("does not offer message copying for system notices or image-only messages", () => {
+    render(
+      <Messages
+        messages={[
+          {
+            id: "system-notice",
+            author: "user",
+            timestamp: "2026-11-06T20:18:00Z",
+            structuredSenderKind: "system",
+            chunks: [{ kind: "text", text: "A system notice" }],
+          },
+          {
+            id: "image-only",
+            author: "user",
+            timestamp: "2026-11-06T20:18:00Z",
+            chunks: [
+              { kind: "image", base64: "aW1hZ2U=", mimeType: "image/png" },
+            ],
+          },
+        ]}
+        isStreaming={false}
+      />,
+      { wrapper }
+    )
+
+    expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull()
   })
 
   it("renders queued passage replies even without plain text", () => {
@@ -239,7 +397,14 @@ describe("Messages", () => {
         .getByRole("link", { name: "Open Worker 2cfc31d4 thread" })
         .getAttribute("href")
     ).toBe("/agents/7db1bbf5-0623-5a35-a5a4-db372cfc31d4")
+    const result = screen.getByRole("button", {
+      name: "Details for Worker result received",
+    })
+    expect(result.getAttribute("aria-expanded")).toBe("false")
     expect(container.textContent).not.toContain("Can I change")
+    fireEvent.click(result)
+    expect(container.textContent).toContain(source.content)
+    fireEvent.click(result)
     fireEvent.click(details)
     expect(container.textContent).toContain(source.content)
     expect(container.querySelector("img,script")).toBeNull()
@@ -248,6 +413,77 @@ describe("Messages", () => {
     expect(container.textContent).not.toContain("hidden model text")
     fireEvent.click(details)
     expect(container.textContent).not.toContain("Can I change")
+  })
+
+  it("shows consecutive read and search calls individually inside the work fold", () => {
+    const read = (id: string, path: string): ToolExecutionChunk => ({
+      kind: "tool-execution",
+      toolCallId: id,
+      toolName: "read_file",
+      title: "read_file",
+      toolKind: "read",
+      input: { file_path: path },
+      status: "completed",
+      output: "File contents",
+    })
+    const search: ToolExecutionChunk = {
+      kind: "tool-execution",
+      toolCallId: "search",
+      toolName: "grep",
+      title: "grep",
+      toolKind: "search",
+      input: { pattern: "work" },
+      status: "completed",
+      output: "Matches",
+    }
+    const messages: Message[] = [
+      {
+        id: "turn",
+        author: "agent",
+        timestamp: "2026-01-01T00:00:10Z",
+        chunks: [
+          read("read-1", "first.ts"),
+          search,
+          read("read-2", "second.ts"),
+          {
+            kind: "tool-execution",
+            toolCallId: "eval",
+            title: "eval",
+            toolKind: "code",
+            input: { code: "await tools.readFile()" },
+            status: "completed",
+            calls: [
+              read("nested-1", "nested-first.ts"),
+              read("nested-2", "nested-second.ts"),
+            ],
+          },
+          { kind: "text", text: "Done." },
+        ],
+      },
+    ]
+    render(<Messages messages={messages} isStreaming={false} />, { wrapper })
+
+    const fold = screen.getByRole("button", { name: "Worked · 6 actions" })
+    expect(screen.queryByText("first.ts")).toBeNull()
+    fireEvent.click(fold)
+    const rows = [
+      screen.getByText("first.ts"),
+      screen.getByText('"work"'),
+      screen.getByText("second.ts"),
+      screen.getByText("nested-first.ts"),
+      screen.getByText("nested-second.ts"),
+    ]
+    for (let i = 1; i < rows.length; i += 1) {
+      expect(
+        rows[i - 1]!.compareDocumentPosition(rows[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
+    }
+    expect(
+      screen.queryByRole("button", { name: /previous tool calls/i })
+    ).toBeNull()
+    fireEvent.click(fold)
+    expect(screen.queryByText("first.ts")).toBeNull()
   })
 
   it("keeps the worker launch in the conversation when surrounding work is folded", async () => {
@@ -291,19 +527,16 @@ describe("Messages", () => {
       wrapper,
     })
     const chip = screen.getByRole("button", {
-      name: "Worker 2cfc31d4 · Started",
+      name: "Details for Worker · Started",
     })
-    const folds = screen.getAllByRole("button", { name: "Worked · 1 action" })
-    expect(folds).toHaveLength(2)
-    for (const fold of folds) {
-      expect(fold.getAttribute("aria-expanded")).toBe("false")
-    }
+    const fold = screen.getByRole("button", { name: "Worked · 3 actions" })
+    expect(fold.getAttribute("aria-expanded")).toBe("false")
     expect(
-      folds[0]!.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING
+      fold.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-    expect(
-      chip.compareDocumentPosition(folds[1]!) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy()
+    fireEvent.click(fold)
+    expect(screen.getByText("AGENTS.md")).toBeTruthy()
+    expect(screen.getByText("README.md")).toBeTruthy()
     expect(
       screen
         .getByRole("link", { name: "Open Worker 2cfc31d4 thread" })
@@ -318,6 +551,73 @@ describe("Messages", () => {
     fireEvent.click(chip)
     expect(screen.getByText("Investigate <login> & validation")).toBeTruthy()
     expect(container.querySelector("login")).toBeNull()
+  })
+
+  it("shows a worker result in order within the work fold and keeps failures clear", async () => {
+    const workerId = "7db1bbf5-0623-5a35-a5a4-db372cfc31d4"
+    const tool = (id: string, path: string): ToolExecutionChunk => ({
+      kind: "tool-execution",
+      toolCallId: id,
+      toolName: "read_file",
+      title: `read_file ${path}`,
+      toolKind: "read",
+      input: { path },
+      status: "completed",
+    })
+    const messages: Message[] = [
+      {
+        id: "turn",
+        author: "agent",
+        timestamp: "2026-01-01T00:00:10Z",
+        chunks: [
+          tool("before", "before.txt"),
+          {
+            kind: "task-event",
+            messageId: "result",
+            event: {
+              version: 1,
+              task_id: "d505b040-c025-4b52-a27e-339803281cfb",
+              sender_thread_id: workerId,
+              sender_role: "worker",
+              sender_label: "Investigation",
+              kind: "completion",
+              status: "error",
+              content: "The worker failed safely <test>.",
+            },
+          },
+          tool("after", "after.txt"),
+          { kind: "text", text: "Continuing." },
+        ],
+      },
+    ]
+    const router = createRouter({
+      routeTree: createRootRoute({
+        component: () => <Messages messages={messages} isStreaming={false} />,
+      }),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    })
+    await router.load()
+    render(<RouterProvider router={router} />, { wrapper })
+    const fold = screen.getByRole("button", { name: "Worked · 2 actions" })
+    const result = screen.getByRole("button", {
+      name: "Details for Worker result received · Failed",
+    })
+    expect(
+      screen
+        .getByRole("link", { name: "Open Investigation thread" })
+        .getAttribute("href")
+    ).toBe(`/agents/${workerId}`)
+    fireEvent.click(fold)
+    const before = screen.getByText("before.txt")
+    const after = screen.getByText("after.txt")
+    expect(
+      before.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      result.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    fireEvent.click(result)
+    expect(screen.getByText("The worker failed safely <test>.")).toBeTruthy()
   })
 
   it.each(["manage_thread", "message_task_thread"])(
@@ -416,41 +716,303 @@ describe("Messages", () => {
         { wrapper }
       )
       expect(
-        screen.getByRole("button", { name: `Worker · ${label}` })
+        screen.getByRole("button", {
+          name:
+            label === "Launch status unknown"
+              ? `Worker · ${label}`
+              : `Details for Worker · ${label}`,
+        })
       ).toBeTruthy()
       expect(screen.queryByRole("link")).toBeNull()
     }
   )
 
-  it("expands system context with the shared chip", () => {
+  it("folds runs that woke and ended without a reply into one row", () => {
+    const monitor = (
+      id: string,
+      at: string,
+      sender = { id: "system:monitor", name: "Monitor" }
+    ) => ({
+      id,
+      author: "user" as const,
+      timestamp: at,
+      structuredSenderKind: "system" as const,
+      structuredSenderId: sender.id,
+      structuredSenderName: sender.name,
+      chunks: [
+        {
+          kind: "text" as const,
+          text:
+            sender.id === "system:background-task"
+              ? "A sandbox background command finished.\nTask: cmd-123\nStatus: completed\nExit code: 0\nDuration: 33.27s\nOutput: /tmp/output.log\nUse background_task to continue."
+              : `Monitor \`${id}\` (CI) emitted, starting at raw line 1:\nsecret instruction`,
+        },
+      ],
+    })
+    const silentRun = (
+      id: string,
+      startedAt: string,
+      at: string,
+      call: Partial<ToolExecutionChunk> = {}
+    ) => ({
+      id,
+      author: "agent" as const,
+      startedAt,
+      timestamp: at,
+      chunks: [
+        {
+          kind: "tool-execution" as const,
+          toolCallId: `${id}-call`,
+          toolName: "check_pr",
+          toolKind: "other" as const,
+          title: "Check PR",
+          status: "completed" as const,
+          output: "still pending",
+          ...call,
+        },
+      ],
+    })
     render(
       <Messages
         isStreaming={false}
         messages={[
           {
-            id: "system-context",
+            id: "moved",
             author: "user",
-            timestamp: "2026-09-03T10:30:00.000Z",
+            timestamp: "2026-09-03T09:59:00.000Z",
             structuredSenderKind: "system",
-            structuredSenderName: "Scheduler",
-            chunks: [{ kind: "text", text: "Check the latest deployment" }],
+            structuredSenderId: "system:sandbox-handoff",
+            structuredSenderName: "Moved to the cloud",
+            chunks: [{ kind: "text", text: "Moved this thread to the cloud." }],
+          },
+          monitor("wake-1", "2026-09-03T10:00:00.000Z"),
+          silentRun(
+            "run-1",
+            "2026-09-03T10:00:00.000Z",
+            "2026-09-03T10:01:00.000Z"
+          ),
+          monitor("wake-2", "2026-09-03T10:05:00.000Z", {
+            id: "system:background-task",
+            name: "Background task",
+          }),
+          silentRun(
+            "run-2",
+            "2026-09-03T10:05:00.000Z",
+            "2026-09-03T10:08:00.000Z"
+          ),
+          monitor("wake-3", "2026-09-03T10:10:00.000Z"),
+          {
+            id: "run-3",
+            author: "agent",
+            timestamp: "2026-09-03T10:11:00.000Z",
+            chunks: [{ kind: "text", text: "CI is green." }],
+          },
+          // A call waiting on approval keeps its run, and the one before it,
+          // out of a fold.
+          monitor("wake-4", "2026-09-03T10:20:00.000Z"),
+          silentRun(
+            "run-4",
+            "2026-09-03T10:20:00.000Z",
+            "2026-09-03T10:21:00.000Z"
+          ),
+          monitor("wake-5", "2026-09-03T10:25:00.000Z"),
+          silentRun(
+            "run-5",
+            "2026-09-03T10:25:00.000Z",
+            "2026-09-03T10:26:00.000Z",
+            { status: "pending" }
+          ),
+          monitor("wake-6", "2026-09-03T10:30:00.000Z"),
+          silentRun(
+            "run-6",
+            "2026-09-03T10:30:00.000Z",
+            "2026-09-03T10:31:00.000Z",
+            { toolKind: "read", status: "error", output: "Check failed" }
+          ),
+          monitor("wake-7", "2026-09-03T10:35:00.000Z"),
+          silentRun(
+            "run-7",
+            "2026-09-03T10:35:00.000Z",
+            "2026-09-03T10:36:00.000Z"
+          ),
+          monitor("wake-8", "2026-09-03T10:40:00.000Z"),
+          silentRun(
+            "run-8",
+            "2026-09-03T10:40:00.000Z",
+            "2026-09-03T10:41:00.000Z",
+            {
+              toolKind: "code",
+              calls: [
+                {
+                  kind: "tool-execution",
+                  toolCallId: "nested-failed-call",
+                  toolName: "check_pr",
+                  toolKind: "other",
+                  title: "Check PR",
+                  status: "error",
+                  output: "Nested check failed",
+                },
+              ],
+            }
+          ),
+        ]}
+      />,
+      { wrapper }
+    )
+
+    const fold = screen.getByRole("button", {
+      name: "2 runs without a reply · 4m 0s · 2 actions · woken by Monitor, Background task",
+    })
+    expect(
+      screen.getAllByRole("button", { name: /runs without a reply/ })
+    ).toHaveLength(1)
+    expect(screen.queryByRole("button", { name: "Monitor" })).toBeNull()
+    expect(screen.getByText("CI is green.")).toBeTruthy()
+    expect(
+      screen.queryByRole("button", { name: "Moved to the cloud" })
+    ).toBeNull()
+
+    fireEvent.click(fold)
+    expect(fold.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getAllByText("Monitor update").length).toBeGreaterThan(1)
+    const task = screen.getByRole("button", {
+      name: "Background task completed · 33s",
+    })
+    fireEvent.click(task)
+    expect(screen.getByText(/Task: cmd-123/)).toBeTruthy()
+    expect(screen.queryByText(/secret instruction/)).toBeNull()
+    expect(screen.queryByText(/Use background_task/)).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Worked for 1m 0s · 2 actions" })
+    )
+    expect(screen.getByText("Failed")).toBeTruthy()
+  })
+
+  it("does not present a subscription deadline as a failure", () => {
+    const message: Message = {
+      id: "subscription-timeout",
+      author: "system",
+      timestamp: "2026-09-03T10:00:00Z",
+      structuredSenderKind: "system",
+      structuredSenderId: "system:event-subscription",
+      chunks: [
+        {
+          kind: "text",
+          text: "The bounded wait for subscription `sub-123` on GitHub has reached its deadline.",
+        },
+      ],
+    }
+    expect(BackgroundEvent.fromMessage(message)).toEqual({
+      heading: "Event subscription timed out",
+      failed: false,
+    })
+  })
+
+  it("distinguishes failed and timed-out background events without exposing model instructions", () => {
+    render(
+      <Messages
+        isStreaming={false}
+        messages={[
+          {
+            id: "failed",
+            author: "system",
+            timestamp: "2026-09-03T10:00:00Z",
+            structuredSenderKind: "system",
+            structuredSenderId: "system:background-task",
+            chunks: [
+              {
+                kind: "text",
+                text: "A sandbox background command finished.\nTask: cmd-123\nStatus: failed\nExit code: 1\nDuration: 3s\nOutput: /tmp/output.log\nUse background_task to continue.",
+              },
+            ],
+          },
+          {
+            id: "timeout",
+            author: "system",
+            timestamp: "2026-09-03T10:01:00Z",
+            structuredSenderKind: "system",
+            structuredSenderId: "system:background-task",
+            chunks: [
+              {
+                kind: "text",
+                text: "A sandbox background command finished.\nTask: cmd-456\nStatus: timed_out\nExit code: None\nDuration: 10s\nOutput: /tmp/output.log",
+              },
+            ],
+          },
+          {
+            id: "monitor",
+            author: "system",
+            timestamp: "2026-09-03T10:02:00Z",
+            structuredSenderKind: "system",
+            structuredSenderId: "system:monitor",
+            chunks: [
+              {
+                kind: "text",
+                text: "Monitor `mon-123` (CI) ended: it reached its 30s timeout.\nSECRET INSTRUCTIONS",
+              },
+            ],
           },
         ]}
-      />
+      />,
+      { wrapper }
     )
-    const toggle = screen.getByRole("button", { name: "Scheduler" })
-    expect(screen.queryByText("Check the latest deployment")).toBeNull()
-    fireEvent.click(toggle)
-    expect(toggle.getAttribute("aria-expanded")).toBe("true")
-    expect(screen.getByText("Check the latest deployment")).toBeTruthy()
-    fireEvent.click(toggle)
-    expect(screen.queryByText("Check the latest deployment")).toBeNull()
+    expect(
+      screen.getByRole("button", { name: "Background task failed · 3s" })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Background task timed out · 10s" })
+    ).toBeTruthy()
+    expect(screen.getByText("Monitor timed out")).toBeTruthy()
+    expect(screen.queryByText(/SECRET INSTRUCTIONS/)).toBeNull()
+    expect(screen.queryByText(/Use background_task/)).toBeNull()
   })
 
   it("shows run activity while a stream is starting with no messages", () => {
-    render(<Messages messages={[]} isStreaming />)
+    const { rerender } = render(<Messages messages={[]} isStreaming />)
 
-    expect(screen.getByRole("status").textContent).toBe("Working…0s")
+    expect(screen.getByRole("status").textContent).toBe("Working…")
+    const wake: Message = {
+      id: "wake",
+      author: "user",
+      timestamp: new Date().toISOString(),
+      structuredSenderKind: "system",
+      structuredSenderId: "system:monitor",
+      chunks: [{ kind: "text", text: "Check CI" }],
+    }
+    rerender(
+      <Messages
+        messages={[wake]}
+        isStreaming
+        emptyState={<p>No messages yet</p>}
+      />
+    )
+    expect(screen.getByRole("status").textContent).toContain("Working…")
+    expect(screen.queryByText("No messages yet")).toBeNull()
+    expect(screen.queryByText("Check CI")).toBeNull()
+    rerender(
+      <Messages
+        messages={[
+          {
+            id: "previous-answer",
+            author: "agent",
+            timestamp: wake.timestamp,
+            chunks: [{ kind: "text", text: "Previous answer" }],
+          },
+          wake,
+        ]}
+        isStreaming
+      />
+    )
+    expect(screen.getByText("Previous answer")).toBeTruthy()
+    expect(screen.getByRole("status").textContent).toContain("Working…")
+    rerender(
+      <Messages
+        messages={[wake]}
+        isStreaming={false}
+        emptyState={<p>No messages yet</p>}
+      />
+    )
+    expect(screen.getByText("No messages yet")).toBeTruthy()
   })
 
   it("shows reconnect activity in the existing status line", () => {
@@ -463,8 +1025,202 @@ describe("Messages", () => {
     )
 
     expect(screen.getByRole("status").textContent).toBe(
-      "Reconnecting… 3/12 (retrying in 4s)0s"
+      "Reconnecting… 3/12 (retrying in 4s)"
     )
+  })
+
+  it("keeps work time when returning to a running thread and when it finishes", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-09-03T10:00:30Z"))
+    const messages: Message[] = [
+      {
+        id: "agent-turn",
+        author: "agent",
+        runStartedAt: "2026-09-03T10:00:00Z",
+        startedAt: "2026-09-03T10:00:05Z",
+        timestamp: "2026-09-03T10:00:12Z",
+        chunks: [
+          {
+            kind: "text",
+            text: "I'll investigate.",
+            timestamp: "2026-09-03T10:00:10Z",
+          },
+          {
+            kind: "tool-execution",
+            toolCallId: "search",
+            title: "Search",
+            toolKind: "search",
+            status: "in_progress",
+            timestamp: "2026-09-03T10:00:12Z",
+          },
+        ],
+      },
+    ]
+    const view = render(<Messages messages={messages} isStreaming />, {
+      wrapper,
+    })
+    view.unmount()
+    vi.setSystemTime(new Date("2026-09-03T10:00:35Z"))
+    const reopened = render(<Messages messages={messages} isStreaming />, {
+      wrapper,
+    })
+    expect(
+      screen.getByRole("button", { name: /1 action/ }).textContent
+    ).toContain("35s")
+    act(() => vi.advanceTimersByTime(5000))
+    reopened.rerender(<Messages messages={messages} isStreaming={false} />)
+    expect(
+      screen.getByRole("button", { name: "Worked for 40s · 1 action" })
+    ).toBeTruthy()
+    reopened.unmount()
+    render(
+      <Messages
+        messages={[{ ...messages[0]!, completedAt: "2026-09-03T10:00:40Z" }]}
+        isStreaming={false}
+      />,
+      { wrapper }
+    )
+    expect(
+      screen.getByRole("button", { name: "Worked for 40s · 1 action" })
+    ).toBeTruthy()
+    vi.useRealTimers()
+  })
+
+  it("times each live work stretch from its preceding reply", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-09-03T10:00:35Z"))
+    const message: Message = {
+      id: "agent-turn",
+      author: "agent",
+      runStartedAt: "2026-09-03T10:00:00Z",
+      startedAt: "2026-09-03T10:00:01Z",
+      timestamp: "2026-09-03T10:00:21Z",
+      chunks: [
+        {
+          kind: "tool-execution",
+          toolCallId: "first",
+          title: "Search",
+          toolKind: "search",
+          status: "completed",
+          timestamp: "2026-09-03T10:00:01Z",
+        },
+        {
+          kind: "text",
+          text: "Found the cause.",
+          timestamp: "2026-09-03T10:00:20Z",
+        },
+        {
+          kind: "tool-execution",
+          toolCallId: "second",
+          title: "Search",
+          toolKind: "search",
+          status: "in_progress",
+          timestamp: "2026-09-03T10:00:21Z",
+        },
+      ],
+    }
+    const view = render(<Messages messages={[message]} isStreaming />, {
+      wrapper,
+    })
+    expect(
+      screen.getByRole("button", { name: "Worked for 20s · 1 action" })
+    ).toBeTruthy()
+    expect(
+      screen.getAllByRole("button", { name: /1 action/ })[1]?.textContent
+    ).toContain("15s")
+    view.unmount()
+    const reopened = render(<Messages messages={[message]} isStreaming />, {
+      wrapper,
+    })
+    expect(
+      screen.getAllByRole("button", { name: /1 action/ })[1]?.textContent
+    ).toContain("15s")
+    act(() => vi.advanceTimersByTime(5000))
+    reopened.rerender(<Messages messages={[message]} isStreaming={false} />)
+    expect(
+      screen.getAllByRole("button", { name: "Worked for 20s · 1 action" })
+    ).toHaveLength(2)
+    reopened.unmount()
+    render(
+      <Messages
+        messages={[{ ...message, completedAt: "2026-09-03T10:00:40Z" }]}
+        isStreaming={false}
+      />,
+      { wrapper }
+    )
+    expect(
+      screen.getAllByRole("button", { name: "Worked for 20s · 1 action" })
+    ).toHaveLength(2)
+    vi.useRealTimers()
+  })
+
+  it("times work after an interjection from the new agent message", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-09-03T10:00:40Z"))
+    const messages: Message[] = [
+      {
+        id: "first",
+        author: "agent",
+        runStartedAt: "2026-09-03T10:00:00Z",
+        startedAt: "2026-09-03T10:00:01Z",
+        timestamp: "2026-09-03T10:00:20Z",
+        chunks: [
+          {
+            kind: "tool-execution",
+            toolCallId: "first",
+            title: "Search",
+            toolKind: "search",
+            status: "completed",
+          },
+        ],
+      },
+      {
+        id: "human",
+        author: "user",
+        timestamp: "2026-09-03T10:00:25Z",
+        chunks: [{ kind: "text", text: "Continue" }],
+      },
+      {
+        id: "second",
+        author: "agent",
+        startedAt: "2026-09-03T10:00:30Z",
+        timestamp: "2026-09-03T10:00:30Z",
+        chunks: [
+          {
+            kind: "tool-execution",
+            toolCallId: "second",
+            title: "Search",
+            toolKind: "search",
+            status: "in_progress",
+          },
+        ],
+      },
+    ]
+    const view = render(<Messages messages={messages} isStreaming />, {
+      wrapper,
+    })
+    expect(
+      screen.getByRole("button", { name: "Worked for 20s · 1 action" })
+    ).toBeTruthy()
+    expect(
+      screen.getAllByRole("button", { name: /1 action/ })[1]?.textContent
+    ).toContain("10s")
+    view.unmount()
+    render(
+      <Messages
+        messages={[
+          messages[0]!,
+          messages[1]!,
+          { ...messages[2]!, completedAt: "2026-09-03T10:00:50Z" },
+        ]}
+        isStreaming={false}
+      />,
+      { wrapper }
+    )
+    expect(
+      screen.getAllByRole("button", { name: "Worked for 20s · 1 action" })
+    ).toHaveLength(2)
+    vi.useRealTimers()
   })
 
   it("renders a sent Slack reply before the work that follows it", () => {
@@ -550,7 +1306,7 @@ describe("Messages", () => {
     )
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Report platform issue Sandbox disconnected",
+        name: "Details for Report platform issue",
       })
     )
     expect(container.textContent).toContain(
@@ -652,6 +1408,8 @@ describe("Messages", () => {
             id: "agent-turn",
             author: "agent",
             startedAt: "2026-09-03T10:00:00.000Z",
+            runStartedAt: "2026-09-03T10:00:00.000Z",
+            completedAt: "2026-09-03T10:10:00.000Z",
             timestamp: "2026-09-03T10:10:00.000Z",
             chunks: [
               {
@@ -744,8 +1502,17 @@ describe("Messages", () => {
     expect(screen.getByText("subagent")).toBeTruthy()
   })
 
-  it("shows a tool result's image on its card outside the folded work", () => {
+  it("shows a tool result's images on its card outside the folded work", async () => {
     const dataUrl = "data:image/png;base64,iVBORw0KGgo="
+    // A screenshot the state read links to, which loads from the transcript's copy.
+    const stored = attachmentUrl("t-1", "a-1")
+    const fetchImage = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(new Blob(["png"], { type: "image/png" })))
+    Object.assign(URL, {
+      createObjectURL: () => "blob:stored-shot",
+      revokeObjectURL: () => {},
+    })
     const messages = streamMessagesToUi([
       new AIMessage({
         id: "browse",
@@ -762,6 +1529,11 @@ describe("Messages", () => {
         content: [
           { type: "text", text: "Captured the page" },
           { type: "image", url: dataUrl },
+          {
+            type: "image",
+            url: "/dashboard/api/threads/t-1/transcript/attachments/a-1",
+            mime_type: "image/png",
+          },
         ],
       }),
       new AIMessage({ id: "reply", content: "The page is shown above." }),
@@ -772,10 +1544,16 @@ describe("Messages", () => {
       screen.getByRole("button", { name: "Worked · 1 action" })
     ).toBeTruthy()
     expect(screen.queryByText("README.md")).toBeNull()
-    expect(screen.getByRole("img", { name: "image" }).getAttribute("src")).toBe(
-      dataUrl
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("img", { name: "image" })
+          .map((image) => image.getAttribute("src"))
+      ).toEqual([dataUrl, "blob:stored-shot"])
     )
+    expect(fetchImage).toHaveBeenCalledWith(stored, { credentials: "include" })
     expect(screen.getByText("Captured the page")).toBeTruthy()
+    fetchImage.mockRestore()
   })
 
   it("keeps workflow approval available alongside an empty-state error", () => {
@@ -792,5 +1570,32 @@ describe("Messages", () => {
     expect(screen.getByTestId("workflow-approval-card").textContent).toBe(
       "Approval for thread-1"
     )
+  })
+
+  it("dates approval cards by the thread's newest user message, also when it's older than the turns shown", () => {
+    const ask: Message = {
+      id: "ask",
+      author: "user",
+      timestamp: "2026-11-17T10:00:00Z",
+      chunks: [{ kind: "text", text: "Ship it" }],
+    }
+    const answer: Message = {
+      id: "answer",
+      author: "agent",
+      timestamp: "2026-11-17T10:05:00Z",
+      chunks: [{ kind: "text", text: "Done" }],
+    }
+    render(
+      <Messages
+        threadId="thread-1"
+        messages={[answer]}
+        transcript={[ask, answer]}
+        isStreaming={false}
+      />,
+      { wrapper }
+    )
+    expect(
+      screen.getByTestId("workflow-approval-card").dataset.latestUserMessageAt
+    ).toBe("2026-11-17T10:00:00Z")
   })
 })

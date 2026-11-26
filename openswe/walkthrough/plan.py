@@ -149,6 +149,10 @@ class Hunks:
     def get(self, path: str, name: str) -> Hunk | None:
         return self._named.get((path, name))
 
+    def in_file(self, path: str) -> list[Hunk]:
+        """``path``'s hunks in diff order."""
+        return self._by_path.get(path, [])
+
     def holding(self, point: LinePoint) -> Hunk | None:
         parts = self.within(LineSet.point(point))
         return parts[0][0] if parts else None
@@ -322,9 +326,6 @@ class Plan(BaseModel):
 
     def complete(self, index: DiffIndex) -> bool:
         return not self.unplanned(index)
-
-    def number_of(self, chunk_id: str) -> int | None:
-        return next((i for i, c in enumerate(self.chunks, start=1) if c.id == chunk_id), None)
 
     def chunk(self, chunk_id: str) -> PlanChunk | None:
         return next((c for c in self.chunks if c.id == chunk_id), None)

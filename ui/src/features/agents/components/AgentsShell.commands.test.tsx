@@ -1,11 +1,21 @@
 /** @vitest-environment jsdom */
 
 import { TooltipProvider } from "@langchain/macaw-components/Tooltip"
-import { cleanup, render, screen, fireEvent } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { afterEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import { SidebarThreadRow } from "./SidebarThreadRow"
+import { LocalAccessRequests } from "./LocalAccessRequests"
+import { EmbeddedThreadContext } from "../lib/embeddedThread"
+import { SidebarLayoutProvider } from "@/components/sidebar-layout"
 import { cloudSidebarThread } from "../lib/sidebarThreads"
 import { agentThreadKeys } from "../lib/queries"
 import { projectKeys } from "@/features/projects/lib/projects"
@@ -25,10 +35,13 @@ const stub = vi.hoisted(() => {
     activeThread: {
       id: "thread-1",
       title: "Thread",
+      ownerId: "019abf10-0000-7000-8000-000000000001",
       status: "idle",
       resolved: false,
       repoFullName: "langchain-ai/open-swe",
       repo: "open-swe",
+      projectId: null as string | null,
+      taskWorkers: [] as Array<AgentThread>,
       updatedAt: "2026-09-10T00:00:00Z",
     },
     pinned: { data: [] },
@@ -54,12 +67,6 @@ const stub = vi.hoisted(() => {
     rename: mutation(),
     noop: fn(),
     pullRequestFor: () => undefined,
-    projects: {
-      projects: [],
-      loaded: true,
-      addProject: fn(),
-      removeProject: fn(),
-    },
     session: { data: { login: "octocat" } },
     theme: { toggleTheme: fn() },
   }
@@ -91,8 +98,13 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     select: (state: {
       location: { pathname: string; search: Record<string, unknown> }
+      matches: { staticData: { historyControls?: boolean } }[]
     }) => unknown
-  }) => select({ location: { pathname: "/agents/thread-1", search: {} } }),
+  }) =>
+    select({
+      location: { pathname: "/agents/thread-1", search: {} },
+      matches: [{ staticData: { historyControls: true } }],
+    }),
   useSearch: () => undefined,
   useRouter: () => ({ options: { parseSearch: () => ({}) } }),
 }))
@@ -125,10 +137,6 @@ vi.mock("@/features/agents/lib/useRunCompletionNotifier", () => ({
   useRunCompletionNotifier: () => {},
 }))
 
-vi.mock("@/features/agents/lib/desktopProjects", () => ({
-  useDesktopProjects: () => stub.projects,
-}))
-
 window.matchMedia = ((query: string) => ({
   matches: false,
   media: query,
@@ -136,10 +144,23 @@ window.matchMedia = ((query: string) => ({
   removeEventListener: vi.fn(),
 })) as unknown as typeof window.matchMedia
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    }
+  )
+})
+
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
   localStorage.clear()
   stub.emptyList.items = []
+  stub.activeThread.projectId = null
+  stub.activeThread.taskWorkers = []
   vi.clearAllMocks()
 })
 
@@ -149,6 +170,7 @@ afterEach(() => {
 const RENDER_BUDGET = 25
 const USER: SessionUser = {
   login: "alice",
+  user_id: "019abf10-0000-7000-8000-000000000001",
   email: null,
   avatar_url: null,
   is_admin: false,
@@ -180,10 +202,14 @@ it("registers the active thread's commands once and then stops", async () => {
   expect(probeRenders).toBeLessThanOrEqual(RENDER_BUDGET)
 })
 
-it("keeps a project thread out of No project even when the unscoped page is cached", () => {
+it("reveals a project worker without duplicating its coordinator in Recents", () => {
   localStorage.setItem(
     "open-swe.agents.sidebar-prefs",
-    JSON.stringify({ organize: "repo" })
+    JSON.stringify({
+      organize: "repo",
+      collapsedSectionKeys: ["repos"],
+      collapsedRepoKeys: ["project:project-1"],
+    })
   )
   const client = new QueryClient({
     defaultOptions: { queries: { enabled: false, retry: false } },
@@ -199,6 +225,18 @@ it("keeps a project thread out of No project even when the unscoped page is cach
     updatedAt: 2,
     messages: [],
   }
+  const worker: AgentThread = {
+    ...thread,
+    id: "project-worker",
+    title: "Project worker",
+    taskMembership: {
+      role: "worker",
+      taskId: "task-1",
+      coordinatorThreadId: thread.id,
+    },
+  }
+  stub.activeThread.projectId = thread.projectId ?? null
+  stub.activeThread.taskWorkers = [worker]
   stub.emptyList.items = [
     {
       ...thread,
@@ -213,7 +251,6 @@ it("keeps a project thread out of No project even when the unscoped page is cach
     {
       id: "project-1",
       name: "Example project",
-      workspace: "default",
       repo_full_name: null,
       role: "owner",
       members: [],
@@ -223,32 +260,50 @@ it("keeps a project thread out of No project even when the unscoped page is cach
   ])
   client.setQueryData(
     agentThreadKeys.infinitePages({
-      limit: 10,
+      limit: 25,
       hierarchy: true,
       resolved: false,
       scope: "interactive",
       owned: true,
-      sortBy: "created_at",
+      sortBy: "updated_at",
     }),
     {
-      pages: [{ items: [thread], hasMore: false, limit: 10, offset: 0 }],
+      pages: [{ items: [thread], hasMore: false, limit: 25, offset: 0 }],
       pageParams: [0],
     }
   )
   render(
     <QueryClientProvider client={client}>
       <AppCommandProvider>
-        <AgentsShell user={USER}>
+        <AgentsShell user={USER} activeThreadId={worker.id}>
           <div />
         </AgentsShell>
       </AppCommandProvider>
     </QueryClientProvider>
   )
 
+  fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }))
   expect(screen.getByRole("button", { name: "Example project" })).toBeTruthy()
-  expect(screen.getByRole("button", { name: "No project" })).toBeTruthy()
+  expect(screen.getByRole("button", { name: "Recents" })).toBeTruthy()
   expect(screen.getByRole("link", { name: /Unfiled chat/ })).toBeTruthy()
-  expect(screen.queryByRole("link", { name: /Thread/ })).toBeNull()
+  expect(
+    screen
+      .getByRole("link", { name: /^Project worker/ })
+      .getAttribute("aria-current")
+  ).toBe("page")
+  expect(
+    screen
+      .getByRole("button", { name: "Projects" })
+      .getAttribute("aria-expanded")
+  ).toBe("true")
+  expect(
+    screen
+      .getByRole("button", { name: "Example project" })
+      .getAttribute("aria-expanded")
+  ).toBe("true")
+  expect(screen.getAllByRole("link", { name: "Thread" })).toHaveLength(1)
+  fireEvent.click(screen.getByRole("button", { name: "Example project" }))
+  expect(screen.queryByRole("link", { name: /^Project worker/ })).toBeNull()
 })
 
 it("renames an unopened thread from its context menu and discards cancelled drafts", async () => {
@@ -257,11 +312,11 @@ it("renames an unopened thread from its context menu and discards cancelled draf
     viewed: true,
   } as unknown as AgentThread
   const client = new QueryClient()
-  render(
+  const Row = ({ title }: { title: string }) => (
     <QueryClientProvider client={client}>
       <TooltipProvider>
         <SidebarThreadRow
-          item={cloudSidebarThread(thread)}
+          item={cloudSidebarThread({ ...thread, title })}
           isActive={false}
           pinned={false}
           archived={false}
@@ -271,6 +326,7 @@ it("renames an unopened thread from its context menu and discards cancelled draf
       </TooltipProvider>
     </QueryClientProvider>
   )
+  const { rerender } = render(<Row title={thread.title} />)
   const row = screen.getByRole("link", { name: /Thread/ })
   expect(screen.queryByRole("button", { name: "Pin thread" })).toBeNull()
   expect(screen.queryByRole("button", { name: "Archive thread" })).toBeNull()
@@ -282,7 +338,7 @@ it("renames an unopened thread from its context menu and discards cancelled draf
   expect(stub.noop).toHaveBeenCalledTimes(2)
   fireEvent.contextMenu(row)
   fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }))
-  const input = (await screen.findByRole("textbox", {
+  let input = (await screen.findByRole("textbox", {
     name: "Thread title",
   })) as HTMLInputElement
   expect(document.activeElement).toBe(input)
@@ -291,23 +347,90 @@ it("renames an unopened thread from its context menu and discards cancelled draf
   fireEvent.change(input, { target: { value: "Discard this" } })
   fireEvent.keyDown(input, { key: "Escape" })
   expect(stub.rename.mutate).not.toHaveBeenCalled()
-  fireEvent.contextMenu(row)
+  fireEvent.contextMenu(screen.getByRole("link", { name: /Thread/ }))
   fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }))
-  const reopened = (await screen.findByRole("textbox", {
+  input = (await screen.findByRole("textbox", {
     name: "Thread title",
   })) as HTMLInputElement
-  expect(reopened.value).toBe(thread.title)
-  fireEvent.change(reopened, { target: { value: "   " } })
-  expect(
-    (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled
-  ).toBe(true)
-  fireEvent.change(reopened, { target: { value: "  New title  " } })
-  fireEvent.submit(reopened.closest("form")!)
-  expect(stub.rename.mutate).toHaveBeenCalledExactlyOnceWith({
+  expect(input.value).toBe(thread.title)
+  fireEvent.change(input, { target: { value: "  New title  " } })
+  fireEvent.keyDown(input, { key: "Enter" })
+  expect(stub.rename.mutate).toHaveBeenCalledOnce()
+  expect(stub.rename.mutate.mock.lastCall?.[0]).toEqual({
     threadId: thread.id,
     title: "New title",
   })
   expect(screen.queryByRole("dialog")).toBeNull()
+  expect(screen.getByRole("textbox", { name: "Thread title" })).toBe(input)
+  rerender(<Row title="New title" />)
+  expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull()
+  expect(screen.getByText("New title")).toBeTruthy()
+
+  stub.rename.mutate.mockClear()
+  const startInlineRename = () => {
+    fireEvent.doubleClick(screen.getByRole("link"))
+    return screen.getByRole("textbox", {
+      name: "Thread title",
+    }) as HTMLInputElement
+  }
+  input = startInlineRename()
+  expect(document.activeElement).toBe(input)
+  expect(input.selectionStart).toBe(0)
+  expect(input.selectionEnd).toBe("New title".length)
+  fireEvent.change(input, { target: { value: "  Inline title  " } })
+  fireEvent.keyDown(input, { key: "Enter" })
+  fireEvent.blur(input)
+  expect(stub.rename.mutate).toHaveBeenCalledOnce()
+  expect(stub.rename.mutate.mock.lastCall?.[0]).toEqual({
+    threadId: thread.id,
+    title: "Inline title",
+  })
+  rerender(<Row title="Inline title" />)
+
+  stub.rename.mutate.mockClear()
+  fireEvent.blur(startInlineRename())
+  input = startInlineRename()
+  fireEvent.change(input, { target: { value: "   " } })
+  fireEvent.blur(input)
+  expect(stub.rename.mutate).not.toHaveBeenCalled()
+
+  input = startInlineRename()
+  fireEvent.change(input, { target: { value: "Discard via X" } })
+  expect(screen.queryByRole("button", { name: "Thread actions" })).toBeNull()
+  expect(
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Cancel rename" }))
+  ).toBe(false)
+  fireEvent.click(screen.getByRole("button", { name: "Cancel rename" }))
+  fireEvent.blur(input)
+  expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull()
+
+  input = startInlineRename()
+  fireEvent.change(input, {
+    target: { value: "Discard after tabbing past Cancel" },
+  })
+  const cancel = screen.getByRole("button", { name: "Cancel rename" })
+  fireEvent.blur(input, { relatedTarget: cancel })
+  expect(screen.getByRole("textbox", { name: "Thread title" })).toBe(input)
+  fireEvent.focus(cancel)
+  fireEvent.blur(cancel)
+  expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull()
+  expect(stub.rename.mutate).not.toHaveBeenCalled()
+
+  input = startInlineRename()
+  fireEvent.change(input, { target: { value: "Discard via Escape" } })
+  fireEvent.keyDown(input, { key: "Escape" })
+  fireEvent.blur(input)
+  expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull()
+  expect(stub.rename.mutate).not.toHaveBeenCalled()
+
+  input = startInlineRename()
+  fireEvent.change(input, { target: { value: "Saved on blur" } })
+  fireEvent.blur(input)
+  expect(stub.rename.mutate).toHaveBeenCalledOnce()
+  expect(stub.rename.mutate.mock.lastCall?.[0]).toEqual({
+    threadId: thread.id,
+    title: "Saved on blur",
+  })
 })
 
 it("opens asynchronous workers as real conversations and expands the selected worker separately from synchronous subagents", () => {
@@ -347,13 +470,13 @@ it("opens asynchronous workers as real conversations and expands the selected wo
     ],
   } as AgentThread
   const client = new QueryClient()
-  render(
+  const row = (activeThreadId: string) => (
     <QueryClientProvider client={client}>
       <TooltipProvider>
         <SidebarThreadRow
           item={cloudSidebarThread(parent)}
-          isActive={false}
-          activeThreadId="worker"
+          isActive={activeThreadId === "parent"}
+          activeThreadId={activeThreadId}
           pinned={false}
           archived={false}
           onTogglePin={stub.noop}
@@ -362,13 +485,37 @@ it("opens asynchronous workers as real conversations and expands the selected wo
       </TooltipProvider>
     </QueryClientProvider>
   )
+  const { rerender } = render(row("other"))
+  expect(screen.queryByRole("link", { name: /Inspect code/ })).toBeNull()
+  expect(screen.queryByRole("link", { name: /Implement change/ })).toBeNull()
+  expect(
+    screen.queryByRole("button", { name: "Show child threads" })
+  ).toBeNull()
+  rerender(row("parent"))
+  expect(screen.getByRole("link", { name: /Inspect code/ })).toBeTruthy()
+  expect(screen.getByRole("link", { name: /Implement change/ })).toBeTruthy()
+  expect(
+    screen.getByRole("button", { name: "Hide child threads" })
+  ).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Hide child threads" }))
+  expect(screen.queryByRole("link", { name: /Inspect code/ })).toBeNull()
+  rerender(row("other"))
+  expect(screen.queryByRole("link", { name: /Implement change/ })).toBeNull()
+  rerender(row("parent"))
+  expect(screen.getByRole("link", { name: /Inspect code/ })).toBeTruthy()
+  expect(
+    screen.getAllByRole("button", { name: "Hide child threads" })
+  ).toHaveLength(1)
+  expect(screen.getByRole("link", { name: /Implement change/ })).toBeTruthy()
+  rerender(row("worker"))
+  expect(screen.getByRole("link", { name: /Inspect code/ })).toBeTruthy()
   const workerLink = screen.getByRole("link", { name: /Implement change/ })
+  expect(screen.getByRole("link", { name: /Worker inspection/ })).toBeTruthy()
   expect(workerLink.getAttribute("href")).toBe("/agents/worker")
   expect(workerLink.getAttribute("aria-current")).toBe("page")
-  fireEvent.click(screen.getByRole("button", { name: "Hide task workers" }))
-  expect(screen.queryByRole("link", { name: /Implement change/ })).toBeNull()
-  fireEvent.click(screen.getByRole("button", { name: "Show task workers" }))
-  expect(screen.getByRole("link", { name: /Implement change/ })).toBeTruthy()
+  expect(
+    screen.getByRole("button", { name: "Hide child threads" })
+  ).toBeTruthy()
   const workerSyncToggle = screen.queryByRole("button", {
     name: "Show worker subagents",
   })
@@ -376,9 +523,147 @@ it("opens asynchronous workers as real conversations and expands the selected wo
   expect(
     screen.getByRole("link", { name: /Worker inspection/ }).getAttribute("href")
   ).toBe("/agents/worker?subagent=worker-sync")
-  const syncToggle = screen.queryByRole("button", { name: "Show subagents" })
-  if (syncToggle) fireEvent.click(syncToggle)
+  expect(
+    screen.queryByRole("button", { name: "Show child threads" })
+  ).toBeNull()
+  rerender(row("parent"))
+  expect(
+    screen.queryByRole("button", { name: "Show worker subagents" })
+  ).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Hide child threads" }))
+  expect(screen.queryByRole("link", { name: /Implement change/ })).toBeNull()
+  expect(screen.queryByRole("link", { name: /Inspect code/ })).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Show child threads" }))
+  expect(screen.getByRole("link", { name: /Implement change/ })).toBeTruthy()
   expect(
     screen.getByRole("link", { name: /Inspect code/ }).getAttribute("href")
   ).toBe("/agents/parent?subagent=sync-tool")
+})
+
+it("always shows the Recents organize and new thread controls", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { enabled: false, retry: false } },
+  })
+  client.setQueryData(projectKeys.all, [])
+  render(
+    <QueryClientProvider client={client}>
+      <AppCommandProvider>
+        <AgentsShell user={USER}>
+          <div />
+        </AgentsShell>
+      </AppCommandProvider>
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }))
+  expect(screen.queryByRole("button", { name: "Organize" })).toBeNull()
+  const organize = await screen.findByRole("button", {
+    name: "Recents options",
+  })
+  const newThread = screen.getByRole("button", { name: "New thread" })
+  for (const control of [organize, newThread])
+    expect(control.className).not.toMatch(/\bopacity-0\b/)
+})
+
+it("suspends approvals behind mobile navigation and opens embedded requests in their thread", async () => {
+  vi.stubGlobal("innerWidth", 700)
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    }
+  )
+  const setThread = vi.fn().mockResolvedValue(true)
+  const review = vi.fn()
+  vi.stubGlobal("openSweDesktop", {
+    setLocalAccessThread: setThread,
+    reviewLocalAccessRequest: review,
+    localAccessRequests: async () => [
+      { id: "request", kind: "read", concern: null },
+    ],
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const content = (collapsed: boolean, embedded: boolean) => (
+    <QueryClientProvider client={client}>
+      <SidebarLayoutProvider
+        value={{
+          width: 260,
+          collapsed,
+          setWidth: stub.noop,
+          setCollapsed: stub.noop,
+          setCollapsedForPage: stub.noop,
+          toggle: stub.noop,
+          closeOnMobile: stub.noop,
+        }}
+      >
+        <EmbeddedThreadContext.Provider value={embedded ? {} : null}>
+          <div data-chat-drop-zone>
+            <LocalAccessRequests threadId="thread-1" />
+          </div>
+        </EmbeddedThreadContext.Provider>
+      </SidebarLayoutProvider>
+    </QueryClientProvider>
+  )
+  const { rerender } = render(content(true, false))
+  fireEvent.click(await screen.findByRole("button", { name: "Review" }))
+  expect(review).toHaveBeenCalledWith("request")
+  expect(setThread.mock.lastCall?.[1]).not.toBeNull()
+  rerender(content(false, false))
+  expect(setThread).toHaveBeenLastCalledWith("thread-1", null)
+  rerender(content(true, false))
+  expect(setThread.mock.lastCall?.[1]).not.toBeNull()
+  rerender(content(true, true))
+  expect(setThread).toHaveBeenLastCalledWith("thread-1", null)
+  review.mockClear()
+  fireEvent.click(screen.getByRole("button", { name: "Open thread to review" }))
+  expect(stub.noop).toHaveBeenCalledWith({
+    to: "/agents/$threadId",
+    params: { threadId: "thread-1" },
+  })
+  expect(review).not.toHaveBeenCalled()
+})
+
+it("keeps approval badges on the requesting thread until its queue clears", async () => {
+  vi.stubGlobal("innerWidth", 1440)
+  let pending = ["another-thread"]
+  const events = new EventTarget()
+  vi.stubGlobal("openSweDesktop", {
+    getUpdateState: async () => ({ status: "idle" }),
+    onUpdateState: () => () => {},
+    onCommand: () => () => {},
+    pendingLocalAccessThreads: async () => pending,
+    onLocalAccessRequestsChanged: (callback: () => void) => {
+      events.addEventListener("change", callback)
+      return () => events.removeEventListener("change", callback)
+    },
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { enabled: false, retry: false } },
+  })
+  client.setQueryData(projectKeys.all, [])
+  render(
+    <QueryClientProvider client={client}>
+      <AppCommandProvider>
+        <AgentsShell user={USER} activeThreadId="thread-1">
+          <div />
+        </AgentsShell>
+      </AppCommandProvider>
+    </QueryClientProvider>
+  )
+  await screen.findByRole("link", { name: "Thread" })
+  expect(screen.queryByText("Needs approval")).toBeNull()
+  pending = ["thread-1"]
+  await act(() => events.dispatchEvent(new Event("change")))
+  expect(
+    screen
+      .getByRole("link", { name: "Thread" })
+      .contains(await screen.findByText("Needs approval"))
+  ).toBe(true)
+  fireEvent.click(screen.getByRole("link", { name: "Thread" }))
+  expect(screen.getByText("Needs approval")).toBeTruthy()
+  pending = []
+  await act(() => events.dispatchEvent(new Event("change")))
+  await waitFor(() => expect(screen.queryByText("Needs approval")).toBeNull())
 })

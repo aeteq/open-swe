@@ -1,4 +1,4 @@
-"""The guarantees the bridge queue makes to both halves of a sandbox bridge.
+"""The guarantees the bridge queue makes to both halves of a local-access bridge.
 
 These run against a real migrated schema: the claim's ``SKIP LOCKED``, the
 conditional finish and the heartbeat window are all SQL, so an in-memory double
@@ -9,11 +9,14 @@ import asyncio
 from datetime import date
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import text
 
+from openswe.bridge.local_access_policy import LocalAccess
 from openswe.bridge.protocol import JsonObject
 from openswe.bridge.store import Bridge, BridgeInUseError, BridgeStore
 from openswe.database import postgres
+from tests.conftest import LangSmithUsers
 
 OWNER = "test-user"
 OTHER = "someone-else"
@@ -21,19 +24,15 @@ OTHER = "someone-else"
 
 async def _open(owner: str = OWNER) -> Bridge:
     bridge = await BridgeStore.register(
-        owner_id=owner,
-        hostname="laptop.local",
-        root_path="/Users/test/project",
-        label=None,
-        bridge_id=None,
+        owner_id=owner, hostname="laptop.local", label=None, bridge_id=None
     )
     assert bridge is not None
     return bridge
 
 
-async def _enqueue(bridge_id: str, command: str = "true") -> str:
-    params: JsonObject = {"command": command, "timeout": None}
-    return await BridgeStore.enqueue(bridge_id, method="execute", params=params)
+async def _enqueue(bridge_id: str, path: str = "~/notes.txt") -> str:
+    params: JsonObject = {"operation": "read", "path": path}
+    return await BridgeStore.enqueue(bridge_id, method="local_action", params=params)
 
 
 async def _go_quiet(bridge_id: str, seconds: int = 600) -> None:
@@ -48,6 +47,53 @@ async def _go_quiet(bridge_id: str, seconds: int = 600) -> None:
             ),
             {"bridge_id": bridge_id, "seconds": seconds},
         )
+
+
+async def test_local_access_requires_its_owners_private_thread_and_desktop(
+    registry_db: None, langsmith_users: LangSmithUsers
+) -> None:
+    langsmith_users.add(OWNER)
+    langsmith_users.add(OTHER)
+    bridge = await _open()
+    metadata: dict[str, object] = {"owner_login": OWNER, "visibility": "private"}
+    assert (
+        await LocalAccess.offer(bridge.bridge_id, metadata=metadata, login=OWNER, owner_id=OWNER)
+        == bridge.bridge_id
+    )
+    for changed, login in [
+        ({**metadata, "visibility": "public"}, OWNER),
+        (metadata, OTHER),
+    ]:
+        with pytest.raises(HTTPException):
+            await LocalAccess.offer(bridge.bridge_id, metadata=changed, login=login, owner_id=login)
+    # A bridge another app registered serves no approved actions.
+    async with postgres.transaction() as conn:
+        await conn.execute(
+            text(
+                "UPDATE sandbox_bridge SET root_path = '/Users/test/project' WHERE bridge_id = :id"
+            ),
+            {"id": bridge.bridge_id},
+        )
+    with pytest.raises(HTTPException, match="approved local actions"):
+        await LocalAccess.offer(bridge.bridge_id, metadata=metadata, login=OWNER, owner_id=OWNER)
+
+
+async def test_a_run_drops_local_access_it_cannot_have_rather_than_failing(
+    registry_db: None, langsmith_users: LangSmithUsers
+) -> None:
+    langsmith_users.add(OWNER)
+    bridge = await _open()
+    # The desktop's view of the thread is stale: it is no longer private.
+    metadata: dict[str, object] = {"owner_login": OWNER, "visibility": "workspace"}
+    assert (
+        await LocalAccess.offer_for_run(
+            bridge.bridge_id, metadata=metadata, login=OWNER, owner_id=OWNER
+        )
+        is None
+    )
+    with pytest.raises(HTTPException) as malformed:
+        await LocalAccess.offer_for_run("  ", metadata=metadata, login=OWNER, owner_id=OWNER)
+    assert malformed.value.status_code == 422
 
 
 async def test_a_claimed_request_is_not_offered_to_another_claimer(registry_db: None) -> None:
@@ -96,15 +142,11 @@ async def test_reopening_requeues_what_the_last_connection_never_answered(
     await _go_quiet(bridge.bridge_id)
 
     reopened = await BridgeStore.register(
-        owner_id=OWNER,
-        hostname="laptop.local",
-        root_path="/Users/test/other-project",
-        label="after restart",
-        bridge_id=bridge.bridge_id,
+        owner_id=OWNER, hostname="laptop.local", label="after restart", bridge_id=bridge.bridge_id
     )
 
     assert reopened is not None
-    assert reopened.root_path == "/Users/test/other-project"
+    assert reopened.label == "after restart"
     assert [
         request.request_id for request in await BridgeStore.claim(bridge.bridge_id, limit=8)
     ] == [request_id]
@@ -115,11 +157,7 @@ async def test_a_bridge_another_process_is_serving_is_not_shared(registry_db: No
 
     with pytest.raises(BridgeInUseError):
         await BridgeStore.register(
-            owner_id=OWNER,
-            hostname="laptop.local",
-            root_path="/Users/test/project",
-            label=None,
-            bridge_id=bridge.bridge_id,
+            owner_id=OWNER, hostname="laptop.local", label=None, bridge_id=bridge.bridge_id
         )
 
 
@@ -127,11 +165,7 @@ async def test_reopening_someone_elses_bridge_finds_nothing(registry_db: None) -
     bridge = await _open(OTHER)
 
     reopened = await BridgeStore.register(
-        owner_id=OWNER,
-        hostname="laptop.local",
-        root_path="/Users/test/project",
-        label=None,
-        bridge_id=bridge.bridge_id,
+        owner_id=OWNER, hostname="laptop.local", label=None, bridge_id=bridge.bridge_id
     )
 
     assert reopened is None
@@ -141,8 +175,8 @@ async def test_reopening_someone_elses_bridge_finds_nothing(registry_db: None) -
 
 async def test_closing_fails_every_unanswered_request(registry_db: None) -> None:
     bridge = await _open()
-    pending_id = await _enqueue(bridge.bridge_id, "pending")
-    claimed_id = await _enqueue(bridge.bridge_id, "claimed")
+    pending_id = await _enqueue(bridge.bridge_id, "~/pending.txt")
+    claimed_id = await _enqueue(bridge.bridge_id, "~/claimed.txt")
     await BridgeStore.claim(bridge.bridge_id, limit=1)
 
     assert await BridgeStore.close(bridge.bridge_id, owner_id=OWNER)

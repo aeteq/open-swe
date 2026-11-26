@@ -1,9 +1,8 @@
 """A person calling Open SWE's agent tools from outside any thread.
 
 The remote MCP server serves this catalog: every agent tool opted in with
-``@expose_mcp``, plus the integration MCPs the person may use in a private
-thread. Each call runs through a tool node exactly as in a private thread the
-caller owns, so injected state and access policies resolve the same way.
+``@expose_mcp``. Each call runs through a tool node exactly as in a private thread
+the caller owns, so injected state and access policies resolve the same way.
 """
 
 from dataclasses import dataclass
@@ -24,35 +23,39 @@ if TYPE_CHECKING:
 
 _TOOL_MODULES: Final = (
     "openswe.tools.automations",
-    "openswe.tools.workspaces",
+    "openswe.routing.tools",
+    "openswe.tools.snapshotctl",
     "openswe.tools.organization_skills",
     "openswe.tools.manage_feature_flags",
+    "openswe.tools.manage_model_defaults",
+    "openswe.tools.execution_defaults",
     "openswe.tools.manage_review_apps",
     "openswe.tools.manage_review_approval_mode",
     "openswe.tools.manage_review_shadow",
+    "openswe.tools.manage_sandbox_github_budget",
+    "openswe.tools.upgrade_app_installs",
     "openswe.tools.slack_bots",
     "openswe.tools.manage_review_repos",
     "openswe.tools.read_only_sql",
     "openswe.tools.fetch_url",
     "openswe.tools.http_request",
-    "openswe.tools.web_search",
     "openswe.tools.save_user_instructions",
     "openswe.tools.save_user_settings",
     "openswe.tools.projects",
-    "openswe.tools.connect_claude_code",
     "openswe.tools.user_skills",
     "openswe.tools.threads",
     "openswe.tools.report_platform_issue",
     "openswe.tools.upload_session",
     "openswe.slack.tools.request_pr_review",
-    "openswe.slack.tools.start_review_channel",
+    "openswe.tools.recheck_pr_approval",
     "openswe.tools.request_human_review",
     "openswe.tools.expedite_pr_approval",
     "openswe.tools.read_user_settings",
+    "openswe.tools.settings",
+    "openswe.tools.usage",
     "openswe.tools.search_pull_requests",
     "openswe.tools.list_review_findings",
     "openswe.tools.repair_data",
-    "openswe.tools.send_announcement",
 )
 
 
@@ -105,28 +108,12 @@ class ToolCaller:
         }
 
     async def tools(self) -> dict[str, tuple[BaseTool, Access]]:
-        from openswe.mcp.instance import instance_mcp_source
-        from openswe.mcp.runtime import load_mcp_tools
-        from openswe.mcp.user import user_mcp_source
-        from openswe.mcp.workspace import workspace_mcp_source
-        from openswe.workspaces.store import DEFAULT_WORKSPACE_SLUG
-
         admin = self.admin
-        tools = {
+        return {
             name: (tool, access)
             for name, (tool, access) in _exposed().items()
             if access == "session" or admin
         }
-        sources = (
-            instance_mcp_source(),
-            workspace_mcp_source(DEFAULT_WORKSPACE_SLUG),
-            user_mcp_source(self.login),
-        )
-        for tool in await load_mcp_tools(*sources):
-            if tool.name in tools:
-                raise ValueError(f"MCP tool name collides with a local tool: {tool.name}")
-            tools[tool.name] = (tool, "session")
-        return tools
 
     async def invoke(self, name: str, arguments: dict[str, JsonValue]) -> ToolResult:
         from langgraph.graph import MessagesState

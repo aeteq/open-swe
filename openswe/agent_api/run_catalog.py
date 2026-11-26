@@ -4,12 +4,14 @@ Both are resolved once, as the backend starts the run, from what only the backen
 the run's kind resolves its tools, models, subagents and loop rules (``RunKind.catalog``),
 and the backend adds the sandbox MDA keeps for the thread and a grant of each operation. The catalog lists every tool but the run's integrations, which
 the context names only: every tool is kept by digest (``run_tool_sets``), which
-``tool_specs``, ``search_tools`` and ``resolve_tool`` read.
+``tool_specs``, ``tool_set`` and ``resolve_tool`` read.
 """
 
 import asyncio
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Final
 
 from langchain_core.runnables import RunnableConfig
@@ -21,7 +23,6 @@ from runtime_api.catalog import (
     FilesSpec,
     ModelSpec,
     RunModels,
-    SandboxSpec,
     SubagentSpec,
     ToolSpec,
 )
@@ -29,6 +30,7 @@ from runtime_api.models import model_spec
 
 from openswe.agent_api.connections import operation_connections
 from openswe.agent_api.git_metadata import trace_actor
+from openswe.agent_api.memory_scope import RunMemoryScope
 from openswe.agent_api.operations import Injections
 from openswe.agent_api.run_kinds import RunKind
 from openswe.agent_api.run_sandbox import RunSandbox
@@ -37,10 +39,10 @@ from openswe.agent_api.tokens import AGENT_TURN_KEY, AgentTurnSettings, RemoteRu
 from openswe.agent_api.tool_sets import ToolSet
 from openswe.config import ENV
 from openswe.dispatch import COMPLETION_WEBHOOK_URL
-from openswe.incidents.runtime import INCIDENT_SOURCE
+from openswe.execution import ExecutionProfile
 from openswe.prompts import common_prompt, prompt
 from openswe.run_config import RunConfig
-from openswe.sandboxes.tool_runtime import EXCLUDED_TOOLS, ModelChoice, ToolSurface
+from openswe.sandboxes.tool_runtime import ModelChoice, ToolSurface
 from openswe.server import (
     DEEP_AGENT_TOOL_NAMES,
     call_seconds,
@@ -50,10 +52,14 @@ from openswe.server import (
     runtime_runs,
 )
 from openswe.threads.access import agent_version_metadata
-from openswe.utils.thread_reads import shared_thread_reads
+from openswe.trace_metadata import RunOrigin, TraceVisibility
+from openswe.utils.json_types import thread_metadata
+from openswe.utils.startup_trace import apm_span
+from openswe.utils.thread_reads import read_thread, shared_thread_reads
 
-# The model a person picked, which the planner records on the run's config, so a trace
-# compares it with the model routing chose.
+logger = logging.getLogger(__name__)
+
+# The model a person picked, which the planner records on the run's config.
 _ROUTING_TRACE_KEYS: Final = ("user_model_choice", "user_effort_choice")
 # MDA's own deep agent runs subagents and code.
 _SYNC_SUBAGENT_TOOL: Final = "task"
@@ -90,29 +96,71 @@ class RunCatalog:
     """A run's catalog as its kind resolves it, before MDA starts the run."""
 
     def __init__(
-        self, kind: RunKind, run: RemoteRun, surface: ToolSurface, config: RunnableConfig
+        self,
+        kind: RunKind,
+        run: RemoteRun,
+        surface: ToolSurface,
+        config: RunnableConfig,
+        execution: ExecutionProfile | None = None,
+        visibility: str | None = None,
     ) -> None:
         self.kind = kind
         self.run = run
         self.surface = surface
         self.config = config
+        self.execution = execution
+        self.visibility = visibility
 
     @classmethod
     async def of(cls, kind: RunKind, run: RemoteRun) -> RunCatalog:
         # Resolved from the run as dispatch stamped it, never from the settings it decides.
         config = run_config(run, settled=False)
+        with apm_span("start_run.catalog.execution", {}):
+            execution = await ExecutionProfile.resolve()
+            config["configurable"] = {
+                **(config.get("configurable") or {}),
+                "execution": await execution.keep(),
+            }
         surface = ToolSurface()
         # The kind's lookups consult the thread's ownership and access many times over.
-        async with shared_thread_reads():
-            await kind.catalog(config, surface)
-            await surface.prepare()
-        return cls(kind, run, surface, config)
+        with ExecutionProfile.bind(execution):
+            async with shared_thread_reads():
+                with apm_span("start_run.catalog.kind", {}):
+                    await kind.catalog(config, surface)
+                with apm_span("start_run.catalog.prepare", {}):
+                    await surface.prepare()
+                with apm_span("start_run.catalog.visibility", {}):
+                    visibility = await cls.thread_visibility(run.thread_id)
+        return cls(kind, run, surface, config, execution, visibility)
+
+    @staticmethod
+    async def thread_visibility(thread_id: str) -> str | None:
+        """Whether the run's thread is ``public`` or ``private``, so traces split by it.
+
+        A thread that names none is public, as everywhere else that checks it; one that
+        can't be read keeps the visibility the run's start stamped (``MdaRuntime.trace_access``).
+        """
+        try:
+            thread = await read_thread(thread_id)
+        except LookupError:
+            logger.warning(
+                "Run trace has no visibility: its thread is not indexed",
+                extra={"thread_id": thread_id},
+                exc_info=True,
+            )
+            return None
+        return TraceVisibility.of(thread_metadata(thread)).value
 
     async def start(self) -> RunStart:
         """What MDA builds the run from, and the settings its calls read."""
-        tools, catalog = await asyncio.gather(self.tool_set().keep(), self.granted())
-        settings = self.settings().model_copy(update={"tools": tools})
+        with ExecutionProfile.bind(self.execution):
+            tools, catalog = await asyncio.gather(self._keep_tool_set(), self.granted())
+            settings = self.settings().model_copy(update={"tools": tools})
         return RunStart(catalog=catalog.model_copy(update={"tool_set": tools}), settings=settings)
+
+    async def _keep_tool_set(self) -> str:
+        with apm_span("start_run.catalog.tool_set", {}):
+            return await self.tool_set().keep()
 
     def _backend_tools(self) -> dict[str, BaseTool]:
         return {name: tool for name, tool in self.surface.tools.items() if name not in _MDA_TOOLS}
@@ -126,20 +174,18 @@ class RunCatalog:
 
     def _excluded(self) -> frozenset[str]:
         return (
-            frozenset(
-                ((self.surface.excluded | EXCLUDED_TOOLS) - _MDA_TOOLS)
-                | self._unoffered_delegation_tools()
-            )
+            frozenset((self.surface.excluded - _MDA_TOOLS) | self._unoffered_delegation_tools())
             - self.surface.disabled()
         )
 
+    @cached_property
     def _specs(self) -> list[ToolSpec]:
         surface = self.surface
         tools = {
             **{name: surface.always_offered[name] for name in surface.disabled()},
             **self._backend_tools(),
         }
-        # A bridged client's own tool of the same name is the client's to run.
+        # A client's own tool of the same name is the client's to run.
         clients = {spec.name for spec in RunConfig.from_config(self.config).client_tools}
         return [
             ToolSpec(
@@ -150,9 +196,8 @@ class RunCatalog:
                 reads_all=injections.reads_all,
                 code_name=code_name(described.name),
                 seconds=call_seconds(described.name),
-                connections=(connections := operation_connections(described.name, self.config)),
-                runtime_runs=described.name not in clients
-                and runtime_runs(described.name, connections),
+                connections=operation_connections(described.name, self.config),
+                runtime_runs=described.name not in clients and runtime_runs(described.name),
             )
             for described in self.surface.catalog()
             if described.name in tools
@@ -160,7 +205,7 @@ class RunCatalog:
 
     def tool_set(self) -> ToolSet:
         """Every tool the run may call, which the backend keeps for the run to read."""
-        return ToolSet(self._specs(), self._excluded())
+        return ToolSet(self._specs, self._excluded())
 
     def models(self) -> RunModels:
         models = self.surface.models
@@ -175,7 +220,6 @@ class RunCatalog:
         return RunModels(
             model=spec(models.main),
             subagent_model=spec(models.subagent),
-            use_gateway=models.use_gateway,
             routes={route: spec(choice) for route, choice in models.routes.items()},
             vision=None if models.vision is None else spec(models.vision),
             fallback_model_id=fallback_model_id,
@@ -194,14 +238,19 @@ class RunCatalog:
         }
         # Integrations stay on the backend, which finds them for the run's search and its
         # code mode: listing hundreds of them would put about a megabyte in every run's
-        # context. The run's own tools stay listed, so the model knows them unsearched.
-        withheld = from_code_only & set(surface.integration_names)
+        # context. The run's own tools stay listed, so the model knows them unsearched. One
+        # whose name code cannot call is withheld too, and called directly after a search.
+        withheld = {
+            name
+            for name in tools.keys() - excluded
+            if name in surface.integration_names and not direct_and_from_code(name)
+        }
         searches = surface.code_mode or bool(withheld)
         offered = tools.keys() | _FILE_TOOLS | ({SEARCH_TOOLS} if searches else set())
         # Code mode calls tools past the model's list, so what the run excludes stays out.
         from_code = offered - excluded if surface.code_mode else frozenset()
         return Catalog(
-            operations=[spec for spec in self._specs() if spec.name not in withheld],
+            operations=[spec for spec in self._specs if spec.name not in withheld],
             mcp_servers=list(surface.mcp_servers),
             subagents=[
                 SubagentSpec(
@@ -218,15 +267,14 @@ class RunCatalog:
             excluded=sorted(excluded),
             code_only=sorted(from_code_only - withheld),
             # Offered to the model, and callable from MDA's code mode too.
-            also_from_code=sorted(name for name in from_code if direct_and_from_code(name)),
+            also_from_code=sorted(
+                name for name in from_code - from_code_only if direct_and_from_code(name)
+            ),
             disabled=sorted(disabled),
             described={name: prompt("tools/display-description") for name in _DESCRIBED_TOOLS},
             files=FilesSpec(
-                backend_paths=list(surface.backend_paths),
-                artifacts_root=surface.artifacts_root,
                 checks=list(surface.file_checks),
             ),
-            incident_evidence=surface.loop.incident,
             browser=surface.browser,
             worker_webhook=COMPLETION_WEBHOOK_URL if surface.delegates else None,
             skill_sources=list(surface.skill_sources),
@@ -245,21 +293,35 @@ class RunCatalog:
     async def granted(self) -> Catalog:
         """The catalog, with who the run acts for, the sandbox MDA creates for it, and the
         grant of each operation to the run."""
-        sandbox = await RunSandbox(self.config, reviews=self.kind.reviews).managed()
-        spec = (
-            None if sandbox is None else SandboxSpec.model_validate(sandbox.model_dump(mode="json"))
-        )
-        catalog = self.build()
+        run_sandbox = RunSandbox(self.config, reviews=self.kind.reviews)
+        with apm_span("start_run.catalog.sandbox", {}):
+            spec = await run_sandbox.spec()
+        with apm_span("start_run.catalog.build", {}):
+            catalog = self.build()
         metadata = self.config.get("metadata") or {}
         return catalog.model_copy(
             update={
                 "trace_metadata": {
                     **trace_actor(self.config),
+                    "origin": RunOrigin.resolve(
+                        metadata.get("origin"),
+                        inherited=self.run.configurable.get("origin"),
+                        fallback=self.run.configurable.get("source"),
+                    ).value,
                     **agent_version_metadata(),
                     **{key: metadata[key] for key in _ROUTING_TRACE_KEYS if key in metadata},
+                    **({"visibility": self.visibility} if self.visibility else {}),
+                    # The tags' values again, so traces group by them too.
+                    "model_routing": catalog.loop.routing_arm,
+                    **(
+                        {"model_experiment": catalog.loop.model_experiment}
+                        if catalog.loop.model_experiment
+                        else {}
+                    ),
                 },
                 "trace_tags": catalog.loop.trace_tags,
                 "sandbox": spec,
+                "memory": RunMemoryScope.for_run(self.config),
                 "operations": [
                     operation.model_copy(
                         update={
@@ -281,12 +343,13 @@ class RunCatalog:
         slack_thread = configurable.get("slack_thread")
         return RunSettings(
             source=cfg.source,
+            execution=cfg.execution,
             draft_prs=cfg.draft_prs,
             model_id=cfg.resolved_agent_model_id,
             effort=cfg.resolved_agent_effort,
             agent=None if turn is None else AgentTurnSettings.model_validate(turn),
             slack_thread=_json_object.validate_python(slack_thread)
-            if cfg.source == INCIDENT_SOURCE and isinstance(slack_thread, Mapping)
+            if cfg.source == "incidents_agent" and isinstance(slack_thread, Mapping)
             else None,
             disabled_tools=sorted(self.surface.disabled()),
         )

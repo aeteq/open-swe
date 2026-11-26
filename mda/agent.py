@@ -7,8 +7,8 @@ it works out as it starts the run names the run's operations, subagents, models,
 sandbox and the rules of its loop. This runtime's own middleware runs the loop
 around each model call as those rules say (``rt.loop``), asking the backend only for
 what needs its data or credentials. The file and shell tools are this runtime's own,
-in the thread's sandbox or against its files on the backend (``rt.file_tools``). The run
-token in the context authenticates every call.
+in the thread's sandbox, which every run has, but on the paths the backend serves
+(``rt.file_tools``). The run token in the context authenticates every call.
 
 None of that is built into the graph but the run's models. Each graph is built once
 per process from what is the same for every run that plays it on the same models
@@ -37,15 +37,16 @@ from langchain_core.language_models import BaseChatModel
 from managed_deepagents import (
     DeepAgentDefinition,
     ManagedServerRuntime,
+    cached_agent,
     define_deep_agent,
-    shared_factory,
 )
 from managed_deepagents.sandbox import SandboxDefinition
 from pydantic import BaseModel, ConfigDict
 from rt.backend import OpenSweBackend, RunContext
 from rt.browser import ReportedBrowserMiddleware
 from rt.factory_timing import FactoryTiming
-from rt.file_tools import FileToolsMiddleware
+from rt.file_tools import FILE_TOOLS, FileToolsMiddleware
+from rt.gateway import RUN_GATEWAY
 from rt.kinds import Graph
 from rt.managed_sandbox import (
     EXECUTE_TIMEOUT_SECONDS,
@@ -58,13 +59,11 @@ from rt.middleware import (
     AsyncWorkerLaunchMiddleware,
     BackendRunMiddleware,
     DescribedToolsMiddleware,
-    IncidentEvidenceMiddleware,
     ReportRepliesMiddleware,
     RuntimeToolsMiddleware,
 )
 from rt.model_calls import model_call_guards
 from rt.models import build_model
-from rt.remote_files import FILE_TOOLS, RemoteFiles, RunArtifacts
 from rt.run_prompt import RunPromptMiddleware, ThreadPromptMiddleware
 from rt.run_tools import (
     BackendTools,
@@ -78,9 +77,9 @@ from rt.run_tools import (
 )
 from rt.skills import RunSkillsMiddleware, SkillFiles
 from rt.slack_move import SlackMoveMiddleware
-from rt.task_retry import task_retry
+from rt.task_errors import TaskErrorMiddleware
 from rt.tools import run_id
-from rt.tracing import MIDDLEWARE_TRACE_POLICY
+from rt.tracing import MIDDLEWARE_TRACE_POLICY, RootAgentTraceMiddleware
 from runtime_api.catalog import Catalog, ModelSpec
 
 if TYPE_CHECKING:
@@ -112,7 +111,6 @@ _SUBAGENTS: Final[dict[Graph, str]] = {
 _REVIEWER_PTC_TOOLS: Final = (
     "read_file",
     "write_file",
-    "web_search",
     "fetch_url",
     "http_request",
     "list_findings",
@@ -130,7 +128,7 @@ class GraphInputs(BaseModel):
 
     They are the same for every run of the deployment that plays the graph on the same
     models, so MDA builds each graph once per process and shares it. Every graph has
-    the same middleware, so a thread's state reads alike through any of them.
+    a persisted state schema covered by the reviewer's graph for thread reads.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -143,7 +141,6 @@ class GraphInputs(BaseModel):
     # run's model and credentials; routing may still send a call to another model.
     model: ModelSpec | None = None
     subagent_model: ModelSpec | None = None
-    use_gateway: bool = False
 
     @classmethod
     def of(cls, graph: Graph, catalog: Catalog) -> Self:
@@ -155,7 +152,6 @@ class GraphInputs(BaseModel):
             worker_webhook=catalog.worker_webhook,
             model=models.model,
             subagent_model=models.subagent_model,
-            use_gateway=models.use_gateway,
         )
 
     def agent_model(self) -> BaseChatModel | str:
@@ -165,14 +161,14 @@ class GraphInputs(BaseModel):
         return self._built(self.subagent_model)
 
     def _built(self, spec: ModelSpec | None) -> BaseChatModel | str:
-        return _DEFAULT_MODEL if spec is None else build_model(spec, use_gateway=self.use_gateway)
+        return _DEFAULT_MODEL if spec is None else build_model(spec)
 
 
-async def _inputs(runtime: ManagedServerRuntime) -> GraphInputs:
+def _inputs(runtime: ManagedServerRuntime) -> GraphInputs:
     execution = runtime.execution_runtime
     if execution is None:
-        # A read: through the agent's graph, which has every graph's shape.
-        return GraphInputs()
+        # A read: through the reviewer's graph, which has every graph's persisted state.
+        return GraphInputs(graph="reviewer")
     context = RunContext.model_validate(execution.context or {})
     return GraphInputs.of(context.graph, context.run().planned)
 
@@ -222,25 +218,22 @@ def _parts(graph: Graph) -> _Parts:
     timing = FactoryTiming()
     # Called as the run in progress: the graph serves every run.
     backend = OpenSweBackend()
-    remote = RemoteFiles(backend, run_id)
     # The run's skills, listed for the agent and its subagents and read from here.
     skill_files = SkillFiles(backend, run_id)
     files = FileToolsMiddleware(
         backend,
         EXECUTE_TIMEOUT_SECONDS,
-        remote_files=remote,
         skills={tool.name: tool for tool in FilesystemMiddleware(backend=skill_files).tools},
     )
     toolsets = RunToolsets(backend, files)
     # What the run calls that its catalog leaves out, as the backend names it.
     backend_tools = BackendTools(backend)
     skills = RunSkillsMiddleware(backend, skill_files)
-    managed_sandbox = ManagedSandboxMiddleware(backend)
+    managed_sandbox = ManagedSandboxMiddleware()
     # The backend's transcript and usage see every reply and every tool call.
     reports: list[AgentMiddleware] = [
         ReportRepliesMiddleware(backend),
         RuntimeToolsMiddleware(backend, FILE_TOOLS),
-        IncidentEvidenceMiddleware(backend),
     ]
     subagent = _SUBAGENTS[graph]
     subagents: list[SubAgent] = [
@@ -272,21 +265,18 @@ def _parts(graph: Graph) -> _Parts:
                 backend,
                 opened_sandbox,
                 booted_sandbox,
-                read_ahead=[skill_files.list_ahead],
+                read_ahead=[skill_files.list_ahead, RUN_GATEWAY.read_ahead],
             ),
             managed_sandbox,
             *reports,
             files,
-            task_retry(),
+            TaskErrorMiddleware(),
             # A Slack conversation's move goes through MDA, before the backend's tool would.
             SlackMoveMiddleware(backend),
             RunToolsMiddleware(toolsets, backend_tools=backend_tools),
             _code_mode(graph, toolsets, files, backend_tools),
             DescribedToolsMiddleware(backend),
-            # A LangSmith browser per thread the dashboard shows: the coding agent's, and
-            # a review's whose apps ask for one; the deployment's workspace needs the
-            # LangSmith browser beta.
-            ReportedBrowserMiddleware(backend, graph=graph),
+            *([ReportedBrowserMiddleware(backend, graph=graph)] if graph == "reviewer" else []),
             # The system prompt in the order of how many runs share each part, for the
             # provider's prompt cache (``rt.run_prompt``).
             RunPromptMiddleware(),
@@ -294,6 +284,8 @@ def _parts(graph: Graph) -> _Parts:
             ThreadPromptMiddleware(),
             RunModelCallLimit(backend, _MODEL_CALL_LIMIT),
             *model_call_guards(),
+            # Innermost, so only the agent's own model calls are its thread's main conversation.
+            RootAgentTraceMiddleware(lambda: backend.run.catalog.trace_metadata),
         ],
     )
     timing.lap("middleware")
@@ -302,17 +294,14 @@ def _parts(graph: Graph) -> _Parts:
         subagents=subagents,
         middleware=middleware,
         worker_middleware=[*middleware, AsyncWorkerLaunchMiddleware(backend)],
-        # A run without MDA's sandbox keeps the graph's own files where its file tools are.
-        sandbox=declared_sandbox(
-            RunArtifacts(backend, run_id, lambda: backend.run.catalog.files.artifacts_root)
-        ),
+        sandbox=declared_sandbox(),
     )
 
 
 # MDA builds this once per distinct inputs, from them alone, and shares its graph.
 # `mda build` reads the agent's name without running it, so its body stays
 # assignments and one `return define_deep_agent(...)`.
-@shared_factory(_inputs)
+@cached_agent(keyed_by=_inputs)
 def agent(inputs: GraphInputs) -> DeepAgentDefinition:
     parts = _parts(inputs.graph)
     sync_subagents: list[SubAgent] = parts.sync_subagents(inputs.sync_subagent_model())
@@ -334,7 +323,7 @@ def agent(inputs: GraphInputs) -> DeepAgentDefinition:
         context_schema=RunContext,
         # The thread's sandbox, for the file and shell tools run in it and for MDA's own use
         # of it, such as the browser's screenshots; the backend's operations work in the
-        # same sandbox. Whether a run has one, and its options, are the run's catalog's; a
+        # same sandbox. Which sandbox a run has, and its options, are the run's catalog's; a
         # worker, MDA's async subagent of its coordinator, shares the coordinator's sandbox.
         sandbox=parts.sandbox,
         # `mda build` reads `worker`'s literal name to build its graph.

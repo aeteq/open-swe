@@ -53,11 +53,6 @@ export class AgentsApiError extends DashboardRequestError {
   }
 }
 
-/** Where a thread moves: onto this Mac through its bridge, or to the cloud. */
-export type ThreadMoveDestination =
-  | { sandbox_bridge_id: string }
-  | { target: "cloud" }
-
 export interface ScheduleCreateRequest {
   prompt: string
   /** Every trigger, any of which fires the automation; replaces them all on update. */
@@ -66,8 +61,8 @@ export interface ScheduleCreateRequest {
   admin_thread?: boolean
   model_id?: string | null
   effort?: string | null
-  /** Slug of the workspace every run launches in. */
-  workspace: string
+  /** Robin's, not the creator's: admins only, unbounded. */
+  system?: boolean
 }
 
 export interface ScheduleUpdateRequest {
@@ -79,7 +74,7 @@ export interface ScheduleUpdateRequest {
   model_id?: string | null
   effort?: string | null
   enabled?: boolean | null
-  workspace?: string | null
+  system?: boolean
 }
 
 export interface ScheduleTriggerResult {
@@ -190,7 +185,7 @@ export interface ThreadsPageParams {
   project?: string
   ownerless?: boolean
   owned?: boolean
-  /** Thread sources to leave out, such as `claude_code`. */
+  /** Thread sources to leave out, such as `slack`. */
   excludeSources?: Array<string>
   sortBy?: ThreadSortBy
 }
@@ -207,8 +202,6 @@ export interface SidebarRepo {
   repoFullName: string
   name: string
   updatedAt: number
-  /** Slug of the workspace that owns this repository; `"default"` when unassigned. */
-  workspace: string
   projectId?: null
 }
 
@@ -219,16 +212,23 @@ export interface SidebarProjectFolder {
   repoFullName: string | null
   name: string
   updatedAt: number
-  workspace: string
 }
 
 export type SidebarFolder = SidebarRepo | SidebarProjectFolder
+
+/** Where a file's bytes are served, relative to the dashboard API. */
+export interface ThreadFilePreviewLink {
+  path: string
+}
 
 const API_BASE = dashboardApiBase()
 
 export const agentsLangGraphApiUrl = `${API_BASE}/dashboard/api`
 
 const timedFetch = withRequestTiming((input, init) => fetch(input, init))
+const timedListFetch = withRequestTiming((input, init) => fetch(input, init), {
+  measureLists: true,
+})
 
 function errorDetailMessage(detail: unknown): string {
   if (typeof detail === "string") return detail
@@ -273,20 +273,24 @@ function errorDetailMessage(detail: unknown): string {
 
 export async function agentsRequest<T>(
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  measureList = false
 ): Promise<T> {
   return productAnalytics.mutation(path, init.method, async () => {
     const requestId = newRequestId()
-    const res = await timedFetch(dashboardApiUrl(path), {
-      ...init,
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        [REQUEST_ID_HEADER]: requestId,
-        ...dashboardForwardedHeaders(),
-        ...init.headers,
-      },
-    }).catch((cause: unknown) => {
+    const res = await (measureList ? timedListFetch : timedFetch)(
+      dashboardApiUrl(path),
+      {
+        ...init,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          [REQUEST_ID_HEADER]: requestId,
+          ...dashboardForwardedHeaders(),
+          ...init.headers,
+        },
+      }
+    ).catch((cause: unknown) => {
       throw networkError(cause, requestId)
     })
     if (!res.ok) {
@@ -412,12 +416,16 @@ export const agentsApi = {
       includeAutomations?: boolean
       owned?: boolean
       excludeSources?: Array<string>
-    } = {}
+    } = {},
+    measure = false
   ) =>
     agentsRequest<Array<SidebarFolder>>(
-      `/threads/repos${buildReposQuery(params)}`
+      `/threads/repos${buildReposQuery(params)}`,
+      {},
+      measure
     ),
-  listPinnedThreads: () => agentsRequest<Array<AgentThread>>("/threads/pinned"),
+  listPinnedThreads: (measure = false) =>
+    agentsRequest<Array<AgentThread>>("/threads/pinned", {}, measure),
   reorderSidebarThreads: (body: {
     thread_ids: Array<string>
     project?: string
@@ -433,17 +441,16 @@ export const agentsApi = {
       method: "PUT",
       body: JSON.stringify({ thread_ids: threadIds }),
     }),
-  listThreadsPage: (params: ThreadsPageParams = {}) =>
-    agentsRequest<ThreadsPage>(`/threads/page${buildThreadsPageQuery(params)}`),
-  shareThreadWithWorkspace: (threadId: string) =>
-    agentsRequest<AgentThread>(
-      `/threads/${encodeURIComponent(threadId)}/share-to-workspace`,
-      { method: "POST" }
+  listThreadsPage: (params: ThreadsPageParams = {}, measure = false) =>
+    agentsRequest<ThreadsPage>(
+      `/threads/page${buildThreadsPageQuery(params)}`,
+      {},
+      measure
     ),
-  moveThread: (threadId: string, destination: ThreadMoveDestination) =>
+  shareThread: (threadId: string) =>
     agentsRequest<AgentThread>(
-      `/threads/${encodeURIComponent(threadId)}/move`,
-      { method: "POST", body: JSON.stringify(destination) }
+      `/threads/${encodeURIComponent(threadId)}/share`,
+      { method: "POST" }
     ),
   continueThreadPrivately: (threadId: string) =>
     agentsRequest<AgentThread>(
@@ -471,7 +478,10 @@ export const agentsApi = {
     agentsRequest<void>(`/threads/${encodeURIComponent(threadId)}/pin`, {
       method: pinned ? "POST" : "DELETE",
     }),
-  listSchedules: () => agentsRequest<Array<AgentSchedule>>("/schedules"),
+  listSchedules: (allUsers = false) =>
+    agentsRequest<Array<AgentSchedule>>(
+      allUsers ? "/schedules?all_users=true" : "/schedules"
+    ),
   createSchedule: (body: ScheduleCreateRequest) =>
     agentsRequest<AgentSchedule>("/schedules", {
       method: "POST",
@@ -496,10 +506,14 @@ export const agentsApi = {
     }),
   getThread: (threadId: string) =>
     agentsRequest<AgentThread>(`/threads/${encodeURIComponent(threadId)}`),
-  setThreadViewed: (threadId: string, viewed: boolean) =>
+  setThreadViewed: (
+    threadId: string,
+    viewed: boolean,
+    responseId?: string | null
+  ) =>
     agentsRequest<{ viewed: boolean }>(
       `/threads/${encodeURIComponent(threadId)}/read-state`,
-      { method: "PUT", body: JSON.stringify({ viewed }) }
+      { method: "PUT", body: JSON.stringify({ viewed, responseId }) }
     ),
   getPullRequestChecks: (
     pullRequests: Array<{ repoFullName: string; number: number }>
@@ -587,6 +601,11 @@ export const agentsApi = {
   getThreadPath: (threadId: string, path: string) =>
     agentsRequest<WorkspacePath>(
       `/threads/${encodeURIComponent(threadId)}/files?path=${encodeURIComponent(path)}`
+    ),
+  createThreadFilePreview: (threadId: string, path: string) =>
+    agentsRequest<ThreadFilePreviewLink>(
+      `/threads/${encodeURIComponent(threadId)}/files/preview-url`,
+      { method: "POST", body: JSON.stringify({ path }) }
     ),
   getThreadFileIndex: (threadId: string) =>
     agentsRequest<WorkspaceFileIndex>(

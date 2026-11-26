@@ -1,13 +1,14 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import langgraph_sdk
 import pytest
 from langgraph.graph.state import RunnableConfig
 
-from openswe.dashboard.workspace_settings import WorkspaceSettings
+from openswe.dashboard.settings import Settings
 from openswe.sandboxes.tool_runtime import ToolSurface
 from openswe.server import agent_catalog
+from openswe.threads import index
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
@@ -21,7 +22,9 @@ _MODEL_DEFAULTS = {
 
 
 @pytest.fixture(autouse=True, params=["public", "private"])
-def saved_thread_scope(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+async def saved_thread_scope(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, registry_db
+) -> None:
     client = SimpleNamespace(
         threads=SimpleNamespace(
             get=AsyncMock(
@@ -30,10 +33,15 @@ def saved_thread_scope(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureR
         )
     )
     monkeypatch.setattr(langgraph_sdk, "get_client", lambda: client)
+    await index.create(
+        "thread-123",
+        runtime="mda",
+        metadata={"visibility": request.param, "owner_login": "octocat"},
+    )
 
 
 @pytest.mark.asyncio
-async def test_agent_subagent_uses_workspace_defaults_despite_profile_override() -> None:
+async def test_agent_subagent_uses_global_defaults_despite_profile_override() -> None:
     config: RunnableConfig = {
         "configurable": {
             "__is_for_execution__": True,
@@ -52,19 +60,14 @@ async def test_agent_subagent_uses_workspace_defaults_despite_profile_override()
         ),
         patch("openswe.server.resolve_triggering_user_identity", return_value=None),
         patch(
-            "openswe.server.ensure_sandbox_for_thread",
-            new_callable=AsyncMock,
-            return_value=MagicMock(),
-        ),
-        patch(
             "openswe.server.resolve_sandbox_work_dir",
             new_callable=AsyncMock,
             return_value="/workspace",
         ),
         patch(
-            "openswe.server.cached_workspace_settings",
+            "openswe.server.cached_settings",
             new_callable=AsyncMock,
-            return_value=WorkspaceSettings(_MODEL_DEFAULTS),
+            return_value=Settings(_MODEL_DEFAULTS),
         ),
         patch(
             "openswe.server.load_profile",
@@ -104,26 +107,21 @@ async def test_agent_ignores_disabled_fable_profile() -> None:
         ),
         patch("openswe.server.resolve_triggering_user_identity", return_value=None),
         patch(
-            "openswe.server.ensure_sandbox_for_thread",
-            new_callable=AsyncMock,
-            return_value=MagicMock(),
-        ),
-        patch(
             "openswe.server.resolve_sandbox_work_dir",
             new_callable=AsyncMock,
             return_value="/workspace",
         ),
         patch(
-            "openswe.server.cached_workspace_settings",
+            "openswe.server.cached_settings",
             new_callable=AsyncMock,
-            return_value=WorkspaceSettings({**_MODEL_DEFAULTS, "fable_enabled": False}),
+            return_value=Settings({**_MODEL_DEFAULTS, "fable_enabled": False}),
         ),
         # Profile selected Fable back when it was allowed; it's now disabled.
         patch(
             "openswe.server.load_profile",
             new_callable=AsyncMock,
             return_value={
-                "default_model": "anthropic:claude-fable-5-1",
+                "default_model": "anthropic:claude-fable-5-2",
                 "reasoning_effort": "high",
             },
         ),

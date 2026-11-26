@@ -129,6 +129,9 @@ struct FakeEnv {
     ticks: VecDeque<WaitTick>,
     retries: VecDeque<bool>,
     scope_errors: VecDeque<anyhow::Error>,
+    /// What the token check gets when it issues the agent's token, in order;
+    /// once empty, issuing succeeds without a log line.
+    issued: VecDeque<Result<OAuthAuthorizationSession>>,
     /// What webhook_secret returns; the fake never logs the value.
     webhook_secret: Option<String>,
     owner_error: Option<anyhow::Error>,
@@ -140,6 +143,8 @@ struct FakeEnv {
     webhook_elsewhere: Option<String>,
     /// `MDA_GITHUB_APP_INSTALLATION_ID`.
     installation_env: Option<String>,
+    /// The installation Agent Auth recorded for the agent's token.
+    recorded_installation: Option<u64>,
     log: Vec<String>,
 }
 
@@ -230,6 +235,10 @@ impl SetupEnv for FakeEnv {
         self.installation_env.clone()
     }
 
+    fn recorded_installation(&mut self, _connection: &AppConnection) -> Option<u64> {
+        self.recorded_installation
+    }
+
     fn choose_installation(&mut self, installations: &[GitHubInstallation]) -> Result<String> {
         let ids: Vec<String> = installations.iter().map(|i| i.id.to_string()).collect();
         self.log
@@ -289,6 +298,20 @@ impl SetupEnv for FakeEnv {
         match self.scope_errors.pop_front() {
             Some(error) => Err(error),
             None => Ok(()),
+        }
+    }
+
+    fn issue_token(
+        &mut self,
+        _connection: &AppConnection,
+        installation_id: u64,
+    ) -> Result<OAuthAuthorizationSession> {
+        match self.issued.pop_front() {
+            Some(outcome) => {
+                self.log.push(format!("issue {installation_id}"));
+                outcome
+            }
+            None => Ok(session("completed")),
         }
     }
 
@@ -355,6 +378,256 @@ fn an_installed_app_syncs_and_reports_without_prompting() {
         env.log,
         vec!["sync".to_string(), READY.to_string(), TOKEN.to_string()]
     );
+}
+
+fn installed_and_set_up() -> FakeEnv {
+    let mut env = FakeEnv::interactive();
+    env.connection = Some(connection(GitHubAppState::Created, true));
+    env.syncs
+        .push_back(GitHubSyncOutcome::Synced(Box::new(status(true))));
+    env
+}
+
+#[test]
+fn a_token_agent_auth_can_issue_is_only_checked() {
+    let mut env = installed_and_set_up();
+    env.issued = VecDeque::from([Ok(session("completed"))]);
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(
+        env.log,
+        vec![
+            "sync".to_string(),
+            READY.to_string(),
+            TOKEN.to_string(),
+            "issue 9".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn a_token_agent_auth_cannot_issue_is_reset_on_its_installation() {
+    // Agent Auth's refresh failed the same way: deploy resets the provider's
+    // scopes and issues the token again, as a person would by hand.
+    let mut env = installed_and_set_up();
+    env.issued = VecDeque::from([Ok(failed("oauth-provider-request-failed"))]);
+    env.started = Some(session("completed"));
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(
+        env.log[3..6],
+        [
+            "issue 9".to_string(),
+            format!("scopes {PROVIDER} issues:write,metadata:read"),
+            format!("start {APP} Installation(\"9\")"),
+        ]
+    );
+    let last = env.log.last().unwrap();
+    assert!(
+        last.starts_with("warning: Agent Auth could not issue the agent's GitHub token (oauth-provider-request-failed), so deploy reset it on installation 9."),
+        "{last}"
+    );
+    assert!(last.contains("now has"), "{last}");
+}
+
+fn agent_auth_error(detail: &str) -> anyhow::Error {
+    anyhow::Error::new(ApiError {
+        status: reqwest::StatusCode::BAD_GATEWAY,
+        detail: detail.into(),
+    })
+}
+
+#[test]
+fn a_token_check_without_an_answer_leaves_the_token_alone() {
+    // A network error, timeout, rate limit or other server error says nothing
+    // about the token: resetting it during an outage could drop one that works.
+    for outcome in [
+        Err(anyhow::anyhow!("connection reset by peer")),
+        Err(anyhow::Error::new(ApiError {
+            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            detail: "GitHub rate limit reached".into(),
+        })),
+        Err(agent_auth_error(
+            "GitHub rejected the GitHub App credentials",
+        )),
+    ] {
+        let mut env = installed_and_set_up();
+        env.issued = VecDeque::from([outcome]);
+
+        run_setup(&mut env, &channel()).unwrap();
+
+        assert!(
+            !env.log
+                .iter()
+                .any(|line| line.starts_with("scopes") || line.starts_with("start ")),
+            "{:?}",
+            env.log
+        );
+        let last = env.log.last().unwrap();
+        assert!(
+            last.starts_with("warning: Could not check the agent's GitHub token ("),
+            "{last}"
+        );
+        assert!(
+            last.ends_with("so deploy leaves it as it is. Run `mda deploy` again to check it."),
+            "{last}"
+        );
+    }
+}
+
+#[test]
+fn a_provider_request_that_fails_twice_resets_the_token() {
+    // Agent Auth answers a GitHub hiccup the same way, so it asks twice.
+    let mut env = installed_and_set_up();
+    env.issued = VecDeque::from([
+        Err(agent_auth_error("OAuth provider request failed")),
+        Err(agent_auth_error("OAuth provider request failed")),
+    ]);
+    env.started = Some(session("completed"));
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(
+        env.log[3..7],
+        [
+            "issue 9".to_string(),
+            "issue 9".to_string(),
+            format!("scopes {PROVIDER} issues:write,metadata:read"),
+            format!("start {APP} Installation(\"9\")"),
+        ]
+    );
+    assert!(env.log.last().unwrap().contains("now has"), "{:?}", env.log);
+}
+
+#[test]
+fn a_provider_request_that_fails_once_leaves_the_token_alone() {
+    let mut env = installed_and_set_up();
+    env.issued = VecDeque::from([
+        Err(agent_auth_error("OAuth provider request failed")),
+        Ok(session("completed")),
+    ]);
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(env.log[3..], ["issue 9".to_string(), "issue 9".to_string()]);
+}
+
+#[test]
+fn refused_permissions_reset_the_token_at_once() {
+    let mut env = installed_and_set_up();
+    env.issued = VecDeque::from([Err(agent_auth_error(
+        "GitHub rejected the requested permissions",
+    ))]);
+    env.started = Some(session("completed"));
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(
+        env.log[3..6],
+        [
+            "issue 9".to_string(),
+            format!("scopes {PROVIDER} issues:write,metadata:read"),
+            format!("start {APP} Installation(\"9\")"),
+        ]
+    );
+}
+
+#[test]
+fn a_token_that_cannot_be_reset_says_so() {
+    let mut env = installed_and_set_up();
+    env.issued = VecDeque::from([Ok(failed("oauth-provider-request-failed"))]);
+    env.scope_errors.push_back(anyhow::anyhow!(
+        "the LangSmith API key deploy runs with needs the workspace permission workspaces:integrations:manage (Integrations: manage) to change the agent's GitHub token"
+    ));
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert!(
+        !env.log.iter().any(|line| line.starts_with("start ")),
+        "{:?}",
+        env.log
+    );
+    let last = env.log.last().unwrap();
+    assert!(
+        last.starts_with("warning: Agent Auth cannot issue the agent's GitHub token (oauth-provider-request-failed), so the agent has no working GitHub token, and resetting it failed ("),
+        "{last}"
+    );
+    assert!(last.contains("workspaces:integrations:manage"), "{last}");
+}
+
+#[test]
+fn a_refused_scope_change_names_the_missing_permission() {
+    let refused = anyhow::Error::new(ApiError {
+        status: reqwest::StatusCode::FORBIDDEN,
+        detail: "This request is not authorized to access OAuth provider configuration.".into(),
+    });
+    let explained = format!("{:#}", explain_forbidden_scopes(refused));
+    assert!(
+        explained.starts_with("the LangSmith API key deploy runs with needs the workspace permission workspaces:integrations:manage (Integrations: manage)"),
+        "{explained}"
+    );
+    assert!(explained.contains("(HTTP 403)"), "{explained}");
+
+    // Anything else passes through unchanged.
+    let other = anyhow::Error::new(ApiError {
+        status: reqwest::StatusCode::BAD_GATEWAY,
+        detail: "OAuth provider request failed".into(),
+    });
+    assert!(!format!("{:#}", explain_forbidden_scopes(other)).contains("workspaces:"));
+}
+
+#[test]
+fn a_token_on_one_of_several_unpinned_installations_is_not_checked() {
+    // Which installation holds it is unknown, so there is nothing to issue on.
+    let mut env = installed_and_set_up();
+    env.syncs = VecDeque::from([GitHubSyncOutcome::Synced(Box::new(installed_twice()))]);
+    env.issued = VecDeque::from([Ok(failed("should-not-be-asked"))]);
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert!(
+        !env.log.iter().any(|line| line.starts_with("issue ")),
+        "{:?}",
+        env.log
+    );
+}
+
+#[test]
+fn a_token_on_a_suspended_installation_is_not_checked_on_another() {
+    // The token was minted on 10, since suspended; 9 is another account's.
+    let mut env = installed_and_set_up();
+    let mut suspended = installed_twice();
+    suspended.installations[1].suspended_at = Some("2026-11-01T00:00:00Z".into());
+    env.syncs = VecDeque::from([GitHubSyncOutcome::Synced(Box::new(suspended))]);
+    env.recorded_installation = Some(10);
+    env.issued = VecDeque::from([Ok(failed("should-not-be-asked"))]);
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert!(
+        !env.log.iter().any(|line| line.starts_with("issue ")),
+        "{:?}",
+        env.log
+    );
+    assert_eq!(
+        env.log.last().unwrap(),
+        "info: The agent's GitHub token is on GitHub App installation 10, which is not active, so deploy leaves it as it is. Set MDA_GITHUB_APP_INSTALLATION_ID to choose the installation it uses."
+    );
+}
+
+#[test]
+fn a_token_recorded_on_the_single_installation_is_checked() {
+    for recorded in [Some(9), None] {
+        let mut env = installed_and_set_up();
+        env.recorded_installation = recorded;
+        env.issued = VecDeque::from([Ok(session("completed"))]);
+
+        run_setup(&mut env, &channel()).unwrap();
+
+        assert_eq!(env.log.last().unwrap(), "issue 9", "{recorded:?}");
+    }
 }
 
 #[test]
@@ -1407,6 +1680,12 @@ fn a_pinned_installation_past_the_report_narrows_only_to_what_its_token_held() {
             format!("start {APP} Installation(\"777\")"),
         ]
     );
+    // Its account's type is unknown past the report, so no settings URL is guessed.
+    let last = env.log.last().unwrap();
+    assert!(
+        last.contains("An owner of the account with installation 777 accepts them in that installation's settings on GitHub"),
+        "{last}"
+    );
 }
 
 #[test]
@@ -1468,6 +1747,54 @@ fn a_pinned_installation_the_token_cannot_use_still_drops_a_narrowed_token() {
     let last = env.log.last().unwrap();
     assert!(last.contains("not installed as installation 777"), "{last}");
     assert!(last.contains("the agent has no GitHub token"), "{last}");
+}
+
+/// The App installed on acme (9) and on `others` user accounts after it.
+fn installed_on_many(others: usize) -> GitHubChannelStatus {
+    let mut many = status(true);
+    for index in 0..others {
+        let mut other = many.installations[0].clone();
+        other.id = 100 + index as u64;
+        other.account.login = format!("user{index}");
+        other.account.kind = "User".into();
+        // GitHub reports the agent's installation last.
+        many.installations.insert(0, other);
+    }
+    many
+}
+
+#[test]
+fn the_agents_installation_is_named_among_many() {
+    let mut env = FakeEnv::interactive();
+    env.connection = Some(connection(GitHubAppState::Created, true));
+    env.recorded_installation = Some(9);
+    env.syncs = VecDeque::from([GitHubSyncOutcome::Synced(Box::new(installed_on_many(112)))]);
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(
+        env.log,
+        vec![
+            "sync".to_string(),
+            "success: GitHub channel ready · App acme-triage (acme) · this agent uses acme/api · also installed on 112 other accounts (user111, user110, user109 and 109 more)".to_string(),
+            TOKEN.to_string(),
+        ]
+    );
+}
+
+#[test]
+fn the_installation_env_names_the_agents_installation_when_none_is_recorded() {
+    let mut env = FakeEnv::interactive();
+    env.connection = Some(connection(GitHubAppState::Created, true));
+    env.installation_env = Some("9".into());
+    env.syncs = VecDeque::from([GitHubSyncOutcome::Synced(Box::new(installed_on_many(2)))]);
+
+    run_setup(&mut env, &channel()).unwrap();
+
+    assert_eq!(
+        env.log[1],
+        "success: GitHub channel ready · App acme-triage (acme) · this agent uses acme/api · also installed on acme/api; acme/api"
+    );
 }
 
 const TEST_KEY: &str = "-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----";

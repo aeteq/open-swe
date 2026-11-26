@@ -1,9 +1,7 @@
 """The run's file and shell tools, with the checks around them.
 
-They run in the thread's sandbox, which MDA owns, or against the thread's files on the
-backend (``rt.remote_files``): where the sandbox is not MDA's, such as a thread bridged
-to a person's machine, and on the paths the backend serves. Reads of the run's
-skills are answered from the skills this runtime keeps (``rt.skills``).
+They run in the thread's sandbox, which MDA owns. Reads of the run's skills are
+answered from the skills this runtime keeps (``rt.skills``).
 
 Around every call: a command that may push or open a pull request is first put to
 the backend's guards, which inspect the push and may need a person's approval, so
@@ -27,6 +25,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from functools import partial, wraps
 from typing import Final
 
+from deepagents.middleware.filesystem import FilesystemMiddleware
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain.tools import ToolRuntime
@@ -40,13 +39,14 @@ from langsmith.sandbox import SandboxRetryableConnectionError
 from pydantic import JsonValue
 from runtime_api.catalog import FilesSpec
 from runtime_api.endpoint import call
-from runtime_api.loop import REFRESH_GITHUB_PROXY, RefreshGitHubProxy
 from runtime_api.operations import CHECK_SHELL, ShellCheck
 
-from rt.backend import OpenSweBackend, RunLocal
+from rt.auto_review import PATH_ARGUMENTS
+from rt.backend import OpenSweBackend
 from rt.git_evidence import OBSERVED_TOOLS, turn_git
+from rt.memory_policy import MemoryPolicy
 from rt.middleware import reported
-from rt.remote_files import FILE_TOOLS, RemoteFiles, remote_file_tools
+from rt.prompts import prompt
 from rt.sandbox_setup import sandbox_setup
 from rt.subdir_agents import SubdirAgentsReadMiddleware
 from rt.tool_errors import ToolErrorMiddleware
@@ -56,16 +56,10 @@ from rt.validate_image_reads import ValidateImageReadsMiddleware
 
 logger = logging.getLogger(__name__)
 
-# The argument naming the path each file tool acts on.
-_PATH_ARGUMENTS: Final = {
-    "ls": "path",
-    "read_file": "file_path",
-    "write_file": "file_path",
-    "edit_file": "file_path",
-    "delete": "file_path",
-    "glob": "path",
-    "grep": "path",
-}
+# deepagents' file and shell tools.
+FILE_TOOLS: Final = frozenset(
+    {"ls", "read_file", "write_file", "edit_file", "delete", "glob", "grep", "execute"}
+)
 # A command the push and pull request guards may stop: one naming a push, the GitHub
 # CLI or the pulls API, or nesting shells as deep as the pull request guard reads.
 _GUARDED_WORDS: Final = re.compile(r"\b(?:push|gh|pulls)\b")
@@ -77,22 +71,10 @@ _QUOTING: Final = re.compile(r"\\\n|[\"'\\]")
 # As the backend's sandbox: the client gives up on a command the sandbox never
 # answers 30 seconds past its own timeout.
 _EXECUTE_GRACE_SECONDS: Final = 30
+# The longest an ``execute`` may hold the turn; longer work goes to ``background_execute``.
+_FOREGROUND_SECONDS: Final = 600
 # A sandbox call rejected before it started cannot have run, so it is sent again.
 _TRANSIENT_BACKOFF_SECONDS: Final = (0.5, 1.0, 2.0)
-# What git, the GitHub CLI and the REST API print when GitHub refuses the token the
-# sandbox's proxy sends.
-_GITHUB_COMMAND: Final = re.compile(r"(?:^|[\s;&|()])(?:git|gh|curl)(?:\s|$)")
-_GITHUB_REFUSED: Final = re.compile(
-    r"^fatal: could not read Username for 'https://github\.com'"
-    r"|^fatal: Authentication failed for 'https://github\.com/"
-    r"|^(?:gh: )?HTTP 401: Bad credentials"
-    r"|^\s*\{\s*\"message\":\s*\"Bad credentials\"",
-    re.MULTILINE,
-)
-_GITHUB_REAUTHORIZED: Final = (
-    "GitHub refused the sandbox's credentials, so the sandbox has been given a fresh "
-    "GitHub token. Run the GitHub step again."
-)
 
 Handler = Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]]
 
@@ -111,18 +93,9 @@ class FileToolsMiddleware(AgentMiddleware):
         backend: OpenSweBackend,
         execute_timeout: int,
         *,
-        remote_files: RemoteFiles,
         skills: Mapping[str, BaseTool] | None = None,
     ) -> None:
         self._backend = backend
-        self._remote_files = remote_files
-        # Each run's view of the backend's files as deepagents' own tools, with large
-        # results under the run's artifacts root, which a bridged thread has its own of.
-        self._remote_by_run = RunLocal(
-            lambda: remote_file_tools(
-                self._remote_files, self._backend.run.catalog.files.artifacts_root
-            )
-        )
         # The run's skills, which this runtime keeps itself (``rt.skills``).
         self._skills = dict(skills or {})
         # The sandbox's own tools, as the model is offered them; code mode runs them from here.
@@ -130,21 +103,11 @@ class FileToolsMiddleware(AgentMiddleware):
         self._execute_timeout = execute_timeout
         self._tool_errors = ToolErrorMiddleware(backend)
         self._image_reads = ValidateImageReadsMiddleware()
-        self._agents_md_in_sandbox = SubdirAgentsReadMiddleware(None)
-        self._agents_md_remote = SubdirAgentsReadMiddleware(remote_files)
-
-    @property
-    def _in_sandbox(self) -> bool:
-        """Whether the run's files are in MDA's sandbox, rather than only on the backend."""
-        return self._backend.run.planned.sandbox is not None
+        self._agents_md = SubdirAgentsReadMiddleware()
 
     @property
     def _spec(self) -> FilesSpec:
         return self._backend.run.catalog.files
-
-    @property
-    def _remote(self) -> dict[str, BaseTool]:
-        return self._remote_by_run.get(self._backend.run)
 
     @property
     def _shell_search(self) -> bool:
@@ -167,7 +130,8 @@ class FileToolsMiddleware(AgentMiddleware):
 
     def code_tools(self, names: Iterable[str]) -> list[StructuredTool]:
         """The file and shell tools among ``names``, for code mode, each call checked."""
-        templates = remote_file_tools(self._remote_files, "/")
+        # Only their names, descriptions and schemas: each call runs the sandbox's own tool.
+        templates = {tool.name: tool for tool in FilesystemMiddleware().tools}
         return [
             self._code_tool(self._described_tool(templates[name]))
             for name in sorted({*names} & {*templates})
@@ -219,23 +183,17 @@ class FileToolsMiddleware(AgentMiddleware):
             return await handler(request)
         if request.tool is not None:
             request = request.override(tool=self._skill_tool(request, request.tool))
-        spec = self._spec
-        if _under(self._backend.run.catalog.skill_sources, call_["name"], call_["args"]):
-            run: Handler = self._run_skill
-        elif _under(spec.backend_paths, call_["name"], call_["args"]):
-            run = self._run_remote
-        elif not self._in_sandbox:
-            run = partial(self._observed, handler=self._run_remote)
+        if _under(("/memories/",), call_["name"], call_["args"]):
+            run: Handler = handler
+        elif _under(self._backend.run.catalog.skill_sources, call_["name"], call_["args"]):
+            run = self._run_skill
         else:
             run = partial(
                 self._observed,
-                handler=partial(
-                    self._reauthorized,
-                    handler=partial(
-                        _retried, handler=partial(self._within_deadline, handler=handler)
-                    ),
-                ),
+                handler=partial(_retried, handler=partial(self._within_deadline, handler=handler)),
             )
+        # Any call may reach memory, a search from ``/`` included, so each meets its policy.
+        run = partial(self._in_memory, handler=run)
         # The transcript records a call the guards refuse, with their reason, as any other.
         return await reported(
             self._backend,
@@ -246,13 +204,28 @@ class FileToolsMiddleware(AgentMiddleware):
     async def _screened_run(
         self, request: ToolCallRequest, handler: Handler
     ) -> ToolMessage | Command:
+        timeout = request.tool_call["args"].get("timeout")
+        # 0 turns a command's timeout off, so it is past the limit too.
+        if (
+            request.tool_call["name"] == "execute"
+            and isinstance(timeout, int)
+            and not 0 < timeout <= _FOREGROUND_SECONDS
+        ):
+            return ToolMessage(
+                content=prompt(
+                    "tools/foreground-limit", timeout=timeout, limit=_FOREGROUND_SECONDS
+                ),
+                tool_call_id=request.tool_call.get("id") or "",
+                name="execute",
+                status="error",
+            )
         screened = await self._screened(request)
         if isinstance(screened, ToolMessage):
             return screened
         return await handler(screened)
 
     async def _screened(self, request: ToolCallRequest) -> ToolCallRequest | ToolMessage:
-        """``request`` as the guards let it run, an approved push as they fixed it, or their refusal."""
+        """The request or an approved push as the guards fixed it, otherwise their refusal."""
         command = request.tool_call["args"].get("command")
         if (
             request.tool_call["name"] != "execute"
@@ -328,11 +301,6 @@ class FileToolsMiddleware(AgentMiddleware):
 
         return tool.model_copy(update={"coroutine": read_skill})
 
-    async def _run_remote(self, request: ToolCallRequest) -> ToolMessage | Command:
-        """The call against the backend's files, as the sandbox's own tool would run it."""
-        tool = self._skill_tool(request, self._remote[request.tool_call["name"]])
-        return await _invoked(tool, request)
-
     async def _run_skill(self, request: ToolCallRequest) -> ToolMessage | Command:
         """The call against the run's skills, as the sandbox's own tool would run it."""
         tool = self._skills.get(request.tool_call["name"])
@@ -345,56 +313,33 @@ class FileToolsMiddleware(AgentMiddleware):
             )
         return await _invoked(self._skill_tool(request, tool), request)
 
+    async def _in_memory(self, request: ToolCallRequest, handler: Handler) -> ToolMessage | Command:
+        """``handler``'s call, unless the memory policy refuses it."""
+        call_ = request.tool_call
+        policy = MemoryPolicy(self._backend.run.catalog.memory)
+        if (refusal := policy.refusal(call_["name"], call_["args"])) is None:
+            return await handler(request)
+        return ToolMessage(
+            content=refusal, tool_call_id=call_["id"] or "", name=call_["name"], status="error"
+        )
+
     async def _run_own(self, request: ToolCallRequest) -> ToolMessage | Command:
         """A code mode call, run by the tool the model's own call of it runs."""
-        tools = self._sandbox_tools if self._in_sandbox else self._remote
-        return await _invoked(self._skill_tool(request, tools[request.tool_call["name"]]), request)
+        tool = self._sandbox_tools[request.tool_call["name"]]
+        return await _invoked(self._skill_tool(request, tool), request)
 
     async def _checked(self, request: ToolCallRequest, handler: Handler) -> ToolMessage | Command:
         """``handler`` in the graph's own order: image reads, then tool errors, then AGENTS.md."""
         checks = self._spec.checks
-        agents_md = self._agents_md_in_sandbox if self._in_sandbox else self._agents_md_remote
         checked = handler
         for check in (
-            agents_md if "agents_md" in checks else None,
+            self._agents_md if "agents_md" in checks else None,
             self._tool_errors,
             self._image_reads if "image_reads" in checks else None,
         ):
             if check is not None:
                 checked = partial(check.awrap_tool_call, handler=checked)
         return await checked(request)
-
-    async def _reauthorized(
-        self, request: ToolCallRequest, handler: Handler
-    ) -> ToolMessage | Command:
-        """``handler``; when GitHub refused the sandbox's token, a fresh one is put there and
-        the result says so.
-
-        The command is not run again: it may have done other things before GitHub refused it.
-        """
-        result = await handler(request)
-        if (
-            request.tool_call["name"] != "execute"
-            or not self._backend.run.catalog.loop.refresh_github_proxy
-            or not isinstance(result, ToolMessage)
-            or not _GITHUB_COMMAND.search(str(request.tool_call["args"].get("command", "")))
-            or "github.com" not in (str(request.tool_call["args"].get("command", "")) + result.text)
-            or not _GITHUB_REFUSED.search(result.text)
-        ):
-            return result
-        try:
-            refreshed = await call(
-                self._backend,
-                REFRESH_GITHUB_PROXY,
-                RefreshGitHubProxy(run_id=run_id(), force_refresh=True),
-            )
-        except Exception:
-            logger.warning("Could not refresh the sandbox's GitHub token", exc_info=True)
-            return result
-        if refreshed.expires_at is None:
-            return result
-        logger.info("Refreshed the sandbox's GitHub token after GitHub refused it")
-        return result.model_copy(update={"content": f"{result.text}\n\n{_GITHUB_REAUTHORIZED}"})
 
     async def _within_deadline(
         self, request: ToolCallRequest, handler: Handler
@@ -434,7 +379,7 @@ async def _invoked(tool: BaseTool, request: ToolCallRequest) -> ToolMessage | Co
 
 def _under(prefixes: Iterable[str], name: str, arguments: Mapping[str, object]) -> bool:
     """Whether the path ``name``'s call acts on is under one of ``prefixes``."""
-    path = _absolute(arguments.get(_PATH_ARGUMENTS.get(name, "")))
+    path = _absolute(arguments.get(PATH_ARGUMENTS.get(name, "")))
     return path is not None and any(
         path == prefix.rstrip("/") or path.startswith(prefix) for prefix in prefixes
     )

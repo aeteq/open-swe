@@ -12,10 +12,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from openswe.database.orm import Base
 from openswe.expedited_review.eligibility import ExcludedHunk, Exclusion
 
+# A value shown as itself (a toggle, a number, an option of a fixed set) or redacted.
+AuditedSettingValue = bool | int | str | None
+
 
 class SettingsChange(TypedDict):
-    before: bool | int | Literal["[REDACTED]"] | None
-    after: bool | int | Literal["[REDACTED]"] | None
+    before: AuditedSettingValue
+    after: AuditedSettingValue
 
 
 class ExpeditedExclusions(BaseModel):
@@ -32,7 +35,7 @@ class ExpeditedExclusions(BaseModel):
 
 
 class AuditLogEnrichments(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     source: Literal["http", "tool"] = "http"
     actor_kind: Literal["person", "api_key", "github_actions", "agent"] | None = None
@@ -41,20 +44,17 @@ class AuditLogEnrichments(BaseModel):
     request_path: str | None = None
     response_status_code: int | None = None
     resource_ids: list[str] = Field(default_factory=list)
-    workspace: str | None = None
     thread_id: str | None = None
+    run_id: str | None = None
     delegated_from_sandbox_id: str | None = None
-    settings_scope: Literal["instance", "workspace"] | None = None
+    settings_scope: Literal["instance", "workspace", "execution"] | None = None
     settings_changes: dict[str, SettingsChange] | None = None
     expedited_exclusions: ExpeditedExclusions | None = None
 
     @field_serializer("settings_changes")
     def _serialize_settings_changes(
         self, changes: dict[str, SettingsChange] | None
-    ) -> (
-        dict[str, dict[Literal["before", "after"], bool | int | Literal["[REDACTED]"] | None]]
-        | None
-    ):
+    ) -> dict[str, dict[Literal["before", "after"], AuditedSettingValue]] | None:
         """Preserve null overrides even when the envelope excludes absent metadata."""
         if changes is None:
             return None
@@ -73,8 +73,37 @@ class AuditLog(BaseModel):
     operation_succeeded: bool | None = None
     api_key_id: str | None = None
     user_id: UUID | None = None
-    workspace_id: UUID | None = None
     enrichments: AuditLogEnrichments = Field(default_factory=AuditLogEnrichments)
+
+    async def enrich_tool(self) -> None:
+        from openswe.sandboxes.state import SANDBOX_BACKENDS
+        from openswe.tools.access import direct_user_run
+        from openswe.tools.admin_gate import configurable
+        from openswe.users import User
+
+        cfg = configurable()
+        self.enrichments.thread_id = cfg.thread_id
+        self.enrichments.run_id = cfg.run_id or None
+        backend = SANDBOX_BACKENDS.get(cfg.thread_id) if cfg.thread_id else None
+        if backend is not None and backend.has_backend:
+            self.enrichments.delegated_from_sandbox_id = backend.id
+        if not direct_user_run(cfg) and not cfg.mcp_caller:
+            return
+        self.enrichments.actor_login = cfg.github_login
+        user = (
+            await User.get(UUID(cfg.user_id))
+            if cfg.user_id
+            else await User.for_identity("github", cfg.github_user_id)
+            if cfg.github_user_id
+            else await User.for_login("github", cfg.github_login)
+            if cfg.github_login
+            else await User.for_identity("slack", cfg.slack_thread.triggering_user_id)
+            if cfg.slack_thread and cfg.slack_thread.triggering_user_id
+            else None
+        )
+        if user is not None:
+            self.user_id = user.id
+            self.enrichments.actor_login = user.github_login or None
 
 
 class AuditLogRow(Base):
@@ -86,7 +115,6 @@ class AuditLogRow(Base):
     operation_succeeded: Mapped[bool | None]
     api_key_id: Mapped[str | None]
     user_id: Mapped[UUID | None]
-    workspace_id: Mapped[UUID | None]
     enrichments: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
 
 

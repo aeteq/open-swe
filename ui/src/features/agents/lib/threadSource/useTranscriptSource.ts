@@ -21,7 +21,9 @@ import type { ThreadRunInput, TranscriptThreadSource } from "./types"
 
 /** The append-only transcript log, behind the source interface. */
 export function useTranscriptSource(threadId: string): TranscriptThreadSource {
-  const [runTracker] = useState(() => new RunTracker({ threadId }))
+  const [runTracker] = useState(
+    () => new RunTracker({ threadId, threadSource: "transcript" })
+  )
   useEffect(() => () => runTracker.dispose(), [runTracker])
   const transcript = useThreadTranscript(threadId, { runTracker })
   const stop = useCancelRun(threadId)
@@ -77,6 +79,7 @@ export function useTranscriptSource(threadId: string): TranscriptThreadSource {
       settledRunId,
       threadId,
       messages: transcript.messages,
+      shownFrom: 0,
       queued: transcript.queued,
       isRunning: transcript.isRunning,
       isHydrating: transcript.isHydrating,
@@ -89,7 +92,6 @@ export function useTranscriptSource(threadId: string): TranscriptThreadSource {
       subagentToolCalls: subagents,
       subagentMessages: subagentTranscript,
       subagentTask: task,
-      workspaceStale: transcript.workspaceStale,
       startRun,
       stop,
       hasOlder: transcript.hasOlder,

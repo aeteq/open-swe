@@ -11,22 +11,16 @@ import {
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import {
-  api,
-  type WorkspaceSettings,
-  type WorkspaceSettingsView,
-} from "@/lib/api"
+import { api } from "@/lib/api"
 
 import {
   SlackIntegrationSection,
   UsersSection,
 } from "@/features/settings/components/AdminSections"
 import { AnnouncementsSection } from "@/features/settings/components/AnnouncementsSection"
-import { ReviewSettings } from "@/features/settings/components/ReviewSettings"
 
 afterEach(cleanup)
 
-const STORAGE_KEY = "open-swe.admin.slack-code-channels-enabled"
 const storage = new Map<string, string>()
 const localStorage = {
   clear: () => storage.clear(),
@@ -52,13 +46,8 @@ describe("SlackIntegrationSection", () => {
     })
   })
 
-  it("defaults to legacy Slack and copies Code Channels only when enabled", async () => {
+  it("copies the ordinary Slack manifest", async () => {
     render(<SlackIntegrationSection backendUrl="https://openswe.example.com" />)
-
-    const toggle = screen.getByRole("switch", {
-      name: /^Slack Code Channels/,
-    })
-    expect(toggle.getAttribute("aria-checked")).toBe("false")
 
     fireEvent.click(screen.getByRole("button", { name: "Copy manifest" }))
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
@@ -70,14 +59,6 @@ describe("SlackIntegrationSection", () => {
     expect(legacy.oauth_config.redirect_urls).toContain(
       "https://openswe.example.com/dashboard/api/slack/callback"
     )
-
-    fireEvent.click(toggle)
-    expect(localStorage.getItem(STORAGE_KEY)).toBe("true")
-    fireEvent.click(screen.getByRole("button", { name: "Copy manifest" }))
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
-    expect(
-      JSON.parse(writeText.mock.calls[1]![0]).features.code_channels.enabled
-    ).toBe(true)
   })
 })
 
@@ -139,81 +120,58 @@ describe("UsersSection", () => {
   })
 })
 
-describe("ReviewSettings", () => {
-  const settings = (review_draft_prs: boolean): WorkspaceSettings => ({
-    review_trace_links: false,
-    review_draft_prs,
-  })
-  const loaded = (review_draft_prs: boolean): WorkspaceSettingsView => ({
-    effective: settings(review_draft_prs),
-    overrides: {},
-  })
-
-  afterEach(() => vi.restoreAllMocks())
-
-  it("caches a save under the workspace it started in, not the one shown when it finishes", async () => {
-    const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    })
-    vi.spyOn(api, "getInstanceSettings").mockResolvedValue(settings(false))
-    vi.spyOn(api, "getWorkspaceSettings").mockImplementation(async () =>
-      loaded(false)
-    )
-    let finishSave: (saved: WorkspaceSettingsView) => void = () => {}
-    const save = vi
-      .spyOn(api, "saveWorkspaceSettings")
-      .mockImplementation(
-        () =>
-          new Promise<WorkspaceSettingsView>(
-            (resolve) => (finishSave = resolve)
-          )
-      )
-    const section = (slug: string) => (
-      <QueryClientProvider client={qc}>
-        <ReviewSettings scope={{ kind: "workspace", slug }} canEdit />
-      </QueryClientProvider>
-    )
-
-    const view = render(section("alpha"))
-    const row = (
-      await within(view.container).findByText("Review Draft PRs")
-    ).closest("label")!.parentElement!
-    const toggle = within(row).getByRole("switch")
-    await waitFor(() => {
-      expect(toggle.hasAttribute("disabled")).toBe(false)
-      expect(toggle.hasAttribute("data-disabled")).toBe(false)
-      expect(toggle.getAttribute("aria-disabled")).not.toBe("true")
-    })
-    fireEvent.click(toggle)
-    await waitFor(() =>
-      expect(save).toHaveBeenCalledWith("alpha", { review_draft_prs: true })
-    )
-
-    view.rerender(section("beta"))
-    const saved: WorkspaceSettingsView = {
-      effective: settings(true),
-      overrides: { review_draft_prs: true },
-    }
-    finishSave(saved)
-
-    await waitFor(() =>
-      expect(qc.getQueryData(["workspaceSettings", "alpha"])).toEqual(saved)
-    )
-    await waitFor(() =>
-      expect(qc.getQueryData(["workspaceSettings", "beta"])).toEqual(
-        loaded(false)
-      )
-    )
-  })
-})
-
 describe("AnnouncementsSection", () => {
   afterEach(() => vi.restoreAllMocks())
+
+  it("shows the saved scope and message before explicitly approving", async () => {
+    vi.spyOn(api, "listAnnouncements").mockResolvedValue({
+      recipients: 15,
+      items: [],
+      approvals: [
+        {
+          id: "approval-1",
+          thread_id: "thread-1",
+          text: "Saved *message*",
+          recipients: 12,
+          payload_digest: "digest-1",
+          created_at: "2026-01-01T00:00:00Z",
+          expires_at: "2026-01-02T00:00:00Z",
+        },
+      ],
+    })
+    const decide = vi
+      .spyOn(api, "decideAnnouncement")
+      .mockResolvedValue({ status: "approved" })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <AnnouncementsSection />
+      </QueryClientProvider>
+    )
+    expect(
+      await screen.findByText(/12 people with Slack connected at preparation/)
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Review and send" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("Saved *message*")).toBeTruthy()
+    expect(within(dialog).getByText("DM 12 people?")).toBeTruthy()
+    expect(decide).not.toHaveBeenCalled()
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Approve and send" })
+    )
+    await waitFor(() =>
+      expect(decide).toHaveBeenCalledWith("approval-1", "approve", "digest-1")
+    )
+    client.clear()
+  })
 
   it("sends to everyone only after the admin confirms the exact text", async () => {
     vi.spyOn(api, "listAnnouncements").mockResolvedValue({
       recipients: 12,
       items: [],
+      approvals: [],
     })
     const send = vi
       .spyOn(api, "sendAnnouncement")
@@ -244,7 +202,74 @@ describe("AnnouncementsSection", () => {
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith("We shipped walkthroughs", false)
     )
-    expect(await screen.findByText("Sending to 12 people.")).toBeTruthy()
+    expect(
+      await screen.findByText(
+        "Queued for 12 people. If your Slack account is connected, your DM is sent first."
+      )
+    ).toBeTruthy()
+    client.clear()
+  })
+
+  it("opens delivery history in a modal and cancels remaining deliveries", async () => {
+    const item = {
+      id: "announcement-1",
+      text: "*Release notes*\nRead <https://example.com|the update>",
+      author: "An admin",
+      created_at: "2026-11-17T03:39:33Z",
+      finished_at: null,
+      cancelled_at: null,
+      recipients: 230,
+      sent: 23,
+      failed: 0,
+    }
+    const list = vi
+      .spyOn(api, "listAnnouncements")
+      .mockResolvedValue({ recipients: 230, items: [item], approvals: [] })
+    const cancel = vi
+      .spyOn(api, "cancelAnnouncement")
+      .mockImplementation(async () => {
+        list.mockResolvedValue({
+          recipients: 230,
+          items: [{ ...item, cancelled_at: "2026-11-17T03:40:00Z" }],
+          approvals: [],
+        })
+      })
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <AnnouncementsSection />
+      </QueryClientProvider>
+    )
+    expect(
+      await screen.findByText("230 people with Slack connected")
+    ).toBeTruthy()
+    expect(screen.queryByText("Release notes")).toBeNull()
+    const historyButton = screen.getByRole("button", {
+      name: "View delivery history",
+    })
+    fireEvent.click(historyButton)
+    const dialog = await screen.findByRole("dialog", {
+      name: "Delivery history",
+    })
+    expect(within(dialog).getByText("23 of 230 delivered")).toBeTruthy()
+    expect(screen.getByText("Release notes").tagName).toBe("STRONG")
+    expect(
+      screen.getByRole("link", { name: "the update" }).getAttribute("href")
+    ).toBe("https://example.com")
+    fireEvent.click(screen.getByRole("button", { name: "Cancel remaining" }))
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("announcement-1"))
+    expect(await screen.findByText("Cancelled")).toBeTruthy()
+    expect(
+      screen.queryByRole("button", { name: "Cancel remaining" })
+    ).toBeNull()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull()
+      expect(document.activeElement).toBe(historyButton)
+    })
+    expect(screen.queryByText("Release notes")).toBeNull()
     client.clear()
   })
 })

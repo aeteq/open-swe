@@ -12,13 +12,13 @@ The reviewer needs three things from a PR diff:
    (``last_reviewed_sha..new_head_sha``).
 """
 
+import functools
 import hashlib
 import logging
 import re
+import shlex
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
-
-from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from deepagents.backends.protocol import SandboxBackendProtocol
@@ -135,6 +135,8 @@ def parse_unified_diff(diff_text: str) -> list[FileDiff]:
     return files
 
 
+# ponytail: holds the last four diffs' text, key by a digest if huge diffs make that matter.
+@functools.lru_cache(maxsize=4)
 def compute_diff_line_set(diff_text: str) -> dict[str, dict[str, set[int]]]:
     """Return ``{file: {"RIGHT": {new_lines}, "LEFT": {old_lines}}}`` for the
     lines covered by the diff.
@@ -144,6 +146,10 @@ def compute_diff_line_set(diff_text: str) -> dict[str, dict[str, set[int]]]:
     (``side = LEFT`` — deletions). ``add_finding`` and ``publish_review``
     validate a finding's ``(file, start_line..end_line, side)`` against the
     matching set so deleted-line bugs aren't wrongly rejected.
+
+    A review run restores these sets on every call it makes to the backend, so
+    each diff is parsed once and every caller shares the result: read it, never
+    change it.
     """
     out: dict[str, dict[str, set[int]]] = {}
     for file_diff in parse_unified_diff(diff_text):
@@ -247,52 +253,6 @@ async def fetch_pr_diff(
     return response.text
 
 
-class _Comparison(BaseModel):
-    status: Literal["ahead", "behind", "diverged", "identical"]
-
-
-async def fetch_compare_diff(
-    *,
-    owner: str,
-    repo: str,
-    base_ref: str,
-    head_ref: str,
-    token: str,
-    timeout: float = 30.0,
-) -> str | None:
-    """Fetch the two-dot diff ``base_ref..head_ref`` from the GitHub REST API.
-
-    GitHub only compares from the merge base, which is ``base_ref`` only when it is an
-    ancestor of ``head_ref``; otherwise, as after a force-push, this returns None.
-    """
-    import httpx2
-
-    from openswe.github.http import github_client, github_request
-
-    url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_ref}...{head_ref}"
-    try:
-        async with github_client(token=token) as client:
-            comparison = await github_request(client, "GET", url, timeout=timeout)
-            comparison.raise_for_status()
-            if _Comparison.model_validate(comparison.json()).status not in ("ahead", "identical"):
-                return None
-            response = await github_request(
-                client,
-                "GET",
-                url,
-                headers={"Accept": "application/vnd.github.diff"},
-                timeout=timeout,
-            )
-            response.raise_for_status()
-    except httpx2.HTTPError:
-        logger.exception(
-            "Failed to fetch compare diff",
-            extra={"repository": f"{owner}/{repo}", "base_ref": base_ref, "head_ref": head_ref},
-        )
-        return None
-    return response.text
-
-
 async def fetch_pr_metadata(
     *,
     owner: str,
@@ -301,7 +261,7 @@ async def fetch_pr_metadata(
     token: str,
     timeout: float = 30.0,
 ) -> tuple[str, str] | None:
-    """Fetch the PR's title and body from the GitHub REST API.
+    """Fetch the PR's title and body from GitHub's GraphQL API.
 
     Returns ``(title, body)`` or ``None`` if the request fails. Always
     fetched fresh per run (never cached) so an edited title/description is
@@ -310,23 +270,15 @@ async def fetch_pr_metadata(
     """
     import httpx2
 
-    from openswe.github.http import github_client, github_request
+    from openswe.github.http import GitHubClient
+    from openswe.github.pull_request_status import PullRequestClient
 
-    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
     try:
-        async with github_client(token=token) as client:
-            response = await github_request(client, "GET", url, timeout=timeout)
-            response.raise_for_status()
-            payload = response.json()
-    except httpx2.HTTPError:
+        async with GitHubClient.connect(token=token, timeout=timeout) as github:
+            return await PullRequestClient(github.repo(owner, repo), pr_number).title_and_body()
+    except httpx2.HTTPError, ValueError:
         logger.exception("Failed to fetch PR metadata for %s/%s#%s", owner, repo, pr_number)
         return None
-    except ValueError:
-        logger.exception("Failed to parse PR metadata for %s/%s#%s", owner, repo, pr_number)
-        return None
-    title = payload.get("title")
-    body = payload.get("body")
-    return (title if isinstance(title, str) else "", body if isinstance(body, str) else "")
 
 
 def review_diff_range(
@@ -358,6 +310,7 @@ async def materialize_review_diff(
     head_ref: str,
     merge_base: bool,
     diff_text: str | None = None,
+    fallback_base_ref: str | None = None,
 ) -> MaterializedReviewDiff:
     """Idempotently write a review diff to the sandbox."""
     path = review_diff_path(work_dir, base_ref, head_ref, merge_base)
@@ -374,13 +327,34 @@ async def materialize_review_diff(
                 merge_base=merge_base,
                 cached=True,
             )
-        diff_text = await compute_diff_in_sandbox(
-            sandbox_backend,
-            work_dir,
-            base_ref,
-            head_ref,
-            merge_base=merge_base,
-        )
+        try:
+            diff_text = await compute_diff_in_sandbox(
+                sandbox_backend, work_dir, base_ref, head_ref, merge_base=merge_base
+            )
+        except RuntimeError:
+            if merge_base or not fallback_base_ref:
+                raise
+            logger.warning("Incremental review diff unavailable; fetching its base", exc_info=True)
+            await sandbox_backend.aexecute(
+                f"cd {shlex.quote(work_dir)} && "
+                f"git fetch --quiet --no-tags origin {shlex.quote(base_ref)}",
+                timeout=60,
+            )
+            try:
+                diff_text = await compute_diff_in_sandbox(
+                    sandbox_backend, work_dir, base_ref, head_ref
+                )
+            except RuntimeError:
+                logger.warning(
+                    "Incremental review base unavailable; using full diff", exc_info=True
+                )
+                return await materialize_review_diff(
+                    sandbox_backend,
+                    work_dir=work_dir,
+                    base_ref=fallback_base_ref,
+                    head_ref=head_ref,
+                    merge_base=True,
+                )
 
     responses = await sandbox_backend.aupload_files([(path, diff_text.encode())])
     response = responses[0] if responses else None

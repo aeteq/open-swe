@@ -12,11 +12,19 @@ import secrets
 import time
 from collections.abc import Mapping
 from typing import Final
+from uuid import UUID
 
 import jwt
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    ValidationError,
+)
 
-from openswe.bridge.constants import BridgeClient
 from openswe.config import ENV
 
 _ISSUER: Final = "open-swe"
@@ -53,28 +61,27 @@ class AgentTurnSettings(BaseModel):
 
     # Whoever sent the message that started the run, and whose private credentials it may use.
     profile_login: str | None = None
+    # The sender's ``users.id``, when they have one.
+    profile_user_id: UUID | None = None
     credential_login: str | None = None
-    # Whether the sender administers workspaces, and is the only one who may write here.
-    admin_workspaces: bool = False
+    admin: bool = Field(default=False, validation_alias=AliasChoices("admin", "admin_workspaces"))
     sole_writer: bool = False
     # The model that titles the thread.
     title_model_id: str
     title_effort: str | None = None
-    use_gateway: bool = False
+
     # The model and effort each route stands for.
     route_models: dict[str, tuple[str, str | None]] = {}
     # Whether the opening message may ask for a model, and the one an earlier message did.
     offers_requested_models: bool = False
     fable_enabled: bool = False
     saved_requested_model: str | None = None
-    # The client of a thread bridged to a person's machine.
-    bridge_client: BridgeClient | None = None
     # Why managed tool discovery failed while planning, which the prompt says.
     tool_discovery_failures: list[str] = []
-    # Whether the thread runs a review walkthrough, which pins its checkout in the sandbox.
-    review_guide: bool = False
-    # Whether the thread had one that has closed: its guide stays, to retire its rules.
-    review_guide_closed: bool = False
+    # Managed tools services a private thread's owner has yet to connect, which the prompt names.
+    connectable_managed_services: list[str] = []
+    # MCP connections whose tools were still loading when the run started.
+    loading_mcp_connections: list[str] = []
     # A task worker's coordinator, whose sandbox the worker may use only once the backend has
     # checked it may, and whose GitHub token its runs keep fresh.
     coordinator_thread_id: str | None = None
@@ -82,7 +89,7 @@ class AgentTurnSettings(BaseModel):
     @property
     def reaches_sandbox(self) -> bool:
         """Whether preparing a turn connects to the thread's sandbox even where MDA keeps it."""
-        return self.review_guide or self.coordinator_thread_id is not None
+        return self.coordinator_thread_id is not None
 
 
 class RunSettings(BaseModel):
@@ -102,7 +109,8 @@ class RunSettings(BaseModel):
     # The digest of every tool the run started with, kept in ``run_tool_sets``;
     # its catalog lists only those the model is offered.
     tools: str | None = None
-    # Where an incident run answers: its incident's Slack thread, not the run's own.
+    execution: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    # Where a channel rule's kickoff run answers.
     slack_thread: dict[str, JsonValue] | None = None
     # Tools the run's catalog offers the model but never grants (``Catalog.disabled``).
     disabled_tools: list[str] = []
@@ -115,6 +123,7 @@ class RunSettings(BaseModel):
             "resolved_agent_model_id": self.model_id,
             "resolved_agent_effort": self.effort,
             "slack_thread": self.slack_thread,
+            "execution": self.execution,
         }
         return {key: value for key, value in values.items() if value is not None}
 
@@ -182,7 +191,11 @@ def _sign(audience: str, run: RemoteRun, extra: dict[str, JsonValue], now: int |
         "assistant_id": run.assistant_id,
         "cfg": run.configurable,
         "md": run.metadata,
-        **({"set": settings} if (settings := run.settings.model_dump(exclude_none=True)) else {}),
+        **(
+            {"set": settings}
+            if (settings := run.settings.model_dump(mode="json", exclude_none=True))
+            else {}
+        ),
         "gid": run.grant_id,
         **extra,
     }

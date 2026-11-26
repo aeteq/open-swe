@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { TooltipProvider } from "@langchain/macaw-components/Tooltip"
-import { QueryClientProvider } from "@tanstack/react-query"
+import { QueryClientProvider, useQuery } from "@tanstack/react-query"
 import {
   act,
   cleanup,
@@ -25,6 +25,8 @@ import {
 import { reportError } from "@/lib/errorReporting"
 import { makeQueryClient } from "@/lib/query"
 import { OpenPullRequests } from "./OpenPullRequests"
+import { MergePullRequest } from "./components/MergePullRequest"
+import { pullRequestStatusQuery } from "./lib/cache"
 import type { ReviewsSearch } from "./search"
 
 vi.mock("@/lib/api", () => ({
@@ -34,13 +36,15 @@ vi.mock("@/lib/api", () => ({
     pullRequestStatus: vi.fn(),
     repos: vi.fn(),
     reviewSummaries: vi.fn(),
-    fixPullRequest: vi.fn(),
-    addressPullRequestComments: vi.fn(),
+    fixUpPullRequest: vi.fn(),
     pullRequestThreadStatus: vi.fn(),
     mergePullRequest: vi.fn(),
+    disablePullRequestAutoMerge: vi.fn(),
     closePullRequest: vi.fn(),
     markPullRequestReady: vi.fn(),
     repoMergeMethods: vi.fn(),
+    getPullRequestLabels: vi.fn(),
+    humanReviewAvailability: vi.fn(),
     openPullRequestThread: vi.fn(),
   },
 }))
@@ -50,6 +54,7 @@ vi.mock("@/lib/session", () => ({
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
+  useElementScrollRestoration: () => undefined,
   Link: ({
     params,
     children,
@@ -113,7 +118,7 @@ const payload = {
   incomplete: false,
   updatedAt: "2026-09-12T12:00:00Z",
 }
-function mount() {
+function mount(client = makeQueryClient()) {
   function Harness() {
     const [filters, setFilters] = useState<ReviewsSearch>({})
     return (
@@ -127,7 +132,6 @@ function mount() {
       />
     )
   }
-  const client = makeQueryClient()
   client.setDefaultOptions({ queries: { retry: false } })
   return render(
     <QueryClientProvider client={client}>
@@ -202,8 +206,18 @@ const chooseMergeMethod = async (number: number, label: string) => {
 }
 
 beforeEach(() => {
+  vi.mocked(api.getPullRequestLabels).mockResolvedValue({
+    selected: [],
+    available: [],
+  })
   vi.mocked(api.repoMergeMethods).mockResolvedValue({
     mergeMethods: ["squash", "merge", "rebase"],
+  })
+  vi.mocked(api.humanReviewAvailability).mockResolvedValue({
+    available: true,
+    active: false,
+    permalink: "",
+    blockers: [],
   })
   vi.mocked(api.pullRequestThreadStatus).mockResolvedValue({ running: false })
   vi.mocked(api.reviewSummaries).mockResolvedValue({})
@@ -247,12 +261,12 @@ describe("My PRs", () => {
     vi.mocked(api.pullRequestThreadStatus).mockResolvedValue({ running: true })
     mount()
     const button = await screen.findByRole("button", {
-      name: "Fixing",
+      name: "Fixing up",
     })
     expect((button as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.queryByRole("button", { name: "Fix" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Fix up" })).toBeNull()
     fireEvent.click(button)
-    expect(api.fixPullRequest).not.toHaveBeenCalled()
+    expect(api.fixUpPullRequest).not.toHaveBeenCalled()
   })
 
   it("opens the associated coding thread with immediate loading feedback", async () => {
@@ -306,42 +320,54 @@ describe("My PRs", () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it("merges in the background and keeps the merged card in place", async () => {
-    vi.mocked(api.openPullRequests).mockResolvedValue({
-      ...payload,
-      pullRequests: [pull(1, { reviewDecision: "approved" }), pull(2)],
-    })
-    let finish!: (result: PullRequestActionResult) => void
-    vi.mocked(api.mergePullRequest).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve
-        })
-    )
-    mount()
-    const card = (await screen.findByText("Change 1")).closest("li")!
-    await chooseMergeMethod(1, "Squash merge")
-    fireEvent.click(
-      within(card).getByRole("button", {
-        name: "Squash and merge",
+  it.each([null, pull(1, { state: "closed" })])(
+    "keeps a locally merged card after its live status becomes %j",
+    async (status) => {
+      vi.mocked(api.openPullRequests).mockResolvedValue({
+        ...payload,
+        pullRequests: [pull(1, { reviewDecision: "approved" }), pull(2)],
       })
-    )
-    expect(await within(card).findByText(/^Merged ·/)).toBeTruthy()
-    expect(screen.getByText("Change 1")).toBeTruthy()
-    expect(api.mergePullRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ number: 1, headSha: "a".repeat(40) }),
-      "squash",
-      false
-    )
-    finish({ action: "merge", done: true })
-    await waitFor(() =>
-      expect(within(card).getByText(/^Merged ·/)).toBeTruthy()
-    )
-    expect(titles()).toEqual(["Change 1", "Change 2"])
-    expect(within(card).queryByRole("button", { name: MERGE })).toBeNull()
-    expect(toast.success).toHaveBeenCalledWith("Merged acme/app#1")
-    expect(navigate).not.toHaveBeenCalled()
-  })
+      let finish!: (result: PullRequestActionResult) => void
+      vi.mocked(api.mergePullRequest).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      const client = makeQueryClient()
+      mount(client)
+      const card = (await screen.findByText("Change 1")).closest("li")!
+      await chooseMergeMethod(1, "Squash merge")
+      fireEvent.click(
+        within(card).getByRole("button", {
+          name: "Squash and merge",
+        })
+      )
+      expect(await within(card).findByText(/^Merged ·/)).toBeTruthy()
+      expect(screen.getByText("Change 1")).toBeTruthy()
+      expect(api.mergePullRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ number: 1, headSha: "a".repeat(40) }),
+        "squash",
+        false,
+        false,
+        false
+      )
+      finish({ action: "merge", done: true })
+      await act(async () => {
+        client.setQueryData(
+          pullRequestStatusQuery("octocat", pull(1)).queryKey,
+          status
+        )
+      })
+      await waitFor(() =>
+        expect(within(card).getByText(/^Merged ·/)).toBeTruthy()
+      )
+      expect(titles()).toEqual(["Change 1", "Change 2"])
+      expect(within(card).queryByRole("button", { name: MERGE })).toBeNull()
+      expect(toast.success).toHaveBeenCalledWith("Merged acme/app#1")
+      expect(navigate).not.toHaveBeenCalled()
+    }
+  )
 
   it.each(["clean", "blocked"] as const)(
     "keeps merging available with unknown conversation rules (%s)",
@@ -366,9 +392,7 @@ describe("My PRs", () => {
       const button = screen.getByRole("button", { name: "Squash and merge" })
       expect((button as HTMLButtonElement).disabled).toBe(false)
       fireEvent.click(button)
-      expect(screen.queryByRole("dialog") !== null).toBe(
-        mergeState === "blocked"
-      )
+      await waitFor(() => expect(api.getPullRequestLabels).toHaveBeenCalled())
       if (mergeState === "blocked") {
         const dialog = await screen.findByRole("dialog")
         within(dialog).getByText(/Could not confirm whether/)
@@ -380,11 +404,93 @@ describe("My PRs", () => {
         expect(api.mergePullRequest).toHaveBeenCalledWith(
           expect.objectContaining({ number: 1 }),
           "squash",
-          mergeState === "blocked"
+          mergeState === "blocked",
+          false,
+          false
         )
       )
     }
   )
+
+  it("confirms bypassing rules without enabling auto-merge or resolving conversations", async () => {
+    vi.mocked(api.openPullRequests).mockResolvedValue({
+      ...payload,
+      pullRequests: [
+        pull(1, {
+          ci: "pending",
+          requiredChecksPassing: false,
+          inMergeQueue: true,
+          mergeQueueEnabled: true,
+          unresolvedThreads: 2,
+          conversationResolutionRequired: true,
+        }),
+      ],
+    })
+    vi.mocked(api.getPullRequestLabels).mockResolvedValue({
+      selected: [{ name: "do-not-merge", color: "ff0000", description: null }],
+      available: [],
+    })
+    let finish!: (result: PullRequestActionResult) => void
+    vi.mocked(api.mergePullRequest).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const client = makeQueryClient()
+    mount(client)
+    const card = (await screen.findByText("Change 1")).closest("li")!
+    await chooseMergeMethod(1, "Squash merge")
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Merge method for PR #1" }),
+      { key: "Enter", code: "Enter" }
+    )
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /Merge without waiting/ })
+    )
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      within(dialog).getByText(/This PR is labeled do-not-merge/)
+    ).toBeTruthy()
+    expect(
+      within(dialog).getByText(/Conversations will not be resolved/)
+    ).toBeTruthy()
+    expect(api.mergePullRequest).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    expect(api.mergePullRequest).not.toHaveBeenCalled()
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Merge method for PR #1" }),
+      { key: "Enter", code: "Enter" }
+    )
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /Merge without waiting/ })
+    )
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Bypass rules and merge",
+      })
+    )
+    await waitFor(() =>
+      expect(api.mergePullRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ number: 1, headSha: "a".repeat(40) }),
+        "squash",
+        false,
+        false,
+        true
+      )
+    )
+    expect(within(card).queryByText(/^Merged ·/)).toBeNull()
+    finish({ action: "merge", done: true })
+    expect(await within(card).findByText(/^Merged ·/)).toBeTruthy()
+    await act(async () => {
+      client.setQueryData(
+        pullRequestStatusQuery("octocat", pull(1)).queryKey,
+        pull(1, { state: "closed" })
+      )
+    })
+    expect(within(card).getByText(/^Merged ·/)).toBeTruthy()
+    expect(api.disablePullRequestAutoMerge).not.toHaveBeenCalled()
+  })
 
   it.each([false, true])(
     "asks to resolve required conversations before merging (auto-merge: %s)",
@@ -427,7 +533,123 @@ describe("My PRs", () => {
         expect(api.mergePullRequest).toHaveBeenCalledWith(
           expect.objectContaining({ number: 1 }),
           "squash",
-          true
+          true,
+          autoMerge,
+          false
+        )
+      )
+    }
+  )
+
+  it.each([
+    ["Squash merge", "Squash and merge", "squash", false, 0],
+    ["Merge commit", "Merge", "merge", false, 0],
+    ["Rebase merge", "Rebase and merge", "rebase", false, 0],
+    ["Squash merge", "Enable auto-merge", "squash", true, 0],
+    ["Squash merge", "Squash and merge", "squash", false, 2],
+  ] as const)(
+    "confirms do-not-merge before %s (%s, auto-merge: %s, conversations: %s)",
+    async (choice, button, method, autoMerge, unresolvedThreads) => {
+      vi.mocked(api.getPullRequestLabels).mockResolvedValue({
+        selected: [
+          { name: "do-not-merge", color: "ff0000", description: null },
+        ],
+        available: [],
+      })
+      vi.mocked(api.openPullRequests).mockResolvedValue({
+        ...payload,
+        pullRequests: [
+          pull(1, {
+            ci: autoMerge ? "pending" : "passing",
+            unresolvedThreads,
+            conversationResolutionRequired: true,
+          }),
+        ],
+      })
+      vi.mocked(api.mergePullRequest).mockResolvedValue({
+        action: "merge",
+        done: true,
+      })
+      mount()
+      await screen.findByText("Change 1")
+      await chooseMergeMethod(1, choice)
+      fireEvent.click(screen.getByRole("button", { name: button }))
+      let dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText("PR #1 is labeled do-not-merge")
+      ).toBeTruthy()
+      expect(api.mergePullRequest).not.toHaveBeenCalled()
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+      expect(api.mergePullRequest).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole("button", { name: button }))
+      dialog = await screen.findByRole("dialog")
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name:
+            unresolvedThreads > 0
+              ? "Resolve and merge"
+              : autoMerge
+                ? "Enable auto-merge anyway"
+                : "Merge anyway",
+        })
+      )
+      await waitFor(() =>
+        expect(api.mergePullRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ number: 1 }),
+          method,
+          unresolvedThreads > 0,
+          autoMerge,
+          false
+        )
+      )
+    }
+  )
+
+  it.each([false, true])(
+    "confirms when labels cannot be checked (auto-merge: %s)",
+    async (autoMerge) => {
+      vi.mocked(api.getPullRequestLabels).mockRejectedValue(
+        new Error("Unavailable")
+      )
+      vi.mocked(api.openPullRequests).mockResolvedValue({
+        ...payload,
+        pullRequests: [pull(1, { ci: autoMerge ? "pending" : "passing" })],
+      })
+      vi.mocked(api.mergePullRequest).mockResolvedValue({
+        action: "merge",
+        done: true,
+      })
+      const client = makeQueryClient()
+      client.setQueryData(["pullRequestLabels", "acme", "app", 1], {
+        selected: [],
+        available: [],
+      })
+      mount(client)
+      await screen.findByText("Change 1")
+      await chooseMergeMethod(1, "Squash merge")
+      expect(api.getPullRequestLabels).not.toHaveBeenCalled()
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: autoMerge ? "Enable auto-merge" : "Squash and merge",
+        })
+      )
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText("Could not check labels on PR #1")
+      ).toBeTruthy()
+      expect(api.mergePullRequest).not.toHaveBeenCalled()
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: autoMerge ? "Enable auto-merge anyway" : "Merge anyway",
+        })
+      )
+      await waitFor(() =>
+        expect(api.mergePullRequest).toHaveBeenCalledWith(
+          expect.objectContaining({ number: 1 }),
+          "squash",
+          false,
+          autoMerge,
+          false
         )
       )
     }
@@ -447,18 +669,328 @@ describe("My PRs", () => {
     vi.mocked(api.mergePullRequest).mockResolvedValue({
       action: "merge",
       done: true,
+      auto_merge: true,
     })
     mount()
     await screen.findByText("Change 1")
     await chooseMergeMethod(1, "Squash merge")
     fireEvent.click(screen.getByRole("button", { name: "Enable auto-merge" }))
     expect(
-      await screen.findByRole("button", { name: "Auto-merge enabled" })
+      await screen.findByRole("button", { name: "Disable auto-merge" })
     ).toBeTruthy()
     expect(screen.queryByText(/^Merged ·/)).toBeNull()
     expect(toast.success).toHaveBeenCalledWith(
       "Auto-merge enabled for acme/app#1"
     )
+    vi.mocked(api.disablePullRequestAutoMerge).mockResolvedValue({
+      action: "disable-auto-merge",
+      done: true,
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Disable auto-merge" }))
+    expect(
+      await screen.findByRole("button", { name: "Enable auto-merge" })
+    ).toBeTruthy()
+    expect(api.disablePullRequestAutoMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ number: 1 })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Enable auto-merge" }))
+    expect(
+      await screen.findByRole("button", { name: "Disable auto-merge" })
+    ).toBeTruthy()
+    expect(api.mergePullRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it("shares auto-merge changes between controls and after remounting", async () => {
+    const initial = pull(1, {
+      autoMerge: true,
+      ci: "pending",
+      requiredChecksPassing: false,
+    })
+    const client = makeQueryClient()
+    client.setQueryData(
+      pullRequestStatusQuery("octocat", initial).queryKey,
+      initial
+    )
+    vi.mocked(api.pullRequestStatus).mockResolvedValue(initial)
+    let finishDisable!: (result: PullRequestActionResult) => void
+    vi.mocked(api.disablePullRequestAutoMerge)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishDisable = resolve
+          })
+      )
+      .mockResolvedValue({ action: "disable-auto-merge", done: true })
+    vi.mocked(api.mergePullRequest).mockResolvedValue({
+      action: "merge",
+      done: true,
+      auto_merge: true,
+    })
+    function Controls() {
+      const { data } = useQuery({
+        ...pullRequestStatusQuery("octocat", initial),
+        staleTime: Infinity,
+      })
+      return data ? (
+        <>
+          <MergePullRequest pr={data} />
+          <MergePullRequest pr={data} />
+        </>
+      ) : null
+    }
+    const view = (
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <Controls />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    const rendered = render(view)
+    let finishStatus!: (status: OpenPullRequest) => void
+    vi.mocked(api.pullRequestStatus).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStatus = resolve
+        })
+    )
+    void client.refetchQueries({
+      queryKey: pullRequestStatusQuery("octocat", initial).queryKey,
+    })
+    await waitFor(() => expect(api.pullRequestStatus).toHaveBeenCalled())
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Disable auto-merge" })[0]!
+    )
+    await waitFor(() =>
+      expect(api.disablePullRequestAutoMerge).toHaveBeenCalled()
+    )
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Disable auto-merge",
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(true)
+    await act(async () => {
+      finishDisable({ action: "disable-auto-merge", done: true })
+    })
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: "Enable auto-merge" })
+      ).toHaveLength(2)
+    )
+    await act(async () => {
+      finishStatus(initial)
+    })
+    expect(
+      screen.getAllByRole("button", { name: "Enable auto-merge" })
+    ).toHaveLength(2)
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Enable auto-merge" })[1]!
+    )
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: "Disable auto-merge" })
+      ).toHaveLength(2)
+    )
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Disable auto-merge" })[0]!
+    )
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: "Enable auto-merge" })
+      ).toHaveLength(2)
+    )
+    rendered.unmount()
+    render(view)
+    expect(
+      screen.getAllByRole("button", { name: "Enable auto-merge" })
+    ).toHaveLength(2)
+  })
+
+  it("keeps the list's cached state after disabling and remounting", async () => {
+    const initial = pull(1, {
+      autoMerge: true,
+      ci: "pending",
+      requiredChecksPassing: false,
+    })
+    vi.mocked(api.openPullRequests).mockResolvedValue({
+      ...payload,
+      pullRequests: [initial],
+    })
+    vi.mocked(api.disablePullRequestAutoMerge).mockResolvedValue({
+      action: "disable-auto-merge",
+      done: true,
+    })
+    window.localStorage.setItem("open-swe.reviews.mergeMethod", "squash")
+    const client = makeQueryClient()
+    const rendered = mount(client)
+    await waitFor(() => expect(api.repoMergeMethods).toHaveBeenCalled())
+    await act(async () => {})
+    let finishList!: (result: typeof payload) => void
+    vi.mocked(api.openPullRequests).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishList = resolve
+        })
+    )
+    void client.refetchQueries({ queryKey: ["open-pull-requests"] })
+    await waitFor(() => expect(api.openPullRequests).toHaveBeenCalledTimes(2))
+    const disable = await screen.findByRole("button", {
+      name: "Disable auto-merge",
+    })
+    await waitFor(() =>
+      expect((disable as HTMLButtonElement).disabled).toBe(false)
+    )
+    fireEvent.click(disable)
+    await waitFor(() =>
+      expect(api.disablePullRequestAutoMerge).toHaveBeenCalled()
+    )
+    await screen.findByRole("button", { name: "Enable auto-merge" })
+    await act(async () => {
+      finishList({ ...payload, pullRequests: [initial] })
+    })
+    expect(
+      screen.getByRole("button", { name: "Enable auto-merge" })
+    ).toBeTruthy()
+    rendered.unmount()
+    mount(client)
+    expect(
+      await screen.findByRole("button", { name: "Enable auto-merge" })
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole("button", { name: "Disable auto-merge" })
+    ).toBeNull()
+  })
+
+  it("shares queue entry across controls, remounts and status refreshes", async () => {
+    const initial = pull(1, { ci: "pending", requiredChecksPassing: false })
+    const client = makeQueryClient()
+    const query = pullRequestStatusQuery("octocat", initial)
+    client.setQueryData(query.queryKey, initial)
+    vi.mocked(api.mergePullRequest).mockResolvedValue({
+      action: "merge",
+      done: true,
+      auto_merge: true,
+      in_merge_queue: true,
+    })
+    function Controls() {
+      const { data } = useQuery({ ...query, staleTime: Infinity })
+      return data && data.state === "open" ? (
+        <>
+          <MergePullRequest pr={data} />
+          <MergePullRequest pr={data} />
+        </>
+      ) : null
+    }
+    const view = (
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <Controls />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    const rendered = render(view)
+    const buttons = await screen.findAllByRole("button", {
+      name: "Enable auto-merge",
+    })
+    fireEvent.click(buttons[0]!)
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Queued" })).toHaveLength(2)
+    )
+    rendered.unmount()
+    render(view)
+    expect(screen.getAllByRole("button", { name: "Queued" })).toHaveLength(2)
+    await act(async () => {
+      client.setQueryData(query.queryKey, initial)
+    })
+    await screen.findAllByRole("button", { name: "Enable auto-merge" })
+    await act(async () => {
+      client.setQueryData(query.queryKey, { ...initial, state: "merged" })
+    })
+    await waitFor(() => expect(screen.queryByRole("button")).toBeNull())
+  })
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    "keeps the PR open while waiting (queue enabled: %s, in queue: %s)",
+    async (queueEnabled, inQueue) => {
+      window.localStorage.setItem("open-swe.reviews.mergeMethod", "merge")
+      vi.mocked(api.openPullRequests).mockResolvedValue({
+        ...payload,
+        pullRequests: [
+          pull(1, {
+            reviewDecision: "approved",
+            mergeQueueEnabled: queueEnabled,
+          }),
+        ],
+      })
+      let finish!: (result: PullRequestActionResult) => void
+      vi.mocked(api.mergePullRequest).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          })
+      )
+      mount()
+      await screen.findByText("Change 1")
+      await chooseMergeMethod(1, "Squash merge")
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: queueEnabled ? "Merge" : "Squash and merge",
+        })
+      )
+      await waitFor(() => expect(api.mergePullRequest).toHaveBeenCalled())
+      await screen.findByText(queueEnabled ? "Merging…" : /^Merged ·/)
+      expect(screen.queryAllByText(/^Merged ·/)).toHaveLength(
+        queueEnabled ? 0 : 1
+      )
+      finish({
+        action: "merge",
+        done: true,
+        auto_merge: true,
+        in_merge_queue: inQueue,
+      })
+      expect(
+        await screen.findByRole("button", {
+          name: inQueue ? "Queued" : "Disable auto-merge",
+        })
+      ).toBeTruthy()
+      expect(screen.queryByText(/^Merged ·/)).toBeNull()
+      const saved = window.localStorage.getItem("open-swe.reviews.mergeMethod")
+      expect(saved).toBe(queueEnabled || inQueue ? "merge" : "squash")
+      expect(toast.success).toHaveBeenCalledWith(
+        inQueue ? "Queued acme/app#1" : "Auto-merge enabled for acme/app#1"
+      )
+    }
+  )
+
+  it("restores enabled auto-merge when disabling an existing request fails", async () => {
+    vi.mocked(api.openPullRequests).mockResolvedValue({
+      ...payload,
+      pullRequests: [pull(1, { autoMerge: true })],
+    })
+    vi.mocked(api.disablePullRequestAutoMerge).mockRejectedValue(
+      new Error("Permission denied")
+    )
+    mount()
+    await screen.findByRole("button", { name: "Disable auto-merge" })
+    await act(async () => {})
+    fireEvent.click(screen.getByRole("button", { name: "Disable auto-merge" }))
+    await waitFor(() =>
+      expect(api.disablePullRequestAutoMerge).toHaveBeenCalled()
+    )
+    await expectReported(
+      "Could not disable auto-merge for acme/app#1",
+      "Permission denied"
+    )
+    expect(
+      screen.getByRole("button", { name: "Disable auto-merge" })
+    ).toBeTruthy()
+    expect(api.mergePullRequest).not.toHaveBeenCalled()
   })
 
   it("rolls a rejected merge back to a retry action", async () => {
@@ -488,7 +1020,7 @@ describe("My PRs", () => {
     ).toBe(false)
   })
 
-  it("opens the preview from the title, keeps the number plain, and provides explicit destination links", async () => {
+  it("opens the selected PR from the title without a separate reviewer destination", async () => {
     mount()
     const title = await screen.findByText("Change 1")
     const card = title.closest("li")!
@@ -502,9 +1034,7 @@ describe("My PRs", () => {
     expect(
       within(card).getByRole("link", { name: "GitHub" }).getAttribute("href")
     ).toBe("https://github.com/acme/app/pull/1")
-    expect(
-      within(card).getByRole("link", { name: "Reviewer" }).getAttribute("href")
-    ).toBe("/agents/reviews/acme/app/1")
+    expect(within(card).queryByRole("link", { name: "Reviewer" })).toBeNull()
   })
   it("shows pending checks as Pending alongside the PR's other conditions", async () => {
     vi.mocked(api.openPullRequests).mockResolvedValue({
@@ -547,10 +1077,10 @@ describe("My PRs", () => {
     expect(within(shown[2]!).queryByText("Conflicted")).toBeNull()
     const fixes = (card: HTMLElement) =>
       within(card)
-        .queryAllByRole("button", { name: "Fix" })
+        .queryAllByRole("button", { name: "Fix up" })
         .map((button) => button.textContent)
-    expect(fixes(shown[0]!)).toEqual(["Fix"])
-    expect(fixes(shown[1]!)).toEqual(["Fix"])
+    expect(fixes(shown[0]!)).toEqual(["Fix up"])
+    expect(fixes(shown[1]!)).toEqual(["Fix up"])
     expect(fixes(shown[2]!)).toEqual([])
   })
 
@@ -745,7 +1275,8 @@ describe("My PRs", () => {
       ],
     })
     mount()
-    expect(await screen.findByRole("status")).toHaveProperty(
+    // The loading placeholder is a named status; the timeout notice is not.
+    expect(await screen.findByRole("status", { name: "" })).toHaveProperty(
       "textContent",
       expect.stringContaining("Filter by repository")
     )
@@ -788,7 +1319,7 @@ describe("My PRs", () => {
     expect(within(card).queryByRole("button", { name: MERGE })).toBeNull()
   })
 
-  it("dims the merge and names a required check that never reported", async () => {
+  it("offers auto-merge and names a required check that never reported", async () => {
     vi.mocked(api.openPullRequests).mockResolvedValue({
       ...payload,
       pullRequests: [
@@ -804,13 +1335,38 @@ describe("My PRs", () => {
     expect(
       within(card).getByText("Merge blocked: Lint Final Results never reported")
     ).toBeTruthy()
-    expect(within(card).getByRole("button", { name: MERGE })).toHaveProperty(
-      "disabled",
-      true
-    )
+    expect(
+      within(card).getByRole("button", { name: "Enable auto-merge" })
+    ).toHaveProperty("disabled", false)
     expect(
       within(card).getByRole("button", { name: "Update branch" })
     ).toBeTruthy()
+  })
+
+  it("shows a required review without enabling Fix up", async () => {
+    vi.mocked(api.openPullRequests).mockResolvedValue({
+      ...payload,
+      pullRequests: [
+        pull(1, {
+          reviewRequired: true,
+          reviewDecision: "approved",
+          requiredChecksPassing: false,
+        }),
+      ],
+    })
+    mount()
+    expect(await screen.findByText("Review required")).toBeTruthy()
+    expect(screen.queryByText("Approved")).toBeNull()
+    expect(screen.queryByText("Failing")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Fix up" })).toBeNull()
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Enable auto-merge" })
+      ).toHaveProperty("disabled", false)
+    )
+    expect(
+      screen.getByRole("button", { name: "Request review in Slack" })
+    ).toHaveProperty("disabled", false)
   })
 
   it("offers both a fix and a merge when only optional checks fail", async () => {
@@ -829,7 +1385,7 @@ describe("My PRs", () => {
     const card = (await screen.findByText("Change 1")).closest("li")!
     expect(within(card).getByText("Failing")).toBeTruthy()
     expect(within(card).getByText("Browser E2E")).toBeTruthy()
-    expect(within(card).getByRole("button", { name: "Fix" })).toBeTruthy()
+    expect(within(card).getByRole("button", { name: "Fix up" })).toBeTruthy()
     expect(within(card).getByRole("button", { name: MERGE })).toBeTruthy()
   })
 
@@ -870,7 +1426,7 @@ describe("My PRs", () => {
     ["pending", true],
     ["none", true],
   ] as const)(
-    "gates merging on required checks (%s, %s), not optional CI",
+    "waits for required checks (%s, %s), not optional CI, before merging",
     async (ci, requiredChecksPassing) => {
       vi.mocked(api.openPullRequests).mockResolvedValue({
         ...payload,
@@ -881,16 +1437,12 @@ describe("My PRs", () => {
       mount()
       await screen.findByText("Change 1")
       const button = await screen.findByRole("button", {
-        name: "Squash and merge",
+        name:
+          requiredChecksPassing === true
+            ? "Squash and merge"
+            : "Enable auto-merge",
       })
-      await waitFor(() =>
-        expect(button).toHaveProperty(
-          "disabled",
-          requiredChecksPassing !== true
-        )
-      )
-      if (requiredChecksPassing !== true) fireEvent.click(button)
-      expect(api.mergePullRequest).not.toHaveBeenCalled()
+      await waitFor(() => expect(button).toHaveProperty("disabled", false))
     }
   )
 
@@ -964,13 +1516,20 @@ describe("My PRs", () => {
     mount()
     await screen.findByText("Change 2")
     const card = screen.getByText("Change 1").closest("li")!
-    // The only allowed method needs no menu; the button already names it.
     const only = await within(card).findByRole("button", {
       name: "Squash and merge",
     })
+    fireEvent.keyDown(
+      within(card).getByRole("button", { name: "Merge method for PR #1" }),
+      { key: "Enter", code: "Enter" }
+    )
+    const menu = await screen.findByRole("menu")
+    expect(within(menu).queryAllByRole("menuitemradio")).toHaveLength(0)
     expect(
-      within(card).queryByRole("button", { name: "Merge method for PR #1" })
-    ).toBeNull()
+      within(menu).getByRole("menuitem", { name: /Merge without waiting/ })
+    ).toBeTruthy()
+    fireEvent.keyDown(menu, { key: "Escape", code: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
     expect(await mergeOptions(2)).toEqual(["Squash merge", "Merge commit"])
     const pair = screen.getByText("Change 2").closest("li")!
     expect(
@@ -981,6 +1540,8 @@ describe("My PRs", () => {
       expect(api.mergePullRequest).toHaveBeenCalledWith(
         expect.objectContaining({ number: 1 }),
         "squash",
+        false,
+        false,
         false
       )
     )
@@ -1012,6 +1573,8 @@ describe("My PRs", () => {
       expect(api.mergePullRequest).toHaveBeenCalledWith(
         expect.objectContaining({ number: 1 }),
         "rebase",
+        false,
+        false,
         false
       )
     )
@@ -1192,31 +1755,31 @@ describe("My PRs", () => {
 
   it("queues the fix in the background and keeps the button disabled after success", async () => {
     let resolve!: (value: PullRequestThreadResult) => void
-    vi.mocked(api.fixPullRequest).mockImplementation(
+    vi.mocked(api.fixUpPullRequest).mockImplementation(
       () =>
         new Promise((done) => {
           resolve = done
         })
     )
     mount()
-    fireEvent.click(await screen.findByRole("button", { name: "Fix" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Fix up" }))
     expect(
       (
         (await screen.findByRole("button", {
-          name: "Fix queued",
+          name: "Fix up queued",
         })) as HTMLButtonElement
       ).disabled
     ).toBe(true)
-    expect(api.fixPullRequest).toHaveBeenCalledWith(
+    expect(api.fixUpPullRequest).toHaveBeenCalledWith(
       expect.objectContaining(payload.pullRequests[0]!)
     )
     resolve({ thread_id: "fix-thread", already_running: false })
     const queued = await screen.findByRole("button", {
-      name: "Fix queued",
+      name: "Fix up queued",
     })
     expect((queued as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(queued)
-    expect(api.fixPullRequest).toHaveBeenCalledTimes(1)
+    expect(api.fixUpPullRequest).toHaveBeenCalledTimes(1)
     expect(navigate).not.toHaveBeenCalled()
     expect(cards()).toHaveLength(2)
   })
@@ -1337,7 +1900,7 @@ describe("My PRs", () => {
     expect(
       within(shown[3]!).getByText("1 unresolved conversation")
     ).toBeTruthy()
-    const address = "Address comments"
+    const address = "Fix up"
     expect(
       await within(shown[0]!).findByRole("button", { name: address })
     ).toBeTruthy()
@@ -1359,7 +1922,7 @@ describe("My PRs", () => {
       pullRequests: [pull(1, { unresolvedThreads: 2 })],
     })
     let resolve!: (value: PullRequestThreadResult) => void
-    vi.mocked(api.addressPullRequestComments).mockImplementation(
+    vi.mocked(api.fixUpPullRequest).mockImplementation(
       () =>
         new Promise((done) => {
           resolve = done
@@ -1367,29 +1930,25 @@ describe("My PRs", () => {
     )
     mount()
     const card = (await screen.findByText("Change 1")).closest("li")!
-    fireEvent.click(
-      await within(card).findByRole("button", { name: "Address comments" })
-    )
+    fireEvent.click(await within(card).findByRole("button", { name: "Fix up" }))
     expect(
       (
         (await within(card).findByRole("button", {
-          name: "Comment fixes queued",
+          name: "Fix up queued",
         })) as HTMLButtonElement
       ).disabled
     ).toBe(true)
-    expect(api.addressPullRequestComments).toHaveBeenCalledWith(
+    expect(api.fixUpPullRequest).toHaveBeenCalledWith(
       expect.objectContaining({ number: 1, unresolvedThreads: 2 })
     )
     resolve({ thread_id: "comments-thread", already_running: false })
     const queued = await within(card).findByRole("button", {
-      name: "Comment fixes queued",
+      name: "Fix up queued",
     })
     expect((queued as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(queued)
-    expect(api.addressPullRequestComments).toHaveBeenCalledTimes(1)
-    expect(toast.success).toHaveBeenCalledWith(
-      "Queued comment fixes for acme/app#1"
-    )
+    expect(api.fixUpPullRequest).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledWith("Fix up queued for acme/app#1")
     expect(navigate).not.toHaveBeenCalled()
   })
 
@@ -1398,21 +1957,17 @@ describe("My PRs", () => {
       ...payload,
       pullRequests: [pull(1, { unresolvedThreads: 1 })],
     })
-    vi.mocked(api.addressPullRequestComments).mockResolvedValue({
+    vi.mocked(api.fixUpPullRequest).mockResolvedValue({
       thread_id: "comments-thread",
       already_running: true,
     })
     mount()
     const card = (await screen.findByText("Change 1")).closest("li")!
-    fireEvent.click(
-      await within(card).findByRole("button", { name: "Address comments" })
-    )
+    fireEvent.click(await within(card).findByRole("button", { name: "Fix up" }))
     expect(
-      await within(card).findByRole("button", { name: "Addressing comments" })
+      await within(card).findByRole("button", { name: "Fixing up" })
     ).toBeTruthy()
-    expect(toast.success).toHaveBeenCalledWith(
-      "Already addressing comments for acme/app#1"
-    )
+    expect(toast.success).toHaveBeenCalledWith("Already fixing up acme/app#1")
   })
 
   it("does not address comments while the associated thread is running", async () => {
@@ -1423,13 +1978,11 @@ describe("My PRs", () => {
     })
     mount()
     const button = await screen.findByRole("button", {
-      name: "Addressing comments",
+      name: "Fixing up",
     })
     expect((button as HTMLButtonElement).disabled).toBe(true)
-    expect(
-      screen.queryByRole("button", { name: "Address comments" })
-    ).toBeNull()
+    expect(screen.queryByRole("button", { name: "Fix up" })).toBeNull()
     fireEvent.click(button)
-    expect(api.addressPullRequestComments).not.toHaveBeenCalled()
+    expect(api.fixUpPullRequest).not.toHaveBeenCalled()
   })
 })

@@ -8,12 +8,13 @@ run in, and what its middleware does around each model call.
 """
 
 from collections.abc import Mapping
-from typing import Final, Literal, Self
+from typing import ClassVar, Final, Literal, Self
 
-from pydantic import BaseModel, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, JsonValue, model_validator
 
 from runtime_api.connections import ConnectionRef
 from runtime_api.provenance import Provenance
+from runtime_api.sandbox_setup import GitIdentity
 
 # The runtime's own tool that finds the run's operations by what they do.
 SEARCH_TOOLS = "search_tools"
@@ -35,7 +36,7 @@ class RunModels(BaseModel):
 
     model: ModelSpec
     subagent_model: ModelSpec
-    use_gateway: bool
+
     # The models the graph's model routing picks between, by route name.
     routes: dict[str, ModelSpec] = {}
     # What a text-only model's call goes to once the conversation holds an image.
@@ -107,8 +108,64 @@ class SandboxCreate(BaseModel):
     mem_bytes: int | None = None
     idle_ttl_seconds: int
     delete_after_stop_seconds: int
-    # Create-request fields the SDK does not model, such as ``preserve_memory_on_stop``.
+    # The other ``create_sandbox`` arguments, from ``EXTRA_FIELDS``.
     extra_fields: dict[str, JsonValue] = {}
+    # The environment of every command in the sandbox, set in its own run config. None of it
+    # is a credential.
+    env_vars: dict[str, str] = {}
+
+    #: The LangSmith SDK ``create_sandbox`` arguments ``extra_fields`` may hold: the ones Robin
+    #: handles beyond the snapshot, VM size and TTLs above.
+    EXTRA_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "access_delegation",
+            "delete_after_stop_seconds",
+            "idle_ttl_seconds",
+            "mount_config",
+            "preserve_memory_on_stop",
+            "proxy_config",
+            "run_config",
+            "tag_value_ids",
+        }
+    )
+
+    def create_arguments(self) -> dict[str, JsonValue]:
+        """``extra_fields`` that go to ``create_sandbox``: only ``EXTRA_FIELDS``, never null.
+
+        Only a record saved before ``EXTRA_FIELDS`` was enforced holds any other key.
+        """
+        arguments: dict[str, JsonValue] = {
+            key: value
+            for key, value in self.extra_fields.items()
+            if key in self.EXTRA_FIELDS and value is not None
+        }
+        if "mount_config" in arguments:
+            arguments["mount_config"] = self.mount_config_argument(arguments["mount_config"])
+        return arguments
+
+    @staticmethod
+    def mount_config_argument(mount_config: JsonValue) -> JsonValue:
+        """``mount_config`` without its JSON nulls in ``auth``; anything else goes as it is.
+
+        The sandbox API reads a null as absent, so a proxy rule can authenticate the mount
+        instead, but the SDK's ``create_sandbox`` counts a null provider as set and rejects
+        it next to that provider's proxy rule (and a null ``auth`` outright).
+        """
+        if not isinstance(mount_config, dict) or "auth" not in mount_config:
+            return mount_config
+        auth = mount_config["auth"]
+        if auth is None:
+            without_auth: dict[str, JsonValue] = {
+                key: value for key, value in mount_config.items() if key != "auth"
+            }
+            return without_auth
+        if not isinstance(auth, dict):
+            return mount_config
+        providers: dict[str, JsonValue] = {
+            provider: value for provider, value in auth.items() if value is not None
+        }
+        with_providers: dict[str, JsonValue] = {**mount_config, "auth": providers}
+        return with_providers
 
 
 class SandboxSpec(BaseModel):
@@ -116,18 +173,20 @@ class SandboxSpec(BaseModel):
 
     create: SandboxCreate
     sandbox_id: str | None = None
-    # The connection the sandbox's GitHub rules carry, where MDA writes its proxy config
-    # (``runtime_api.sandbox_proxy``); None leaves the proxy config to the backend.
-    github_proxy: ConnectionRef | None = None
-
-    @field_validator("github_proxy")
-    @classmethod
-    def _deployments_own(cls, github: ConnectionRef | None) -> ConnectionRef | None:
-        # Everyone who runs on the thread, and its task workers, works in the sandbox, and
-        # its proxy config outlives the run: one person's token there reaches them all.
-        if github is not None and github.owner != "agent":
-            raise ValueError("A sandbox's GitHub proxy reads the deployment's own connection")
-        return github
+    # The sandbox's whole proxy config, which MDA creates it with and writes before its
+    # commands. It is the same on every run, so it holds no credential: commands get
+    # GitHub's and the tool channel's from the backend's proxy callback, which LangSmith
+    # asks as they go out. None leaves the sandbox's own alone, as an external one keeps
+    # its harness's.
+    proxy_config: dict[str, JsonValue] | None = None
+    # Whether the run may prepare before its sandbox is open and report the sandbox afterwards
+    # (``runtime_api.loop.BIND_SANDBOX``), so its first model call waits for neither: nothing
+    # preparing this run does reaches the sandbox. A backend from before that call says nothing.
+    bind_after_prepare: bool = False
+    # Who commits in the sandbox: the thread's owner, written before the run's first command.
+    git_identity: GitIdentity = GitIdentity()
+    # Externally created LangSmith sandbox (evals): adopt as-is without setup, proxy writes, or replacement.
+    external: bool = False
 
 
 ShellGuard = Literal["shell_commands"]
@@ -137,11 +196,6 @@ FileCheck = Literal["image_reads", "agents_md"]
 class FilesSpec(BaseModel):
     """Where the run's file and shell tools act, and what is checked around them."""
 
-    # Paths under these prefixes are the backend's (skills, offloaded images): the
-    # runtime's file tools reach them through the files API rather than the sandbox.
-    backend_paths: list[str] = []
-    # Where large results and binary reads are offloaded; the backend serves blobs under it.
-    artifacts_root: str = "/"
     # Shell commands the backend checks before they run: its push and pull request guards.
     guards: list[ShellGuard] = []
     # Checks on what ``read_file`` returns.
@@ -215,17 +269,11 @@ class ReplyRules(Nudging):
     max_nudges: int = 2
 
 
-class CliResultRules(Nudging):
-    """A bridged CLI waits on the run's ``tool`` call; a run that ends without one is asked
-    again, ``nudge`` up to ``max_nudges`` times."""
-
-    tool: str
-    max_nudges: int = 2
-
-
 # A route a run's model calls take: the classifier picks one of ``ROUTES``; ``default``
 # is the run's own model.
 RouteName = Literal["fast", "balanced", "performance", "default"]
+# A model experiment's arm: a fixed tier, or the classifier ("router").
+ModelExperiment = Literal["balanced", "performance", "router"]
 ROUTES: Final[tuple[RouteName, ...]] = ("fast", "balanced", "performance")
 
 
@@ -251,6 +299,9 @@ class RoutingRules(BaseModel):
 
     # None keeps the default route; "fast" never asks the classifier.
     mode: Literal["auto", "fast"] | None = None
+    # The classifier still reads the thread's first request so its trace records the task
+    # type, but nothing is routed by it.
+    shadow: bool = False
     # The model each route stands for, which the dashboard shows, and the effort it runs at.
     route_model_ids: dict[str, str] = {}
     route_efforts: dict[str, str | None] = {}
@@ -286,36 +337,35 @@ class LoopRules(BaseModel):
     # How the run picks each call's route; None: it picks none.
     routing: RoutingRules | None = None
     reply: ReplyRules | None = None
-    cli_result: CliResultRules | None = None
     # The task the thread may belong to, as its coordinator or a worker, as the run
     # started; None where it may not. A coordinator's first worker hands back the context
     # of the task it then joined (``runtime_api.workers.Worker``).
     task_context: TaskContext | None = None
-    # Deprecated: what an MDA deployment from before ``task_context`` reads to ask the
-    # backend's ``task_context`` before each call. Remove once every deployment reads
-    # ``task_context``.
-    task_coordination: bool = False
     # Whether the run may wait on a call its client runs itself.
     client_tools: bool = False
     # Open SWE's own framing of the tools the client runs, after every call's system prompt;
     # never words the client wrote, which reach the model only in the conversation.
     client_prompt: str = ""
-    # Whether the backend gives the sandbox's GitHub proxy a fresh token before each model
-    # call: a task worker's, the token of its coordinator's sandbox.
-    refresh_github_proxy: bool = False
-    # Whether the run investigates an incident: before each model call the backend checks the
-    # incident still wants it and gives the call its instructions (``incident_context``).
-    incident: bool = False
     # Whether the run was asked only to offload the conversation: it summarizes it and ends.
     offload_conversation: bool = False
     # What the run's end does besides recording it.
     at_end: list[Literal["settle_review_check", "finish_scout_plan"]] = []
+    # The model experiment's arm the run is on; None outside the experiment.
+    model_experiment: ModelExperiment | None = None
+
+    @property
+    def routing_arm(self) -> Literal["active", "inactive"]:
+        """Whether the classifier routes the run's model calls."""
+        return "active" if self.routing is not None and self.routing.mode == "auto" else "inactive"
 
     @property
     def trace_tags(self) -> list[str]:
-        """The tags the run's trace carries: whether the classifier routes its model calls."""
-        active = self.routing is not None and self.routing.mode == "auto"
-        return [f"model_routing:{'active' if active else 'inactive'}"]
+        """The tags the run's trace carries: whether the classifier routes its model calls,
+        and the model experiment's tier the run is on."""
+        tags = [f"model_routing:{self.routing_arm}"]
+        if self.model_experiment is not None:
+            tags.append(f"model_experiment:{self.model_experiment}")
+        return tags
 
 
 class BrowserSpec(BaseModel):
@@ -323,6 +373,20 @@ class BrowserSpec(BaseModel):
 
     # The domains, each with its subdomains, it may install a sign-in session for.
     session_domains: list[str] = []
+
+
+class MemoryScope(BaseModel):
+    """Where a run was asked from, which decides what memory it may use (``rt.memory_policy``)."""
+
+    # ``public``: a public Slack channel inside the company.
+    # ``other``: anywhere else inside the company, like a DM, private channel or group DM.
+    # ``external``: anywhere people outside the company may see, or that couldn't be confirmed.
+    thread: Literal["public", "other", "external"] = "other"
+
+    @property
+    def internal(self) -> bool:
+        """Whether only people in the company can see the run's conversation."""
+        return self.thread != "external"
 
 
 class Catalog(BaseModel):
@@ -352,11 +416,10 @@ class Catalog(BaseModel):
     disabled: list[str] = []
     # Tools the model labels each call of, with what the label argument tells it.
     described: dict[str, str] = {}
-    # The thread's sandbox; None runs the file and shell tools through the files API alone.
+    # The thread's sandbox, which every run has; None only from a backend from before that,
+    # whose run MDA refuses.
     sandbox: SandboxSpec | None = None
     files: FilesSpec = FilesSpec()
-    # Whether each tool result is recorded as incident evidence, which the result then cites.
-    incident_evidence: bool = False
     # A review's browser; None gives a review none. The coding agent always has its own.
     browser: BrowserSpec | None = None
     # Where the Agent Server reports a launched worker's run ending; None launches none.
@@ -374,9 +437,11 @@ class Catalog(BaseModel):
     # catalog leaves out from code, and how the model reads the search.
     search_tools: bool = False
     search_tools_description: str | None = None
+    # Where the run was asked from, for its memory; None uses no memory.
+    memory: MemoryScope | None = None
     # The digest the backend keeps every tool the run may call by, which the run reads
-    # once per process to search and resolve them itself (``runtime_api.tool_search``);
-    # None searches on the backend.
+    # once per process to search and resolve them itself (``runtime_api.tool_search``).
+    # Every backend names one; a run with none finds nothing.
     tool_set: str | None = None
 
     def names_only(self) -> Catalog:

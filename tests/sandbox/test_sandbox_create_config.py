@@ -1,155 +1,234 @@
-"""Which workspace image a new sandbox boots from."""
+"""Pinned execution images and private sandbox authority."""
+
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from openswe.dashboard.execution_defaults import EXECUTION_DEFAULTS, ExecutionDefaults
+from openswe.execution import ExecutionProfile
 from openswe.sandboxes.lifecycle import SandboxCreateConfig
-from openswe.workspaces.store import Workspace
+
+
+@pytest.fixture
+def execution_defaults(monkeypatch: pytest.MonkeyPatch) -> ExecutionDefaults:
+    defaults = ExecutionDefaults()
+    monkeypatch.setattr(EXECUTION_DEFAULTS, "load", AsyncMock(return_value=defaults))
+    return defaults
 
 
 @pytest.mark.asyncio
-async def test_inherited_sandbox_tracks_default_without_changing_workspace_identity(
-    monkeypatch,
+async def test_global_defaults_are_pinned_and_public_metadata_cannot_expand_authority(
+    monkeypatch, execution_defaults: ExecutionDefaults
 ) -> None:
-    child_params = {
-        "proxy_config": {"rules": [{"name": "child-api", "match_hosts": ["child.example.com"]}]},
-        "tag_value_ids": ["00000000-0000-0000-0000-000000000001"],
-    }
-    child = Workspace(
-        slug="child",
-        inherit_default_sandbox=True,
-        prompt="Child instructions",
-        create_params=child_params,
-    )
-    default = Workspace(
-        slug="default",
-        update_script="git pull",
-        snapshot_status="ready",
-        snapshot_id="snap-1",
-        mem_bytes=1234,
-        create_params={
-            "preserve_memory_on_stop": False,
-            "proxy_config": {
-                "rules": [
-                    {
-                        "name": "aws",
-                        "type": "aws",
-                        "aws": {"role_arn": "arn:aws:iam::123456789012:role/DefaultOnly"},
-                    }
-                ]
+    execution_defaults.snapshot_id = "global-1"
+    execution_defaults.create_params = {"proxy_config": {"rules": [{"name": "original"}]}}
+    profile = await ExecutionProfile.resolve()
+    execution_defaults.snapshot_id = "global-2"
+    execution_defaults.create_params = {"proxy_config": {"rules": [{"name": "changed"}]}}
+    with ExecutionProfile.bind(profile):
+        pinned = await SandboxCreateConfig.resolve()
+        assert pinned.snapshot_id == "global-1"
+        assert pinned.proxy_config == {"rules": [{"name": "original"}]}
+        existing = await SandboxCreateConfig.for_thread(
+            {
+                "sandbox_id": "old",
+                "sandbox_base_proxy_config": {"rules": ["injected"]},
+                "sandbox_create_options": profile.create.model_dump(mode="json"),
             },
-            "env_vars": {"DEFAULT_SETTING": "default"},
-            "mount_config": {"mounts": []},
-        },
+            thread_id="thread-1",
+        )
+        assert existing.proxy_config == {}
+        assert existing.langsmith_options().extra_fields == {
+            "preserve_memory_on_stop": True,
+            "proxy_config": {},
+        }
+        assert (await existing.recreation_options()).snapshot_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["defaults", "base"])
+async def test_mda_recreation_tracks_the_image_without_changing_bound_authority(
+    monkeypatch, registry_db, execution_defaults: ExecutionDefaults, source: str
+) -> None:
+    from openswe.execution import SANDBOX_EXECUTION
+    from openswe.sandboxes.managed import ManagedSandbox
+
+    execution_defaults.create_params = {"proxy_config": {"rules": [{"name": "original"}]}}
+    execution_defaults.snapshot_id = "snapshot-1"
+    monkeypatch.setattr("openswe.threads.store.THREADS.update", AsyncMock())
+    metadata = {"sandbox_id": "mda-sandbox", "sandbox_owner": "mda"}
+    monkeypatch.setattr(
+        "openswe.sandboxes.managed.get_sandbox_metadata", AsyncMock(return_value=metadata)
     )
+    config = (
+        SandboxCreateConfig(snapshot_id=None, create_params={"preserve_memory_on_stop": True})
+        if source == "base"
+        else await SandboxCreateConfig.resolve()
+    )
+    original = config.langsmith_options()
+    await SANDBOX_EXECUTION.bind("thread-1", "mda-sandbox", config.authority_profile(), {})
 
-    async def load(slug: str | None) -> Workspace:
-        return child if slug == "child" else default
-
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.load_workspace", load)
-    config = await SandboxCreateConfig.resolve("child")
-    assert config.snapshot_id == "snap-1"
-    assert config.resources == {"mem_bytes": 1234}
-    assert config.create_params == {**child_params, "preserve_memory_on_stop": True}
-    assert default.create_params["preserve_memory_on_stop"] is False
-    assert child.prompt == "Child instructions"
-    default.snapshot_id = "snap-2"
-    assert (await SandboxCreateConfig.resolve("child")).snapshot_id == "snap-2"
-    child.inherit_default_sandbox = False
-    assert (await SandboxCreateConfig.resolve("child")).snapshot_id is None
-    assert (await SandboxCreateConfig.resolve("child", source="base")).snapshot_id is None
+    for snapshot in ("snapshot-2", "snapshot-3"):
+        execution_defaults.snapshot_id = snapshot
+        execution_defaults.create_params = {"proxy_config": {"rules": [{"name": "new"}]}}
+        managed = await ManagedSandbox.for_thread("thread-1")
+        assert managed is not None and managed.sandbox_id == "mda-sandbox"
+        assert managed.create == original.model_copy(
+            update={"snapshot_id": None if source == "base" else snapshot}
+        )
+        connected = await SandboxCreateConfig.for_thread(metadata, thread_id="thread-1")
+        assert connected.langsmith_options() == original
+        assert connected.proxy_config == original.extra_fields.get("proxy_config")
 
 
 _HOST = "coordinator-1"
 _WORKER = {"task_id": "00000000-0000-0000-0000-000000000001", "sandbox_host_thread_id": _HOST}
+_UNBOUND = {"sandbox_id": None, "sandbox_base_proxy_config": None}
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("metadata", "host", "owner"),
+    ("metadata", "host", "owner", "sandbox_id", "written"),
     [
-        ({}, {}, "own"),
-        ({"sandbox_id": "mda-sandbox", "sandbox_owner": "mda"}, {}, "own"),
-        ({"sandbox_id": "backend-sandbox"}, {}, None),
-        # The sandbox the backend made is gone: this run starts in MDA's instead of failing.
-        ({"sandbox_id": "gone-sandbox"}, {}, "own"),
-        ({"sandbox_id": "bridge:abc"}, {}, None),
-        ({**_WORKER}, {"sandbox_id": "sandbox", "sandbox_owner": "mda"}, None),
+        ({}, {}, "own", None, []),
+        ({"sandbox_id": "mda-sandbox", "sandbox_owner": "mda"}, {}, "own", "mda-sandbox", []),
+        # Files a Slack message brought wait for preparing to write them in the sandbox.
         (
-            {**_WORKER, "sandbox_id": "sandbox"},
+            {"slack_files_pending": [{"url": "https://files.invalid/a", "path": "/tmp/a"}]},
+            {},
+            "own",
+            None,
+            [],
+        ),
+        # The sandbox the backend made becomes MDA's under its own name.
+        (
+            {"sandbox_id": "backend-sandbox"},
+            {},
+            "own",
+            "backend-sandbox",
+            [("thread-1", {"sandbox_owner": "mda"})],
+        ),
+        # The sandbox the backend made is gone: this run starts in MDA's instead of failing.
+        ({"sandbox_id": "gone-sandbox"}, {}, "own", None, [("thread-1", _UNBOUND)]),
+        # A sandbox of MDA's that is gone stays bound: nothing replaces it, a review's included.
+        (
+            {"sandbox_id": "gone-sandbox", "sandbox_owner": "mda"},
+            {},
+            "own",
+            "gone-sandbox",
+            [],
+        ),
+        # A worker shares the sandbox its coordinator is bound to now, whatever its own copy says.
+        ({**_WORKER}, {"sandbox_id": "sandbox", "sandbox_owner": "mda"}, _HOST, "sandbox", []),
+        (
+            {**_WORKER, "sandbox_id": "stale"},
             {"sandbox_id": "sandbox", "sandbox_owner": "mda"},
             _HOST,
+            "sandbox",
+            [],
         ),
-        ({**_WORKER, "sandbox_id": "sandbox"}, {"sandbox_id": "sandbox"}, None),
+        # The coordinator's sandbox the backend made is adopted for the coordinator.
+        (
+            {**_WORKER, "sandbox_id": "sandbox"},
+            {"sandbox_id": "sandbox"},
+            _HOST,
+            "sandbox",
+            [(_HOST, {"sandbox_owner": "mda"})],
+        ),
+        # Before the coordinator has one, MDA shares the sandbox it opens for the coordinator.
+        ({**_WORKER}, {}, _HOST, None, []),
     ],
 )
-async def test_mda_owns_new_threads_and_its_own_sandboxes(
-    monkeypatch, metadata: dict[str, str], host: dict[str, str], owner: str | None
+async def test_every_run_gets_an_mda_sandbox(
+    monkeypatch,
+    execution_defaults: ExecutionDefaults,
+    metadata: dict[str, object],
+    host: dict[str, object],
+    owner: str,
+    sandbox_id: str | None,
+    written: list[tuple[str, dict[str, object]]],
 ) -> None:
-    """MDA creates new threads' sandboxes; a sandbox the backend made before is kept; workers share MDA's."""
+    """MDA creates new threads' sandboxes and adopts those the backend made; workers share
+    their coordinator's.
+
+    A run reports its sandbox behind its preparation only where preparing reaches none, and
+    the deployment has not turned that off."""
+    from openswe.sandboxes.lifecycle import TaskWorkerSandbox
     from openswe.sandboxes.managed import ManagedSandbox
 
-    workspace = Workspace(
-        slug="default",
-        snapshot_status="ready",
-        snapshot_id="snap-1",
-        create_params={
-            "proxy_config": {
-                "rules": [
-                    {
-                        "name": "aws",
-                        "type": "aws",
-                        "aws": {
-                            "role_arn": "arn:aws:iam::123456789012:role/ReadOnly",
-                            "subject_scope": "tag:00000000-0000-0000-0000-000000000001",
-                        },
-                    }
-                ]
-            },
-            "preserve_memory_on_stop": False,
-            "tag_value_ids": ["00000000-0000-0000-0000-000000000001"],
-        },
-    )
+    execution_defaults.snapshot_id = "snap-1"
+    execution_defaults.create_params = {"proxy_config": {"rules": []}}
 
-    async def load(slug: str | None) -> Workspace:
-        return workspace
-
-    async def read_metadata(thread_id: str) -> dict[str, str]:
-        return host if thread_id == _HOST else metadata
+    async def read_metadata(thread_id: str) -> dict[str, object]:
+        return {**host} if thread_id == _HOST else metadata
 
     async def exists(sandbox_id: str) -> bool:
         return sandbox_id != "gone-sandbox"
 
-    unbound: list[dict[str, object]] = []
+    writes: list[tuple[str, dict[str, object]]] = []
 
     async def write_metadata(*, thread_id: str, metadata: dict[str, object]) -> None:
-        unbound.append(metadata)
+        writes.append((thread_id, metadata))
 
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.load_workspace", load)
-    monkeypatch.setattr("openswe.sandboxes.managed.get_sandbox_metadata", read_metadata)
+    for module in ("managed", "lifecycle"):
+        monkeypatch.setattr(f"openswe.sandboxes.{module}.get_sandbox_metadata", read_metadata)
     monkeypatch.setattr("openswe.sandboxes.providers.langsmith.sandbox_exists", exists)
     monkeypatch.setattr("openswe.sandboxes.lifecycle.client.threads.update", write_metadata)
+    monkeypatch.setattr("openswe.sandboxes.lifecycle.THREADS.update", write_metadata)
+    monkeypatch.setattr("openswe.sandboxes.lifecycle.THREADS.search", AsyncMock(return_value=[]))
+    monkeypatch.setattr(TaskWorkerSandbox, "host", AsyncMock(return_value=_HOST))
 
-    sandbox = await ManagedSandbox.for_thread("thread-1", None)
+    sandbox = await ManagedSandbox.for_thread("thread-1", prepare_reaches_sandbox=False)
 
-    handed_over = metadata.get("sandbox_id") == "gone-sandbox"
-    assert unbound == (
-        [{"sandbox_id": None, "sandbox_base_proxy_config": None}] if handed_over else []
-    )
-
-    if owner is None:
-        assert sandbox is None
-        return
-    assert sandbox is not None
+    assert writes == written
     assert sandbox.thread_id == (None if owner == "own" else owner)
-    assert sandbox.sandbox_id == (
-        metadata.get("sandbox_id")
-        if owner == _HOST or metadata.get("sandbox_owner") == "mda"
-        else None
+    assert sandbox.sandbox_id == sandbox_id
+    assert sandbox.bind_after_prepare is (owner == "own" and "slack_files_pending" not in metadata)
+    # A review prepares in its sandbox, and the deployment can turn the late report off.
+    review = await ManagedSandbox.for_thread("thread-1")
+    monkeypatch.setenv("MDA_BIND_SANDBOX_AFTER_PREPARE", "false")
+    disabled = await ManagedSandbox.for_thread("thread-1", prepare_reaches_sandbox=False)
+    assert not review.bind_after_prepare
+    assert not disabled.bind_after_prepare
+    assert sandbox.create.snapshot_id == (None if sandbox_id is not None else "snap-1")
+
+
+@pytest.mark.asyncio
+async def test_mda_adopts_a_backend_sandbox_only_one_thread_is_bound_to(
+    monkeypatch, registry_db
+) -> None:
+    """MDA keeps one sandbox per thread, so it adopts a sandbox the backend made only where no
+    other thread but the task workers sharing it is bound to it; elsewhere the thread starts in
+    a fresh sandbox, and the threads still bound to the shared one keep it."""
+    from openswe.sandboxes.lifecycle import BackendSandbox
+    from openswe.threads import index
+    from openswe.threads.store import THREADS
+
+    monkeypatch.setattr(THREADS.copies, "start", MagicMock())
+    monkeypatch.setattr("openswe.sandboxes.lifecycle.client.threads.update", THREADS.update)
+    monkeypatch.setattr(
+        "openswe.sandboxes.providers.langsmith.sandbox_exists", AsyncMock(return_value=True)
     )
-    assert sandbox.create.snapshot_id == "snap-1"
-    assert sandbox.create.extra_fields == {
-        **workspace.create_params,
-        "preserve_memory_on_stop": True,
+    for thread_id, metadata in (
+        ("coordinator", {"sandbox_id": "own-box"}),
+        ("worker", {**_WORKER, "sandbox_host_thread_id": "coordinator", "sandbox_id": "own-box"}),
+        ("first", {"sandbox_id": "shared-box"}),
+        ("second", {"sandbox_id": "shared-box"}),
+    ):
+        await index.create(thread_id, runtime="mda", metadata=metadata)
+
+    assert await BackendSandbox("coordinator", "own-box").hand_to_mda() == "own-box"
+    assert await BackendSandbox("first", "shared-box").hand_to_mda() is None
+
+    threads = await THREADS.get_many(["coordinator", "worker", "first", "second"])
+    assert {
+        thread_id: (thread.metadata.get("sandbox_id"), thread.metadata.get("sandbox_owner"))
+        for thread_id, thread in threads.items()
+    } == {
+        "coordinator": ("own-box", "mda"),
+        "worker": ("own-box", None),
+        "first": (None, None),
+        "second": ("shared-box", None),
     }
 
 
@@ -170,39 +249,21 @@ async def test_mda_owns_new_threads_and_its_own_sandboxes(
         ({}, None, {"sandbox_owner": "mda"}),
         ({"sandbox_id": "mda-sandbox", "sandbox_owner": "mda"}, "mda-sandbox", None),
         ({"sandbox_id": "mda-sandbox", "sandbox_owner": "mda"}, None, None),
-        # A thread handed over by ``recreate_sandbox`` gets the sandbox it asked for, once.
-        (
-            {"sandbox_replacement": {"workspace": "default", "source": "base"}},
-            "mda-sandbox",
-            {"sandbox_owner": "mda", "sandbox_id": "mda-sandbox", "sandbox_replacement": None},
-        ),
-        (
-            {
-                "sandbox_id": "mda-sandbox",
-                "sandbox_owner": "mda",
-                "sandbox_replacement": {"workspace": "default", "source": "base"},
-            },
-            "mda-sandbox",
-            None,
-        ),
     ],
 )
 async def test_the_backend_binds_the_sandbox_mda_reports(
     monkeypatch,
-    metadata: dict[str, str],
+    registry_db,
+    execution_defaults: ExecutionDefaults,
+    metadata: dict[str, object],
     reported: str | None,
     update: dict[str, object] | None,
 ) -> None:
     from openswe.sandboxes.lifecycle import bind_mda_sandbox, ensure_sandbox_for_thread
     from openswe.sandboxes.state import SandboxUnreachableError
 
-    workspace = Workspace(
-        slug="default", create_params={"proxy_config": {"rules": []}}, snapshot_status="ready"
-    )
+    execution_defaults.create_params = {"proxy_config": {"rules": []}}
     updates: list[dict[str, object]] = []
-
-    async def load(slug: str | None) -> Workspace:
-        return workspace
 
     async def read_metadata(thread_id: str) -> dict[str, object]:
         return {**metadata, **(updates[-1] if updates else {})}
@@ -210,11 +271,11 @@ async def test_the_backend_binds_the_sandbox_mda_reports(
     async def write_metadata(*, thread_id: str, metadata: dict[str, object]) -> None:
         updates.append(metadata)
 
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.load_workspace", load)
     monkeypatch.setattr("openswe.sandboxes.lifecycle.get_sandbox_metadata", read_metadata)
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.client.threads.update", write_metadata)
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.maybe_start_update", _no_update)
+    monkeypatch.setattr("openswe.threads.store.THREADS.update", write_metadata)
+    monkeypatch.setattr("openswe.execution_images.EXECUTION_IMAGES.maybe_start_update", AsyncMock())
 
+    profile = await ExecutionProfile.resolve()
     if reported is None and "sandbox_id" not in metadata:
         with pytest.raises(SandboxUnreachableError, match="could not open.*HTTP 503") as raised:
             await bind_mda_sandbox("thread-1", reported, open_error="SandboxClientError: HTTP 503")
@@ -222,24 +283,49 @@ async def test_the_backend_binds_the_sandbox_mda_reports(
         with pytest.raises(SandboxUnreachableError, match="could not open"):
             await ensure_sandbox_for_thread("thread-1")
     else:
-        await bind_mda_sandbox("thread-1", reported)
+        with ExecutionProfile.bind(profile):
+            await bind_mda_sandbox("thread-1", reported)
 
     assert updates == ([] if update is None else [update])
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("replacement_pending", [False, True])
-async def test_replicas_cannot_rebind_a_thread_to_a_different_sandbox(
-    monkeypatch, replacement_pending: bool
-) -> None:
+@pytest.mark.parametrize("deleted", [False, True])
+async def test_a_bound_sandbox_langsmith_deleted_ends_the_run(monkeypatch, deleted: bool) -> None:
+    """MDA could not open the thread's sandbox: the thread keeps its binding, and the run ends
+    only where LangSmith confirms the sandbox deleted, since nothing replaces it."""
+    from openswe.sandboxes.lifecycle import bind_mda_sandbox
+    from openswe.sandboxes.state import SandboxDeletedError
+
+    metadata = {"sandbox_id": "original", "sandbox_owner": "mda"}
+    updates = AsyncMock()
+    monkeypatch.setattr(
+        "openswe.sandboxes.lifecycle.get_sandbox_metadata", AsyncMock(return_value=metadata)
+    )
+    monkeypatch.setattr("openswe.threads.store.THREADS.update", updates)
+    monkeypatch.setattr(
+        "openswe.sandboxes.providers.langsmith.sandbox_exists",
+        AsyncMock(return_value=not deleted),
+    )
+    error = "BoundSandboxMissingError: The thread's bound sandbox 'original' no longer exists"
+
+    if deleted:
+        with pytest.raises(SandboxDeletedError) as raised:
+            await bind_mda_sandbox("thread-1", None, open_error=error)
+        assert (raised.value.sandbox_id, raised.value.reason) == ("original", error)
+    else:
+        await bind_mda_sandbox("thread-1", None, open_error=error)
+    updates.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_replicas_cannot_rebind_a_thread_to_a_different_sandbox(monkeypatch) -> None:
     from unittest.mock import MagicMock
 
     from openswe.sandboxes.lifecycle import bind_mda_sandbox
     from openswe.sandboxes.state import SANDBOX_CONNECTIONS, SandboxUnreachableError
 
     metadata: dict[str, object] = {"sandbox_id": "original", "sandbox_owner": "mda"}
-    if replacement_pending:
-        metadata["sandbox_replacement"] = {"workspace": "default", "source": "base"}
     updates: list[dict[str, object]] = []
     connection = MagicMock()
     monkeypatch.setitem(SANDBOX_CONNECTIONS, "original", connection)
@@ -266,67 +352,22 @@ async def test_replicas_cannot_rebind_a_thread_to_a_different_sandbox(
     assert updates == []
 
 
-@pytest.mark.asyncio
-async def test_a_sandbox_mda_replaced_from_another_workspace_gets_that_workspaces_proxy(
-    monkeypatch,
-) -> None:
-    from unittest.mock import AsyncMock
-
-    from openswe.sandboxes.lifecycle import reconnect_replaced_sandbox
-
-    other = Workspace(slug="other", create_params={"proxy_config": {"rules": ["other"]}})
-    metadata = {
-        "sandbox_id": "mda-sandbox",
-        "sandbox_owner": "mda",
-        "sandbox_base_proxy_config": {"rules": ["original"]},
-        "sandbox_replacement": {"workspace": "other", "source": "workspace"},
-    }
-    updates: list[dict[str, object]] = []
-
-    async def load(slug: str | None) -> Workspace | None:
-        return other if slug == "other" else None
-
-    async def read_metadata(thread_id: str) -> dict[str, object]:
-        return metadata
-
-    async def write_metadata(*, thread_id: str, metadata: dict[str, object]) -> None:
-        updates.append(metadata)
-
-    ensure = AsyncMock()
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.load_workspace", load)
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.get_sandbox_metadata", read_metadata)
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.client.threads.update", write_metadata)
-    monkeypatch.setattr("openswe.sandboxes.lifecycle.ensure_sandbox_for_thread", ensure)
-
-    await reconnect_replaced_sandbox("thread-1", workspace_slug="original")
-
-    assert updates == [
-        {"sandbox_base_proxy_config": {"rules": ["other"]}, "sandbox_replacement": None}
-    ]
-    ensure.assert_awaited_once_with(
-        "thread-1",
-        workspace_slug="original",
-        github_proxy_repositories=None,
-        github_proxy_permissions=None,
-    )
-
-
-async def _no_update(workspace: object) -> None:
-    return None
-
-
 class TestLangSmithSandboxCredentials:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("linked_github", [False, True])
     async def test_cloud_lifecycle_never_borrows_github_credentials(
-        self, monkeypatch, linked_github: bool
+        self,
+        monkeypatch,
+        registry_db,
+        execution_defaults: ExecutionDefaults,
+        linked_github: bool,
     ) -> None:
         from unittest.mock import AsyncMock, MagicMock
         from uuid import UUID
 
         from openswe.sandboxes import lifecycle
         from openswe.sandboxes.managed import ManagedSandbox
-        from openswe.sandboxes.providers.langsmith import sandbox_proxy_config
+        from openswe.sandboxes.providers.langsmith import AdoptedSandbox, LiveSandboxProxy
         from openswe.users.models import User, UserIdentity
 
         owner = User(
@@ -337,57 +378,121 @@ class TestLangSmithSandboxCredentials:
             owner.identities.append(
                 UserIdentity(provider="github", external_id="123", login="alice")
             )
+        tag_id = "00000000-0000-0000-0000-000000000002"
         cloud_rule = {
             "name": "aws",
             "type": "aws",
-            "aws": {"role_arn": "arn:aws:iam::123456789012:role/ReadOnly"},
+            "aws": {
+                "role_arn": "arn:aws:iam::123456789012:role/ReadOnly",
+                "subject_scope": f"tag:{tag_id}",
+            },
         }
         base_config = {"rules": [{"name": "github", "headers": [{"value": "stale"}]}, cloud_rule]}
-        workspace = Workspace(slug="default", snapshot_status="ready", snapshot_id="snap-1")
+        execution_defaults.snapshot_id = "snap-1"
+        execution_defaults.create_params = {"proxy_config": base_config, "tag_value_ids": [tag_id]}
         metadata = {
             "owner_type": "user",
             "owner_user_id": str(owner.id),
             "owner_login": f"user:{owner.id}",
         }
-        tools_rule = {"name": "open-swe-thread-tools"}
         backend = MagicMock(id="sandbox-ls")
         mint = AsyncMock(side_effect=AssertionError("GitHub token minting is forbidden"))
         scope = AsyncMock(side_effect=AssertionError("GitHub scope lookup is forbidden"))
-        configure = AsyncMock(side_effect=sandbox_proxy_config)
-        monkeypatch.setenv("MDA_GITHUB_PROXY_CONNECTION", "github-installation")
         monkeypatch.setattr(User, "get", AsyncMock(return_value=owner))
-        monkeypatch.setattr(lifecycle, "load_workspace", AsyncMock(return_value=workspace))
         monkeypatch.setattr(lifecycle, "get_sandbox_metadata", AsyncMock(return_value=metadata))
         monkeypatch.setattr(
             "openswe.sandboxes.managed.get_sandbox_metadata", AsyncMock(return_value=metadata)
         )
-        monkeypatch.setattr(lifecycle, "workspace_token", mint)
+        monkeypatch.setattr(lifecycle, "sandbox_token", mint)
         monkeypatch.setattr(lifecycle, "thread_token_repositories", scope)
-        monkeypatch.setattr(lifecycle, "configure_sandbox_proxy", configure)
         monkeypatch.setattr(lifecycle, "configure_git_identity", AsyncMock())
         monkeypatch.setattr(lifecycle, "connect_existing_sandbox", AsyncMock(return_value=backend))
-        monkeypatch.setattr(lifecycle, "complete_handoff", AsyncMock())
         monkeypatch.setattr(lifecycle, "set_sandbox_backend", lambda thread_id, backend: backend)
-        monkeypatch.setattr(lifecycle, "maybe_start_update", AsyncMock())
-        monkeypatch.setattr(lifecycle.client.threads, "update", AsyncMock())
         monkeypatch.setattr(
-            "openswe.sandboxes.tool_access.tool_proxy_rule", AsyncMock(return_value=tools_rule)
+            "openswe.execution_images.EXECUTION_IMAGES.maybe_start_update", AsyncMock()
         )
+        monkeypatch.setattr("openswe.threads.store.THREADS.update", AsyncMock())
+        adopted = AdoptedSandbox(rules=[cloud_rule], env_vars={})
+        monkeypatch.setattr(LiveSandboxProxy, "adopt", AsyncMock(return_value=adopted))
 
-        managed = await ManagedSandbox.for_thread("ls-thread", "default")
-        assert managed is not None
-        assert managed.github_proxy is None
+        managed = await ManagedSandbox.for_thread("ls-thread")
         assert managed.create.snapshot_id == "snap-1"
-        await lifecycle.bind_mda_sandbox("ls-thread", "sandbox-ls", workspace_slug="default")
+        # MDA creates it with the workspace's cloud identity, and no GitHub credentials.
+        assert managed.proxy_config is not None
+        assert managed.proxy_config["rules"] == [cloud_rule]
+        await lifecycle.bind_mda_sandbox("ls-thread", "sandbox-ls")
         metadata.update(
             sandbox_id="sandbox-ls", sandbox_owner="mda", sandbox_base_proxy_config=base_config
         )
-        await lifecycle.reconnect_replaced_sandbox("ls-thread", workspace_slug="default")
-        assert await lifecycle.refresh_thread_github_proxy("ls-thread") is None
-        assert configure.await_count == 2
-        for call in configure.await_args_list:
-            assert call.args == ("sandbox-ls", None)
-            clean_config = await sandbox_proxy_config(*call.args, **call.kwargs)
-            assert clean_config["rules"] == [tools_rule, cloud_rule]
+        await lifecycle.ensure_sandbox_for_thread("ls-thread")
+        replanned = await ManagedSandbox.for_thread("ls-thread")
+        assert replanned.proxy_config is not None
+        assert replanned.proxy_config["rules"] == [cloud_rule]
         mint.assert_not_awaited()
         scope.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_legacy_run_digest_is_frozen_and_rejects_modified_records(monkeypatch) -> None:
+    import json
+
+    from openswe import execution
+
+    record = json.loads(
+        '{"captured_at":null,"create":{"delete_after_stop_seconds":400,"extra_fields":{"proxy_config":{"rules":[]}},"fs_capacity_bytes":100,"idle_ttl_seconds":300,"mem_bytes":200,"snapshot_id":"old-snapshot","vcpus":2},"instructions":"Old instructions","name":"Historical","refresh_enabled":false,"refresh_workspace":"deleted-environment","replacement":null,"repos":["acme/api"],"uses_defaults":false}'
+    )
+    digest = "7975e5b0861291bee270bce69c31d0d2b80c1a1cef26ba0823153c70558de4cc"
+    load = AsyncMock(return_value=record)
+    monkeypatch.setattr(execution._records, "get", load)
+    kept = await ExecutionProfile.kept(digest)
+    assert kept.create.snapshot_id == "old-snapshot"
+    assert kept.digest() == digest
+    config = await SandboxCreateConfig.from_profile(kept)
+    assert config.proxy_config == {"rules": []}
+    record["create"]["extra_fields"] = {"proxy_config": {"rules": ["injected"]}}
+    with pytest.raises(ValueError, match="profile has changed"):
+        await ExecutionProfile.kept(digest)
+
+
+@pytest.mark.asyncio
+async def test_external_sandbox_skips_credentials_and_proxy(monkeypatch) -> None:
+    from openswe.agent_api.run_sandbox import RunSandbox
+    from openswe.sandboxes.lifecycle import SandboxCredentialPolicy
+    from openswe.sandboxes.managed import ManagedSandbox
+    from openswe.tasks.schemas import ThreadMetadata
+
+    metadata: dict[str, object] = {
+        "owner_type": "system",
+        "sandbox_id": "tb-task-1",
+        "sandbox_owner": "external",
+        "sandbox_work_dir": "/app",
+    }
+    monkeypatch.setattr(
+        "openswe.sandboxes.managed.get_sandbox_metadata", AsyncMock(return_value=metadata)
+    )
+    monkeypatch.setattr(
+        "openswe.sandboxes.lifecycle.get_sandbox_metadata", AsyncMock(return_value=metadata)
+    )
+    managed = await ManagedSandbox.for_thread("thread-ext")
+    assert managed.sandbox_id == "tb-task-1"
+    assert managed.external is True
+    # Nothing writes an attached sandbox's proxy.
+    spec = await RunSandbox({"configurable": {"thread_id": "thread-ext"}}, reviews=False).spec()
+    assert spec.proxy_config is None
+    assert not await SandboxCredentialPolicy(
+        ThreadMetadata.model_validate(metadata)
+    ).allows_github()
+    worker_metadata: dict[str, object] = {
+        "owner_type": "system",
+        "sandbox_id": "tb-task-1",
+        "sandbox_host_thread_id": "thread-ext",
+        "task_id": "01950000-0000-7000-8000-000000000001",
+    }
+    by_thread = {"thread-ext": metadata, "thread-worker": worker_metadata}
+    monkeypatch.setattr(
+        "openswe.sandboxes.lifecycle.get_sandbox_metadata",
+        AsyncMock(side_effect=lambda tid: by_thread[tid]),
+    )
+    assert not await SandboxCredentialPolicy(
+        ThreadMetadata.model_validate(worker_metadata)
+    ).allows_github()

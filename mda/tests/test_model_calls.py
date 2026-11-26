@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Protocol, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import anthropic
 import httpx
 import httpx2
 import openai
@@ -19,6 +20,7 @@ from langchain.agents.middleware.types import (
     ModelResponse,
 )
 from langchain_anthropic import ChatAnthropic
+from langchain_core.exceptions import ModelRefusalError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -31,13 +33,17 @@ from langchain_core.messages import (
 from langchain_core.tools import tool
 from langchain_fireworks import ChatFireworks
 from langchain_openai import ChatOpenAI
+from langchain_openai.chat_models.base import OpenAIInvalidRequestError, OpenAIStreamServerError
+from langsmith.run_trees import RunTree
 from pydantic import SecretStr
 from rt.backend import Run, RunContext
+from rt.gateway import RUN_GATEWAY
 from rt.middleware import BackendRunMiddleware, ModelCall
 from rt.model_calls import (
     MODEL_OUTAGE_MESSAGE,
     ModelCallTimeoutError,
     ModelCallTimeoutMiddleware,
+    OutputLimitMiddleware,
     ReplayableHistoryMiddleware,
     call_with_fallback,
     model_call_guards,
@@ -45,8 +51,18 @@ from rt.model_calls import (
 from rt.model_retries import ModelRetriesMiddleware
 from rt.models import ModelSpec, build_model
 from rt.run_prompt import RunPromptMiddleware, ThreadPromptMiddleware
-from runtime_api.catalog import Catalog
-from runtime_api.model_errors import is_model_failure_reply
+from rt.tracing import TurnTrace
+from runtime_api.catalog import (
+    Catalog,
+    LoopRules,
+    RoutingRules,
+    RunModels,
+    SandboxCreate,
+    SandboxSpec,
+)
+from runtime_api.loop import GatewayCredential
+from runtime_api.model_errors import classify_exception, is_model_failure_reply
+from runtime_api.provenance import Provenance
 
 _ANTHROPIC = ChatAnthropic(model_name="claude-opus-5-5", api_key=SecretStr("test"))
 _OPENAI = ChatOpenAI(
@@ -115,6 +131,57 @@ async def test_parallel_results_are_replayed_in_tool_call_order() -> None:
     assert [getattr(m, "tool_call_id", None) for m in forwarded.messages[2:5]] == ["a", "b", "c"]
     assert forwarded.messages[5] is messages[5]
     assert messages == original
+
+
+@pytest.mark.parametrize("stamped", [True, False])
+async def test_personal_context_follows_shared_context_without_crossing_conversation(
+    stamped: bool,
+) -> None:
+    contexts = [
+        HumanMessage(
+            content=f'<dynamic-context kind="{kind}" id="{key}">{text}</dynamic-context>',
+            additional_kwargs=Provenance(kind="context", sender=sender).stamp() if stamped else {},
+        )
+        for kind, key, text, sender in [
+            ("person", "user:ada", "Ada", "user:ada"),
+            ("run", "environment", "Sandbox", "run:environment"),
+            ("run", "recent-threads", "Recent work", "run:recent-threads"),
+            ("person", "user:grace", "Grace", "user:grace"),
+            ("run", "source", "Slack", "run:source"),
+            ("run", "task-role", "Coordinator", "run:task-role"),
+            ("run", "code-tools", "Tools", "run:code-tools"),
+        ]
+    ]
+    person, environment, recent, teammate, source, task, tools = contexts
+    human = HumanMessage("Keep this conversation in order")
+    reply = AIMessage("Working")
+    call = _calls("a", "b")
+    a, b = _result("a"), _result("b")
+    messages: list[AnyMessage] = [human, *contexts, reply, call, b, a, person, tools, human]
+    original = list(messages)
+
+    forwarded = await _forwarded(ReplayableHistoryMiddleware(), messages, _OPENAI)
+
+    assert forwarded.messages == [
+        human,
+        environment,
+        source,
+        task,
+        tools,
+        person,
+        recent,
+        teammate,
+        reply,
+        call,
+        a,
+        b,
+        tools,
+        person,
+        human,
+    ]
+    assert messages == original
+    replayed = await _forwarded(ReplayableHistoryMiddleware(), forwarded.messages, _OPENAI)
+    assert replayed.messages == forwarded.messages
 
 
 async def test_empty_thinking_blocks_are_dropped_only_for_anthropic() -> None:
@@ -217,20 +284,61 @@ async def test_a_provider_timeout_is_not_reported_as_budget_exhaustion() -> None
     assert raised.value is error
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"stop_reason": "max_tokens"},
+        {"finish_reason": "length"},
+        {"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}},
+    ],
+)
+@pytest.mark.parametrize("written", ["", "The first half of the answer"])
+async def test_a_subagent_reply_cut_off_at_the_output_limit_says_so(
+    metadata: dict[str, object], written: str
+) -> None:
+    reply = AIMessage(content=written, response_metadata=metadata)
+    handler = AsyncMock(return_value=ModelResponse(result=[reply]))
+    request = cast(ModelRequest, MagicMock())
+
+    subagent = await OutputLimitMiddleware(subagent=True).awrap_model_call(request, handler)
+    agent = await OutputLimitMiddleware().awrap_model_call(request, handler)
+
+    answer = subagent.result[-1]
+    assert answer.text.startswith(written)
+    assert "cut off at the model's output limit" in answer.text
+    assert agent.result == [reply]
+
+
+async def test_main_agent_cutoffs_tag_the_turn_once_without_changing_replies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = RunTree(name="turn", run_type="chain", tags=["existing"])
+    monkeypatch.setattr(TurnTrace, "current_root", lambda: root)
+    reply = AIMessage(content="Partial", response_metadata={"finish_reason": "length"})
+    handler = AsyncMock(return_value=ModelResponse(result=[reply]))
+    request = ModelRequest(model=_OPENAI, messages=[])
+    middleware = OutputLimitMiddleware()
+
+    for _ in range(2):
+        assert (await middleware.awrap_model_call(request, handler)).result == [reply]
+    assert root.tags == ["existing", "model_output_limit"]
+    assert root.metadata["model_output_limit"] == "length"
+
+    monkeypatch.setattr(TurnTrace, "current_root", MagicMock(side_effect=RuntimeError))
+    assert (await middleware.awrap_model_call(request, handler)).result == [reply]
+
+
 @pytest.mark.parametrize("with_image", [True, False])
 async def test_a_text_only_model_hands_images_to_the_vision_model(
     monkeypatch: pytest.MonkeyPatch, with_image: bool
 ) -> None:
     built: dict[str, BaseChatModel] = {"fireworks:kimi": _FIREWORKS, "openai:gpt": _OPENAI}
-    monkeypatch.setattr(
-        "rt.middleware.build_model", lambda spec, *, use_gateway: built[spec.model_id]
-    )
+    monkeypatch.setattr("rt.middleware.build_model", lambda spec: built[spec.model_id])
     call = ModelCall(
         system_prompt="prompt",
         model=ModelSpec(model_id="fireworks:kimi", kwargs={}),
         vision=ModelSpec(model_id="openai:gpt", kwargs={}),
         fallback=None,
-        use_gateway=False,
     )
     image = [{"type": "image", "url": "https://example.com/screenshot.png"}]
     messages: list[AnyMessage] = [
@@ -239,16 +347,31 @@ async def test_a_text_only_model_hands_images_to_the_vision_model(
     ]
 
     monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
-    # A run whose catalog names no models of its own, so the call's own decide.
-    run = Run(RunContext.model_validate({"__catalog": Catalog().model_dump(mode="json")}))
-    forwarded = await _forwarded(
-        BackendRunMiddleware(run.backend),
-        messages,
-        _ANTHROPIC,
-        state={"messages": messages, "open_swe_call": call.model_dump()},
+    assert call.model is not None
+    catalog = Catalog(
+        loop=LoopRules(routing=RoutingRules(mode="auto")),
+        models=RunModels(
+            model=call.model,
+            subagent_model=call.model,
+            routes={"fast": call.model},
+        ),
     )
+    run = Run(RunContext.model_validate({"__catalog": catalog.model_dump(mode="json")}))
+    run.route = "fast"
 
-    assert forwarded.model is (_OPENAI if with_image else _FIREWORKS)
+    async def handler(request: ModelRequest) -> ModelResponse:
+        assert request.model is (_OPENAI if with_image else _FIREWORKS)
+        assert await RUN_GATEWAY.route() == ("default" if with_image else "auto")
+        return ModelResponse(result=[AIMessage(content="ok")])
+
+    await BackendRunMiddleware(run.backend).awrap_model_call(
+        ModelRequest(
+            model=_ANTHROPIC,
+            messages=messages,
+            state=cast(AgentState, {"messages": messages, "open_swe_call": call.model_dump()}),
+        ),
+        handler,
+    )
 
 
 class _Skills(AgentMiddleware):
@@ -278,23 +401,34 @@ def _search(query: str) -> str:
     return query
 
 
+@pytest.mark.parametrize("execution_key", ["execution_prompt", "workspace_prompt"])
 async def test_the_system_prompt_is_cached_up_to_what_only_the_thread_says(
     monkeypatch: pytest.MonkeyPatch,
+    execution_key: str,
 ) -> None:
-    """The run's shared prompt and the workspace's each end in an Anthropic cache
+    """The shared and execution prompts each end in an Anthropic cache
     breakpoint ahead of the skills and the thread's own part, keeping a request within
-    four, the tools take none, and a fallback to another provider carries none."""
+    four, the tools take none, and a fallback to OpenAI carries OpenAI's breakpoints."""
     built: dict[str, BaseChatModel] = {"anthropic:opus": _ANTHROPIC, "openai:gpt": _OPENAI}
-    monkeypatch.setattr(
-        "rt.middleware.build_model", lambda spec, *, use_gateway: built[spec.model_id]
-    )
+    monkeypatch.setattr("rt.middleware.build_model", lambda spec: built[spec.model_id])
     monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
-    run = Run(RunContext.model_validate({"__catalog": Catalog().model_dump(mode="json")}))
+    primary = ModelSpec(model_id="anthropic:opus", kwargs={})
+    catalog = Catalog(
+        loop=LoopRules(routing=RoutingRules(mode="auto")),
+        models=RunModels(
+            model=primary,
+            subagent_model=primary,
+            routes={"fast": primary},
+        ),
+    )
+    run = Run(RunContext.model_validate({"__catalog": catalog.model_dump(mode="json")}))
+    run.route = "fast"
     static = SystemMessage(content="The graph's own instructions")
     sent: list[ModelRequest] = []
 
     async def handler(request: ModelRequest) -> ModelResponse:
         sent.append(request)
+        assert await RUN_GATEWAY.route() == ("auto" if request.model is _ANTHROPIC else "default")
         if request.model is _ANTHROPIC:
             raise TimeoutError("overloaded")
         return ModelResponse(result=[AIMessage(content="ok")])
@@ -306,13 +440,14 @@ async def test_the_system_prompt_is_cached_up_to_what_only_the_thread_says(
         model_call_guards()[-1],
     ]
     for thread in ("First thread's part", "Next thread's part"):
-        call = ModelCall(
-            system_prompt="Every thread's prompt",
-            workspace_prompt="The workspace's prompt",
-            thread_prompt=thread,
-            model=ModelSpec(model_id="anthropic:opus", kwargs={}),
-            fallback=ModelSpec(model_id="openai:gpt", kwargs={}),
-            use_gateway=False,
+        call = ModelCall.model_validate(
+            {
+                "system_prompt": "Every thread's prompt",
+                execution_key: "Robin-wide execution instructions",
+                "thread_prompt": thread,
+                "model": ModelSpec(model_id="anthropic:opus", kwargs={}),
+                "fallback": ModelSpec(model_id="openai:gpt", kwargs={}),
+            }
         )
         messages: list[AnyMessage] = [HumanMessage(content="go")]
         request = ModelRequest(
@@ -329,7 +464,7 @@ async def test_the_system_prompt_is_cached_up_to_what_only_the_thread_says(
     assert cast(SystemMessage, first.system_message).content == [
         {"type": "text", "text": "The graph's own instructions"},
         {"type": "text", "text": "Every thread's prompt", "cache_control": cached},
-        {"type": "text", "text": "The workspace's prompt", "cache_control": cached},
+        {"type": "text", "text": "Robin-wide execution instructions", "cache_control": cached},
         {"type": "text", "text": "\n\nSkills"},
         {"type": "text", "text": "First thread's part", "cache_control": cached},
     ]
@@ -342,10 +477,15 @@ async def test_the_system_prompt_is_cached_up_to_what_only_the_thread_says(
         "text": "Next thread's part",
         "cache_control": cached,
     }
+    explicit = {"mode": "explicit"}
     assert cast(SystemMessage, first_fallback.system_message).content == [
         {"type": "text", "text": "The graph's own instructions"},
-        {"type": "text", "text": "Every thread's prompt"},
-        {"type": "text", "text": "The workspace's prompt"},
+        {"type": "text", "text": "Every thread's prompt", "prompt_cache_breakpoint": explicit},
+        {
+            "type": "text",
+            "text": "Robin-wide execution instructions",
+            "prompt_cache_breakpoint": explicit,
+        },
         {"type": "text", "text": "\n\nSkills"},
         {"type": "text", "text": "First thread's part"},
     ]
@@ -398,6 +538,12 @@ def _fallback_call(
             request=httpx2.Request("POST", "https://api.openai.com/v1/responses"),
             body=None,
         ),
+        # langchain-openai reclassifies a mid-stream `server_error` as retryable.
+        OpenAIStreamServerError(
+            message="An error occurred while processing your request.",
+            request=httpx2.Request("POST", "https://api.openai.com/v1/responses"),
+            body={"type": "server_error", "code": None},
+        ),
     ],
 )
 async def test_a_transient_failure_goes_to_the_fallback(error: BaseException) -> None:
@@ -436,7 +582,41 @@ async def test_attempts_wait_out_the_backoff_with_jitter(monkeypatch: pytest.Mon
     sleep.assert_awaited_once_with(10.0)
 
 
-@pytest.mark.parametrize("error", [ValueError("not transient"), _status_error(400)])
+_CYBER_FLAG = (
+    "This content was flagged for possible cybersecurity risk. If this seems wrong, try "
+    "rephrasing your request. Otherwise, confirm that the access_programs.cyber parameter "
+    "is set to the appropriate tier, and note that some cybersecurity requests are still "
+    "limited, even when Daybreak is on."
+)
+
+
+def _invalid_request(message: str, body: object = None) -> OpenAIInvalidRequestError:
+    request = httpx2.Request("POST", "https://api.openai.com/v1/responses")
+    response = httpx2.Response(400, request=request, text=message)
+    return OpenAIInvalidRequestError(message, response=response, body=body)
+
+
+# As production raises them: a 400 for the request, or an error event in a stream it
+# accepted; and a block identified by its code alone.
+_POLICY_BLOCKS = [
+    _invalid_request(f"Error code: 400 - {_CYBER_FLAG}", _CYBER_FLAG),
+    openai.APIError(
+        _CYBER_FLAG,
+        request=httpx2.Request("POST", "https://api.openai.com/v1/responses"),
+        body={"message": _CYBER_FLAG},
+    ),
+    _invalid_request("flagged", {"code": "cyber_policy", "message": "flagged"}),
+]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError("not transient"),
+        _status_error(400),
+        _invalid_request("Error code: 400 - Invalid value for 'input'.", {"code": "invalid_value"}),
+    ],
+)
 async def test_an_error_another_attempt_would_repeat_raises_at_once(error: BaseException) -> None:
     attempts = _Attempts(error)
 
@@ -455,6 +635,97 @@ async def test_a_lasting_outage_ends_with_a_message_instead_of_failing_the_run()
     assert attempts.models == [_ANTHROPIC, _OPENAI, _ANTHROPIC, _OPENAI]
 
 
+def _refusal(written: str) -> ModelRefusalError:
+    return ModelRefusalError(
+        "Model refused to produce the requested output",
+        raw_message=AIMessage(
+            content=[
+                *([{"type": "text", "text": written}] if written else []),
+                {"type": "refusal", "refusal": "I can't help with that."},
+            ]
+        ),
+    )
+
+
+@pytest.mark.parametrize("refusal", [_refusal(""), *_POLICY_BLOCKS])
+async def test_a_refused_reply_goes_once_to_the_fallback(refusal: BaseException) -> None:
+    attempts = _Attempts(refusal)
+
+    response = await _fallback_call(attempts)
+
+    assert response.result[0].content == "answered"
+    assert attempts.models == [_ANTHROPIC, _OPENAI]
+
+
+@pytest.mark.parametrize("fallback", [None, lambda: _OPENAI])
+@pytest.mark.parametrize("written", ["", "Here is the first half"])
+async def test_a_refused_reply_ends_the_run_saying_so_and_keeps_what_was_written(
+    fallback: Callable[[], BaseChatModel] | None, written: str
+) -> None:
+    attempts = _Attempts(_refusal(written), _refusal(written), _refusal(written))
+
+    answer = await call_with_fallback(
+        ModelRequest(model=_ANTHROPIC, messages=[]),
+        attempts,
+        fallback,
+        backoff_schedule=(0.0, 0.0, 0.0),
+    )
+
+    reply = answer.result[0]
+    assert is_model_failure_reply(reply)
+    assert "provider blocked" in reply.text
+    assert reply.text.startswith(written)
+    assert attempts.models == ([_ANTHROPIC] if fallback is None else [_ANTHROPIC, _OPENAI])
+
+
+@pytest.mark.parametrize("fallback", [None, lambda: _OPENAI])
+async def test_a_blocked_request_ends_the_run_saying_so(
+    fallback: Callable[[], BaseChatModel] | None,
+) -> None:
+    attempts = _Attempts(*_POLICY_BLOCKS)
+
+    answer = await call_with_fallback(
+        ModelRequest(model=_OPENAI, messages=[]),
+        attempts,
+        fallback,
+        backoff_schedule=(0.0, 0.0, 0.0),
+    )
+
+    reply = answer.result[0]
+    assert is_model_failure_reply(reply)
+    assert reply.text.startswith("The model provider blocked this reply.")
+    assert attempts.models == ([_OPENAI] if fallback is None else [_OPENAI, _OPENAI])
+
+
+@pytest.mark.parametrize("error", _POLICY_BLOCKS)
+def test_a_policy_block_reports_the_provider_refused(error: BaseException) -> None:
+    assert classify_exception(error) == "model_refused"
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (_status_error(400), "provider_unavailable"),
+        (_invalid_request("Error code: 400 - Invalid value for 'input'."), None),
+        (_status_error(429), "provider_rate_limited"),
+    ],
+)
+def test_other_errors_keep_their_classification(error: BaseException, code: str | None) -> None:
+    assert classify_exception(error) == code
+
+
+async def test_a_refused_reply_survives_a_transient_failure_on_failover() -> None:
+    attempts = _Attempts(_refusal("Here is the first half"), TimeoutError("stalled"))
+
+    answer = await _fallback_call(attempts)
+
+    reply = answer.result[0]
+    assert is_model_failure_reply(reply)
+    assert reply.text.startswith("Here is the first half")
+    assert "provider blocked" in reply.text
+    assert attempts.models == [_ANTHROPIC, _OPENAI]
+
+
 async def test_a_model_the_workspace_cannot_use_says_so() -> None:
     body: dict[str, object] = {
         "error": {"code": "model_not_found", "message": "The model does not exist."}
@@ -469,6 +740,62 @@ async def test_a_model_the_workspace_cannot_use_says_so() -> None:
     assert isinstance(content, str) and "OpenAI returned: The model does not exist." in content
     assert attempts.models == [_ANTHROPIC]
     assert is_model_failure_reply(answer.result[0])
+
+
+@pytest.mark.parametrize("fallback", [None, lambda: _OPENAI])
+@pytest.mark.parametrize("error_type", [openai.APIStatusError, anthropic.APIStatusError])
+async def test_a_gateway_spend_limit_ends_with_an_actionable_reply(
+    fallback: Callable[[], BaseChatModel] | None,
+    error_type: type[openai.APIStatusError] | type[anthropic.APIStatusError],
+) -> None:
+    body = {"error": {"message": "request blocked by gateway policies: private-policy"}}
+    response = httpx2.Response(
+        402, request=httpx2.Request("POST", "https://gateway.example.com"), json=body
+    )
+    attempts = _Attempts(error_type("request rejected", response=response, body=body))
+
+    answer = await call_with_fallback(
+        ModelRequest(model=_ANTHROPIC, messages=[]), attempts, fallback
+    )
+
+    content = answer.result[0].text
+    assert "spending limit" in content
+    assert "admin" in content
+    assert "private-policy" not in content
+    assert is_model_failure_reply(answer.result[0])
+    assert attempts.models == [_ANTHROPIC]
+
+
+async def test_a_gateway_rate_limit_still_retries() -> None:
+    attempts = _Attempts(
+        _status_error(429, {"error": {"message": "request blocked by gateway policies: rate"}})
+    )
+
+    answer = await _fallback_call(attempts)
+
+    assert answer.result[0].content == "answered"
+    assert attempts.models == [_ANTHROPIC, _OPENAI]
+
+
+async def test_a_run_whose_login_lapsed_tells_the_person_instead_of_calling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Its request's own auth would fail as a connection error the loop retries for the
+    whole budget; the run answers why at once instead."""
+    monkeypatch.setattr(
+        RUN_GATEWAY,
+        "credential",
+        AsyncMock(return_value=GatewayCredential(unavailable="Sign in to Robin again.")),
+    )
+    attempts = _Attempts()
+
+    for fallback in (None, lambda: _OPENAI):
+        answer = await call_with_fallback(
+            ModelRequest(model=_ANTHROPIC, messages=[]), attempts, fallback
+        )
+        assert answer.result[0].content == "Sign in to Robin again."
+        assert is_model_failure_reply(answer.result[0])
+    assert attempts.models == []
 
 
 async def test_without_a_fallback_the_call_is_made_once() -> None:
@@ -609,7 +936,6 @@ async def test_provider_http_retries_are_owned_by_model_middleware(
                     "max_retries": 9,
                 },
             ),
-            use_gateway=False,
         )
         assert isinstance(model, ChatOpenAI)
         assert model.max_retries is not None
@@ -705,7 +1031,11 @@ async def test_streamed_partial_output_is_superseded_on_retry_or_fallback(
 
     monkeypatch.setattr(ChatOpenAI, "_astream", partial)
     monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
-    run = Run(RunContext.model_validate({"__catalog": Catalog().model_dump(mode="json")}))
+    sandbox = SandboxSpec(
+        create=SandboxCreate(fs_capacity_bytes=1, idle_ttl_seconds=60, delete_after_stop_seconds=60)
+    )
+    catalog = Catalog(sandbox=sandbox)
+    run = Run(RunContext.model_validate({"__catalog": catalog.model_dump(mode="json")}))
     model = ChatOpenAI(model="test", api_key="test", max_retries=0)
     backend_middleware = BackendRunMiddleware(run.backend)
     monkeypatch.setattr(backend_middleware, "_before_agent", AsyncMock(return_value=(None, False)))

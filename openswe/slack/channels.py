@@ -17,7 +17,7 @@ from typing import Any, Final, Self
 import aiohttp
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_slack_response import AsyncSlackResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 PAYLOAD_TTL = timedelta(seconds=300)
 _NEVER_FETCHED = datetime.fromtimestamp(0, UTC)
 HISTORY_MAX_MESSAGES = 100
-
 _CHANNEL_TYPES: Final = "public_channel,private_channel"
 _PAGE_SIZE: Final = 1000
 # conversations.list allows about 20 pages a minute, so a large workspace's walk
@@ -122,11 +121,11 @@ class SlackChannel(Base):
 
     @property
     def context(self) -> SlackChannelContext:
-        """This channel's identity and description, for prompts and thread metadata."""
+        """This channel's cached Slack metadata and sharing flags."""
         return self.details.to_context(self.id)
 
     @property
-    def can_be_kitchen(self) -> bool:
+    def can_listen(self) -> bool:
         """Whether Slack delivers this channel's messages and it is not externally shared."""
         return self.context.allows_operations and self.payload.get("is_member") is True
 
@@ -174,6 +173,58 @@ class SlackChannel(Base):
         """The directory: every listed channel, by name."""
         async with postgres.session() as session:
             rows = await session.scalars(select(cls).where(cls.listed).order_by(cls.name, cls.id))
+            return list(rows)
+
+    @classmethod
+    async def search_directory(cls, query: str, limit: int = 10) -> list[Self]:
+        """Search cached public, internal channel descriptions without contacting Slack."""
+        terms = list(dict.fromkeys(query.lower().split()))[:20]
+        if not terms:
+            return []
+        purpose = case(
+            (func.jsonb_typeof(cls.payload["purpose"]) == "string", cls.payload["purpose"].astext),
+            else_=cls.payload["purpose"]["value"].astext,
+        )
+        topic = case(
+            (func.jsonb_typeof(cls.payload["topic"]) == "string", cls.payload["topic"].astext),
+            else_=cls.payload["topic"]["value"].astext,
+        )
+        name_hits = [cls.name.icontains(term, autoescape=True) for term in terms]
+        description_hits = [
+            or_(purpose.icontains(term, autoescape=True), topic.icontains(term, autoescape=True))
+            for term in terms
+        ]
+        score = case((name_hits[0], 2), (description_hits[0], 1), else_=0)
+        for name_hit, description_hit in zip(name_hits[1:], description_hits[1:], strict=True):
+            score += case((name_hit, 2), (description_hit, 1), else_=0)
+        members = case(
+            (
+                func.jsonb_typeof(cls.payload["num_members"]) == "number",
+                cls.payload["num_members"].as_float(),
+            ),
+            else_=0,
+        )
+        async with postgres.session() as session:
+            rows = await session.scalars(
+                select(cls)
+                .where(
+                    cls.listed,
+                    cls.payload.contains(
+                        {
+                            "is_channel": True,
+                            "is_private": False,
+                            "is_archived": False,
+                            "is_ext_shared": False,
+                            "is_pending_ext_shared": False,
+                        }
+                    ),
+                    ~cls.payload.contains({"is_im": True}),
+                    ~cls.payload.contains({"is_mpim": True}),
+                    or_(*name_hits, *description_hits),
+                )
+                .order_by(score.desc(), members.desc(), cls.name, cls.id)
+                .limit(max(1, min(limit, 25)))
+            )
             return list(rows)
 
     @classmethod

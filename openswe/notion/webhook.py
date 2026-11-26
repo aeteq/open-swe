@@ -140,7 +140,7 @@ async def _resolve_repo(
             profile_repo = None
         if profile_repo:
             return profile_repo
-    return (await common.get_workspace_settings()).default_repo
+    return (await common.get_settings()).default_repo
 
 
 async def _thread_busy(thread_id: str) -> bool:
@@ -243,16 +243,11 @@ async def _configurable(
     notion_page: dict[str, str],
     repo: dict[str, str] | None,
     requester: Requester,
-) -> tuple[dict[str, object], str]:
-    workspace = await common.get_thread_workspace(
-        thread_id
-    ) or await common.workspace_for_repo_config(repo)
+) -> dict[str, object]:
     configurable: dict[str, object] = {
         "notion_page": notion_page,
         "user_email": requester.email,
         "source": "notion",
-        "workspace": workspace,
-        "environment": workspace,
     }
     if repo:
         configurable["repo"] = repo
@@ -270,9 +265,8 @@ async def _configurable(
         title=" ".join(part for part in (notion_page["identifier"], notion_page["title"]) if part)
         or "Notion task",
         source_context=SourceContext(notion_page=NotionPageRef.model_validate(notion_page)),
-        workspace=workspace,
     )
-    return configurable, workspace
+    return configurable
 
 
 def _sender_id(user: NotionUser) -> str:
@@ -359,12 +353,12 @@ async def _context_comments(
 
 
 async def _image_blocks(
-    image_urls: list[str], requester: Requester, workspace: str
+    image_urls: list[str], requester: Requester
 ) -> tuple[list[dict[str, object]], tuple[str, str] | None]:
     if not image_urls:
         return [], None
     override: tuple[str, str] | None = None
-    model_id = await common.resolve_agent_model_id(requester.github_login, workspace=workspace)
+    model_id = await common.resolve_agent_model_id(requester.github_login)
     if not common.model_supports_images(model_id):
         override = common.default_vision_model_pair()
     blocks: list[dict[str, object]] = []
@@ -404,8 +398,8 @@ async def process_notion_task(
         comments=comments,
     )
 
-    configurable, workspace = await _configurable(thread_id, notion_page, repo, requester)
-    image_blocks, model_override = await _image_blocks(body.image_urls, requester, workspace)
+    configurable = await _configurable(thread_id, notion_page, repo, requester)
+    image_blocks, model_override = await _image_blocks(body.image_urls, requester)
     if model_override:
         configurable["agent_model_id"], configurable["agent_effort"] = model_override
 
@@ -447,7 +441,7 @@ async def _dispatch_design_follow_up(
 ) -> None:
     thread_id = notion_page_thread_id(page.id)
     notion_page = _page_ref(page, requester)
-    configurable, _ = await _configurable(thread_id, notion_page, repo, requester)
+    configurable = await _configurable(thread_id, notion_page, repo, requester)
     follow_up = prompt(
         "runs/notion-design-approved",
         design=design.markdown_link(),
@@ -619,7 +613,7 @@ async def _forward_comment(
 ) -> TaskResult:
     page = await client.get_page(page_id)
     requester = await _requester(client, author.id)
-    configurable, _ = await _configurable(
+    configurable = await _configurable(
         thread_id,
         _page_ref(page, requester, kind=kind, discussion_id=comment.discussion_id),
         _thread_repo(metadata),
@@ -659,7 +653,7 @@ async def _start_question(
         body=body.markdown or "(empty page)",
         discussion=await _discussion_history(client, comment, page.id, settings),
     )
-    configurable, _ = await _configurable(thread_id, notion_page, repo, requester)
+    configurable = await _configurable(thread_id, notion_page, repo, requester)
     messages: list[RunMessage] = [
         system_introduction(_SYSTEM),
         system_input(

@@ -19,6 +19,7 @@ from openswe.github.ci import RequiredCheck
 from openswe.github.http import GitHubAppUnavailable, GitHubClient, RepoClient
 from openswe.jobs import queue
 from openswe.jobs.worker import JobWorker
+from openswe.ui_invalidations import outbox
 from openswe.ui_invalidations.topics import Topic
 from openswe.users.models import User
 
@@ -30,6 +31,7 @@ def conversation_rules(monkeypatch):
     monkeypatch.setattr(
         RepoClient, "requires_conversation_resolution", AsyncMock(return_value=True)
     )
+    monkeypatch.setattr(RepoClient, "required_approving_reviews", AsyncMock(return_value=1))
 
 
 async def test_required_checks_refresh_off_request_and_expire_per_branch(monkeypatch):
@@ -49,7 +51,7 @@ async def test_required_checks_refresh_off_request_and_expire_per_branch(monkeyp
     worker = JobWorker()
     worker.register(REFRESH_JOB)(refresh_required_checks)
     assert await worker.run_due() == 1
-    assert await cache.read() == BranchRules({RequiredCheck("lint", 42)}, True)
+    assert await cache.read() == BranchRules({RequiredCheck("lint", 42)}, True, 1)
     assert await BranchConfig("acme/app", "release").read() is None
     assert fetch.await_count == 1
 
@@ -60,11 +62,31 @@ async def test_required_checks_refresh_off_request_and_expire_per_branch(monkeyp
             ),
             {"age": CACHE_TTL + timedelta(seconds=1)},
         )
-    assert await cache.read() == BranchRules({RequiredCheck("lint", 42)}, True)
+    assert await cache.read() == BranchRules({RequiredCheck("lint", 42)}, True, 1)
     fetch.return_value = set()
     assert await worker.run_due() == 2
-    assert await cache.read() == BranchRules(set(), True)
-    assert await BranchConfig("acme/app", "release").read() == BranchRules(set(), True)
+    assert await cache.read() == BranchRules(set(), True, 1)
+    assert await BranchConfig("acme/app", "release").read() == BranchRules(set(), True, 1)
+
+    # Every open status of the repository rereads when its rules change, so a
+    # refresh that finds them as they were stays quiet.
+    topic = Topic.REQUIRED_CHECKS.keyed("acme/app")
+    async with transaction() as conn:
+        await conn.execute(
+            text("DELETE FROM ui_invalidation WHERE topic = :topic"), {"topic": topic}
+        )
+    await cache.refresh()
+    assert await outbox.invalidated_since({topic: 60}) == set()
+    fetch.return_value = {RequiredCheck("lint", 42), RequiredCheck("build")}
+    await cache.refresh()
+    assert await outbox.invalidated_since({topic: 60}) == {topic}
+    async with transaction() as conn:
+        await conn.execute(
+            text("DELETE FROM ui_invalidation WHERE topic = :topic"), {"topic": topic}
+        )
+    fetch.return_value = {RequiredCheck("build"), RequiredCheck("lint", 42)}
+    await cache.refresh()
+    assert await outbox.invalidated_since({topic: 60}) == set()
 
     fetch.return_value = {RequiredCheck("test")}
     monkeypatch.setattr(
@@ -74,7 +96,7 @@ async def test_required_checks_refresh_off_request_and_expire_per_branch(monkeyp
     )
     with pytest.raises(httpx2.ConnectError, match="GitHub unavailable"):
         await cache.refresh()
-    assert await cache.read() == BranchRules({RequiredCheck("test")}, True)
+    assert await cache.read() == BranchRules({RequiredCheck("test")}, True, 1)
 
 
 async def test_failed_refresh_does_not_turn_unknown_rules_into_no_checks(monkeypatch):
@@ -118,7 +140,7 @@ async def test_refresh_uses_viewer_when_app_is_not_installed(monkeypatch):
     [job] = await queue.find({})
     assert job.payload["viewer_id"] == str(viewer.id)
     await refresh_required_checks(job)
-    assert await cache.read() == BranchRules({RequiredCheck("lint")}, True)
+    assert await cache.read() == BranchRules({RequiredCheck("lint")}, True, 1)
 
 
 async def test_required_check_notifications_authorize_only_accessible_repositories(monkeypatch):

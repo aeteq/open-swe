@@ -1,26 +1,32 @@
 """Start PR repairs in an accessible coding thread."""
 
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Annotated, ClassVar, Literal
 
 from fastapi import HTTPException
-from langgraph_sdk.schema import Thread
 from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from openswe.dashboard.repo_access import require_repo_access_for_user
 from openswe.dispatch import dispatch_agent_run
+from openswe.github.http import GitHubClient
 from openswe.github.pull_request_status import pull_request_identity
 from openswe.github.pull_requests import PullRequest
+from openswe.input_messages import SystemIdentity, build_run_input
 from openswe.prompts import prompt
+from openswe.review.findings import Finding, ReviewerThreadMissingError, list_findings
+from openswe.thread_ids import reviewer_thread_id
 from openswe.threads import index
 from openswe.threads.access import _ensure_dashboard_github_token
+from openswe.threads.index import IndexedThread
 from openswe.threads.runs import (
     _build_dashboard_configurable,
     create_dashboard_thread_record,
 )
+from openswe.threads.store import THREADS
 from openswe.threads.summary import _assert_thread_postable
 from openswe.utils.json_types import thread_metadata
 from openswe.utils.thread_ops import langgraph_client
@@ -29,6 +35,11 @@ from openswe.utils.thread_pr_state import agent_thread_pr_state_lock
 logger = logging.getLogger(__name__)
 
 _FIX_THREAD_LINK_SOURCE = "dashboard_pr_fix"
+_FIX_UP_SYSTEM: SystemIdentity = {
+    "id": "system:pull-request-fix-up",
+    "display_name": "Fix up button",
+    "platform": "open-swe",
+}
 
 
 class PullRequestFixContext(BaseModel):
@@ -62,6 +73,8 @@ class _PullRequestIntentBase(BaseModel):
     dispatches_run: ClassVar[bool]
     # Distinct content per request, so a busy thread gets it queued instead of dropped.
     queues_behind_running: ClassVar[bool] = False
+    # A button click is announced by this system sender rather than voiced as the person.
+    system: ClassVar[SystemIdentity | None] = None
 
     def prompt(self, url: str) -> str:
         raise NotImplementedError
@@ -126,6 +139,46 @@ class FixIntent(_PullRequestIntentBase):
 
     def thread_title(self, full_name: str, number: int) -> str:
         return f"Fix {full_name}#{number}"
+
+
+class FixUpIntent(_PullRequestIntentBase):
+    """The one button that asks the agent to look a pull request over and fix what is clearly broken."""
+
+    intent: Literal["fix-up"]
+    context: PullRequestFixContext | None = None
+
+    dispatches_run: ClassVar[bool] = True
+    system: ClassVar[SystemIdentity | None] = _FIX_UP_SYSTEM
+
+    def prompt(self, url: str, *, login: str = "", findings: list[Finding] | None = None) -> str:
+        open_findings = [
+            {
+                "title": finding["title"],
+                "severity": finding["severity"],
+                "file": finding["file"],
+                "line": finding["end_line"],
+                "description": finding["description"],
+                "suggestion": finding["suggestion"],
+            }
+            for finding in findings or []
+            if finding["status"] == "open"
+        ]
+        text = prompt(
+            "runs/pull-request-fix-up",
+            url=url,
+            login=f"@{login}" if login else "The person",
+            findings=json.dumps(open_findings, indent=2) if open_findings else "",
+        )
+        if self.context is None or not self.context.status_available:
+            return text
+        snapshot = prompt(
+            "runs/pull-request-fix-context",
+            snapshot=self.context.model_dump_json(indent=2),
+        )
+        return f"{text}\n\n{snapshot}"
+
+    def thread_title(self, full_name: str, number: int) -> str:
+        return f"Fix up {full_name}#{number}"
 
 
 class AddressCommentsIntent(_PullRequestIntentBase):
@@ -218,6 +271,7 @@ PullRequestThreadIntent = Annotated[
     OpenThreadIntent
     | MessageIntent
     | FixIntent
+    | FixUpIntent
     | AddressCommentsIntent
     | AddressCommentIntent
     | CommentBatchIntent,
@@ -246,31 +300,31 @@ async def _pr_thread_ids(owner: str, repo: str, number: int) -> list[str]:
 
 async def find_pr_threads(
     owner: str, repo: str, number: int, login: str, email: str | None, *, unlisted: bool = False
-) -> list[Thread]:
-    client = langgraph_client()
-    candidates: dict[str, Thread] = {}
+) -> list[IndexedThread]:
+    """The PR's threads ``login`` may post to, its primary thread first.
+
+    The primary thread is the conversation that opened the PR, so every PR action
+    continues it; a thread linked later, such as one a GitHub comment started,
+    comes first only when the caller can't post to the primary.
+    """
+    candidates: dict[str, IndexedThread] = {}
     for thread_id in await _pr_thread_ids(owner, repo, number):
         if thread_id in candidates:
             continue
-        try:
-            thread = await client.threads.get(thread_id)
-        except Exception:  # noqa: BLE001
+        thread = await THREADS.get(thread_id)
+        if thread is None:
             continue
-        metadata = thread_metadata(thread)
+        metadata = thread.metadata
         if metadata.get("kind") or metadata.get("graph_id") not in (None, "agent"):
             continue
         if (metadata.get("unlisted") is True) is not unlisted:
             continue
         try:
-            _assert_thread_postable(metadata, login, email)
+            await _assert_thread_postable(metadata, login, email)
         except HTTPException:
             continue
         candidates[thread_id] = thread
-    return sorted(
-        candidates.values(),
-        key=lambda thread: (thread.get("status") == "busy", str(thread.get("updated_at", ""))),
-        reverse=True,
-    )
+    return list(candidates.values())
 
 
 def _pr_thread_lock_key(login: str, url: str) -> str:
@@ -301,10 +355,10 @@ async def _find_or_create_pr_thread(
     candidates = [
         thread
         for thread in await find_pr_threads(owner, repo, number, login, email, unlisted=unlisted)
-        if await index.live_thread_id(thread["thread_id"]) == thread["thread_id"]
+        if thread.runtime != "local"
     ]
     if candidates:
-        return candidates[0]["thread_id"]
+        return candidates[0].thread_id
     thread = await create_dashboard_thread_record(
         str(uuid.uuid4()),
         login=login,
@@ -342,6 +396,15 @@ async def _link_pr_thread(owner: str, repo: str, number: int, thread_id: str) ->
         )
 
 
+async def _open_findings(owner: str, repo: str, number: int) -> list[Finding]:
+    try:
+        return await list_findings(
+            await index.current_thread_id(reviewer_thread_id(owner, repo, number))
+        )
+    except ReviewerThreadMissingError:
+        return []
+
+
 async def pull_request_thread_running(
     owner: str, repo: str, number: int, login: str, email: str | None = None
 ) -> PullRequestThreadStatus:
@@ -349,9 +412,7 @@ async def pull_request_thread_running(
         raise HTTPException(422, "invalid pull request")
     await require_repo_access_for_user(login, f"{owner}/{repo}")
     threads = await find_pr_threads(owner, repo, number, login, email)
-    return PullRequestThreadStatus(
-        running=any(thread.get("status") == "busy" for thread in threads)
-    )
+    return PullRequestThreadStatus(running=any(thread.status == "busy" for thread in threads))
 
 
 async def start_pull_request_thread(
@@ -368,8 +429,18 @@ async def start_pull_request_thread(
         raise HTTPException(422, "invalid pull request")
     await require_repo_access_for_user(login, full_name)
     await _ensure_dashboard_github_token(login)
+    # The review page asks for its chat before it has read the PR, so a PR no thread links
+    # yet is read on GitHub before the lookup below can write a record or a thread for it.
+    stored = await PullRequest.get(owner, repo, number)
+    if stored is None or not stored.thread_ids:
+        async with GitHubClient.as_user(login) as github:
+            await github.repo(owner, repo).pull_request(number).pull()
     url = f"https://github.com/{full_name}/pull/{number}"
-    prompt = intent.prompt(url)
+    prompt = (
+        intent.prompt(url, login=login, findings=await _open_findings(owner, repo, number))
+        if isinstance(intent, FixUpIntent)
+        else intent.prompt(url)
+    )
     client = langgraph_client()
     async with agent_thread_pr_state_lock(_pr_thread_lock_key(login, url)):
         thread_id = await _find_or_create_pr_thread(
@@ -385,7 +456,7 @@ async def start_pull_request_thread(
         if not intent.dispatches_run:
             return PullRequestThreadRun(thread_id=thread_id)
         current = await client.threads.get(thread_id)
-        _assert_thread_postable(thread_metadata(current), login, email)
+        await _assert_thread_postable(thread_metadata(current), login, email)
         busy = current.get("status") == "busy"
         if busy and not intent.queues_behind_running:
             return PullRequestThreadRun(thread_id=thread_id, already_running=True)
@@ -395,19 +466,29 @@ async def start_pull_request_thread(
                 metadata={
                     "resolved": False,
                     "resolved_at_ms": None,
-                    "auto_resolved_by_prs": False,
                     **({"review_chat": False} if not isinstance(intent, MessageIntent) else {}),
                 },
             )
         current = await client.threads.get(thread_id)
-        _assert_thread_postable(thread_metadata(current), login, email)
+        await _assert_thread_postable(thread_metadata(current), login, email)
         configurable = await _build_dashboard_configurable(
-            thread_id, login, thread_metadata(current)
+            thread_id,
+            login,
+            thread_metadata(current),
+            overrides={"repo": {"owner": owner, "name": repo}, "pr_number": number},
         )
+        system = intent.system
         await dispatch_agent_run(
             thread_id,
-            prompt,
+            None if system else prompt,
             configurable,
+            input=build_run_input(
+                prompt,
+                {"sender_id": system["id"], "surface": "web", "kind": "system"},
+                systems=[system],
+            )
+            if system
+            else None,
             source="dashboard",
             thread_title=None,
             client=client,
@@ -425,7 +506,9 @@ async def dispatch_pull_request_prompt(
     *,
     title: str,
     before_dispatch: Callable[[str], Awaitable[None]],
+    system: SystemIdentity,
     unlisted: bool = False,
+    origin: str = "dashboard",
 ) -> str:
     """Enqueue ``prompt`` on ``login``'s thread for a pull request, creating it if needed; its id.
 
@@ -449,7 +532,10 @@ async def dispatch_pull_request_prompt(
             prompt,
             configurable,
             source="dashboard",
+            origin=origin,
             thread_title=None,
+            context={"sender_id": system["id"], "surface": "automation", "kind": "system"},
+            systems=[system],
             client=client,
             multitask_strategy="enqueue",
         )

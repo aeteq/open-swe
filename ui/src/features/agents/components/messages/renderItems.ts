@@ -14,12 +14,6 @@ import type {
 export type RenderItem =
   | { type: "text-chunk"; key: string; chunk: Chunk }
   | { type: "reasoning-item"; key: string; chunk: Chunk }
-  | {
-      type: "explored-group"
-      key: string
-      id: string
-      chunks: Array<ToolExecutionChunk>
-    }
   /**
    * One or more `task` (subagent) tool calls collapsed into a single group so
    * they can be rendered side by side as a card grid (see subagents/SubagentGroup).
@@ -53,13 +47,17 @@ export type RenderItem =
   | { type: "tool-item"; key: string; chunk: ToolExecutionChunk }
   | { type: "routed-message-item"; key: string; chunk: ToolExecutionChunk }
   | { type: "worker-launch-item"; key: string; chunk: ToolExecutionChunk }
+  | {
+      type: "task-event-item"
+      key: string
+      chunk: Extract<Chunk, { kind: "task-event" }>
+    }
 
 const REPLY_ITEM_TYPES = new Set<RenderItem["type"]>([
   "text-chunk",
   "reply-item",
   "managed-tools-item",
   "iframe-item",
-  "worker-launch-item",
   "routed-message-item",
   "image-item",
 ])
@@ -98,7 +96,7 @@ function attentionItems(
   item: RenderItem,
   includeUnfinished: boolean
 ): Array<RenderItem> {
-  if (item.type === "explored-group" || item.type === "subagent-group") {
+  if (item.type === "subagent-group") {
     return item.chunks
       .filter((chunk) => toolNeedsAttention(chunk, includeUnfinished))
       .map((chunk) => ({
@@ -121,6 +119,10 @@ function attentionItems(
     return chunks.some((chunk) => toolNeedsAttention(chunk, includeUnfinished))
       ? [item]
       : []
+  }
+
+  if (item.type === "worker-launch-item" || item.type === "task-event-item") {
+    return [item]
   }
 
   if (item.type === "text-chunk" && item.chunk.kind === "error") {
@@ -176,7 +178,6 @@ export class WorkTail {
           },
         ]
       }
-      case "explored-group":
       case "subagent-group":
         return WorkTail.toolEntries(item.key, item.chunks)
       case "code-item":
@@ -214,14 +215,15 @@ export class WorkTail {
 
 export function countWorkActions(items: Array<RenderItem>): number {
   return items.reduce((count, item) => {
-    if (item.type === "explored-group" || item.type === "subagent-group") {
+    if (item.type === "subagent-group") {
       return count + item.chunks.length
     }
     if (
       item.type === "edit-item" ||
       item.type === "shell-item" ||
       item.type === "sql-item" ||
-      item.type === "tool-item"
+      item.type === "tool-item" ||
+      item.type === "worker-launch-item"
     ) {
       return count + 1
     }
@@ -261,15 +263,8 @@ function isEditTool(chunk: ToolExecutionChunk): boolean {
   return false
 }
 
-function isExplorationTool(chunk: ToolExecutionChunk): boolean {
-  if (chunk.diffs?.length) return false
-  if (chunk.diffData) return false
-  const kind = chunk.toolKind
-  return kind === "read" || kind === "search"
-}
-
 function isShellTool(chunk: ToolExecutionChunk): boolean {
-  return chunk.toolKind === "execute"
+  return chunk.toolKind === "execute" || chunk.toolKind === "background"
 }
 
 function isSqlResult(chunk: ToolExecutionChunk): boolean {
@@ -303,24 +298,8 @@ export function buildRenderItems(
   messageId?: string
 ): Array<RenderItem> {
   const items: Array<RenderItem> = []
-  let exploredBuffer: Array<ToolExecutionChunk> = []
-  let exploredStartIndex = -1
   let subagentBuffer: Array<ToolExecutionChunk> = []
   let subagentStartIndex = -1
-
-  const flushExplored = () => {
-    if (exploredBuffer.length === 0) return
-    const firstId = exploredBuffer[0]?.toolCallId
-    const id = `explored-${firstId || exploredStartIndex}`
-    items.push({
-      type: "explored-group",
-      key: id,
-      id,
-      chunks: [...exploredBuffer],
-    })
-    exploredBuffer = []
-    exploredStartIndex = -1
-  }
 
   const flushSubagents = () => {
     if (subagentBuffer.length === 0) return
@@ -336,18 +315,13 @@ export function buildRenderItems(
     subagentStartIndex = -1
   }
 
-  const flushGroups = () => {
-    flushExplored()
-    flushSubagents()
-  }
-
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i]
     if (!chunk) continue
 
     if (chunk.kind === "tool-execution") {
       if (routedMessageHref(chunk)) {
-        flushGroups()
+        flushSubagents()
         items.push({
           type: "routed-message-item",
           key: `tool-${chunk.toolCallId}`,
@@ -356,7 +330,7 @@ export function buildRenderItems(
         continue
       }
       if (chunk.toolName === "start_async_task") {
-        flushGroups()
+        flushSubagents()
         items.push({
           type: "worker-launch-item",
           key: `tool-${chunk.toolCallId}`,
@@ -365,7 +339,7 @@ export function buildRenderItems(
         continue
       }
       if (chunk.display?.type === "output_iframe") {
-        flushGroups()
+        flushSubagents()
         items.push({
           type: "iframe-item",
           key: `tool-${chunk.toolCallId}`,
@@ -375,7 +349,7 @@ export function buildRenderItems(
       }
 
       if (chunk.images?.length) {
-        flushGroups()
+        flushSubagents()
         items.push({
           type: "image-item",
           key: `tool-${chunk.toolCallId}`,
@@ -386,20 +360,12 @@ export function buildRenderItems(
       }
 
       if (isSubagentTool(chunk)) {
-        flushExplored()
         if (subagentBuffer.length === 0) subagentStartIndex = i
         subagentBuffer.push(chunk)
         continue
       }
 
-      if (isExplorationTool(chunk)) {
-        flushSubagents()
-        if (exploredBuffer.length === 0) exploredStartIndex = i
-        exploredBuffer.push(chunk)
-        continue
-      }
-
-      flushGroups()
+      flushSubagents()
       const offer =
         chunk.toolKind === "managed-tools"
           ? parseManagedToolsCard(chunk.output)
@@ -454,8 +420,18 @@ export function buildRenderItems(
 
     if (chunk.kind === "text" && !chunk.text.trim()) continue
 
+    if (chunk.kind === "task-event") {
+      flushSubagents()
+      items.push({
+        type: "task-event-item",
+        key: `task-event-${chunk.messageId}`,
+        chunk,
+      })
+      continue
+    }
+
     if (chunk.kind === "reasoning") {
-      flushGroups()
+      flushSubagents()
       items.push({
         type: "reasoning-item",
         key: messageId
@@ -466,7 +442,7 @@ export function buildRenderItems(
       continue
     }
 
-    flushGroups()
+    flushSubagents()
     items.push({
       type: "text-chunk",
       key: messageId
@@ -476,6 +452,6 @@ export function buildRenderItems(
     })
   }
 
-  flushGroups()
+  flushSubagents()
   return items
 }

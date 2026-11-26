@@ -54,9 +54,9 @@ export function describeSendError(error: unknown): string {
 }
 
 /**
- * Send a user message as a `run.start`. The server starts a run on an idle
- * thread and steers the live run otherwise, so the client never has to know
- * which; holding a message back until a boundary is the queue's job.
+ * Send a user message. The server starts a run on an idle thread and steers
+ * the live run otherwise, so the client never has to know which; holding a
+ * message back until a boundary is the queue's job.
  *
  * The start is not awaited: the SDK stream's promise settles only when the
  * run ends. The optimistic row stands in until the message shows up in the
@@ -142,10 +142,13 @@ export function useSubmitAgentMessage(threadId: string) {
         // nothing may flip it back afterwards.
         setAgentThreadStatus(queryClient, threadId, "running")
 
-        const configurable = modelConfigurable(
-          { modelId: vars.model_id, effort: vars.effort },
-          vars.model_selection_changed
-        )
+        const configurable =
+          vars.inherit_model_selection && !vars.model_selection_changed
+            ? {}
+            : modelConfigurable(
+                { modelId: vars.model_id, effort: vars.effort },
+                vars.model_selection_changed
+              )
         const surface = useThreadRunConfig.getState().byThread[threadId]
         const [offered] = await Promise.all([
           pageTools.offer(),
@@ -167,6 +170,9 @@ export function useSubmitAgentMessage(threadId: string) {
             },
             configurable: {
               ...configurable,
+              ...(vars.local_access_bridge_id
+                ? { local_access_bridge_id: vars.local_access_bridge_id }
+                : {}),
               ...(offered.length
                 ? { page_tools: offered, page_session: pageTools.session }
                 : {}),

@@ -30,7 +30,6 @@ async def test_scout_records_security_identity_before_starting_or_reusing_a_run(
         pr_title="Change",
         base_sha="base",
         head_sha="head",
-        workspace_slug="workspace",
     )
 
     async def active_run(self: launch.ReviewScoutTarget) -> str | None:
@@ -43,9 +42,15 @@ async def test_scout_records_security_identity_before_starting_or_reusing_a_run(
         return active
 
     monkeypatch.setattr(launch.ReviewScoutTarget, "active_run", active_run)
-    monkeypatch.setattr(launch, "create_durable_run", AsyncMock(return_value={"run_id": "new-run"}))
+    create = AsyncMock(return_value={"run_id": "new-run"})
+    monkeypatch.setattr(launch, "create_durable_run", create)
 
-    assert await target.start() == (active or "new-run")
+    assert await target.start(origin="github") == (active or "new-run")
+    if active:
+        create.assert_not_awaited()
+    else:
+        assert create.await_args.kwargs["source"] == "review-scout"
+        assert create.await_args.kwargs["origin"] == "github"
 
 
 async def test_scout_refuses_a_repository_outside_the_allowed_orgs(
@@ -61,7 +66,6 @@ async def test_scout_refuses_a_repository_outside_the_allowed_orgs(
         pr_title="Change",
         base_sha="base",
         head_sha="head",
-        workspace_slug=None,
     )
 
     with pytest.raises(launch.RepositoryNotAllowed):
@@ -89,7 +93,9 @@ async def test_scout_run_context_preserves_history_and_system_prefix(
     client.__aenter__ = AsyncMock(return_value=pull)
     monkeypatch.setattr(graph.PullRequestClient, "as_app", lambda *args: client)
     monkeypatch.setattr(PinnedCheckout, "pin", AsyncMock())
+    monkeypatch.setattr(launch.queue, "cancel_key", AsyncMock())
     workspace = MagicMock(complete=False)
+    workspace.pull_request.concise_walkthrough = AsyncMock(return_value=False)
     monkeypatch.setattr(graph, "_workspace", AsyncMock(return_value=workspace))
     original = [HumanMessage(content="Scout this PR"), AIMessage(content="Previous plan")]
     state: dict[str, object] = {"messages": original.copy()}

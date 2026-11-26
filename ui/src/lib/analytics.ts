@@ -21,8 +21,6 @@ const ACTIONS = [
   "thread_share",
   "integration_connect",
   "integration_disconnect",
-  "mcp_save",
-  "mcp_delete",
   "automation_create",
   "automation_update",
   "automation_delete",
@@ -48,6 +46,8 @@ const FEATURES = [
   "findings",
 ] as const
 export type ProductFeature = (typeof FEATURES)[number]
+/** An app's name, or an action an app names: a lowercase token, never free text. */
+const APP_TOKEN = /^[a-z][a-z0-9_-]{0,63}$/
 type ActionResult = "accepted" | "failed"
 type FailureKind =
   | "none"
@@ -68,10 +68,7 @@ type ProductEvents = {
     failure_kind: FailureKind
   }
   agents_feature_opened: { feature: ProductFeature }
-  agents_thread_created: {
-    run_target: "local" | "cloud"
-    has_attachments: boolean
-  }
+  agents_thread_created: { has_attachments: boolean }
   agents_message_submitted: {
     mode: "new_turn" | "queue" | "steer"
     has_attachments: boolean
@@ -84,6 +81,10 @@ type ProductEvents = {
     end_reason: "death" | "quit" | "cap"
   }
   trace_flight_submit_rejected: { reason: string }
+  /** An app's page came on screen, by the app's name. */
+  apps_app_opened: { app: string }
+  /** Something the person did in an app, as the app names it. */
+  apps_app_action: { app: string; action: string }
 }
 
 type SegmentClient = Pick<
@@ -266,6 +267,8 @@ export class ProductAnalytics {
         "trace_flight_opened",
         "trace_flight_run_finished",
         "trace_flight_submit_rejected",
+        "apps_app_opened",
+        "apps_app_action",
       ].includes(name)
     )
       return
@@ -317,26 +320,18 @@ export class ProductAnalytics {
         ["DELETE", /^\/projects\/[^/]+\/members\/[^/]+$/, "project_unshare"],
         ["PUT", /^\/projects\/[^/]+\/threads\/[^/]+$/, "project_move_thread"],
         ["DELETE", /^\/projects\/threads\/[^/]+$/, "project_move_thread"],
-        ["POST", /^\/threads\/[^/]+\/share-to-workspace$/, "thread_share"],
+        ["POST", /^\/threads\/[^/]+\/share$/, "thread_share"],
         ["POST", /^\/(?:admin\/)?threads\/[^/]+\/cancel$/, "cancel"],
         ["POST", /^\/schedules$/, "automation_create"],
         ["PATCH", /^\/schedules\/[^/]+$/, "automation_update"],
         ["DELETE", /^\/schedules\/[^/]+$/, "automation_delete"],
         ["POST", /^\/schedules\/[^/]+\/trigger$/, "automation_run"],
-        [
-          "POST",
-          /^\/my-managed-tools\/[^/]+\/connect\/[^/]+$/,
-          "integration_connect",
-        ],
+        ["POST", /^\/my-managed-tools\/connect\/[^/]+$/, "integration_connect"],
         [
           "DELETE",
-          /^\/my-managed-tools\/[^/]+\/services\/[^/]+$/,
+          /^\/my-managed-tools\/services\/[^/]+$/,
           "integration_disconnect",
         ],
-        ["PUT", /^\/(?:my-mcps|mcps)\/[^/]+$/, "mcp_save"],
-        ["DELETE", /^\/(?:my-mcps|mcps)\/[^/]+$/, "mcp_delete"],
-        ["PUT", /^\/workspaces\/[^/]+\/mcps\/[^/]+$/, "mcp_save"],
-        ["DELETE", /^\/workspaces\/[^/]+\/mcps\/[^/]+$/, "mcp_delete"],
         [
           "POST",
           /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+\/human-review$/,
@@ -456,10 +451,14 @@ export class ProductAnalytics {
         ].includes(value)
       )
     }
-    if (name === "agents_thread_created") {
-      if (key === "run_target") return value === "local" || value === "cloud"
+    if (name === "apps_app_opened" || name === "apps_app_action")
+      return (
+        (key === "app" || (key === "action" && name === "apps_app_action")) &&
+        typeof value === "string" &&
+        APP_TOKEN.test(value)
+      )
+    if (name === "agents_thread_created")
       return key === "has_attachments" && typeof value === "boolean"
-    }
     if (name === "agents_message_submitted") {
       if (key === "mode")
         return value === "new_turn" || value === "queue" || value === "steer"

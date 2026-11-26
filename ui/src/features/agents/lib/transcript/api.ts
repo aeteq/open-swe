@@ -1,8 +1,7 @@
 /**
  * Read and write endpoints for the transcript event log. Reads never touch
- * LangGraph; writes are the same v3 `run.start` command `useStream` posts, so
- * the server's existing enrichment (ownership, model, thread creation) applies
- * unchanged.
+ * LangGraph; writes are `/commands` `run.start`s, which the server enriches
+ * (ownership, model, thread creation) as it does every run it starts.
  */
 
 import { AgentsApiError, agentsRequest } from "@/features/agents/lib/api"
@@ -10,6 +9,7 @@ import { promptMessage } from "@/features/agents/lib/stream/promptMessage"
 import { inSendOrder } from "@/features/agents/lib/runStartOrder"
 import {
   REQUEST_ID_HEADER,
+  SUBMITTED_AT_HEADER,
   dashboardApiUrl,
   networkError,
   newRequestId,
@@ -197,9 +197,8 @@ export interface RunStartCommand {
 const AGENT_ASSISTANT_ID = "agent"
 
 /**
- * The command `useStream.submit` would have sent: one `run.start` carrying the
- * new human message plus the run `configurable` (with `thread_id` bound, the
- * way the SDK binds it).
+ * One `run.start` carrying the new human message plus the run `configurable`
+ * (with `thread_id` bound, the way the SDK binds it).
  */
 export function runStartCommand({
   threadId,
@@ -264,6 +263,8 @@ export async function startRun(
   command: RunStartCommand
 ): Promise<void> {
   const requestId = newRequestId()
+  // Taken before waiting behind earlier sends, which the person waits through too.
+  const submittedAt = Date.now()
   const response = await inSendOrder(threadId, () =>
     timedFetch(
       dashboardApiUrl(`/threads/${encodeURIComponent(threadId)}/commands`),
@@ -273,6 +274,7 @@ export async function startRun(
         headers: {
           "Content-Type": "application/json",
           [REQUEST_ID_HEADER]: requestId,
+          [SUBMITTED_AT_HEADER]: String(submittedAt),
         },
         body: JSON.stringify(command),
       }

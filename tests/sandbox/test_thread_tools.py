@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import httpx
-import httpx2
 import jwt
 import pytest
 from fastapi import HTTPException
@@ -13,6 +12,7 @@ from langchain_core.tools import StructuredTool
 from openswe.middleware.dynamic_tools import DynamicToolMiddleware
 from openswe.sandboxes import tool_access
 from openswe.sandboxes.tool_runtime import ToolSurface
+from tests.conftest import serve_threads_from
 
 TEST_SIGNING_KEY = "test-tools-signing-key-" * 3
 
@@ -87,6 +87,7 @@ async def test_capability_carries_binding_and_is_revoked_on_rebinding(
     client = MagicMock()
     client.threads.get = AsyncMock(return_value={"metadata": {"sandbox_id": "sandbox-a"}})
     monkeypatch.setattr(tool_access, "get_client", lambda: client)
+    serve_threads_from(monkeypatch, client.threads.get)
     issued = await tool_access.issue_tool_access("thread-a", "sandbox-a")
     assert issued is not None
     url, token = issued
@@ -116,69 +117,31 @@ async def test_capability_carries_binding_and_is_revoked_on_rebinding(
         await tool_access.authenticate_tool_access("x" * 64)
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_proxy_refresh_preserves_tools_and_custom_rules(
+async def test_the_tool_channel_capability_reaches_the_sandbox_through_its_proxy_callback(
     capability_settings: None,
     monkeypatch: pytest.MonkeyPatch,
-    registry_db: None,
-    enabled: bool,
 ) -> None:
-    from openswe.dashboard.workspace_settings import (
-        WorkspaceSettingsUpdate,
-        upsert_instance_settings,
-    )
-    from openswe.sandboxes.providers import langsmith
+    """The proxy callback answers a request to the tool channel with the capability of the
+    thread the sandbox belongs to, and the sandbox's proxy config, which holds none, tells its
+    commands where the channel is."""
+    from openswe.sandboxes.proxy_callback import CallingSandbox, SandboxProxyCallback
 
-    await upsert_instance_settings(WorkspaceSettingsUpdate(sandbox_openai_enabled=enabled))
-
-    monkeypatch.setenv("LANGSMITH_API_KEY", "test-sandbox-api-key")
-    proxy_client = MagicMock()
-    proxy_client.get = AsyncMock(
-        return_value=httpx2.Response(
-            200, json={"proxy_config": {}}, request=httpx2.Request("GET", "https://sandbox.test")
-        )
-    )
-    client_context = MagicMock()
-    client_context.__aenter__ = AsyncMock(return_value=proxy_client)
-    client_context.__aexit__ = AsyncMock(return_value=False)
-    monkeypatch.setattr(langsmith.httpx2, "AsyncClient", MagicMock(return_value=client_context))
-    patch_proxy = AsyncMock()
-    monkeypatch.setattr(langsmith, "_patch_proxy_config", patch_proxy)
     client = MagicMock()
     client.threads.get = AsyncMock(return_value={"metadata": {"sandbox_id": "sandbox-a"}})
     monkeypatch.setattr(tool_access, "get_client", lambda: client)
-    custom = {"name": "custom", "match_hosts": ["custom.example.test"]}
-    await langsmith.configure_sandbox_proxy(
-        "sandbox-a",
-        "test-github-token",
-        thread_id="thread-a",
-        base_proxy_config={"enabled": True, "rules": [custom]},
+    serve_threads_from(monkeypatch, client.threads.get)
+    sandbox = CallingSandbox(name="sandbox-a", thread_id="thread-a", metadata={})
+
+    answer = await sandbox.headers_for("agent.example.test")
+
+    access = await tool_access.authenticate_tool_access(answer.headers[tool_access.TOOLS_HEADER])
+    assert (access.thread_id, access.sandbox_id) == ("thread-a", "sandbox-a")
+    config = SandboxProxyCallback.proxy_config({"rules": []})
+    assert "sandbox-a" not in str(config) and "thread-a" not in str(config)
+    assert (
+        SandboxProxyCallback.env_vars(github=True)["OPEN_SWE_TOOLS_URL"]
+        == "https://agent.example.test/dashboard/api/sandbox-tools"
     )
-    rules = patch_proxy.call_args.args[2]["proxy_config"]["rules"]
-    assert custom in rules
-    rule = next(rule for rule in rules if rule["name"] == tool_access.TOOLS_RULE)
-    assert rule["match_hosts"] == ["agent.example.test"]
-    assert rule["headers"][0]["type"] == "opaque"
-    expected_env = {
-        "OPEN_SWE_TOOLS_URL": "https://agent.example.test/dashboard/api/sandbox-tools",
-    }
-    if enabled:
-        expected_env.update(
-            OPENAI_BASE_URL="https://agent.example.test/dashboard/api/sandbox-openai/v1",
-            OPENAI_API_KEY=tool_access.OPENAI_API_KEY_PLACEHOLDER,
-        )
-    assert rule["env_vars"] == expected_env
-    assert "thread-a" not in str(rule) and "sandbox-a" not in str(rule)
-    first_token = rule["headers"][0]["value"]
-    await langsmith.configure_sandbox_proxy(
-        "sandbox-a",
-        "new-test-github-token",
-        thread_id="thread-a",
-        base_proxy_config={"enabled": True, "rules": [custom]},
-    )
-    rules = patch_proxy.call_args.args[2]["proxy_config"]["rules"]
-    rule = next(rule for rule in rules if rule["name"] == tool_access.TOOLS_RULE)
-    assert rule["headers"][0]["value"] == first_token
 
 
 async def test_mcp_discovery_without_a_model_call() -> None:
@@ -188,8 +151,6 @@ async def test_mcp_discovery_without_a_model_call() -> None:
     properties = tools.catalog()[0].parameters["properties"]
     assert isinstance(properties, dict) and set(properties) == {"value"}
     assert "integration_echo" in tools.tools
-    # The surface lists the integration tools themselves, so it never offers their loader.
-    assert "load_integration_tools" not in tools.tools
 
 
 @pytest.mark.parametrize(

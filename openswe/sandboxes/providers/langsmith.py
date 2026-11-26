@@ -1,12 +1,11 @@
 """LangSmith sandbox backend integration."""
 
 import asyncio
-import json
 import logging
 import secrets
 import shlex
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Literal, NotRequired, TypedDict
 
 import httpx2
@@ -22,6 +21,7 @@ from deepagents.backends.protocol import (
     WriteResult,
 )
 from langsmith.sandbox import (
+    AsyncSandbox,
     AsyncSandboxClient,
     CommandTimeoutError,
     ResourceNotFoundError,
@@ -31,17 +31,20 @@ from langsmith.sandbox import (
     SandboxServerReloadError,
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from runtime_api.catalog import SandboxCreate
 from runtime_api.sandbox_proxy import GITHUB_PROXY_RULES
+from runtime_api.sandbox_setup import GitIdentity
 
 from openswe.config import ENV
+from openswe.sandboxes.cloud_identity import federated_cloud
+from openswe.sandboxes.configuration import ExecutionConfiguration
 from openswe.sandboxes.paths import WORKSPACE_DIR, forget_work_dir, remember_work_dir
 from openswe.sandboxes.providers.langsmith_api import SandboxAPI
 from openswe.sandboxes.providers.registry import SandboxGoneError
+from openswe.sandboxes.ranges import FileTooLargeError
 from openswe.sandboxes.retry import retry_transient_sandbox_errors
-from openswe.utils.authorship import OPEN_SWE_BOT_EMAIL, OPEN_SWE_BOT_NAME
 from openswe.utils.http_pool import pooled_transport
 from openswe.utils.startup_trace import asubphase
-from openswe.workspaces.cloud_identity import federated_cloud
 
 logger = logging.getLogger(__name__)
 
@@ -131,33 +134,10 @@ def _get_sandbox_snapshot_config() -> tuple[int, int, int, int, int]:
     )
 
 
-def _get_sandbox_create_extra_fields() -> dict[str, Any]:
-    """Parse SANDBOX_CREATE_EXTRA_JSON into extra fields merged into the
-    sandbox-create request body, e.g. ``{"_internal_runtime": "v2"}``."""
-    raw = ENV.SANDBOX_CREATE_EXTRA_JSON.optional()
-    if not raw or not raw.strip():
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as e:
-        msg = f"SANDBOX_CREATE_EXTRA_JSON must be valid JSON, got {raw!r}"
-        raise ValueError(msg) from e
-    if not isinstance(parsed, dict):
-        msg = f"SANDBOX_CREATE_EXTRA_JSON must be a JSON object, got {type(parsed).__name__}"
-        raise ValueError(msg)
-    return parsed
-
-
-def _merge_sandbox_create_extra_fields(
-    create_params: dict[str, Any] | None,
-) -> dict[str, Any]:
-    return {**_get_sandbox_create_extra_fields(), **(create_params or {})}
-
-
 def get_sandbox_proxy_config(
     create_params: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    proxy_config = _merge_sandbox_create_extra_fields(create_params).get("proxy_config")
+    proxy_config = (create_params or {}).get("proxy_config")
     return dict(proxy_config) if isinstance(proxy_config, dict) else None
 
 
@@ -173,7 +153,8 @@ class LangSmithCreateOptions(BaseModel):
     mem_bytes: int | None = None
     idle_ttl_seconds: int
     delete_after_stop_seconds: int
-    # Create-request fields the SDK does not model, such as ``preserve_memory_on_stop``.
+    # The other ``create_sandbox`` arguments, from ``ExecutionConfiguration.CREATE_PARAMS``.
+    # Stored run profiles are digested with this field's name, so it keeps it.
     extra_fields: dict[str, JsonValue] = {}
 
     @classmethod
@@ -195,11 +176,13 @@ class LangSmithCreateOptions(BaseModel):
         ) = _get_sandbox_snapshot_config()
         if mem_bytes is None and vcpus is None:
             mem_bytes, vcpus = default_mem_bytes, default_vcpus
-        extra_fields = _merge_sandbox_create_extra_fields(create_params)
-        # The API boots its default root snapshot only when the key is absent:
-        # `snapshot_id` is a UUID server-side, so "" is rejected with a 422.
-        if not extra_fields.get("snapshot_id"):
-            extra_fields.pop("snapshot_id", None)
+        extra_fields = dict(create_params or {})
+        ExecutionConfiguration.check_create_param_keys(extra_fields)
+        # A TTL in ``create_params`` overrides the deployment's default; null keeps it.
+        if (idle := extra_fields.pop("idle_ttl_seconds", None)) is not None:
+            idle_ttl_seconds = idle
+        if (after_stop := extra_fields.pop("delete_after_stop_seconds", None)) is not None:
+            delete_after_stop_seconds = after_stop
         return cls(
             snapshot_id=snapshot_id or None,
             fs_capacity_bytes=(
@@ -211,22 +194,6 @@ class LangSmithCreateOptions(BaseModel):
             delete_after_stop_seconds=delete_after_stop_seconds,
             extra_fields=_json_object.validate_python(extra_fields),
         )
-
-
-def _install_create_extra_fields(client: AsyncSandboxClient, extra: dict[str, Any]) -> None:
-    """Merge extra fields until the SDK exposes create-payload passthrough."""
-    if not extra:
-        return
-    original_post = client._http.post  # noqa: SLF001
-
-    async def post_with_extra(url: Any, *args: Any, **kwargs: Any) -> Any:
-        payload = kwargs.get("json")
-        if str(url).endswith("/boxes") and isinstance(payload, dict):
-            kwargs["json"] = {**payload, **extra}
-        return await original_post(url, *args, **kwargs)
-
-    # RFC moving this into the SDK if it adds a public arbitrary create-fields API.
-    client._http.post = post_with_extra  # noqa: SLF001 # ty: ignore[invalid-assignment]
 
 
 class GitHubProxyHeader(TypedDict):
@@ -320,28 +287,10 @@ async def _reuse_existing_sandbox(client: AsyncSandboxClient, sandbox_id: str) -
         raise RuntimeError(msg) from e
 
 
-async def _create_sandbox_with_retry(
-    client: AsyncSandboxClient,
-    *,
-    snapshot_id: str,
-    fs_capacity_bytes: int | None,
-    vcpus: int | None,
-    mem_bytes: int | None,
-    idle_ttl_seconds: int | None,
-    delete_after_stop_seconds: int | None,
-    timeout: int,
-) -> Any:
+async def _create_sandbox_with_retry(create: Callable[[], Awaitable[AsyncSandbox]]) -> AsyncSandbox:
     for attempt in range(SANDBOX_CREATE_MAX_ATTEMPTS):
         try:
-            return await client.create_sandbox(
-                snapshot_id=snapshot_id,
-                fs_capacity_bytes=fs_capacity_bytes,
-                vcpus=vcpus,
-                mem_bytes=mem_bytes,
-                idle_ttl_seconds=idle_ttl_seconds,
-                delete_after_stop_seconds=delete_after_stop_seconds,
-                timeout=timeout,
-            )
+            return await create()
         except Exception as exc:
             if attempt == SANDBOX_CREATE_MAX_ATTEMPTS - 1 or not _is_retryable_sandbox_create_error(
                 exc
@@ -358,7 +307,7 @@ async def _create_sandbox_with_retry(
     raise RuntimeError("unreachable sandbox retry state")
 
 
-async def _patch_proxy_config(
+async def _patch_sandbox(
     client: httpx2.AsyncClient,
     url: str,
     payload: dict[str, Any],
@@ -371,55 +320,29 @@ async def _patch_proxy_config(
 
     await retry_transient_sandbox_errors(
         patch,
-        description=f"GitHub proxy config for sandbox {sandbox_name}",
+        description=f"update of sandbox {sandbox_name}",
         max_elapsed=PROXY_CONFIG_RETRY_WINDOW_SECONDS,
         retryable=_is_retryable_proxy_config_error,
         retry_after=_proxy_config_retry_after,
     )
 
 
-async def _federated_proxy_rules(
-    client: httpx2.AsyncClient, url: str, api: SandboxAPI, sandbox_name: str
-) -> list[dict[str, JsonValue]]:
-    async def get() -> dict[str, JsonValue]:
-        response = await client.get(url, headers=api.headers())
-        api.raise_for_status(response)
-        return _json_object.validate_python(response.json())
-
-    sandbox = await retry_transient_sandbox_errors(
-        get,
-        description=f"proxy config of sandbox {sandbox_name}",
-        max_elapsed=PROXY_CONFIG_RETRY_WINDOW_SECONDS,
-        retryable=_is_retryable_proxy_config_error,
-        retry_after=_proxy_config_retry_after,
-    )
-    current = sandbox.get("proxy_config")
-    rules = current.get("rules") if isinstance(current, dict) else None
-    return [
-        rule
-        for rule in (rules if isinstance(rules, list) else [])
-        if isinstance(rule, dict) and federated_cloud(rule)
-    ]
-
-
-async def sandbox_proxy_config(
-    sandbox_name: str,
+def sandbox_proxy_config(
     github_token: str | None,
     *,
     base_proxy_config: Mapping[str, object] | None = None,
-    thread_id: str | None = None,
     federated_rules: Sequence[dict[str, JsonValue]] | None = None,
 ) -> dict[str, JsonValue]:
-    """The sandbox's proxy config: GitHub's rules with ``github_token``, none without one, the
-    thread's tool channel, and the custom settings of ``base_proxy_config``.
+    """The sandbox's proxy config: GitHub's rules with ``github_token``, none without one, and
+    the custom settings of ``base_proxy_config``.
 
     ``federated_rules`` are the cloud identity rules read from the live sandbox, which replace
     any in ``base_proxy_config``; without them, the base config's are kept."""
-    from openswe.sandboxes.tool_access import TOOLS_RULE, tool_proxy_rule
+    from openswe.sandboxes.tool_access import TOOLS_RULE
 
     proxy_config = dict(base_proxy_config or {})
     custom_rules = proxy_config.get("rules")
-    # Written afresh below, or credentials saved by built-in integrations since removed.
+    # Written afresh, or credentials saved by built-in integrations since removed.
     replaced = {
         *(rule.name for rule in GITHUB_PROXY_RULES),
         TOOLS_RULE,
@@ -432,7 +355,6 @@ async def sandbox_proxy_config(
         for rule in (custom_rules if isinstance(custom_rules, list) else [])
         if not isinstance(rule, dict) or rule.get("name") not in replaced
     ]
-    tools_rule = await tool_proxy_rule(thread_id, sandbox_name) if thread_id else None
     if federated_rules is not None:
         # Federation is fixed at creation, including its absence on older sandboxes, and
         # LangSmith allows one rule per cloud.
@@ -446,12 +368,122 @@ async def sandbox_proxy_config(
             ),
             *federated_rules,
         ]
-    proxy_config["rules"] = [
-        *_github_proxy_rules(github_token),
-        *([tools_rule] if tools_rule else []),
-        *preserved_rules,
-    ]
+    proxy_config["rules"] = [*_github_proxy_rules(github_token), *preserved_rules]
     return _json_object.validate_python(proxy_config)
+
+
+class AdoptedSandbox(BaseModel):
+    """A live sandbox as adopting it left it: the cloud identity rules it was created with,
+    and the environment its commands find, None where adopting could not set it."""
+
+    rules: list[dict[str, JsonValue]]
+    env_vars: dict[str, str] | None
+
+
+class LiveSandboxProxy:
+    """The proxy config of live sandbox ``name``, read and written through LangSmith's API.
+
+    LangSmith fixes a sandbox's cloud identity rules when it is created and refuses a write
+    that changes them (HTTP 422), so every config written here keeps the ones read from it.
+    """
+
+    def __init__(self, api: SandboxAPI, name: str) -> None:
+        self.api = api
+        self.name = name
+        self.url = f"{api.endpoint}/boxes/{name}"
+
+    @classmethod
+    async def adopt(cls, name: str, *, env_vars: Mapping[str, str]) -> AdoptedSandbox | None:
+        """Live sandbox ``name``'s cloud identity rules, with its own environment set to hold
+        ``env_vars``; None without a LangSmith API key, which nothing could read them with.
+
+        A sandbox created before its commands' environment came from its own run config has
+        it from its old proxy config's rules, which the config MDA writes no longer carries.
+        Reading the rules raises when it fails, while the host suspends an idle sandbox
+        included; a failed environment write leaves the commands without it until the next
+        adoption sets it.
+        """
+        api = SandboxAPI.from_env()
+        if not api.api_key:
+            return None
+        live = cls(api, name)
+        async with httpx2.AsyncClient(
+            transport=pooled_transport(), timeout=PROXY_CONFIG_TIMEOUT_SECONDS
+        ) as client:
+            sandbox = await live.live(client)
+            rules = cls.federated_rules_in(sandbox)
+            try:
+                await live.set_env(client, sandbox.get("run_config"), env_vars)
+            except Exception:
+                logger.warning(
+                    "Could not set the sandbox's environment",
+                    exc_info=True,
+                    extra={"sandbox_id": name},
+                )
+                return AdoptedSandbox(rules=rules, env_vars=None)
+            return AdoptedSandbox(rules=rules, env_vars=dict(env_vars))
+
+    async def live(self, client: httpx2.AsyncClient) -> dict[str, JsonValue]:
+        """This sandbox as LangSmith answers for it now, retried for as long as the host takes
+        to suspend an idle sandbox."""
+
+        async def get() -> dict[str, JsonValue]:
+            response = await client.get(self.url, headers=self.api.headers())
+            self.api.raise_for_status(response)
+            return _json_object.validate_python(response.json())
+
+        return await retry_transient_sandbox_errors(
+            get,
+            description=f"proxy config of sandbox {self.name}",
+            max_elapsed=PROXY_CONFIG_RETRY_WINDOW_SECONDS,
+            retryable=_is_retryable_proxy_config_error,
+            retry_after=_proxy_config_retry_after,
+        )
+
+    @staticmethod
+    def federated_rules_in(sandbox: Mapping[str, JsonValue]) -> list[dict[str, JsonValue]]:
+        """The cloud identity rules in live sandbox ``sandbox``'s proxy config."""
+        current = sandbox.get("proxy_config")
+        rules = current.get("rules") if isinstance(current, dict) else None
+        return [
+            rule
+            for rule in (rules if isinstance(rules, list) else [])
+            if isinstance(rule, dict) and federated_cloud(rule)
+        ]
+
+    async def set_env(
+        self, client: httpx2.AsyncClient, run_config: JsonValue, env_vars: Mapping[str, str]
+    ) -> None:
+        """Have this sandbox's own environment hold ``env_vars``, over its ``run_config``.
+
+        LangSmith replaces a sandbox's whole run config on an update, but merges its
+        environment key by key, so the rest of it is kept, and pushes the change to a running
+        sandbox."""
+        current = run_config if isinstance(run_config, dict) else {}
+        held = current.get("env_vars")
+        held = held if isinstance(held, dict) else {}
+        if all(held.get(name) == value for name, value in env_vars.items()):
+            return
+        wanted = {**held, **env_vars}
+        updated = {**current, "env_vars": wanted}
+        await _patch_sandbox(client, self.url, {"run_config": updated}, self.api, self.name)
+
+    async def config(
+        self,
+        client: httpx2.AsyncClient,
+        github_token: str | None,
+        *,
+        base_proxy_config: Mapping[str, object] | None = None,
+    ) -> dict[str, JsonValue]:
+        """``sandbox_proxy_config`` for this sandbox, its cloud identity rules read from it."""
+        return sandbox_proxy_config(
+            github_token,
+            base_proxy_config=base_proxy_config,
+            federated_rules=self.federated_rules_in(await self.live(client)),
+        )
+
+    async def write(self, client: httpx2.AsyncClient, proxy_config: dict[str, JsonValue]) -> None:
+        await _patch_sandbox(client, self.url, {"proxy_config": proxy_config}, self.api, self.name)
 
 
 async def configure_sandbox_proxy(
@@ -459,25 +491,19 @@ async def configure_sandbox_proxy(
     github_token: str | None,
     *,
     base_proxy_config: dict[str, Any] | None = None,
-    thread_id: str | None = None,
 ) -> None:
-    """Inject GitHub and thread-tool credentials while preserving custom proxy settings."""
+    """Inject GitHub credentials while preserving custom proxy settings, on a sandbox no
+    thread works in, such as an image build's."""
     api = SandboxAPI.from_env()
     if not api.api_key:
         logger.warning("No LangSmith API key found, skipping sandbox proxy configuration")
         return
-    url = f"{api.endpoint}/boxes/{sandbox_name}"
+    live = LiveSandboxProxy(api, sandbox_name)
     async with httpx2.AsyncClient(
         transport=pooled_transport(), timeout=PROXY_CONFIG_TIMEOUT_SECONDS
     ) as client:
-        proxy_config = await sandbox_proxy_config(
-            sandbox_name,
-            github_token,
-            base_proxy_config=base_proxy_config,
-            thread_id=thread_id,
-            federated_rules=await _federated_proxy_rules(client, url, api, sandbox_name),
-        )
-        await _patch_proxy_config(client, url, {"proxy_config": proxy_config}, api, sandbox_name)
+        proxy_config = await live.config(client, github_token, base_proxy_config=base_proxy_config)
+        await live.write(client, proxy_config)
     logger.info("Configured sandbox proxy", extra={"sandbox_id": sandbox_name})
 
 
@@ -494,8 +520,7 @@ async def create_workspace_service_url(sandbox_id: str, port: int) -> str:
     The URL carries no token and never expires, so the same link keeps working
     for as long as the sandbox does; its viewers authenticate with their own
     LangSmith session. LangSmith refuses it while an unexpired service token
-    exists for the same port, and while the tenant's
-    ``sandbox_service_url_langsmith_login`` flag is off.
+    exists for the same port.
     """
     response = await SandboxAPI.from_env().request(
         "POST",
@@ -525,7 +550,6 @@ async def capture_snapshot_with_tag(
     Snapshots are Docker-style: ``name:tag`` is a mutable pointer at immutable
     content, so re-capturing a tag moves it rather than colliding. The Python SDK
     has no ``tag`` parameter yet, so the field is injected into the capture body
-    the same way ``_install_create_extra_fields`` injects sandbox-create fields,
     along with a request timeout longer than the client's default, which
     ``timeout`` does not cover: it only bounds the wait for the snapshot to be ready.
     """
@@ -568,7 +592,6 @@ async def connect_async_langsmith_sandbox(sandbox_id: str) -> tuple[AsyncSandbox
 
 async def create_langsmith_sandbox(
     sandbox_id: str | None = None,
-    github_token: str | None = None,
     *,
     snapshot_id: str | None = None,
     mem_bytes: int | None = None,
@@ -586,14 +609,13 @@ async def create_langsmith_sandbox(
     Args:
         sandbox_id: Optional existing sandbox ID to connect to.
                    If None, creates a new sandbox.
-        github_token: Optional GitHub token. Used to configure proxy auth on
-                      new sandboxes. Ignored when connecting to an existing sandbox.
         snapshot_id: Optional repo-scoped snapshot to boot from. When omitted,
             uses the API's root snapshot.
         mem_bytes: Optional memory capacity override for a newly-created sandbox.
         vcpus: Optional virtual CPU count override for a newly-created sandbox.
         fs_capacity_bytes: Optional filesystem capacity override for a newly-created sandbox.
-        create_params: Optional additional fields merged into the sandbox create body.
+        create_params: Optional additional fields merged into the sandbox create body,
+            such as a ``proxy_config`` whose cloud identity rules are fixed at creation.
         prepare_work_dir: Whether a new sandbox creates ``/workspace`` before returning.
 
     Returns:
@@ -620,17 +642,6 @@ async def create_langsmith_sandbox(
 
     if sandbox_id is None and prepare_work_dir:
         await backend.aexecute(f"mkdir -p {WORKSPACE_DIR}")
-    if sandbox_id is None and github_token:
-        proxy_config = get_sandbox_proxy_config(create_params)
-        if proxy_config is not None:
-            await configure_sandbox_proxy(
-                backend.id,
-                github_token,
-                base_proxy_config=proxy_config,
-            )
-        else:
-            await configure_sandbox_proxy(backend.id, github_token)
-
     return backend
 
 
@@ -655,14 +666,16 @@ class TimeoutLangSmithSandbox(LangSmithSandbox):
     """
 
     _git_identity_pending: str | None = None
+    _git_identity: GitIdentity = GitIdentity()
     _git_identity_lock: asyncio.Lock | None = None
 
     @property
     def sandbox(self) -> Any:
         return self._sandbox
 
-    def reset_git_identity(self) -> None:
-        """Apply the fallback identity before the next command, without another connection."""
+    def reset_git_identity(self, identity: GitIdentity) -> None:
+        """Apply ``identity`` before the next command, without another connection."""
+        self._git_identity = identity
         self._git_identity_pending = f"__open_swe_git_identity_{secrets.token_hex(16)}__\n"
         forget_work_dir(self)
 
@@ -796,6 +809,17 @@ class TimeoutLangSmithSandbox(LangSmithSandbox):
 
         return list(await asyncio.gather(*(download(path) for path in paths)))
 
+    async def aread_range(self, path: str, start: int, end: int, *, limit: int) -> bytes:
+        try:
+            chunk = await self._aget_sandbox().read_range(path, start=start, end=end)
+        except ResourceNotFoundError as exc:
+            raise FileNotFoundError(path) from exc
+        if max(chunk.total_bytes or 0, len(chunk.content)) > limit:
+            raise FileTooLargeError(path)
+        # A server that ignores the range sends the whole file; keep only what was asked.
+        offset = start - chunk.start
+        return chunk.content[offset : offset + end - start + 1]
+
     async def awrite(self, file_path: str, content: str) -> WriteResult:
         """Upload through the sandbox file API, which creates missing parent directories.
 
@@ -839,8 +863,8 @@ class TimeoutLangSmithSandbox(LangSmithSandbox):
             prepared = (
                 f"{{ if mkdir -p {shlex.quote(WORKSPACE_DIR)} && test -w {shlex.quote(WORKSPACE_DIR)}; "
                 f"then printf %s {shlex.quote(work_dir_ready)}; fi; }} 2>&1; "
-                f"{{ if git config --global user.name {shlex.quote(OPEN_SWE_BOT_NAME)} && "
-                f"git config --global user.email {shlex.quote(OPEN_SWE_BOT_EMAIL)}; "
+                f"{{ if git config --global user.name {shlex.quote(self._git_identity.name)} && "
+                f"git config --global user.email {shlex.quote(self._git_identity.email)}; "
                 f"then printf %s {shlex.quote(identity_ready)}; fi; }} 2>&1; "
                 f"printf %s {shlex.quote(command_started)}; "
                 f"exec /bin/bash -c {shlex.quote(command)}"
@@ -996,7 +1020,6 @@ class LangSmithProvider(SandboxProvider):
             ):
                 msg = f"{name} must be >= 0, got {value}"
                 raise ValueError(msg)
-        _get_sandbox_create_extra_fields()
 
     async def get_or_create(
         self,
@@ -1029,24 +1052,27 @@ class LangSmithProvider(SandboxProvider):
                 sandbox = await _reuse_existing_sandbox(client, sandbox_id)
                 return TimeoutLangSmithSandbox(sandbox.to_sync())
 
-            effective_snapshot_id = snapshot_id or ""
-            extra_fields = _merge_sandbox_create_extra_fields(create_params)
-            # The API boots its default root snapshot only when the key is absent:
-            # `snapshot_id` is a UUID server-side, so "" is rejected with a 422.
-            if not extra_fields.get("snapshot_id"):
-                extra_fields.pop("snapshot_id", None)
-            _install_create_extra_fields(client, extra_fields)
-
+            params = dict(create_params or {})
+            ExecutionConfiguration.check_create_param_keys(params)
+            if "mount_config" in params:
+                params["mount_config"] = SandboxCreate.mount_config_argument(params["mount_config"])
+            # A TTL in ``create_params`` overrides the one given; null keeps it.
+            if (idle := params.pop("idle_ttl_seconds", None)) is not None:
+                idle_ttl_seconds = idle
+            if (after_stop := params.pop("delete_after_stop_seconds", None)) is not None:
+                delete_after_stop_seconds = after_stop
             try:
                 sandbox = await _create_sandbox_with_retry(
-                    client,
-                    snapshot_id=effective_snapshot_id,
-                    fs_capacity_bytes=fs_capacity_bytes,
-                    vcpus=vcpus,
-                    mem_bytes=mem_bytes,
-                    idle_ttl_seconds=idle_ttl_seconds,
-                    delete_after_stop_seconds=delete_after_stop_seconds,
-                    timeout=timeout,
+                    lambda: client.create_sandbox(
+                        snapshot_id=snapshot_id or "",
+                        fs_capacity_bytes=fs_capacity_bytes,
+                        vcpus=vcpus,
+                        mem_bytes=mem_bytes,
+                        idle_ttl_seconds=idle_ttl_seconds,
+                        delete_after_stop_seconds=delete_after_stop_seconds,
+                        timeout=timeout,
+                        **params,
+                    )
                 )
             except Exception as e:
                 msg = f"Failed to create sandbox from snapshot '{snapshot_id}': {e}"

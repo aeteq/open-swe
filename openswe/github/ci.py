@@ -9,33 +9,49 @@ permission, and a missing permission or transient error must never break
 webhook handling.
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
-from openswe.github.checks import REVIEW_CHECK_RUN_NAME
-from openswe.github.http import ReadResult, RepoClient, read_result
+from openswe.github.checks import APPROVAL_CHECK_RUN_NAME, REVIEW_CHECK_RUN_NAME
+from openswe.github.http import CommitCI, ReadResult, RepoClient, read_result
 
 logger = logging.getLogger(__name__)
 
-# Check-run conclusions that mean "this CI step did not pass" and are worth an
-# auto-fix attempt. ``cancelled`` / ``stale`` / ``skipped`` are intentionally
-# excluded: they're rarely a code problem the agent can fix.
-FAILING_CONCLUSIONS: frozenset[str] = frozenset(["failure", "timed_out", "action_required"])
+# Check-run conclusions that did not pass and are worth waking the agent for.
+# A concurrency group can cancel a pull request's run and nothing reruns it; the agent
+# tells that apart from a person's cancel.
+FAILING_CONCLUSIONS: frozenset[str] = frozenset(
+    ["failure", "timed_out", "action_required", "cancelled"]
+)
 
 # Check runs Open SWE itself produces; never treat them as fixable CI.
-_OPEN_SWE_CHECK_NAMES: frozenset[str] = frozenset(
+OPEN_SWE_CHECK_NAMES: frozenset[str] = frozenset(
     [
         REVIEW_CHECK_RUN_NAME,
+        APPROVAL_CHECK_RUN_NAME,
         "Open SWE Review",
         "Robin Auto-fix",
         "Open SWE Auto-fix",
     ]
 )
+
+
+@dataclass(frozen=True, slots=True)
+class CheckFailure:
+    """One failing check run or commit status on a commit."""
+
+    name: str
+    conclusion: str
+    url: str
+    run_id: int | None
+
+    @property
+    def occurrence(self) -> str:
+        return f"run:{self.run_id}" if self.run_id is not None else f"status:{self.name}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,23 +69,68 @@ class CommitChecks:
     @classmethod
     async def read_result(cls, repo: RepoClient, sha: str) -> ReadResult[Self]:
         """Read both CI sources without losing retryable failure information."""
-        runs, statuses = await asyncio.gather(
-            read_result(repo.check_runs(sha)), read_result(repo.commit_statuses(sha))
-        )
-        if runs.value is None or statuses.value is None:
+        result = await read_result(repo.commit_ci(sha))
+        if result.value is None:
             logger.warning(
                 "Commit checks unavailable", extra={"repo_full_name": repo.full_name, "sha": sha}
             )
-            failure = runs.status if runs.value is None else statuses.status
-            if "transient" in (runs.status, statuses.status):
-                failure = "transient"
-            return ReadResult(None, failure)
-        return ReadResult(
-            cls(
-                runs=[run for run in runs.value if run.get("name") not in _OPEN_SWE_CHECK_NAMES],
-                statuses=statuses.value,
-            ),
-            "ok",
+            return ReadResult(None, result.status)
+        return ReadResult(cls.of(result.value), "ok")
+
+    @classmethod
+    def of(cls, ci: CommitCI) -> Self:
+        """``ci`` without the checks Robin itself reports."""
+        return cls(
+            runs=[run for run in ci.runs if run.get("name") not in OPEN_SWE_CHECK_NAMES],
+            statuses=ci.statuses,
+        )
+
+    @property
+    def failures(self) -> list[CheckFailure]:
+        runs = [
+            CheckFailure(
+                name=run.get("name") or "check",
+                conclusion=run.get("conclusion") or "failure",
+                url=run.get("details_url") or run.get("html_url") or "",
+                run_id=run.get("id"),
+            )
+            for run in self.runs
+            if run.get("status") == "completed" and run.get("conclusion") in FAILING_CONCLUSIONS
+        ]
+        statuses = [
+            CheckFailure(
+                name=status.get("context") or "status",
+                conclusion=status.get("state") or "failure",
+                url=status.get("target_url") or "",
+                run_id=None,
+            )
+            for status in self.statuses
+            if status.get("state") in {"failure", "error"}
+        ]
+        return [*runs, *statuses]
+
+    def for_required(self, check: RequiredCheck) -> CommitChecks:
+        return CommitChecks(
+            runs=[run for run in self.runs if check.reported_by([run], [])],
+            statuses=[status for status in self.statuses if check.reported_by([], [status])],
+        )
+
+    @property
+    def state(self) -> Literal["pending", "success", "blocked", "failure"]:
+        if self.failures:
+            return "failure"
+        if self.has_pending or not (self.runs or self.statuses):
+            return "pending"
+        if any(
+            run.get("conclusion") not in {"success", "neutral", "skipped"} for run in self.runs
+        ) or any(status.get("state") != "success" for status in self.statuses):
+            return "blocked"
+        return "success"
+
+    @property
+    def has_pending(self) -> bool:
+        return any(run.get("status") != "completed" for run in self.runs) or any(
+            status.get("state") == "pending" for status in self.statuses
         )
 
     def unreported(self, required: set[RequiredCheck]) -> list[str]:
@@ -128,7 +189,7 @@ class RequiredCheck:
         return {
             check
             for check in required
-            if include_review_checks or check.name not in _OPEN_SWE_CHECK_NAMES
+            if include_review_checks or check.name not in OPEN_SWE_CHECK_NAMES
         }
 
     def reported_by(self, check_runs: list[dict[str, Any]], statuses: list[dict[str, Any]]) -> bool:

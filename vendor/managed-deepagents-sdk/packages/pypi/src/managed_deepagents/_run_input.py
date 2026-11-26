@@ -1,17 +1,10 @@
 """Config defaults for native LangGraph execution."""
 
-import asyncio
 from collections.abc import AsyncIterator, Iterator, Mapping
-from contextlib import AsyncExitStack
 from contextvars import Token
-from functools import cached_property
-from typing import Any, cast
-from uuid import UUID
+from typing import Any, Self, cast
 
-from langchain_core.callbacks import AsyncCallbackManager
 from langchain_core.runnables.config import RunnableConfig
-from langchain_core.tracers.langchain import LangChainTracer
-from langchain_core.tracers.schemas import Run
 from langgraph._internal._config import ensure_config, patch_configurable
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER, CONFIG_KEY_RUNTIME
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -35,7 +28,10 @@ from managed_deepagents._channels.delivery import (
 from managed_deepagents._channels.run_output import RunOutput, _current_output
 from managed_deepagents._identity_runtime import _field
 from managed_deepagents._managed_thread import RunThread, _current_thread, build_run_thread
+from managed_deepagents._memory.assistant_memory import APPROVED_ASSISTANT
 from managed_deepagents._memory.async_util import await_if_needed
+from managed_deepagents._memory.user_memory import APPROVED_USER
+from managed_deepagents._sandbox_run import CURRENT_SANDBOX_RUN, SandboxRun
 from managed_deepagents._telemetry.otel import (
     LogContext,
     current_log_context,
@@ -43,8 +39,8 @@ from managed_deepagents._telemetry.otel import (
     exit_log_context,
     trace_id_from_metadata,
 )
+from managed_deepagents._turn_trace import turn_trace_config, without_tracers
 from managed_deepagents.run_context import is_managed_key
-from managed_deepagents.run_resources import _current_resources
 
 #: Run ``configurable`` key deepagents uses to name the agent that started an async subagent.
 _PARENT_KEY = "deepagents_parent"
@@ -69,109 +65,49 @@ def graph_default_config(config: Mapping[str, object] | None) -> RunnableConfig:
     return cast("RunnableConfig", prepared)
 
 
-class ManagedTurnTracer(LangChainTracer):
-    """Close a managed invocation's trace tree when its root finishes."""
-
-    @cached_property
-    def roots(self) -> list[Run]:
-        return []
-
-    @property
-    def root(self) -> Run | None:
-        return self.roots[0] if self.roots else None
-
-    def copy_with_metadata_defaults(
-        self, *, metadata: Mapping[str, str] | None = None, tags: list[str] | None = None
-    ) -> LangChainTracer:
-        tracer = super().copy_with_metadata_defaults(metadata=metadata, tags=tags)
-        if isinstance(tracer, ManagedTurnTracer):
-            tracer.roots = self.roots
-        return tracer
-
-    def _start_trace(self, run: Run) -> None:
-        if self.root is None:
-            self.roots.append(run)
-            run.metadata.pop("end_reason", None)
-        elif self.root.end_time is not None:
-            run.extra["__disabled"] = True
-        super()._start_trace(run)
-
-    def _errored_chain_run(
-        self, error: BaseException, inputs: dict[str, object] | None, run_id: UUID
-    ) -> Run:
-        run = super()._errored_chain_run(error, inputs, run_id)
-        if run is self.root:
-            reason = "failed"
-            if isinstance(error, (asyncio.CancelledError, GeneratorExit)):
-                reason = "cancelled" if isinstance(error, GeneratorExit) else "failed"
-                pending: list[BaseException] = [error]
-                seen: set[int] = set()
-                while pending:
-                    cause = pending.pop()
-                    if id(cause) in seen:
-                        continue
-                    seen.add(id(cause))
-                    if isinstance(cause, TimeoutError) or type(cause).__name__ == "UserTimeout":
-                        reason = "failed"
-                        break
-                    if type(cause).__name__ == "UserInterrupt":
-                        reason = (
-                            "superseded"
-                            if str(cause).startswith("superseded by run ")
-                            and "(multitask_strategy=interrupt)" in str(cause)
-                            else "cancelled"
-                        )
-                    pending.extend(arg for arg in cause.args if isinstance(arg, BaseException))
-                    if cause.__cause__ is not None:
-                        pending.append(cause.__cause__)
-                if reason != "failed":
-                    run.error = None
-            run.metadata["end_reason"] = reason
-        return run
-
-    def _end_trace(self, run: Run) -> None:
-        if run is self.root:
-            run.metadata.setdefault("end_reason", "failed" if run.error else "completed")
-            pending = list(run.child_runs)
-            while pending:
-                child = pending.pop()
-                pending.extend(child.child_runs)
-                if child.end_time is None:
-                    child.end(end_time=run.end_time)
-                    self._update_run_single(child)
-                    child.extra["__disabled"] = True
-        super()._end_trace(run)
-
-    @classmethod
-    def for_run(cls, config: RunnableConfig) -> RunnableConfig:
-        """Preserve tracing destinations and parents while isolating invocation lifecycle."""
-        manager = AsyncCallbackManager.configure(inheritable_callbacks=config.get("callbacks"))
-        for handler in list(manager.handlers):
-            if not isinstance(handler, LangChainTracer):
-                continue
-            tracer = cls(
-                example_id=handler.example_id,
-                project_name=handler.project_name,
-                address=handler.address,
-                client=handler.client,
-                tags=handler.tags,
-                metadata=handler.tracing_metadata,
-                run_map=dict(handler.run_map),
-                order_map=dict(handler.order_map),
-                _external_run_ids=dict(handler._external_run_ids),  # noqa: SLF001
-            )
-            manager.remove_handler(handler)
-            manager.add_handler(tracer)
-        return {**config, "callbacks": manager}
-
-
 class ManagedCompiledAgent(CompiledStateGraph[Any, Any, Any, Any]):
     """Remove ingress transport before native context conversion, on every execution.
+
+    A top-level run is traced under its own ``ManagedTurnTracer`` (see
+    ``_turn_trace``), so its trace ends with it.
 
     Each step sees the run's channel and thread; when the stream ends, the run's
     result goes to its thread origin, or a scheduled run's ``deliver_to``. A
     scheduled run that raises reports the failure there before it raises.
+
+    ``approved_user`` is the user this call may reach user memory as. MDA sets it on
+    the copy it returns for each run, and each step sees it as ``APPROVED_USER``.
+    ``sandbox_run`` carries the run's runtime to its sandbox's ``resolve`` the same
+    way, as ``CURRENT_SANDBOX_RUN``.
     """
+
+    approved_user: str | None = None
+    approved_assistant: str | None = None
+    sandbox_run: SandboxRun | None = None
+
+    def copy(self, update: dict[str, Any] | None = None) -> Self:
+        """``Pregel.copy``, also keeping the per-call fields, which ``__init__`` doesn't take."""
+        attrs = {
+            key: value
+            for key, value in self.__dict__.items()
+            if key not in ("__orig_class__", "approved_user", "approved_assistant", "sandbox_run")
+        }
+        attrs.update(update or {})
+        copied = self.__class__(**attrs)
+        copied.approved_user = self.approved_user
+        copied.approved_assistant = self.approved_assistant
+        copied.sandbox_run = self.sandbox_run
+        return copied
+
+    def _turn_traced(self, *, replaced: bool) -> Self:
+        """The graph to run once ``turn_trace_config`` has replaced the run's tracers.
+
+        LangGraph merges a graph's bound callbacks back into the run's, so a tracer bound
+        with ``with_config`` would trace the run beside its turn tracer. This runs a copy
+        bound without it; the shared graph is left as it is.
+        """
+        defaults = without_tracers(self.config) if replaced else None
+        return self if defaults is None else self.copy(update={"config": defaults})
 
     def stream(
         self,
@@ -187,10 +123,23 @@ class ManagedCompiledAgent(CompiledStateGraph[Any, Any, Any, Any]):
         log = run_log_context(self.config, config)
         output = None if self._keeps_state(merged) else RunOutput()
         config = execution_config(self.config, config)
-        iterator = super().stream(input, config, context=context, **kwargs)
+        traced = turn_trace_config(self.config, config)
+        graph = self._turn_traced(replaced=traced is not config)
+        iterator = super(ManagedCompiledAgent, graph).stream(
+            input, traced, context=context, **kwargs
+        )
         try:
             while True:
-                tokens = _enter_step(binding, routing, thread, log, output)
+                tokens = _enter_step(
+                    binding,
+                    routing,
+                    thread,
+                    log,
+                    output,
+                    self.approved_user,
+                    self.approved_assistant,
+                    self.sandbox_run,
+                )
                 try:
                     item = next(iterator)
                 except StopIteration:
@@ -226,18 +175,25 @@ class ManagedCompiledAgent(CompiledStateGraph[Any, Any, Any, Any]):
         log = run_log_context(self.config, config)
         output = None if self._keeps_state(merged) else RunOutput()
         config = execution_config(self.config, config)
-        config = ManagedTurnTracer.for_run(ensure_config(self.config, config))
-        iterator = super().astream(input, config, context=context, **kwargs)
-        resources = AsyncExitStack()
+        traced = turn_trace_config(self.config, config)
+        graph = self._turn_traced(replaced=traced is not config)
+        iterator = super(ManagedCompiledAgent, graph).astream(
+            input, traced, context=context, **kwargs
+        )
         try:
             while True:
-                tokens = _enter_step(binding, routing, thread, log, output)
+                tokens = _enter_step(
+                    binding,
+                    routing,
+                    thread,
+                    log,
+                    output,
+                    self.approved_user,
+                    self.approved_assistant,
+                    self.sandbox_run,
+                )
                 try:
-                    resource_token = _current_resources.set(resources)
-                    try:
-                        item = await anext(iterator)
-                    finally:
-                        _current_resources.reset(resource_token)
+                    item = await anext(iterator)
                 except StopAsyncIteration:
                     await self._adeliver(thread, merged, routing, output)
                     return
@@ -251,10 +207,7 @@ class ManagedCompiledAgent(CompiledStateGraph[Any, Any, Any, Any]):
         finally:
             log_token = enter_log_context(log)
             try:
-                try:
-                    await iterator.aclose()
-                finally:
-                    await resources.aclose()
+                await iterator.aclose()
             finally:
                 exit_log_context(log_token)
 
@@ -398,11 +351,14 @@ def run_log_context(defaults: RunnableConfig | None, config: RunnableConfig | No
 _INPUT = {"source": INPUT_SOURCE}
 
 _StepTokens = tuple[
+    Token[str | None],
+    Token[str | None],
     Token[ChannelBinding | None],
     Token[Mapping[str, object] | None],
     Token[RunThread | None],
     Token[LogContext | None],
     Token[RunOutput | None],
+    Token[SandboxRun | None],
 ]
 
 
@@ -412,23 +368,33 @@ def _enter_step(
     thread: RunThread,
     log: LogContext,
     output: RunOutput | None,
+    approved_user: str | None,
+    approved_assistant: str | None = None,
+    sandbox_run: SandboxRun | None = None,
 ) -> _StepTokens:
     return (
+        # A nested managed graph has none of its own and keeps its parent's.
+        APPROVED_USER.set(approved_user or APPROVED_USER.get()),
+        APPROVED_ASSISTANT.set(approved_assistant or APPROVED_ASSISTANT.get()),
         _current_channel.set(binding),
         _current_routing.set(routing),
         _current_thread.set(thread),
         enter_log_context(log),
         _current_output.set(output),
+        CURRENT_SANDBOX_RUN.set(sandbox_run or CURRENT_SANDBOX_RUN.get()),
     )
 
 
 def _exit_step(tokens: _StepTokens) -> None:
-    channel, routing, thread, log, output = tokens
+    approved, assistant, channel, routing, thread, log, output, sandbox_run = tokens
+    CURRENT_SANDBOX_RUN.reset(sandbox_run)
     _current_output.reset(output)
     exit_log_context(log)
     _current_thread.reset(thread)
     _current_routing.reset(routing)
     _current_channel.reset(channel)
+    APPROVED_ASSISTANT.reset(assistant)
+    APPROVED_USER.reset(approved)
 
 
 def _history_config(config: RunnableConfig) -> RunnableConfig:

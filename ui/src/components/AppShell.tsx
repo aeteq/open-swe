@@ -1,10 +1,7 @@
-import {
-  ArrowLeftIcon,
-  CaretRightIcon,
-} from "@langchain/macaw-components/icons"
+import { ArrowLeftIcon } from "@langchain/macaw-components/icons"
 import { Badge } from "@langchain/macaw-components/Badge"
 import { Card } from "@langchain/macaw-components/Card"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Skeleton } from "@/components/Skeleton"
 import { Text } from "@langchain/macaw-components/Text"
 import { Link, Navigate } from "@tanstack/react-router"
 import type { ReactNode } from "react"
@@ -12,7 +9,7 @@ import type { ReactNode } from "react"
 import type { SessionUser } from "@/lib/api"
 import { AppSidebar } from "@/components/AppSidebar"
 import { RequireLogin } from "@/lib/auth-redirect"
-import { useSession } from "@/lib/session"
+import { useSession, useSessionPending } from "@/lib/session"
 import { cn } from "@/lib/utils"
 
 interface AppShellProps {
@@ -99,10 +96,26 @@ export function SettingsPage({
   ...props
 }: SettingsPageProps) {
   const session = useSession()
-  if (session.isLoading) {
+  const sessionPending = useSessionPending()
+  if (sessionPending) {
     return (
-      <main className="p-space-5">
-        <Skeleton className="h-40 w-full" />
+      <main
+        role="status"
+        aria-label="Loading settings"
+        className="mx-auto w-full max-w-3xl px-space-4 pt-space-8 sm:px-space-6"
+      >
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="mt-space-2 h-3 w-80 max-w-full" />
+        <div className="mt-space-6 flex flex-col gap-space-6">
+          {[3, 2].map((rows) => (
+            <div key={rows} className="flex flex-col gap-space-3">
+              <Skeleton className="h-4 w-32" />
+              <div className="overflow-hidden rounded-lg border border-default">
+                <SettingsRowsSkeleton rows={rows} />
+              </div>
+            </div>
+          ))}
+        </div>
       </main>
     )
   }
@@ -157,6 +170,7 @@ export function SettingsSection({
 
 interface SettingsRowProps {
   label: string
+  leadingIcon?: ReactNode
   description?: ReactNode
   control: ReactNode
   htmlFor?: string
@@ -169,6 +183,7 @@ interface SettingsRowProps {
 /** Label + description on the left, a single control on the right. */
 export function SettingsRow({
   label,
+  leadingIcon,
   description,
   control,
   htmlFor,
@@ -178,32 +193,35 @@ export function SettingsRow({
 }: SettingsRowProps) {
   return (
     <div className="flex flex-col gap-space-2 px-space-4 py-space-3 sm:flex-row sm:items-center sm:justify-between sm:gap-space-6">
-      <label className="flex flex-col gap-space-1" htmlFor={htmlFor}>
-        <span className="flex items-center gap-space-2">
-          <Text
-            as="span"
-            variant="md"
-            weight="medium"
-            color={comingSoon ? "secondary" : "primary"}
-          >
-            {label}
-          </Text>
-          {(comingSoon || badge) && (
-            <Badge
-              color="secondary"
-              rounded="sm"
-              size="xxs"
-              className={comingSoon ? undefined : badgeClassName}
+      <label className="flex min-w-0 items-start gap-space-3" htmlFor={htmlFor}>
+        {leadingIcon}
+        <span className="flex min-w-0 flex-col gap-space-1">
+          <span className="flex items-center gap-space-2">
+            <Text
+              as="span"
+              variant="md"
+              weight="medium"
+              color={comingSoon ? "secondary" : "primary"}
             >
-              {comingSoon ? "Coming soon" : (badge ?? "")}
-            </Badge>
+              {label}
+            </Text>
+            {(comingSoon || badge) && (
+              <Badge
+                color="secondary"
+                rounded="sm"
+                size="xxs"
+                className={comingSoon ? undefined : badgeClassName}
+              >
+                {comingSoon ? "Coming soon" : (badge ?? "")}
+              </Badge>
+            )}
+          </span>
+          {description && (
+            <Text as="span" variant="sm" color="secondary">
+              {description}
+            </Text>
           )}
         </span>
-        {description && (
-          <Text as="span" variant="sm" color="secondary">
-            {description}
-          </Text>
-        )}
       </label>
       <div className={cn("sm:shrink-0", comingSoon && "opacity-50")}>
         {control}
@@ -212,40 +230,34 @@ export function SettingsRow({
   )
 }
 
-/** A row that navigates to another settings page. */
-export function SettingsNavRow({
-  to,
-  params,
+/** Rows shaped like `SettingsRow`, for a section whose data is still loading. */
+export function SettingsRowsSkeleton({
+  rows = 2,
   label,
-  description,
 }: {
-  to: string
-  params?: Record<string, string>
-  label: string
-  description?: string
+  rows?: number
+  /** Announces the placeholder as a loading status with this name. */
+  label?: string
 }) {
   return (
-    <Link
-      to={to}
-      params={params}
-      className="flex items-center justify-between gap-space-6 px-space-4 py-space-3 transition-colors hover:bg-surface-level-2-hover"
+    <div
+      role={label ? "status" : undefined}
+      aria-label={label}
+      className="divide-y divide-default"
     >
-      <div className="flex flex-col gap-space-1">
-        <Text as="span" variant="md" weight="medium">
-          {label}
-        </Text>
-        {description && (
-          <Text as="span" variant="sm" color="secondary">
-            {description}
-          </Text>
-        )}
-      </div>
-      <CaretRightIcon
-        className="shrink-0 text-icon-secondary"
-        size={14}
-        weight="regular"
-      />
-    </Link>
+      {Array.from({ length: rows }, (_, index) => (
+        <div
+          key={index}
+          className="flex items-center justify-between gap-space-6 px-space-4 py-space-3"
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-space-2">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3 w-72 max-w-full" />
+          </div>
+          <Skeleton className="h-7 w-20 shrink-0 rounded-md" />
+        </div>
+      ))}
+    </div>
   )
 }
 

@@ -16,10 +16,11 @@ import httpx2
 import jwt
 from fastapi import Depends, HTTPException, Request, Response
 from fastapi.security import APIKeyCookie
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 
 from openswe.config import ENV
+from openswe.github.org_membership import MembershipVerificationError
 from openswe.github.token_auth import bearer_github_token
 from openswe.users.authorization import (
     allowed_logins,
@@ -42,7 +43,7 @@ STATE_COOKIE_NAME = "osw_oauth_state"
 AUTH_PATH = "/dashboard/api/auth"
 GITHUB_CALLBACK_PATH = f"{AUTH_PATH}/callback"
 MCP_SIGN_IN_CALLBACK_PATH = f"{AUTH_PATH}/mcp/callback"
-DESKTOP_APP_ORIGIN = "open-swe://app"
+DESKTOP_APP_ORIGINS = frozenset({"robin://app", "open-swe://app"})
 SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 STATE_TTL_SECONDS = 600
 HANDOFF_TTL_SECONDS = 120
@@ -50,8 +51,6 @@ TERMINAL_TICKET_TTL_SECONDS = 60
 TERMINAL_TICKET_AUDIENCE = "open-swe-cloud-terminal"
 UPLOAD_TICKET_TTL_SECONDS = 60 * 60
 UPLOAD_TICKET_AUDIENCE = "open-swe-session-upload"
-CONNECT_CLAIM_TTL_SECONDS = 5 * 60
-CONNECT_CLAIM_AUDIENCE = "open-swe-claude-code-connect"
 JWT_ALG = "HS256"
 
 
@@ -90,16 +89,28 @@ def decode_terminal_ticket(token: str, *, thread_id: str) -> dict[str, Any]:
 
 
 class UploadTicket(BaseModel):
-    """Who may fill which reserved session-upload thread, as its upload URL carries it."""
+    """Who may fill which reserved session-upload thread, or import any number of sessions."""
 
     sub: str = Field(min_length=1)
     email: str | None = None
     user_id: str | None = None
-    thread_id: str = Field(min_length=1)
+    thread_id: str | None = Field(default=None, min_length=1)
+    import_header: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _one_target(self) -> Self:
+        if (self.thread_id is None) == (self.import_header is None):
+            raise ValueError("an upload ticket holds either a thread_id or an import_header")
+        return self
 
 
 def issue_upload_ticket(
-    *, login: str, email: str | None, user_id: str | None, thread_id: str
+    *,
+    login: str,
+    email: str | None,
+    user_id: str | None,
+    thread_id: str | None = None,
+    import_header: dict[str, Any] | None = None,
 ) -> str:
     now = int(time.time())
     payload = {
@@ -108,6 +119,7 @@ def issue_upload_ticket(
         "email": email,
         "user_id": user_id,
         "thread_id": thread_id,
+        "import_header": import_header,
         "iat": now,
         "exp": now + UPLOAD_TICKET_TTL_SECONDS,
     }
@@ -121,48 +133,11 @@ def decode_upload_ticket(token: str) -> UploadTicket:
             _secret(),
             algorithms=[JWT_ALG],
             audience=UPLOAD_TICKET_AUDIENCE,
-            options={"require": ["aud", "sub", "thread_id", "iat", "exp"]},
+            options={"require": ["aud", "sub", "iat", "exp"]},
         )
         return UploadTicket.model_validate(payload)
     except (jwt.PyJWTError, ValidationError) as exc:
         raise HTTPException(401, "invalid or expired upload code") from exc
-
-
-class ConnectClaim(BaseModel):
-    """A one-time claim on a new Claude Code sync token for ``user_id``'s machine ``name``.
-
-    It stands in for the token wherever an agent can read it: redeeming it mints the
-    token, and ``jti`` lets the token table refuse a second redemption.
-    """
-
-    sub: str = Field(min_length=1)
-    user_id: UUID
-    name: str = Field(min_length=1)
-    jti: UUID
-
-    def issue(self) -> str:
-        now = int(time.time())
-        payload = {
-            **self.model_dump(mode="json"),
-            "aud": CONNECT_CLAIM_AUDIENCE,
-            "iat": now,
-            "exp": now + CONNECT_CLAIM_TTL_SECONDS,
-        }
-        return jwt.encode(payload, _secret(), algorithm=JWT_ALG)
-
-    @classmethod
-    def decode(cls, token: str) -> Self:
-        try:
-            payload = jwt.decode(
-                token,
-                _secret(),
-                algorithms=[JWT_ALG],
-                audience=CONNECT_CLAIM_AUDIENCE,
-                options={"require": ["aud", "sub", "user_id", "name", "jti", "iat", "exp"]},
-            )
-            return cls.model_validate(payload)
-        except (jwt.PyJWTError, ValidationError) as exc:
-            raise HTTPException(401, "invalid or expired claim") from exc
 
 
 GITHUB_APP_CLIENT_ID = ENV.GITHUB_APP_CLIENT_ID.get()
@@ -263,8 +238,17 @@ def validate_github_login_allowlist() -> None:
 
 
 async def enforce_github_login_gate(login: str) -> None:
-    if await is_authorized_github_login(login):
-        return
+    try:
+        if await is_authorized_github_login(login, strict=True):
+            return
+    except MembershipVerificationError as exc:
+        detail = "GitHub organization membership could not be verified."
+        if exc.status_codes:
+            statuses = ", ".join(str(code) for code in exc.status_codes)
+            detail += f" GitHub returned HTTP {statuses} for membership checks."
+        if exc.rate_limited:
+            detail += " GitHub rate-limited a membership check."
+        raise HTTPException(503, detail) from exc
     logger.warning(
         "Rejected dashboard login",
         extra={"github_login": login, "reason": "not in allowed users or orgs"},
@@ -349,6 +333,7 @@ def issue_state(
     redirect_uri: str | None = None,
     connect_slack: bool = False,
     linking_user_id: str | None = None,
+    slack_recovery: str | None = None,
 ) -> str:
     now = int(time.time())
     payload: dict[str, Any] = {
@@ -367,6 +352,8 @@ def issue_state(
         payload["connect_slack"] = True
     if linking_user_id is not None:
         payload["linking_user_id"] = linking_user_id
+    if slack_recovery is not None:
+        payload["slack_recovery"] = slack_recovery
     if handoff_challenge and handoff_port:
         payload["handoff_challenge"] = handoff_challenge
         payload["handoff_port"] = handoff_port
@@ -552,9 +539,13 @@ async def require_session(
 
     principal = DashboardPrincipal.from_session(session)
     principal.authorize_path(request.url.path, request.scope.get("method", "GET"))
-    await principal.authorize(path=request.url.path)
-    bind_audit_session(request, session)
-    return session
+    from openswe.dashboard.langsmith_login import LangSmithLogin
+    from openswe.dashboard.principal import AuthorizedClaims
+
+    async with LangSmithLogin().authorized_person(principal) as (_db, user):
+        authorized = AuthorizedClaims(session, user)
+    bind_audit_session(request, authorized)
+    return authorized
 
 
 def bind_audit_session(request: HTTPConnection, session: dict[str, object]) -> None:
@@ -611,7 +602,7 @@ def require_same_origin(request: HTTPConnection) -> None:
     allowed = allowed_dashboard_origins()
     if not allowed:
         return
-    allowed.add(DESKTOP_APP_ORIGIN)
+    allowed.update(DESKTOP_APP_ORIGINS)
     request_base_origin = _origin_of(str(request.base_url))
     if request_base_origin:
         allowed.add(request_base_origin)
@@ -633,11 +624,12 @@ def require_same_origin_for_mutations(request: HTTPConnection) -> None:
     if request.scope.get("method") in {"GET", "HEAD", "OPTIONS"}:
         return
     # The origin allowlist defends the ambient session cookie. A request whose
-    # only credential is an explicit bearer header can't be forged by a browser,
-    # so it has nothing to defend.
+    # only credential is an explicit header (a bearer token, or a LangSmith key in
+    # X-Api-Key) can't be forged by a browser, so it has nothing to defend.
     if not isinstance(request, Request):
         raise HTTPException(400, "invalid request")
-    if bearer_github_token(request) and not request.cookies.get(COOKIE_NAME):
+    explicit = bearer_github_token(request) or request.headers.get("x-api-key", "").strip()
+    if explicit and not request.cookies.get(COOKIE_NAME):
         return
     require_same_origin(request)
 

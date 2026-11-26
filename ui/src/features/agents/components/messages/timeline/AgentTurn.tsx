@@ -6,13 +6,14 @@ import {
   useRef,
   useState,
 } from "react"
+import { ChatMessage } from "@langchain/macaw-components/ChatMessage"
 import { CopyIconButton } from "@langchain/macaw-components/CopyButton"
 
 import { DiffView } from "../../chat/DiffView"
 import { ChunkRenderer } from "../ChunkRenderer"
 import { ExpandableMessageChip } from "../ExpandableMessageChip"
 import { MessageTimestamp } from "../MessageTimestamp"
-import { WorkerLaunchMessage } from "../TaskEventMessage"
+import { TaskEventMessage, WorkerLaunchMessage } from "../TaskEventMessage"
 import { ReasoningBlock } from "../ReasoningBlock"
 import {
   buildRenderItems,
@@ -24,7 +25,7 @@ import {
 import { LiveWorkTail } from "./LiveWorkTail"
 import { WorkEntryRow } from "./WorkEntryRow"
 import { describeWorkEntry, hasToolCallDetail, latestDiff } from "./workEntry"
-import { TurnFoldRow, WorkGroupToggleRow } from "./foldRows"
+import { TurnFoldRow } from "./foldRows"
 import {
   ImageEntryBody,
   JsonInputEntryBody,
@@ -46,13 +47,6 @@ import { ManagedToolsConnectionCard } from "@/features/agents/components/chat/Ma
 import { SqlResultTable } from "@/features/agents/components/chat/SqlResultTable"
 import { SubagentGroup } from "@/features/agents/components/subagents"
 import { formatElapsed } from "@/lib/utils"
-
-/**
- * How many entries of a work group stay visible while it is collapsed. One
- * keeps the group's most recent activity legible without letting a long
- * exploration burst push the reply off screen.
- */
-const MAX_VISIBLE_WORK_LOG_ENTRIES = 1
 
 /**
  * How long a reply sits at the end of a live turn before an activity row joins
@@ -197,46 +191,6 @@ function ToolWorkEntry({
   )
 }
 
-/**
- * A run of related tool calls (exploration, mostly). Collapsed, it shows only
- * the most recent entries plus a toggle for the rest.
- */
-function WorkGroup({
-  chunks,
-  repoPath,
-  expanded,
-  onToggle,
-}: {
-  chunks: Array<ToolExecutionChunk>
-  repoPath?: string
-  expanded: boolean
-  onToggle: () => void
-}) {
-  const hiddenCount = Math.max(0, chunks.length - MAX_VISIBLE_WORK_LOG_ENTRIES)
-  const visible = expanded
-    ? chunks
-    : chunks.slice(chunks.length - MAX_VISIBLE_WORK_LOG_ENTRIES)
-
-  return (
-    <div>
-      {hiddenCount > 0 && (
-        <WorkGroupToggleRow
-          hiddenCount={hiddenCount}
-          expanded={expanded}
-          onToggle={onToggle}
-        />
-      )}
-      {visible.map((chunk, index) => (
-        <ToolWorkEntry
-          key={chunk.toolCallId || `work-${index}`}
-          chunk={chunk}
-          repoPath={repoPath}
-        />
-      ))}
-    </div>
-  )
-}
-
 export function AgentTurn({
   message,
   isStreaming,
@@ -258,18 +212,10 @@ export function AgentTurn({
     [message.chunks, message.id]
   )
 
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
-    {}
-  )
-  const toggleGroup = useCallback((id: string) => {
-    setExpandedGroups((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }))
-  }, [])
-
-  // Measure wall-clock work time for live runs (most accurate); fall back to
-  // the turn's first→last message timestamps for transcripts loaded from state.
-  const [measuredDurationMs, setMeasuredDurationMs] = useState<number | null>(
-    null
-  )
+  const [measuredWork, setMeasuredWork] = useState<{
+    start: number
+    end: number
+  } | null>(null)
   const workStartRef = useRef<number | null>(null)
   const wasStreamingRef = useRef(false)
   useEffect(() => {
@@ -279,7 +225,7 @@ export function AgentTurn({
       return
     }
     if (wasStreamingRef.current && workStartRef.current !== null) {
-      setMeasuredDurationMs(Date.now() - workStartRef.current)
+      setMeasuredWork({ start: workStartRef.current, end: Date.now() })
       wasStreamingRef.current = false
     }
   }, [isStreaming])
@@ -300,7 +246,6 @@ export function AgentTurn({
         : settledSegments,
     [isStreaming, replyHeld, settledSegments]
   )
-  const workSegmentCount = segments.filter((s) => s.type === "work").length
   const liveItemKey = isStreaming ? renderItems.at(-1)?.key : undefined
 
   const [expandedFolds, setExpandedFolds] = useState<Record<string, boolean>>(
@@ -331,13 +276,31 @@ export function AgentTurn({
 
   const turnStart = message.timestampIsFallback ? undefined : message.startedAt
   const turnEnd = message.timestampIsFallback ? undefined : message.timestamp
+  const firstWork = segments.findIndex((s) => s.type === "work")
+  const lastWork = segments.findLastIndex((s) => s.type === "work")
+  const segmentStart = (index: number): string | undefined =>
+    index === firstWork
+      ? (message.runStartedAt ??
+        replyTimestamp(segments[index - 1]) ??
+        turnStart)
+      : replyTimestamp(segments[index - 1])
   const segmentDurationMs = (index: number): number | null => {
-    if (workSegmentCount === 1 && measuredDurationMs !== null) {
-      return measuredDurationMs
+    const start = segmentStart(index)
+    if (index === lastWork && !isStreaming && message.completedAt)
+      return elapsedMs(start, message.completedAt)
+    if (
+      index === segments.length - 1 &&
+      measuredWork &&
+      (start || index === 0)
+    ) {
+      const startedAt = start ? Date.parse(start) : measuredWork.start
+      if (Number.isFinite(startedAt))
+        return Math.max(0, measuredWork.end - startedAt)
     }
     return elapsedMs(
-      replyTimestamp(segments[index - 1]) ?? turnStart,
-      replyTimestamp(segments[index + 1]) ?? turnEnd
+      start,
+      replyTimestamp(segments[index + 1]) ??
+        (index === segments.length - 1 ? turnEnd : undefined)
     )
   }
 
@@ -355,17 +318,6 @@ export function AgentTurn({
           </div>
         )
       }
-
-      case "explored-group":
-        return (
-          <WorkGroup
-            key={item.key}
-            chunks={item.chunks}
-            repoPath={repoPath}
-            expanded={expandedGroups[item.id] ?? false}
-            onToggle={() => toggleGroup(item.id)}
-          />
-        )
 
       case "subagent-group":
         return <SubagentGroup key={item.key} chunks={item.chunks} />
@@ -410,6 +362,16 @@ export function AgentTurn({
 
       case "worker-launch-item":
         return <WorkerLaunchMessage key={item.key} chunk={item.chunk} />
+
+      case "task-event-item":
+        return (
+          <TaskEventMessage
+            key={item.key}
+            event={item.chunk.event}
+            messageId={item.chunk.messageId}
+            timestamp={item.chunk.timestamp}
+          />
+        )
 
       case "reply-item":
         return <ReplyCard key={item.key} chunk={item.chunk} />
@@ -488,6 +450,7 @@ export function AgentTurn({
         ? `Worked for ${formatElapsed(durationMs)}`
         : "Worked"
     const actionCount = countWorkActions(segment.items)
+    const startedAt = segmentStart(index)
     const visible = expanded
       ? segment.items
       : collapsedWorkItems(segment.items, !isStreaming)
@@ -501,12 +464,21 @@ export function AgentTurn({
               : label
           }
           active={live}
+          since={startedAt ? Date.parse(startedAt) : undefined}
           expanded={expanded}
           onToggle={() => toggleFold(segment.key)}
         />
         {live && !expanded && (
           <LiveWorkTail
-            tail={new WorkTail(segment.items)}
+            tail={
+              new WorkTail(
+                segment.items.filter(
+                  (item) =>
+                    item.type !== "worker-launch-item" &&
+                    item.type !== "task-event-item"
+                )
+              )
+            }
             repoPath={repoPath}
           />
         )}
@@ -516,35 +488,36 @@ export function AgentTurn({
   }
 
   return (
-    <div
-      className="group/turn my-space-2 min-w-0 space-y-space-2"
+    <ChatMessage
+      message={{
+        id: message.id,
+        role: "assistant",
+        status: isStreaming ? "streaming" : "completed",
+        content: [],
+      }}
+      className="group/turn my-space-2"
       data-message-id={message.id}
+      footer={
+        <div className="mt-space-1 flex min-h-5 items-center gap-space-1">
+          {replyText && !isStreaming && (
+            <CopyIconButton copy={replyText} label="Copy message" size="xs" />
+          )}
+          {!message.timestampIsFallback && (
+            <MessageTimestamp
+              timestamp={message.timestamp}
+              startedAt={message.startedAt}
+              costUsd={costUsd}
+            />
+          )}
+        </div>
+      }
     >
       {segments.map((segment, index) =>
         segment.type === "reply"
           ? renderItem(segment.item)
           : renderWorkSegment(segment, index)
       )}
-
-      {/* As tall as the copy button, which only arrives once the run ends. */}
-      <div className="mt-space-1 flex min-h-5 items-center gap-space-1">
-        {replyText && !isStreaming && (
-          <CopyIconButton
-            copy={replyText}
-            label="Copy message"
-            size="xs"
-            className="opacity-0 transition-opacity duration-normal group-hover/turn:opacity-100 focus-visible:opacity-100"
-          />
-        )}
-        {!message.timestampIsFallback && (
-          <MessageTimestamp
-            timestamp={message.timestamp}
-            startedAt={message.startedAt}
-            costUsd={costUsd}
-          />
-        )}
-      </div>
-    </div>
+    </ChatMessage>
   )
 }
 

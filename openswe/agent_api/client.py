@@ -17,6 +17,8 @@ from runtime_api.catalog import Catalog
 from openswe.agent_api.tokens import RemoteRun, runtime_tokens_configured, sign_runtime_token
 from openswe.config import ENV
 from openswe.run_config import RunConfig
+from openswe.trace_metadata import RunOrigin
+from openswe.utils.startup_trace import apm_span
 
 # The graph id `mda build` derives from the project's agent name.
 MDA_GRAPH_ID: Final = "open-swe"
@@ -47,6 +49,7 @@ RemoteRunContext = TypedDict(
         "__run_token": str,
         "__catalog": dict[str, JsonValue],
         "invocation_id": NotRequired[str],
+        "origin": str,
     },
 )
 
@@ -106,6 +109,7 @@ class StartedRun:
     def context(self) -> RemoteRunContext:
         context: RemoteRunContext = {
             "graph": self.graph,
+            "origin": RunOrigin.resolve(self.catalog.trace_metadata.get("origin")).value,
             "__run_token": self.token,
             # Its tools by name alone; the run reads their specs from the backend.
             "__catalog": _json_object.validate_python(
@@ -136,17 +140,19 @@ async def start_remote_run(
         user_id = configurable.get("user_id")
         if not isinstance(user_id, str):
             raise PermissionError("LangSmith-authenticated runs require a user identity")
-        await ThreadIdentity(f"user:{user_id}").authorize()
+        with apm_span("start_run.authorize", {}):
+            await ThreadIdentity(f"user:{user_id}").authorize()
     elif (
         assistant_id == "agent"
-        and configurable.get("source") in {"dashboard", "slack", "web"}
+        and configurable.get("source") in {"dashboard", "slack", "web", "schedule"}
         and not configurable.get("started_by_id")
         and isinstance(login := configurable.get("github_login"), str)
         and login
     ):
         from openswe.threads.identity import ThreadIdentity
 
-        await ThreadIdentity(login).authorize()
+        with apm_span("start_run.authorize", {}):
+            await ThreadIdentity(login).authorize()
     if assistant_id not in HOSTED_GRAPHS:
         raise RemoteRuntimeConfigurationError(f"Managed Deep Agents does not host {assistant_id}")
     graph = _hosted_graph.validate_python(assistant_id)
@@ -160,12 +166,17 @@ async def start_remote_run(
     from openswe.agent_api.hosted import run_kinds
     from openswe.agent_api.run_catalog import RunCatalog
 
-    started = await (await RunCatalog.of(run_kinds()[graph], run)).start()
+    with apm_span("start_run.catalog.resolve", {"graph": graph}):
+        catalog = await RunCatalog.of(run_kinds()[graph], run)
+    with apm_span("start_run.catalog.start", {"graph": graph}):
+        started = await catalog.start()
     # Signed, so every later call reads the settings the run started with.
     run = run.model_copy(update={"settings": started.settings})
+    with apm_span("start_run.sign_token", {}):
+        token = sign_runtime_token(run)
     return StartedRun(
         graph=graph,
-        token=sign_runtime_token(run),
+        token=token,
         catalog=started.catalog,
         invocation_id=RunConfig.parse(configurable).invocation_id,
     )
@@ -182,4 +193,5 @@ async def remote_run_context(
     started = await start_remote_run(
         configurable, metadata=metadata, thread_id=thread_id, assistant_id=assistant_id
     )
-    return started.context()
+    with apm_span("start_run.context", {}):
+        return started.context()

@@ -14,7 +14,9 @@ Kickoffs and reply progress matter only while a run is going: they expire,
 reads treat an expired one as absent, and writes clear a few expired ones.
 """
 
+import asyncio
 import logging
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Self
@@ -41,16 +43,19 @@ from openswe.database.orm import NOW, Base
 from openswe.slack.channels import SlackChannel
 from openswe.slack.client import (
     SLACK_REQUEST_ERRORS,
+    SLACK_WEB_LINK_FOOTER_LABEL,
     SlackClient,
     SlackThreadMappingError,
     normalize_slack_location,
     parse_slack_thread_url,
     slack_error,
+    slack_retry_after,
+    slack_thread_mutation_lock,
 )
+from openswe.slack.payloads import SlackMessage as SlackPostedMessage
 from openswe.source_context import SlackThreadRef, SourceContext
 from openswe.thread_ids import slack_thread_id
 from openswe.threads import index
-from openswe.utils.json_types import JsonObject
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +109,81 @@ class SlackThread(Base):
             return await session.scalar(
                 select(cls).where(cls.channel_id == channel_id, cls.thread_ts == thread_ts)
             )
+
+    @classmethod
+    async def another_robin_started(
+        cls, channel_id: str, thread_ts: str, *, bot_user_id: str
+    ) -> bool | None:
+        """Cache the originating bot, or an unknown verdict until the lookup can retry."""
+        from langgraph_api.cache import cache_get, cache_set
+
+        if not bot_user_id:
+            return False
+        key = f"openswe:slack-root-origin:v2:{bot_user_id}:{channel_id}:{thread_ts}"
+        try:
+            async with asyncio.timeout(0.25):
+                cached = await cache_get(key)
+            if isinstance(cached, bool):
+                return cached
+            if cached == "unknown":
+                return None
+        except Exception:
+            logger.warning("Slack root cache read failed", exc_info=True)
+        ttl = timedelta(seconds=15)
+        try:
+            async with asyncio.timeout(2):
+                result = await cls._fetch_other_robin_origin(
+                    channel_id, thread_ts, bot_user_id=bot_user_id
+                )
+        except (*SLACK_REQUEST_ERRORS, TimeoutError) as exc:
+            logger.warning(
+                "Could not check the Slack thread's originating bot",
+                extra={"slack_channel_id": channel_id, "slack_error": slack_error(exc)},
+            )
+            result = None
+            retry_after = slack_retry_after(exc)
+            if retry_after and retry_after.isdecimal():
+                ttl = timedelta(seconds=max(15, min(int(retry_after), 86_400)))
+        if result is not None:
+            ttl = timedelta(hours=1) if result else timedelta(minutes=1)
+        try:
+            async with asyncio.timeout(0.25):
+                await cache_set(key, result if result is not None else "unknown", ttl)
+        except Exception:
+            logger.warning("Slack root cache write failed", exc_info=True)
+        return result
+
+    @classmethod
+    async def _fetch_other_robin_origin(
+        cls, channel_id: str, thread_ts: str, *, bot_user_id: str
+    ) -> bool | None:
+        """Read the root author rather than a binding that explicit mentions can also create."""
+        async with SlackClient.bot() as slack:
+            page = await slack.conversations_replies(channel=channel_id, ts=thread_ts, limit=1)
+        messages = page.get("messages")
+        if not isinstance(messages, list):
+            return None
+        root = next(
+            (
+                message
+                for raw in messages
+                if (message := SlackPostedMessage.parse(raw)) is not None
+                and message.ts == thread_ts
+            ),
+            None,
+        )
+        if root is None:
+            return None
+        if not root.is_from_bot or not root.user or root.user == bot_user_id:
+            return False
+        text = "\n".join((root.text or "", root.card_text_of(root.dump())))
+        return (
+            re.search(
+                rf"<https?://[^<>|\s]+/agents/[^<>/|\s]+\|{re.escape(SLACK_WEB_LINK_FOOTER_LABEL)}>",
+                text,
+            )
+            is not None
+        )
 
     @classmethod
     async def _save(cls, channel_id: str, thread_ts: str, values: Mapping[str, object]) -> None:
@@ -352,59 +432,6 @@ _TOGGLE_REACTION = text("""
 """)
 
 
-class SlackViewSuggestion(Base):
-    """The options a code-channel view's select menus suggest, by action id."""
-
-    __tablename__ = "slack_view_suggestion"
-
-    channel_id: Mapped[str] = mapped_column(ForeignKey("slack_channel.id"))
-    view_id: Mapped[str]
-    actions: Mapped[JsonObject] = mapped_column(JSONB)
-    id: Mapped[UUID] = mapped_column(primary_key=True, default_factory=uuid7)
-    created_at: Mapped[datetime | None] = mapped_column(server_default=NOW, init=False)
-    created_by: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
-    updated_at: Mapped[datetime | None] = mapped_column(server_default=NOW, init=False)
-    updated_by: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
-
-    @classmethod
-    async def actions_for(cls, channel_id: str, view_id: str) -> JsonObject:
-        async with postgres.session() as session:
-            actions = await session.scalar(
-                select(cls.actions).where(cls.channel_id == channel_id, cls.view_id == view_id)
-            )
-        return actions or {}
-
-    async def save(self) -> None:
-        upsert = insert(type(self)).values(
-            id=self.id,
-            channel_id=self.channel_id,
-            view_id=self.view_id,
-            actions=self.actions,
-        )
-        async with postgres.session() as session:
-            await SlackChannel.ensure(session, self.channel_id)
-            await session.execute(
-                upsert.on_conflict_do_update(
-                    index_elements=[type(self).channel_id, type(self).view_id],
-                    set_={
-                        "actions": upsert.excluded.actions,
-                        "updated_at": func.clock_timestamp(),
-                    },
-                )
-            )
-
-    @classmethod
-    async def discard(cls, channel_id: str, view_id: str) -> None:
-        async with postgres.session() as session:
-            await session.execute(
-                delete(cls).where(cls.channel_id == channel_id, cls.view_id == view_id)
-            )
-
-
 async def _clear_expired(
     session: AsyncSession,
     row: type[SlackThread] | type[SlackRun],
@@ -463,7 +490,6 @@ async def lookup_slack_thread_id(channel_id: str, thread_ts: str) -> str | None:
 
 async def lookup_slack_link_thread_id(url: str) -> str | None:
     """Resolve a permalink to its bound Open SWE thread, including reply-only links."""
-    from openswe.slack.code_channels import CODE_CHANNEL_SESSION_TS
 
     location = parse_slack_thread_url(url)
     if location is None:
@@ -475,7 +501,7 @@ async def lookup_slack_link_thread_id(url: str) -> str | None:
     if mapping and mapping.thread_ts:
         if thread_id := await lookup_slack_thread_id(channel, mapping.thread_ts):
             return thread_id
-    if thread_id := await lookup_slack_thread_id(channel, CODE_CHANNEL_SESSION_TS):
+    if thread_id := await lookup_slack_thread_id(channel, "0"):
         return thread_id
     try:
         async with SlackClient.bot() as client:
@@ -510,7 +536,10 @@ async def bind_slack_thread_id(
     movable = SlackThread.thread_id.is_(None) | (SlackThread.thread_id == upsert.excluded.thread_id)
     if replacing:
         movable |= SlackThread.thread_id == replacing
-    async with postgres.session() as session:
+    async with (
+        slack_thread_mutation_lock(channel, timestamp, purpose="ownership"),
+        postgres.session() as session,
+    ):
         await SlackChannel.ensure(session, channel)
         bound = await session.scalar(
             upsert.on_conflict_do_update(
@@ -761,12 +790,15 @@ async def store_slack_message_run_mapping(
     *,
     run_id: str | None = None,
     triggering_user_id: str | None = None,
+    inherit_current_run: bool = True,
 ) -> None:
-    """Map a bot message to the run that posted it, the thread's current run by default."""
+    """Map a bot message to its run, optionally inheriting the Slack thread's current run."""
     try:
         async with postgres.session() as session:
             await SlackChannel.ensure(session, channel_id)
-            current = await _current_run(session, channel_id, thread_ts)
+            current = (
+                await _current_run(session, channel_id, thread_ts) if inherit_current_run else None
+            )
             run = await _run(session, channel_id, run_id) if run_id else current
             resolved_run_id = run_id or (current.run_id if current else None)
             if not resolved_run_id:

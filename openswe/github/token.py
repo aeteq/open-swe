@@ -1,6 +1,5 @@
 """GitHub OAuth and LangSmith authentication utilities."""
 
-import asyncio
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -18,7 +17,6 @@ from openswe.github.thread_token import (
 from openswe.run_config import RunConfig
 
 logger = logging.getLogger(__name__)
-_legacy_auth_impact_tasks: set[asyncio.Task[None]] = set()
 
 client = get_client()
 
@@ -83,7 +81,7 @@ async def _resolve_bot_installation_token(thread_id: str) -> tuple[str, str | No
     bot_token, expires_at = await get_github_app_installation_token_with_expiry()
     if not bot_token:
         raise RuntimeError(
-            "The GitHub App is not configured for workspace authentication. "
+            "The deployment's GitHub App is not configured for bot authentication. "
             "Set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, and GITHUB_APP_INSTALLATION_ID."
         )
     logger.info("Using GitHub App installation token", extra={"thread_id": thread_id})
@@ -95,7 +93,7 @@ async def _resolve_bot_installation_token(thread_id: str) -> tuple[str, str | No
 async def resolve_github_token(
     config: Mapping[str, Any] | RunnableConfig, thread_id: str
 ) -> tuple[str, str | None]:
-    """Use workspace bot auth publicly and the verified owner's OAuth privately."""
+    """Use deployment bot auth publicly and the verified owner's OAuth privately."""
     cfg = RunConfig.from_config(config)
     if not cfg.github_linked:
         return "", None

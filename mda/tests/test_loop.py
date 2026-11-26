@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
@@ -25,22 +26,20 @@ from runtime_api.catalog import (
     CLIENT_CALL_PENDING,
     JOINED_TASK_CONTEXT,
     Catalog,
-    CliResultRules,
     LoopRules,
     ModelSpec,
     ReplyRules,
     RoutingRules,
     RunModels,
+    SandboxCreate,
+    SandboxSpec,
     TaskContext,
 )
 from runtime_api.endpoint import Delivery
 from runtime_api.loop import (
     Done,
-    GitHubProxyRefreshed,
-    IncidentContext,
     PhaseResult,
     Prepared,
-    Routed,
 )
 from runtime_api.model_errors import MODEL_FAILURE_REPLY_KEY
 from runtime_api.models import chosen_model
@@ -50,8 +49,9 @@ _MAIN = ModelSpec(model_id="anthropic:claude-opus-5-5", kwargs={})
 _FALLBACK = ModelSpec(model_id="openai:gpt-6.1-sol", kwargs={})
 _FAST = ModelSpec(model_id="fireworks:kimi", kwargs={}, reads_images=False, fallback=_FALLBACK)
 _VISION = ModelSpec(model_id="google_genai:gemini-3.8-flash", kwargs={})
-_MODELS = RunModels(
-    model=_MAIN, subagent_model=_MAIN, use_gateway=True, routes={"fast": _FAST}, vision=_VISION
+_MODELS = RunModels(model=_MAIN, subagent_model=_MAIN, routes={"fast": _FAST}, vision=_VISION)
+_SANDBOX = SandboxSpec(
+    create=SandboxCreate(fs_capacity_bytes=1, idle_ttl_seconds=60, delete_after_stop_seconds=60)
 )
 _GUARD = "system:reply-guard"
 _NUDGE = (
@@ -80,7 +80,11 @@ def _backend(
     monkeypatch.setenv("OPEN_SWE_BACKEND_URL", "https://backend.invalid")
     monkeypatch.setattr("rt.loop.run_id", lambda: "run-1")
     monkeypatch.setattr("rt.middleware.run_id", lambda: "run-1")
-    catalog = Catalog() if rules is None else Catalog(loop=rules, models=_MODELS)
+    catalog = (
+        Catalog(sandbox=_SANDBOX)
+        if rules is None
+        else Catalog(loop=rules, models=_MODELS, sandbox=_SANDBOX)
+    )
     context = {"__run_token": "token", "__catalog": catalog.model_dump(mode="json")}
     backend = Run(RunContext.model_validate(context)).backend
     calls: Calls = []
@@ -121,56 +125,6 @@ def _state(*messages: BaseMessage, **held: JsonValue) -> dict[str, object]:
     return {"messages": list(messages), STATE_KEY: held}
 
 
-async def test_a_failed_github_token_refresh_waits_before_the_next_try(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    backend, calls = _backend(
-        monkeypatch,
-        {"refresh_github_proxy": BackendCallError("refresh_github_proxy failed: timed out")},
-        LoopRules(refresh_github_proxy=True),
-    )
-    loop = RunLoop(backend)
-
-    first = await loop.before_model(_state(HumanMessage(content="Fix the login", id="human-1")))
-    held = {"github_proxy_refresh_at": first.update["github_proxy_refresh_at"]}
-    second = await loop.before_model(
-        _state(HumanMessage(content="Fix the login", id="human-1"), **held)
-    )
-
-    assert first.call is not None and second.call is not None
-    assert [name for name, _ in calls] == ["refresh_github_proxy"]
-
-
-async def test_an_incident_run_asks_for_its_incident_before_each_model_call(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    backend, calls = _backend(
-        monkeypatch,
-        {"incident_context": IncidentContext(instructions="Investigate the incident.")},
-        LoopRules(incident=True),
-    )
-
-    loop = RunLoop(backend)
-    human = HumanMessage(content="What broke?", id="human-1")
-
-    planned = await loop.before_model(_state(human))
-
-    assert planned.call is not None
-    assert "Investigate the incident." not in planned.call.system_prompt
-    [instructions] = messages_from_dict(planned.messages)
-    assert instructions.content == "Investigate the incident."
-    (name, body), *_ = calls
-    assert name == "incident_context"
-    assert [m.content for m in messages_from_dict(Routed.model_validate(body).humans)] == [
-        "What broke?"
-    ]
-
-    again = await loop.before_model(_state(human, instructions))
-    assert again.call is not None
-    assert again.call.system_prompt == planned.call.system_prompt
-    assert messages_from_dict(again.messages) == []
-
-
 async def test_the_framing_of_the_clients_tools_follows_the_system_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -185,34 +139,12 @@ async def test_the_framing_of_the_clients_tools_follows_the_system_prompt(
     assert planned.call.system_prompt.endswith("The Docs plugin is open beside you.")
 
 
-async def test_a_refresh_asked_for_a_call_that_is_not_made_is_stopped(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    backend, _ = _backend(monkeypatch, {}, LoopRules())
-    loop = RunLoop(backend)
-    started = asyncio.Event()
-    stopped = asyncio.Event()
-
-    async def refresh(_held: Mapping[str, object]) -> dict[str, JsonValue]:
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            stopped.set()
-        return {}
-
-    monkeypatch.setattr(loop, "_github_proxy", refresh)
-
-    asked = loop.ask(_state())
-    assert asked is not None
-    await started.wait()
-    await asked.close()
-
-    assert stopped.is_set()
-
-
+@pytest.mark.parametrize(
+    "execution_key", ["rendered_execution_prompt", "rendered_workspace_prompt"]
+)
 async def test_each_model_call_is_assembled_here_from_the_rules_and_named_calls(
     monkeypatch: pytest.MonkeyPatch,
+    execution_key: str,
 ) -> None:
     context = '<dynamic-context kind="task" id="task-1">Fix login</dynamic-context>'
     role = '<dynamic-context kind="run" id="task-role">You coordinate the task.</dynamic-context>'
@@ -222,19 +154,15 @@ async def test_each_model_call_is_assembled_here_from_the_rules_and_named_calls(
         hidden_unless={"has_human_input": ["record_human_input"]},
         routing=RoutingRules(mode="fast", route_model_ids={"fast": _FAST.model_id}),
         task_context=TaskContext(instructions=role, message=context),
-        refresh_github_proxy=True,
     )
-    answers: dict[str, BaseModel | BackendCallError] = {
-        "refresh_github_proxy": GitHubProxyRefreshed(expires_at=_TOKEN_EXPIRES),
-    }
-    backend, calls = _backend(monkeypatch, answers, rules)
+    backend, calls = _backend(monkeypatch, {}, rules)
     loop = RunLoop(backend)
     state = _state(
         HumanMessage(content="Fix the login", id="human-1"),
         rendered_system_prompt=(
             "You are Open SWE.\n\nWe deploy on Fridays.\n\nThis thread's artifacts are here."
         ),
-        rendered_workspace_prompt="We deploy on Fridays.",
+        **{execution_key: "We deploy on Fridays."},
         rendered_thread_prompt="This thread's artifacts are here.",
     )
 
@@ -242,39 +170,31 @@ async def test_each_model_call_is_assembled_here_from_the_rules_and_named_calls(
     await backend.outbox.drain()
 
     assert planned.call is not None
-    # What the workspace's threads and this thread alone say go apart, after what every
-    # thread shares.
+    # The execution and thread partitions follow what every thread shares.
     assert planned.call.system_prompt == "This is a preview deployment.\n\nYou are Open SWE."
-    assert planned.call.workspace_prompt == "We deploy on Fridays."
+    assert planned.call.execution_prompt == "We deploy on Fridays."
     assert planned.call.thread_prompt == "This thread's artifacts are here."
     assert planned.call.hidden_tools == ["grep", "record_human_input"]
-    assert planned.update == {
-        "github_proxy_refresh_at": "2999-01-01T11:50:00+00:00",
-        "model_route": "fast",
-    }
+    assert planned.update == {"model_route": "fast"}
     # The fast route's model reads no images, so a call with one goes to the vision model.
     assert (planned.call.model, planned.call.vision) == (_FAST, _VISION)
     assert planned.call.fallback == _FALLBACK
-    assert planned.call.use_gateway is True
     assert [message.content for message in messages_from_dict(planned.messages)] == [
         role,
         context,
     ]
-    # The task's context came with the catalog: the backend is asked only for the token.
-    assert [name for name, _ in calls] == ["refresh_github_proxy"]
+    # The task's context came with the catalog: the backend is asked nothing.
+    assert calls == []
 
-    # The task's context and role the model still sees are not added again, and a token
-    # with time left is not replaced.
+    # The task's context and role the model still sees are not added again.
     seen = _state(
         HumanMessage(content=role, id="task-role:1"),
         HumanMessage(content=context, id="task-context:1"),
         rendered_system_prompt="You are Open SWE.",
         model_route="fast",
-        github_proxy_refresh_at=planned.update["github_proxy_refresh_at"],
     )
     again = await loop.before_model(seen)
     assert again.messages == []
-    assert [name for name, _ in calls].count("refresh_github_proxy") == 1
 
     # A task the thread joined mid-run, as its first worker's launch said, joins the
     # conversation and leaves the system prompt, and the cache with it, as it was.
@@ -285,7 +205,7 @@ async def test_each_model_call_is_assembled_here_from_the_rules_and_named_calls(
     assert moved.call is not None
     assert moved.call.system_prompt == planned.call.system_prompt
     assert [message.content for message in messages_from_dict(moved.messages)] == [joined]
-    assert [name for name, _ in calls] == ["refresh_github_proxy"]
+    assert calls == []
     # The next run's catalog carries it, so a new turn starts without it.
     assert loop.starting()[JOINED_TASK_CONTEXT] is None
 
@@ -431,7 +351,7 @@ async def test_a_new_threads_route_is_classified_while_the_run_prepares(
         # Answers only once preparing has begun: the two run side by side.
         await asyncio.wait_for(preparing.wait(), timeout=1)
         classified.append(RouteClassifier.latest_task(messages))
-        return Route("fast")
+        return Route("fast", answers={"task_type": "lookup", "investigate": "no"})
 
     monkeypatch.setattr(RouteClassifier, "classify", classify)
     rules = LoopRules(
@@ -465,7 +385,7 @@ async def test_a_new_threads_route_is_classified_while_the_run_prepares(
     monkeypatch.setattr(backend, "post", prepare_signalled)
     models: list[str] = []
 
-    def build(spec: ModelSpec, use_gateway: bool) -> FakeListChatModel:
+    def build(spec: ModelSpec) -> FakeListChatModel:
         models.append(spec.model_id)
         return FakeListChatModel(responses=["Done."])
 
@@ -488,8 +408,9 @@ async def test_a_new_threads_route_is_classified_while_the_run_prepares(
     await graph.ainvoke({"messages": [("user", "Rename the flag")]})
 
     assert classified == ["Rename the flag"]
-    # The trace records the route the classifier chose.
+    # The trace records the route the classifier chose, and what Jev said the request is.
     assert {"model_route": "fast"} in traced
+    assert {"jev_task_type": "lookup", "jev_investigate": "no"} in traced
     started = next(body for name, body in calls if name == "run_started")
     assert (started["model_route"], started["model_id"], started["effort"]) == (
         "fast",
@@ -540,17 +461,110 @@ async def test_a_thread_that_kept_default_before_routing_is_classified(
     assert backend.run.route == "performance"
 
 
+async def test_the_thread_classifies_its_first_request_for_the_trace_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    classified: list[str] = []
+
+    async def classify(_self: RouteClassifier, messages: list[BaseMessage]) -> Route:
+        classified.append(RouteClassifier.latest_task(messages))
+        return Route("performance", answers={"task_type": "design", "investigate": "yes"})
+
+    monkeypatch.setattr(RouteClassifier, "classify", classify)
+    backend, calls = _backend(monkeypatch, {}, LoopRules(routing=RoutingRules(shadow=True)))
+    loop = RunLoop(backend)
+    human = HumanMessage(content="Design the cache", id="human-1")
+    state = _state(human)
+    held = state[STATE_KEY]
+    assert isinstance(held, dict)
+
+    classifying = loop.classify_ahead(state)
+    assert classifying is not None
+    update = await loop.routed(held, [human], classifying)
+
+    # The trace gets Jev's answers; the run keeps its own model.
+    assert backend.run.classified == {"jev_task_type": "design", "jev_investigate": "yes"}
+    assert update == {"jev_shadowed": True, "model_route": "default"}
+    assert backend.run.route == "default"
+    assert classified == ["Design the cache"]
+    assert calls == []
+    # A later turn of the thread is not classified again.
+    later = _state(human, **update)
+    assert loop.classify_ahead(later) is None
+
+
+async def test_a_failed_shadow_classification_leaves_the_run_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def classify(_self: RouteClassifier, _messages: list[BaseMessage]) -> Route:
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(RouteClassifier, "classify", classify)
+    backend, _ = _backend(monkeypatch, {}, LoopRules(routing=RoutingRules(shadow=True)))
+    loop = RunLoop(backend)
+    held: dict[str, JsonValue] = {}
+
+    assert await loop.routed(held, [HumanMessage(content="Fix it", id="human-1")], None) == {
+        "model_route": "default"
+    }
+    assert backend.run.classified == {}
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        # What the classifier returns when Jev is unavailable: no task type.
+        Route("default", persist=False),
+        # A message that asks for nothing yet, such as a greeting.
+        Route("balanced", answers={"task_type": "no_task"}),
+    ],
+)
+async def test_the_thread_is_classified_again_until_it_asks_for_something(
+    first: Route, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    answers = iter([first, Route("balanced", answers={"task_type": "lookup"})])
+
+    async def classify(_self: RouteClassifier, _messages: list[BaseMessage]) -> Route:
+        return next(answers)
+
+    monkeypatch.setattr(RouteClassifier, "classify", classify)
+    backend, _ = _backend(monkeypatch, {}, LoopRules(routing=RoutingRules(shadow=True)))
+    loop = RunLoop(backend)
+    human = HumanMessage(content="Fix it", id="human-1")
+
+    unanswered = await loop.routed({}, [human], None)
+
+    # The thread is not marked shadowed, so its next turn asks again and labels the trace.
+    assert unanswered == {"model_route": "default"}
+    assert backend.run.classified == first.trace_metadata
+    later = _state(human, **unanswered)
+    held = later[STATE_KEY]
+    assert isinstance(held, dict)
+    answered = await loop.routed(held, [human], loop.classify_ahead(later))
+    assert answered == {"jev_shadowed": True, "model_route": "default"}
+    assert backend.run.classified == {"jev_task_type": "lookup"}
+
+
 async def test_a_route_kept_for_one_run_still_reaches_its_subagents(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     backend, _ = _backend(monkeypatch, {}, LoopRules(routing=RoutingRules(mode="auto")))
     loop = RunLoop(backend)
-    # An unsure answer routed this run to Balanced without keeping it for the thread.
-    backend.run.route = "balanced"
 
-    await loop.before_model(_state(HumanMessage(content="Add a flag", id="human-1")))
+    async def classify(_self: RouteClassifier, messages: list[BaseMessage]) -> Route:
+        return Route("fast", persist=False)
 
-    assert backend.run.route == "balanced"
+    monkeypatch.setattr(RouteClassifier, "classify", classify)
+    human = HumanMessage(content="Add a flag", id="human-1")
+    first = await loop.before_model(_state(human, model_route="default"))
+    assert first.call is not None and first.call.model == _FAST
+    assert "model_route" not in first.update
+    assert backend.run.route == "fast"
+
+    second = await loop.before_model(_state(human, model_route="default", **first.update))
+
+    assert second.call is not None and second.call.model == _FAST
+    assert backend.run.route == "fast"
 
 
 def test_a_subagent_call_takes_the_runs_route(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -617,7 +631,7 @@ async def test_an_answer_written_for_an_unreachable_model_is_final(
     monkeypatch: pytest.MonkeyPatch, surface: str
 ) -> None:
     """Asking again would wait out the same outage: it is posted as it is, no nudges."""
-    rules = LoopRules(reply=_REPLY, cli_result=CliResultRules(tool="cli_result", nudge=["Send it"]))
+    rules = LoopRules(reply=_REPLY)
     backend, calls = _backend(monkeypatch, {"reply_on_behalf": Done()}, rules)
     loop = RunLoop(backend)
     asked = HumanMessage(content="Fix it", id="human-1")
@@ -647,7 +661,6 @@ async def test_an_answer_written_for_an_unreachable_model_is_final(
 async def test_a_reply_this_turn_satisfies_the_run_even_after_a_nudge(
     monkeypatch: pytest.MonkeyPatch, replied: str, result: dict[str, bool], satisfied: bool
 ) -> None:
-    import json
 
     backend, _calls = _backend(monkeypatch, {}, LoopRules(reply=_REPLY))
     loop = RunLoop(backend)
@@ -674,21 +687,18 @@ async def test_the_end_of_a_run_is_reported_and_its_graph_work_done_by_name(
     backend, calls = _backend(
         monkeypatch,
         {
-            "prepare": Prepared(
-                update={"rendered_system_prompt": "You review."},
-                github_proxy=GitHubProxyRefreshed(expires_at=_TOKEN_EXPIRES),
-            ),
+            "prepare": Prepared(update={"rendered_system_prompt": "You review."}),
             "run_started": Done(),
             # Neither a report nor a notice that fails takes the review check's settling with it.
             "run_ended": BackendCallError("run_ended failed: timed out"),
             "step_limit_reached": BackendCallError("step_limit_reached failed: Slack is down"),
             "settle_review_check": Done(),
         },
-        LoopRules(at_end=["settle_review_check"], refresh_github_proxy=True),
+        LoopRules(at_end=["settle_review_check"]),
     )
     monkeypatch.setattr(
         "rt.middleware.build_model",
-        lambda spec, use_gateway: FakeListChatModel(responses=["Model call limits exceeded"]),
+        lambda spec: FakeListChatModel(responses=["Model call limits exceeded"]),
     )
     monkeypatch.setattr("rt.outbox._RETRY_SECONDS", (0.0,))
     backend.run.invocation_id = "turn"
@@ -721,7 +731,7 @@ async def test_reports_carry_what_they_report_never_the_conversation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-    from langchain_core.messages import ToolCall
+    from langchain_core.messages import ToolCall, UsageMetadata
     from langchain_core.tools import tool
     from rt.middleware import ReportRepliesMiddleware, RuntimeToolsMiddleware
     from runtime_api.loop import ModelResult
@@ -742,11 +752,16 @@ async def test_reports_carry_what_they_report_never_the_conversation(
         """Look around."""
         return "seen"
 
+    usage = UsageMetadata(input_tokens=10, output_tokens=1, total_tokens=11)
     called = AIMessage(
-        content="", id="ai-1", tool_calls=[ToolCall(name="look", args={}, id="call-1")]
+        content="",
+        id="ai-1",
+        tool_calls=[ToolCall(name="look", args={}, id="call-1")],
+        usage_metadata=usage,
     )
+    done = AIMessage(content="done", id="ai-2", usage_metadata=usage)
     graph = create_agent(
-        model=GenericFakeChatModel(messages=iter([called, AIMessage(content="done", id="ai-2")])),
+        model=GenericFakeChatModel(messages=iter([called, done])),
         tools=[look],
         middleware=[
             ReportRepliesMiddleware(backend),
@@ -774,5 +789,27 @@ async def test_reports_carry_what_they_report_never_the_conversation(
         ["human-1"],
         [],
     ]
+    # Only a call after the model answered once can carry a person steering the turn.
+    assert [r.mid_turn for r in replies] == [False, True]
+    # Only the thread's first call can read nothing but what other threads cached.
+    assert [r.first_in_thread for r in replies] == [True, False]
     [started] = [body for name, body in calls if name == "tool_started"]
     assert started["message_id"] == "ai-1"
+
+
+async def test_legacy_automation_rules_allow_model_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend, calls = _backend(monkeypatch, {}, LoopRules.model_validate({"pinned_model": True}))
+    requested = chosen_model("openai:gpt-6.1-sol", "high")
+    result = await RunLoop(backend).before_model(
+        _state(
+            HumanMessage(content="Work"),
+            requested_model=requested.model_id,
+            requested_effort="high",
+            model_route="fast",
+        )
+    )
+    assert result.call is not None
+    assert result.call.model == requested
+    assert calls == []

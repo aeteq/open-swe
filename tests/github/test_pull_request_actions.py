@@ -33,68 +33,103 @@ def github(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("keep_review_id", "keep_commit", "scope_to_review_id", "dismissed"),
+    ("keep_head", "review_id", "dismissed"),
     [
-        (None, "new", None, {1, 5, 6}),
-        (3, None, None, {1, 5, 6, 7}),
-        (None, None, None, {1, 3, 5, 6, 7}),
-        (None, None, 4, {1, 3, 7}),
-        (None, None, 999, set()),
+        (True, None, {1, 5, 6}),
+        (False, None, {1, 3, 5, 6, 7}),
+        (False, 4, {1, 3}),
+        (True, 4, {1}),
+        (False, 999, set()),
     ],
     ids=[
         "head-moved",
-        "approved-again",
         "not-approved",
-        "scoped-to-own-login",
+        "scoped-to-own-login-and-earlier-reviews",
+        "head-moved-before-own-review",
         "own-review-missing",
     ],
 )
-async def test_only_open_swe_approvals_other_than_the_kept_one_are_withdrawn(
-    keep_review_id: int | None,
-    keep_commit: str | None,
-    scope_to_review_id: int | None,
-    dismissed: set[int],
+async def test_withdrawal_spares_only_the_live_head_and_reports_refusals(
+    keep_head: bool, review_id: int | None, dismissed: set[int]
 ) -> None:
-    def review(review_id: int, login: str, state: str, commit: str) -> dict[str, object]:
-        return {
-            "id": review_id,
-            "user": {"id": review_id, "login": login},
-            "state": state,
-            "commit_id": commit,
-        }
+    from openswe.review.approval_withdrawal import ApprovalWithdrawal
 
-    reviews = [
-        review(1, "open-swe[bot]", "APPROVED", "old"),
-        review(2, "alice", "APPROVED", "old"),
-        review(3, "open-swe[bot]", "APPROVED", "new"),
-        review(4, "open-swe[bot]", "COMMENTED", "old"),
-        review(5, "Open-SWE-Preview[bot]", "APPROVED", "old"),
-        review(6, "openswe-dev[bot]", "APPROVED", "old"),
-        review(7, "open-swe[bot]", "APPROVED", "new"),
+    specs = [
+        (1, "open-swe[bot]", "APPROVED", "old"),
+        (2, "alice", "APPROVED", "old"),
+        (3, "open-swe[bot]", "APPROVED", "new"),
+        (4, "open-swe[bot]", "COMMENTED", "old"),
+        (5, "Open-SWE-Preview[bot]", "APPROVED", "old"),
+        (6, "openswe-dev[bot]", "APPROVED", "old"),
+        (7, "open-swe[bot]", "APPROVED", "new"),
     ]
+    reviews = [
+        {"id": i, "user": {"id": i, "login": login}, "state": state, "commit_id": commit}
+        for i, login, state, commit in specs
+    ]
+    approvals = [(login, commit) for _, login, state, commit in specs if state == "APPROVED"]
     dismissals: list[int] = []
 
     def github(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path == "/graphql":
+            return httpx2.Response(200, json=_standing_approvals(approvals, head="new"))
         if request.method == "GET":
             return httpx2.Response(200, json=reviews)
         review_id = int(request.url.path.split("/")[-2])
         dismissals.append(review_id)
-        # A review GitHub no longer has is as good as dismissed; a refusal must be reported.
+        # A submitted review can't be deleted, so a 404 is a refusal like a 403.
         return httpx2.Response({5: 404, 6: 403}.get(review_id, 200), json={})
 
+    withdrawal = ApprovalWithdrawal(
+        owner="acme", repo="app", number=9, keep_head=keep_head, review_id=review_id
+    )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
         pull = GitHubClient(http).repo("acme", "app").pull_request(9)
-        refused = await pull.withdraw_open_swe_approvals(
-            reason="stale",
-            keep_review_id=keep_review_id,
-            keep_commit=keep_commit,
-            scope_to_review_id=scope_to_review_id,
-        )
+        if {5, 6} <= dismissed:
+            with pytest.raises(RuntimeError, match=r"\[5, 6\]"):
+                await withdrawal.run(pull)
+        else:
+            assert await withdrawal.run(pull) == "new"
 
     assert set(dismissals) == dismissed
-    # Scoping to a login excludes review 6 (a different login) before it is ever
-    # attempted, and an unknown scope review attempts nothing at all.
-    assert refused == ([6] if scope_to_review_id is None else [])
+
+
+def _standing_approvals(approvals: list[tuple[str, str]], *, head: str) -> dict[str, object]:
+    """GraphQL's answer, which names an app author by its slug."""
+    nodes = [
+        {"author": {"login": login.removesuffix("[bot]")}, "commit": {"oid": commit}}
+        for login, commit in approvals
+    ]
+    return {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "headRefOid": head,
+                    "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": nodes},
+                }
+            }
+        }
+    }
+
+
+@pytest.mark.parametrize("keep_head", [True, False])
+async def test_withdrawal_reads_once_when_robin_has_nothing_to_withdraw(keep_head: bool) -> None:
+    from openswe.review.approval_withdrawal import ApprovalWithdrawal
+
+    # Another reviewer's approval, plus Robin's of the head only when it is kept.
+    approvals = [("alice", "old")] + ([("robin-agent[bot]", "new")] if keep_head else [])
+    requests: list[str] = []
+
+    def github(request: httpx2.Request) -> httpx2.Response:
+        requests.append(f"{request.method} {request.url.path}")
+        return httpx2.Response(200, json=_standing_approvals(approvals, head="new"))
+
+    withdrawal = ApprovalWithdrawal(owner="acme", repo="app", number=9, keep_head=keep_head)
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
+        pull = GitHubClient(http).repo("acme", "app").pull_request(9)
+        assert await withdrawal.run(pull) == "new"
+
+    assert requests == ["POST /graphql"]
 
 
 @pytest.mark.parametrize("status,merged", [(200, True), (200, False), (409, False), (403, False)])
@@ -120,18 +155,70 @@ async def test_merge_requires_github_confirmation(github, status, merged):
     }
 
 
-async def test_pending_merge_enables_github_auto_merge() -> None:
+@pytest.mark.parametrize("status", [200, 403, 405, 409])
+async def test_explicit_bypass_merges_immediately_or_reports_refusal(status: int) -> None:
     requests: list[dict[str, object]] = []
 
     def github(request: httpx2.Request) -> httpx2.Response:
+        assert request.method == "PUT"
+        requests.append(json.loads(request.content))
+        return response({"merged": status == 200, "message": "Merge refused"}, status)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
+        pull = GitHubClient(http).repo("acme", "app").pull_request(1)
+        action = actions.MergeAction(
+            action="merge",
+            sha="a" * 40,
+            merge_method="merge",
+            auto_merge=True,
+            resolve_conversations=True,
+            bypass_rules=True,
+        )
+        if status == 200:
+            result = await actions.act_on_pull_request(pull, action)
+            assert result.done and not result.auto_merge
+        else:
+            with pytest.raises(HTTPException, match="Merge refused") as error:
+                await actions.act_on_pull_request(pull, action)
+            assert error.value.status_code == status
+    assert requests == [{"sha": "a" * 40, "merge_method": "merge"}]
+
+
+@pytest.mark.parametrize(
+    "auto_merge,in_queue,queue_only",
+    [
+        (True, False, False),
+        (True, True, False),
+        (False, True, False),
+        (False, False, True),
+        (False, True, True),
+    ],
+)
+async def test_pending_merge_enables_github_auto_merge(
+    auto_merge: bool, in_queue: bool, queue_only: bool
+) -> None:
+    requests: list[dict[str, object]] = []
+
+    def github(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "PUT":
+            assert not queue_only
+            return response({"message": "Pull request must be added to the merge queue"}, 405)
         if request.method == "GET":
             return response({"node_id": "PR_1", "head": {"sha": "a" * 40}})
-        requests.append(json.loads(request.content))
+        body = json.loads(request.content)
+        if "MergeQueueRequirement" in body["query"]:
+            return response({"data": {"node": {"isMergeQueueEnabled": True}}})
+        requests.append(body)
         return response(
             {
                 "data": {
                     "enablePullRequestAutoMerge": {
-                        "pullRequest": {"autoMergeRequest": {"enabledAt": "2026-10-31T00:00:00Z"}}
+                        "pullRequest": {
+                            "autoMergeRequest": None
+                            if in_queue
+                            else {"enabledAt": "2026-10-31T00:00:00Z"},
+                            "isInMergeQueue": in_queue,
+                        }
                     }
                 }
             }
@@ -142,17 +229,48 @@ async def test_pending_merge_enables_github_auto_merge() -> None:
         result = await actions.act_on_pull_request(
             pull,
             actions.MergeAction(
-                action="merge", sha="a" * 40, merge_method="merge", auto_merge=True
+                action="merge",
+                sha="a" * 40,
+                merge_method="merge",
+                auto_merge=auto_merge,
+                queue_only=queue_only,
             ),
         )
-    assert result.done
+    assert result.done and result.auto_merge
+    assert result.in_merge_queue is in_queue
     assert requests[0]["variables"] == {
         "input": {
             "pullRequestId": "PR_1",
-            "mergeMethod": "MERGE",
+            **({} if queue_only else {"mergeMethod": "MERGE"}),
             "expectedHeadOid": "a" * 40,
         }
     }
+
+
+@pytest.mark.parametrize("queue_enabled,status", [(False, 409), (None, 502), (True, 422)])
+async def test_queue_only_never_falls_back_to_direct_merge(
+    queue_enabled: bool | None, status: int
+) -> None:
+    def github(request: httpx2.Request) -> httpx2.Response:
+        assert request.method != "PUT"
+        if request.method == "GET":
+            return response({"node_id": "PR_1", "head": {"sha": "a" * 40}})
+        body = json.loads(request.content)
+        if "MergeQueueRequirement" in body["query"]:
+            return response({"data": {"node": {"isMergeQueueEnabled": queue_enabled}}})
+        assert queue_enabled is True
+        return response({"errors": [{"message": "Pull request is in clean status"}]})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
+        pull = GitHubClient(http).repo("acme", "app").pull_request(1)
+        with pytest.raises(HTTPException) as error:
+            await actions.act_on_pull_request(
+                pull,
+                actions.MergeAction(
+                    action="merge", sha="a" * 40, merge_method="merge", queue_only=True
+                ),
+            )
+    assert error.value.status_code == status
 
 
 @pytest.mark.parametrize(
@@ -178,6 +296,92 @@ async def test_auto_merge_requires_github_confirmation(payload: dict[str, object
                 ),
             )
     assert error.value.status_code == (422 if "errors" in payload else 502)
+
+
+@pytest.mark.parametrize(
+    ("updated", "confirmed"),
+    [
+        ({"autoMergeRequest": None}, True),
+        ({"autoMergeRequest": {"enabledAt": "2026-10-31T00:00:00Z"}}, False),
+        ({}, False),
+    ],
+)
+async def test_disable_auto_merge_requires_confirmation(
+    updated: dict[str, object], confirmed: bool
+):
+    requests: list[dict[str, object]] = []
+
+    def github(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "GET":
+            return response({"node_id": "PR_1"})
+        requests.append(json.loads(request.content))
+        return response({"data": {"disablePullRequestAutoMerge": {"pullRequest": updated}}})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
+        pull = GitHubClient(http).repo("acme", "app").pull_request(1)
+        action = actions.DisableAutoMergeAction(action="disable-auto-merge")
+        if confirmed:
+            result = await actions.act_on_pull_request(pull, action)
+            assert result.done and not result.auto_merge
+        else:
+            with pytest.raises(HTTPException) as error:
+                await actions.act_on_pull_request(pull, action)
+            assert error.value.status_code == 502
+    assert requests[0]["variables"] == {"input": {"pullRequestId": "PR_1"}}
+
+
+@pytest.mark.parametrize("auto_merge", [False, True])
+async def test_merge_and_auto_merge_fall_back_to_each_other(auto_merge: bool) -> None:
+    calls: list[str] = []
+
+    def github(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "GET":
+            return response({"node_id": "PR_1", "head": {"sha": "a" * 40}})
+        if request.method == "PUT":
+            calls.append("merge")
+            if auto_merge:
+                return response({"merged": True})
+            return response({"message": "Repository rule violations found"}, 405)
+        calls.append("auto-merge")
+        if auto_merge:
+            return response({"errors": [{"message": "Pull request is in clean status"}]})
+        return response(
+            {
+                "data": {
+                    "enablePullRequestAutoMerge": {
+                        "pullRequest": {"autoMergeRequest": {"enabledAt": "2026-10-31T00:00:00Z"}}
+                    }
+                }
+            }
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
+        pull = GitHubClient(http).repo("acme", "app").pull_request(1)
+        result = await actions.act_on_pull_request(
+            pull,
+            actions.MergeAction(
+                action="merge", sha="a" * 40, merge_method="merge", auto_merge=auto_merge
+            ),
+        )
+    assert result.done and result.auto_merge is not auto_merge
+    assert calls == (["auto-merge", "merge"] if auto_merge else ["merge", "auto-merge"])
+
+
+async def test_a_refused_merge_reports_githubs_refusal_when_auto_merge_also_fails() -> None:
+    def github(request: httpx2.Request) -> httpx2.Response:
+        if request.method == "GET":
+            return response({"node_id": "PR_1", "head": {"sha": "a" * 40}})
+        if request.method == "PUT":
+            return response({"message": "Merge commits are not allowed"}, 405)
+        return response({"errors": [{"message": "Auto-merge is not allowed"}]})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(github)) as http:
+        pull = GitHubClient(http).repo("acme", "app").pull_request(1)
+        with pytest.raises(HTTPException, match="Merge commits are not allowed") as error:
+            await actions.act_on_pull_request(
+                pull, actions.MergeAction(action="merge", sha="a" * 40, merge_method="merge")
+            )
+    assert error.value.status_code == 405
 
 
 async def test_auto_merge_refuses_a_changed_head() -> None:

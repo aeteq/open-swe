@@ -3,7 +3,7 @@
 ``/plugins`` publishes apps' versions and adds them to a person's web UI;
 ``/plugins/previews/{thread_id}`` is the one an agent builds in a thread. ``/plugins/{installation_id}/...`` is
 everything a running plugin may ask for: its documents, its repositories on
-GitHub, and agent threads. The dashboard relays those from the plugin's
+GitHub, its agent chats, and the agent threads its person may read. The dashboard relays those from the plugin's
 sandboxed frame, which cannot reach the network itself.
 """
 
@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from urllib.parse import quote
 from uuid import UUID
 
@@ -35,10 +35,12 @@ from pydantic import (
     TypeAdapter,
     model_validator,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openswe.audit_logs.middleware import audit_endpoint
-from openswe.dashboard.deps import SESSION_DEP
+from openswe.dashboard.deps import ADMIN_DEP, SESSION_DEP
 from openswe.dashboard.principal import DashboardPrincipal
+from openswe.database import postgres
 from openswe.github.http import (
     GitHubClient,
     GitHubError,
@@ -87,6 +89,19 @@ from openswe.plugins.records import (
     PreviewHeldByAnother,
 )
 from openswe.plugins.rooms import MAX_PRESENCE_BYTES, ROOMS, Room
+from openswe.plugins.threads import (
+    MAX_MESSAGES,
+    MAX_THREAD_PAGE,
+    BotModel,
+    ThreadArtifactModel,
+    ThreadMessagesModel,
+    ThreadNotFound,
+    ThreadPageModel,
+    ThreadSource,
+    ThreadSummaryModel,
+)
+from openswe.review_apps.outcomes import ReviewOutcome
+from openswe.review_apps.requests import PluginReviews
 from openswe.users.models import User
 from openswe.utils.json_types import JsonObject
 from openswe.utils.object_store import ObjectStoreError
@@ -114,6 +129,8 @@ def _as_http() -> Iterator[None]:
     except (PluginPermissionDenied, RepositoryNotGranted, CollectionWrittenByApp) as exc:
         raise HTTPException(403, str(exc)) from exc
     except PluginChatNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ThreadNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
     except (PluginNameTaken, PreviewHeldByAnother, ConflictingDocumentWrites) as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -156,8 +173,12 @@ async def _installed(
     with _as_http():
         installation = await PluginInstallations.get(installation_id, viewer.id)
     email = session.get("email")
+    login = session.get("sub")
     return InstalledPlugin(
-        installation=installation, user=viewer, email=email if isinstance(email, str) else None
+        installation=installation,
+        user=viewer,
+        email=email if isinstance(email, str) else None,
+        login=login if isinstance(login, str) else None,
     )
 
 
@@ -227,11 +248,20 @@ class PluginSummary(BaseModel):
         )
 
     @classmethod
-    async def get(cls, installation_id: UUID, user_id: UUID) -> PluginSummary:
+    async def get(
+        cls,
+        installation_id: UUID,
+        user_id: UUID,
+        *,
+        session: AsyncSession | None = None,
+        featured: frozenset[UUID] | None = None,
+    ) -> PluginSummary:
         """The person's install as it is now."""
         with _as_http():
-            installation = await PluginInstallations.get(installation_id, user_id)
-        return cls.of(installation, featured=installation.plugin in await FeaturedApps.active())
+            installation = await PluginInstallations.get(installation_id, user_id, session=session)
+        if featured is None:
+            featured = await FeaturedApps.active()
+        return cls.of(installation, featured=installation.plugin in featured)
 
 
 class PreviewModel(BaseModel):
@@ -262,6 +292,22 @@ class ListedBody(BaseModel):
     listed: bool
 
 
+class MoveInstallsBody(BaseModel):
+    release: int | None = Field(default=None, ge=1)
+    """The release's number; the app's newest without one."""
+
+
+class InstallsMovedModel(BaseModel):
+    """Everyone's installs of an app after an admin moved them to ``release``."""
+
+    release: int
+    moved: int
+    current: int
+    waiting: int
+    """Installs whose own release lacked a permission ``release`` asks for, left for their
+    person to approve."""
+
+
 class RepositoriesBody(BaseModel):
     repositories: list[str] = Field(min_length=1, max_length=50)
 
@@ -281,26 +327,16 @@ class RepositoriesBody(BaseModel):
 async def api_list_plugins(viewer: ViewerDep) -> list[PluginSummary]:
     """The viewer's apps, kept in line with the ones an admin added for everyone."""
     try:
-        await FeaturedApps.add_for(viewer)
-    except Exception:  # noqa: BLE001
-        # The person's apps still load; what's featured catches up on a later load.
-        logger.exception(
-            "Could not bring featured apps into a person's web UI",
-            extra={"user_id": str(viewer.id)},
-        )
-    try:
-        # As uninstalling reads it, so an app shown as featured is one that can't be removed.
-        featured = await FeaturedApps.active()
-    except Exception:  # noqa: BLE001
-        logger.exception(
-            "Could not read the featured apps for a person's web UI",
-            extra={"user_id": str(viewer.id)},
-        )
-        featured = frozenset()
-    return [
-        PluginSummary.of(i, featured=i.plugin in featured)
-        for i in await PluginInstallations.visible_to(viewer.id)
-    ]
+        featured, installations = await FeaturedApps.add_for(viewer)
+    except Exception:
+        logger.exception("Could not reconcile featured apps", extra={"user_id": str(viewer.id)})
+        try:
+            featured = await FeaturedApps.active()
+        except Exception:
+            logger.exception("Could not read featured apps", extra={"user_id": str(viewer.id)})
+            featured = frozenset()
+        installations = await PluginInstallations.visible_to(viewer.id)
+    return [PluginSummary.of(i, featured=i.plugin in featured) for i in installations]
 
 
 @router.get("/apps")
@@ -374,15 +410,40 @@ async def api_list_app(app_id: UUID, body: ListedBody, viewer: ViewerDep) -> Res
     return Response(status_code=204)
 
 
+@router.post("/apps/{app_id}/installs/upgrade")
+@audit_endpoint
+async def api_upgrade_app_installs(
+    app_id: UUID,
+    body: MoveInstallsBody,
+    viewer: ViewerDep,
+    _admin: dict[str, object] = ADMIN_DEP,
+) -> InstallsMovedModel:
+    """Move every install of the app a person added or changed to one of its releases,
+    never back from a newer one; admins only."""
+    with _as_http():
+        version = await PluginApps.numbered_release(app_id, body.release)
+        moved = await PluginInstallations.move_all(version, by=viewer.id)
+    return InstallsMovedModel(
+        release=version.number, moved=moved.moved, current=moved.current, waiting=moved.waiting
+    )
+
+
 @router.post("", status_code=201)
 @audit_endpoint
 async def api_install_plugin(body: InstallBody, viewer: ViewerDep) -> PluginSummary:
     """Add a version of an app to the viewer's web UI."""
+    featured = await FeaturedApps.active()
     with _as_http():
-        version = await PluginApps.version(body.version, viewer.id)
-        body.require_approved(version.manifest)
-        installation_id = await PluginInstallations.install(version, user_id=viewer.id)
-    return await PluginSummary.get(installation_id, viewer.id)
+        async with postgres.session() as session:
+            version = await PluginApps.version(body.version, viewer.id, session=session)
+            body.require_approved(version.manifest)
+            installation_id = await PluginInstallations.install(
+                version, user_id=viewer.id, session=session
+            )
+            summary = await PluginSummary.get(
+                installation_id, viewer.id, session=session, featured=featured
+            )
+    return summary
 
 
 @router.get("/previews/{thread_id}")
@@ -446,13 +507,20 @@ async def api_upgrade_plugin(
     body: InstallBody, plugin: PluginDep, viewer: ViewerDep
 ) -> PluginSummary:
     """Move the install to another version of its app."""
+    featured = await FeaturedApps.active()
     with _as_http():
-        version = await PluginApps.version(body.version, viewer.id)
-        if version.app != plugin.installation.plugin:
-            raise HTTPException(409, "That is not a release of this app")
-        body.require_approved(version.manifest)
-        await PluginInstallations.upgrade(plugin.installation.id, version, by=viewer.id)
-    return await PluginSummary.get(plugin.installation.id, viewer.id)
+        async with postgres.session() as session:
+            version = await PluginApps.version(body.version, viewer.id, session=session)
+            if version.app != plugin.installation.plugin:
+                raise HTTPException(409, "That is not a release of this app")
+            body.require_approved(version.manifest)
+            await PluginInstallations.upgrade(
+                plugin.installation.id, version, by=viewer.id, session=session
+            )
+            summary = await PluginSummary.get(
+                plugin.installation.id, viewer.id, session=session, featured=featured
+            )
+    return summary
 
 
 @router.post("/{installation_id}/repositories")
@@ -462,8 +530,15 @@ async def api_share_plugin_repositories(
 ) -> PluginSummary:
     """Share repositories with the app, for the viewer only: what they picked when it asked."""
     repositories = await body.readable_by(viewer)
-    await PluginInstallations.share(plugin.installation.id, viewer.id, repositories)
-    return await PluginSummary.get(plugin.installation.id, viewer.id)
+    featured = await FeaturedApps.active()
+    async with postgres.session() as session:
+        await PluginInstallations.share(
+            plugin.installation.id, viewer.id, repositories, session=session
+        )
+        summary = await PluginSummary.get(
+            plugin.installation.id, viewer.id, session=session, featured=featured
+        )
+    return summary
 
 
 @router.delete("/{installation_id}/repositories/{owner}/{repo}")
@@ -471,12 +546,20 @@ async def api_share_plugin_repositories(
 async def api_unshare_plugin_repository(
     owner: str, repo: str, plugin: PluginDep, viewer: ViewerDep
 ) -> PluginSummary:
-    if await FeaturedApps.shares(plugin.installation.plugin, f"{owner}/{repo}"):
+    featured = await FeaturedApps.active()
+    named = await FeaturedApps.repositories(featured)
+    if f"{owner}/{repo}".lower() in named.get(plugin.installation.plugin, ()):
         raise HTTPException(
             409, "An admin shares this repository with the app for everyone, so it stays shared"
         )
-    await PluginInstallations.unshare(plugin.installation.id, viewer.id, f"{owner}/{repo}".lower())
-    return await PluginSummary.get(plugin.installation.id, viewer.id)
+    async with postgres.session() as session:
+        await PluginInstallations.unshare(
+            plugin.installation.id, viewer.id, f"{owner}/{repo}".lower(), session=session
+        )
+        summary = await PluginSummary.get(
+            plugin.installation.id, viewer.id, session=session, featured=featured
+        )
+    return summary
 
 
 @router.delete("/{installation_id}", status_code=204)
@@ -822,6 +905,7 @@ class _GitHubPull(BaseModel):
 
     number: int
     title: str | None = None
+    body: str | None = None
     html_url: str | None = None
     state: str | None = None
     draft: bool | None = None
@@ -838,6 +922,7 @@ class _GitHubPull(BaseModel):
 class PullRequestModel(BaseModel):
     number: int
     title: str
+    body: str | None = None
     url: str
     state: str
     merged: bool
@@ -862,6 +947,7 @@ class PullRequestModel(BaseModel):
         return cls(
             number=pull.number,
             title=pull.title or "",
+            body=pull.body,
             url=pull.html_url or "",
             state=pull.state or "open",
             merged=bool(pull.merged),
@@ -878,6 +964,47 @@ class PullRequestModel(BaseModel):
             ],
             requested_teams=[f"{org}/{team.slug}" for team in pull.requested_teams],
         )
+
+
+class _GitHubPullFile(BaseModel):
+    filename: str
+    previous_filename: str | None = None
+    status: str
+    additions: int = 0
+    deletions: int = 0
+    patch: str | None = None
+
+
+class PullRequestFile(BaseModel):
+    """One file a pull request changes, with its unified diff when GitHub gives one."""
+
+    path: str
+    previous_path: str | None
+    """The path before a rename or copy."""
+    status: str
+    """``added``, ``removed``, ``modified``, ``renamed``, ``copied``, ``changed`` or ``unchanged``."""
+    additions: int
+    deletions: int
+    patch: str | None
+    """The file's hunks; GitHub leaves them out for binary files and very large diffs."""
+
+    @classmethod
+    def of(cls, payload: Mapping[str, object]) -> PullRequestFile:
+        file = _GitHubPullFile.model_validate(payload)
+        return cls(
+            path=file.filename,
+            previous_path=file.previous_filename,
+            status=file.status,
+            additions=file.additions,
+            deletions=file.deletions,
+            patch=file.patch,
+        )
+
+
+class PullRequestFiles(BaseModel):
+    files: list[PullRequestFile]
+    truncated: bool
+    """Whether the pull request changes more files than GitHub lists, at most 3000."""
 
 
 class PullRequestSummary(BaseModel):
@@ -909,7 +1036,10 @@ class PullRequestSummary(BaseModel):
 class PullRequestSearch(BaseModel):
     pulls: list[PullRequestSummary]
     incomplete: bool
-    """Whether GitHub left some out: past its first page, or a search that timed out."""
+    """Whether some are missing because GitHub's search timed out or a later page failed.
+    Its search never lists more than its first 1000 results."""
+    next_page: int | None = None
+    """The page to ask for next, when one page was asked for and GitHub has more."""
 
 
 class PullRequestBody(BaseModel):
@@ -1081,27 +1211,71 @@ async def api_plugin_commit(
 
 @router.get("/{installation_id}/github/pulls")
 async def api_plugin_search_pulls(
-    plugin: PluginDep, role: Literal["review-requested", "author"]
+    plugin: PluginDep,
+    role: Literal["review-requested", "author"],
+    page: Annotated[int | None, Query(ge=1)] = None,
+    author: Annotated[str | None, Query(max_length=39)] = None,
 ) -> PullRequestSearch:
-    """Open pull requests in the repositories the person shared and can read, by their role."""
+    """Open pull requests in the repositories the person shared and can read, by their role.
+
+    With ``author``, ``role`` must be ``author``: that person's pull requests, not theirs.
+    Without ``page`` every page of GitHub's search; with it only that page, and the next
+    one's number while GitHub has more, so a caller can show the first page at once.
+    """
+    if author is not None and role != "author":
+        raise HTTPException(422, "author needs role author")
     with _as_http():
         plugin.require(PluginPermission.GITHUB_READ, PluginPermission.GITHUB_WRITE)
         readable = await plugin.readable_repositories()
         if not readable:
             return PullRequestSearch(pulls=[], incomplete=False)
+        pulls: list[OpenPullRequest] = []
+        first = page or 1
+        current: int | None = first
+        incomplete = False
         async with GitHubClient.as_user(plugin.user.github_login) as github:
-            # GitHub's review-requested qualifier includes requests to the person's teams.
-            found = await list_open_pull_requests(
-                github,
-                plugin.user.github_login,
-                ",".join(readable),
-                scope="mine" if role == "author" else "review-requested",
-                lightweight=True,
-            )
+            # GitHub's review-requested qualifier includes requests to the person's teams,
+            # which often run past a page.
+            while current is not None and not incomplete:
+                try:
+                    found = await list_open_pull_requests(
+                        github,
+                        author or plugin.user.github_login,
+                        ",".join(readable),
+                        scope="mine" if role == "author" else "review-requested",
+                        lightweight=True,
+                        page=current,
+                    )
+                except HTTPException:
+                    if current == first:
+                        raise
+                    # A later page failing, as past GitHub's search rate limit, keeps the rest.
+                    logger.warning("A later page of a plugin's PR search failed", exc_info=True)
+                    incomplete = True
+                    break
+                pulls += found.pull_requests
+                current, incomplete = found.next_page, found.incomplete
+                if page is not None:
+                    break
     return PullRequestSearch(
-        pulls=[PullRequestSummary.of(pull) for pull in found.pull_requests],
-        incomplete=found.incomplete or found.next_page is not None,
+        pulls=[PullRequestSummary.of(pull) for pull in pulls],
+        incomplete=incomplete,
+        next_page=current if page is not None and not incomplete else None,
     )
+
+
+@router.post("/{installation_id}/github/{owner}/{repo}/pulls/{number}/review", status_code=202)
+async def api_plugin_request_review(
+    owner: str, repo: str, number: Annotated[int, Path(ge=1, le=2**31 - 1)], plugin: PluginDep
+) -> ReviewOutcome:
+    with _as_http():
+        try:
+            reviews = PluginReviews(plugin)
+            return await reviews.request(f"{owner}/{repo}", number)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/{installation_id}/github/{owner}/{repo}/pulls/{number}")
@@ -1111,6 +1285,25 @@ async def api_plugin_pull(
     with _as_http():
         async with plugin.github(f"{owner}/{repo}") as client:
             return PullRequestModel.of(await client.pull_request(number).pull())
+
+
+# GitHub lists at most 3000 of a pull request's files, 100 a page.
+_MAX_FILE_PAGES = 30
+
+
+@router.get("/{installation_id}/github/{owner}/{repo}/pulls/{number}/files")
+async def api_plugin_pull_files(
+    owner: str, repo: str, number: Annotated[int, Path(ge=1, le=2**31 - 1)], plugin: PluginDep
+) -> PullRequestFiles:
+    """The files pull request ``number`` changes, with their diffs, as GitHub has them now."""
+    with _as_http():
+        async with plugin.github(f"{owner}/{repo}") as client:
+            pull = client.pull_request(number)
+            changed = (await pull.pull()).get("changed_files")
+            count = changed if isinstance(changed, int) else None
+            listed = await pull.files(max_pages=_MAX_FILE_PAGES, count=count)
+    files = [PullRequestFile.of(file) for file in listed]
+    return PullRequestFiles(files=files, truncated=count is not None and count > len(files))
 
 
 @router.get("/{installation_id}/github/{owner}/{repo}/pulls")
@@ -1247,6 +1440,64 @@ async def api_answer_plugin_chat_calls(
     return ChatResumed(run_id=answer.run_id, paused=answer.paused)
 
 
+# ---- Agent threads -----------------------------------------------------------------
+
+ThreadId = Annotated[str, Path(min_length=1, max_length=200)]
+
+
+@router.get("/{installation_id}/threads")
+async def api_plugin_threads(
+    plugin: PluginDep,
+    source: ThreadSource,
+    bot: Annotated[str | None, Query(pattern=r"^(\*|[A-Z0-9]{1,32}:[A-Z0-9]{1,32})$")] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_THREAD_PAGE)] = 25,
+    offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
+) -> ThreadPageModel:
+    """Threads from ``source`` the person may read, most recently updated first.
+
+    ``bot`` keeps threads one allowlisted Slack bot started (``team_id:bot_id``), or
+    any bot's with ``*``. Unlike the dashboard's lists, this one includes incident
+    threads when asked for ``incidents_agent``; see
+    :meth:`openswe.plugins.threads.PluginThreads.may_read`.
+    """
+    with _as_http():
+        return await plugin.threads.page(source, bot=bot, limit=limit, offset=offset)
+
+
+@router.get("/{installation_id}/bots")
+async def api_plugin_bots(plugin: PluginDep) -> list[BotModel]:
+    """The allowlisted Slack bots, whose threads the thread list filters by with ``bot``."""
+    with _as_http():
+        return await plugin.threads.bots()
+
+
+@router.get("/{installation_id}/threads/{thread_id}")
+async def api_plugin_thread(thread_id: ThreadId, plugin: PluginDep) -> ThreadSummaryModel:
+    with _as_http():
+        return await plugin.threads.summary(thread_id)
+
+
+@router.get("/{installation_id}/threads/{thread_id}/messages")
+async def api_plugin_thread_messages(
+    thread_id: ThreadId,
+    plugin: PluginDep,
+    limit: Annotated[int, Query(ge=1, le=MAX_MESSAGES)] = 100,
+) -> ThreadMessagesModel | None:
+    """The newest messages people and the agent wrote in the thread, oldest first, or
+    ``null`` for a thread from before the transcript log, whose messages aren't read here."""
+    with _as_http():
+        return await plugin.threads.messages(thread_id, limit=limit)
+
+
+@router.get("/{installation_id}/threads/{thread_id}/artifact")
+async def api_plugin_thread_artifact(
+    thread_id: ThreadId, plugin: PluginDep
+) -> ThreadArtifactModel | None:
+    """The artifact the thread published, or ``null`` when it published none."""
+    with _as_http():
+        return await plugin.threads.artifact(thread_id)
+
+
 # ---- People ------------------------------------------------------------------------
 
 
@@ -1255,26 +1506,42 @@ class Person(BaseModel):
     name: str
     avatar_url: str | None
 
+    @classmethod
+    def of(cls, login: str, user: User | None) -> Self:
+        """``login`` as Robin knows its person: their name and picture, else the login alone."""
+        return cls(
+            login=login,
+            name=(user.display_name if user else "") or login,
+            avatar_url=(user.avatar_url if user else "")
+            or f"https://avatars.githubusercontent.com/{quote(login, safe='')}",
+        )
+
 
 @router.get("/{installation_id}/people")
 async def api_plugin_people(
     _plugin: PluginDep,
     login: Annotated[list[str], Query(min_length=1, max_length=100)],
 ) -> list[Person]:
-    """Names and pictures for GitHub logins: Open SWE's record of each, else the login alone."""
+    """Names and pictures for GitHub logins: Robin's record of each, else the login alone."""
     found = await User.for_github_logins(login)
-    people: list[Person] = []
-    for name in dict.fromkeys(login):
-        user = found.get(name.lower())
-        people.append(
-            Person(
-                login=name,
-                name=(user.display_name if user else "") or name,
-                avatar_url=(user.avatar_url if user else "")
-                or f"https://avatars.githubusercontent.com/{quote(name, safe='')}",
-            )
-        )
-    return people
+    return [Person.of(name, found.get(name.lower())) for name in dict.fromkeys(login)]
+
+
+@router.get("/{installation_id}/people/search")
+async def api_plugin_search_people(
+    plugin: PluginDep,
+    q: Annotated[str, Query(max_length=100)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[Person]:
+    """People Robin knows with a GitHub login, whose name or login matches ``q``, closest first.
+
+    Listing the directory needs the installation's GitHub grant, which its consent names.
+    """
+    with _as_http():
+        plugin.require(PluginPermission.GITHUB_READ, PluginPermission.GITHUB_WRITE)
+    return [
+        Person.of(user.github_login, user) for user in await User.on_github(search=q, limit=limit)
+    ]
 
 
 # ---- Live rooms --------------------------------------------------------------------

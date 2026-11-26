@@ -21,9 +21,11 @@ from openswe.input_messages import InputMessageContext, SystemIdentity
 from openswe.jobs import queue
 from openswe.prompts import prompt
 from openswe.sandboxes.connect import connect_sandbox
+from openswe.sandboxes.this_mac import MacSandbox
 from openswe.sandboxes.tool_access import SANDBOX_HOST_THREAD_KEY, ToolAccess
 from openswe.slack.thinking import refresh_slack_background_status
 from openswe.source_context import SourceContext
+from openswe.tasks.store import TaskDelegation
 from openswe.tools.background_execute import TASK_ROOT, list_tasks
 from openswe.utils.background_task_state import (
     RUNNING_BACKGROUND_TASKS_KEY,
@@ -168,7 +170,7 @@ async def reconcile_background_tasks(thread_id: str) -> dict[str, Any]:
 
 
 async def reconcile_background_task_callback(task_id: str, access: ToolAccess) -> dict[str, object]:
-    backend = await connect_sandbox(access.sandbox_id, thread_id=access.thread_id)
+    backend = await connect_sandbox(access.sandbox_id)
     # An unreadable list must fail with a 5xx so the runner retries instead of giving up.
     for task in await _list_tasks(backend, required=True):
         if task.get("task_id") == task_id:
@@ -203,13 +205,13 @@ async def _reconcile(thread_id: str, *, access: ToolAccess | None = None) -> _Re
         if isinstance(tracked, list)
         else []
     )
-    sandbox_id = metadata.get("sandbox_id")
-    if not isinstance(sandbox_id, str) or not sandbox_id:
+    sandbox_id = MacSandbox.reachable_id(metadata)
+    if sandbox_id is None:
         if tracked_ids:
             metadata = await update_background_task_state(client, thread_id, reset=True)
         await refresh_slack_background_status(thread_id, metadata=metadata)
         return _Reconciled({"status": "missing_sandbox"}, None, tracked=True)
-    backend = await connect_sandbox(sandbox_id, thread_id=thread_id)
+    backend = await connect_sandbox(sandbox_id)
     tasks = await thread_tasks(backend, thread_id, metadata)
     running = [task for task in tasks if task.get("status") == "running"]
     terminal = [task for task in tasks if task.get("status") in TERMINAL_STATES]
@@ -217,10 +219,18 @@ async def _reconcile(thread_id: str, *, access: ToolAccess | None = None) -> _Re
     finished_ids = [
         task_id for task in terminal if isinstance((task_id := task.get("task_id")), str)
     ]
+    # A finished command stays tracked until its completion run exists, so a client waiting
+    # for the thread to settle never sees it idle in between.
+    undelivered_ids = [
+        task_id
+        for task in terminal
+        if isinstance((task_id := task.get("task_id")), str) and task.get("notification") != "done"
+    ]
     tracked_successfully = False
     status_metadata: dict[str, object] | None = None
+    keep = (set(running_ids) - set(finished_ids)) | set(undelivered_ids)
     # Only take the thread lock when the tracked set changes.
-    if set(running_ids) - set(finished_ids) == set(tracked_ids):
+    if keep == set(tracked_ids):
         status_metadata = metadata
         tracked_successfully = True
     else:
@@ -228,10 +238,9 @@ async def _reconcile(thread_id: str, *, access: ToolAccess | None = None) -> _Re
             status_metadata = await update_background_task_state(
                 client,
                 thread_id,
-                running=running_ids,
+                running=sorted(keep),
                 finished=[
-                    *finished_ids,
-                    *(task_id for task_id in tracked_ids if task_id not in running_ids),
+                    task_id for task_id in (*finished_ids, *tracked_ids) if task_id not in keep
                 ],
             )
             tracked_successfully = True
@@ -242,12 +251,30 @@ async def _reconcile(thread_id: str, *, access: ToolAccess | None = None) -> _Re
                 exc_info=True,
             )
     status_context = SourceContext.from_metadata(status_metadata or metadata)
-    delivered = 0
+    # A cancelled worker takes no more runs, so a completion run would only be refused,
+    # and polling would ask again every minute for good: its completions are dropped.
+    dropping = bool(undelivered_ids) and await TaskDelegation.is_cancelled(thread_id)
+    delivered_ids: list[str] = []
+    dropped_ids: list[str] = []
     for task in terminal:
         task_id = task.get("task_id")
         if not isinstance(task_id, str) or task.get("notification") == "done":
             continue
         if not await _claim(backend, task_id):
+            continue
+        if dropping:
+            try:
+                await _mark_delivered(backend, task_id)
+            except Exception:
+                await _unclaim(backend, task_id)
+                logger.warning(
+                    "Failed to drop background task",
+                    extra={"agent_thread_id": thread_id, "task_id": task_id},
+                    exc_info=True,
+                )
+                continue
+            task["notification"] = "done"
+            dropped_ids.append(task_id)
             continue
         message = _notification(task)
         try:
@@ -259,6 +286,7 @@ async def _reconcile(thread_id: str, *, access: ToolAccess | None = None) -> _Re
                 message,
                 configurable,
                 source=str(configurable.get("source") or "dashboard"),
+                origin=str(task.get("origin") or "automation"),
                 thread_title=None,
                 context=_BACKGROUND_TASK_CONTEXT,
                 systems=[_BACKGROUND_TASK_SENDER],
@@ -268,10 +296,26 @@ async def _reconcile(thread_id: str, *, access: ToolAccess | None = None) -> _Re
             )
             await _mark_delivered(backend, task_id)
             task["notification"] = "done"
-            delivered += 1
+            delivered_ids.append(task_id)
         except Exception:
             await _unclaim(backend, task_id)
             logger.warning("Failed to deliver background task %s", task_id, exc_info=True)
+    if dropped_ids:
+        logger.info(
+            "Dropped a cancelled worker's background task completions",
+            extra={"agent_thread_id": thread_id, "task_ids": dropped_ids},
+        )
+    if settled_ids := [*delivered_ids, *dropped_ids]:
+        try:
+            await update_background_task_state(client, thread_id, finished=settled_ids)
+        except Exception:
+            tracked_successfully = False
+            logger.warning(
+                "Could not untrack delivered background commands",
+                extra={"agent_thread_id": thread_id},
+                exc_info=True,
+            )
+    delivered = len(delivered_ids)
     pending = sum(task.get("notification") != "done" for task in terminal)
     await refresh_slack_background_status(
         thread_id, metadata=status_metadata, source_context=status_context

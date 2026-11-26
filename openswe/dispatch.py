@@ -13,21 +13,16 @@ busy-check and the custom store-queue) with one function that uses:
   step in prod); dashboard-started runs already use the platform's async default.
 - ``webhook=COMPLETION_WEBHOOK_URL`` — the platform calls us on completion or
   failure so every run ends with a signal even if the agent died.
-- ``stream_resumable=False`` — nothing replays these runs' streams: the dashboard
-  reads a thread from its transcript, so keeping every event in the Agent
-  Server's Redis only costs it memory. A client streaming the thread through the
-  SDK sees a run's events from when it joins.
-- the v3 run shape — the same ``stream_mode`` set, ``stream_subgraphs`` and
-  compatibility marker that ``langgraph_api``'s ``run.start`` command applies
-  when the dashboard submits a run. The server fixes a run's streaming protocol
-  at creation: without the marker a run streams ``values`` only, so the dashboard
-  sees no ``tools`` events or subagent namespaces for externally triggered runs.
+- the server's stream settings (``RunFormat``): every run streams the runs API's
+  events, in the modes a thread view joins any run in, and keeps them for that join.
 """
 
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Self
+from types import MappingProxyType
+from typing import Any, Final, Self
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -35,9 +30,9 @@ from langgraph.types import Durability
 from langgraph_sdk import get_client
 from langgraph_sdk.client import LangGraphClient
 from langgraph_sdk.schema import Run
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
-from openswe.agent_api.connections import ACTING_USER_KEY
+from openswe.agent_api.connections import ACTING_USER_KEY, SENDER_USER_KEY
 from openswe.config import ENV
 from openswe.github.pull_request_key import PullRequestKey
 from openswe.input_messages import (
@@ -53,7 +48,7 @@ from openswe.invocation import new_invocation_id, resolve_invocation_id, with_in
 from openswe.run_config import RunConfig
 from openswe.source_context import SourceContext
 from openswe.threads.creation import ensure_titled_thread
-from openswe.trace_metadata import BILLING_FIELDS, BILLING_USER_FIELDS
+from openswe.trace_metadata import ATTRIBUTION_FIELD, BILLING_FIELDS, BILLING_USER_FIELDS, RunOrigin
 from openswe.ui_invalidations import Topic
 from openswe.users import User
 
@@ -73,11 +68,13 @@ TURN_ATTRIBUTION_FIELDS = frozenset(
         *BILLING_FIELDS,
         "created_by",
         ACTING_USER_KEY,
+        SENDER_USER_KEY,
         "ls_repo_provider",
         "ls_attribution_identifier",
         "ls_git_repo",
         "ls_git_branch",
         "open_swe_git_targets",
+        "open_swe_git_commits",
     }
 )
 
@@ -93,7 +90,11 @@ class RunMetadata(BaseModel):
     @classmethod
     def of_run(cls, assistant_id: str, config: LangGraphRunConfig | None) -> Self:
         cfg = RunConfig.from_config(config)
-        if assistant_id not in _PULL_REQUEST_GRAPHS or cfg.repo is None or cfg.pr_number is None:
+        if (
+            assistant_id not in {*_PULL_REQUEST_GRAPHS, "agent"}
+            or cfg.repo is None
+            or cfg.pr_number is None
+        ):
             return cls()
         return cls(pull_request=PullRequestKey.of(cfg.repo.owner, cfg.repo.name, cfg.pr_number))
 
@@ -123,7 +124,7 @@ class RunMetadata(BaseModel):
         return metadata
 
 
-# The server's legacy-named compatibility marker selects the v3 stream path.
+# The server's legacy-named marker for the v3 stream path, which every run turns off.
 V3_STREAMING_CONFIG_KEY = "__event_streaming_v2"
 # Run metadata ``kind`` of a run started only to deliver store leftovers.
 FOLLOW_UP_PICKUP_KIND = "follow_up_pickup"
@@ -140,15 +141,46 @@ def channel_of(metadata: Mapping[str, object] | None) -> str | None:
     return channel if isinstance(channel, str) and channel else None
 
 
-# The dashboard's ``run.start`` defaults, minus protocol-only channels rejected by
-# the REST ``POST /runs`` schema.
-V3_RUN_STREAM_MODES: tuple[str, ...] = (
-    "values",
+# The modes ``@langchain/react`` 2.0's thread view starts its own runs in, which it
+# joins every run in, whoever started it: a join carries only the run's own modes.
+SERVER_STREAM_MODES: Final[tuple[str, ...]] = (
     "updates",
-    "messages",
+    "messages-tuple",
     "custom",
-    "tasks",
-    "checkpoints",
+    "tools",
+    "lifecycle",
+)
+
+
+@dataclass(frozen=True)
+class RunFormat:
+    """How a run streams, as the runs API's run-create fields say.
+
+    Every run the backend starts streams the runs API's events: its
+    ``__event_streaming_v2`` marker is sent ``False``, so it never inherits the ``True``
+    its thread kept from an earlier run. ``fields`` are the stream fields it starts with:
+    the server's (:data:`SERVER_STREAM`), so any client can join it, unless the client
+    that started it chose its own (:meth:`runs_api`).
+    """
+
+    fields: Mapping[str, JsonValue]
+
+    @classmethod
+    def of(cls, fields: Mapping[str, JsonValue]) -> RunFormat:
+        return cls(fields=MappingProxyType(dict(fields)))
+
+    def run_fields(self) -> dict[str, JsonValue]:
+        """The fields a run-create body starts a run in this format with."""
+        return dict(self.fields)
+
+
+SERVER_STREAM: Final = RunFormat.of(
+    {
+        "stream_mode": list(SERVER_STREAM_MODES),
+        "stream_subgraphs": True,
+        # A client joins it from its first event, which only a resumable run keeps.
+        "stream_resumable": True,
+    }
 )
 
 
@@ -183,14 +215,8 @@ async def dispatch_input(
             channel_context = slack_thread.channel_context
             if channel_context is not None:
                 name = channel_context.label
-                topic = channel_context.topic
-                purpose = channel_context.purpose
                 if name:
                     channel["name"] = name
-                if topic:
-                    channel["topic"] = topic
-                if purpose:
-                    channel["purpose"] = purpose
             if slack_thread.thread_ts:
                 channel["thread_id"] = slack_thread.thread_ts
             channels.append(channel)
@@ -319,15 +345,6 @@ def _slack_channel_metadata(configurable: object) -> dict[str, str]:
     return {key: value for key, value in values.items() if value}
 
 
-def thread_workspace(metadata: Mapping[str, Any]) -> str | None:
-    """The workspace a thread's follow-up run carries; ``environment`` is the pre-workspace key."""
-    for key in ("workspace", "environment"):
-        value = metadata.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
 def follow_up_configurable(metadata: Mapping[str, Any], thread_id: str) -> dict[str, Any]:
     """Config for a system-started run that continues a thread where its last run left off."""
     configurable: dict[str, Any] = {"thread_id": thread_id}
@@ -347,10 +364,6 @@ def follow_up_configurable(metadata: Mapping[str, Any], thread_id: str) -> dict[
         )
         configurable.pop("github_login", None)
         configurable.pop("repo", None)
-    workspace = thread_workspace(metadata)
-    if workspace is not None:
-        configurable["workspace"] = workspace
-        configurable["environment"] = workspace
     configurable.update(SourceContext.from_metadata(metadata).dump())
     return configurable
 
@@ -358,6 +371,9 @@ def follow_up_configurable(metadata: Mapping[str, Any], thread_id: str) -> dict[
 def prepare_run_config(
     config: LangGraphRunConfig | None,
     metadata: dict[str, Any] | None,
+    *,
+    source: str | None = None,
+    origin: str | None = None,
 ) -> LangGraphRunConfig:
     run_config = dict(config or {})
     configurable = run_config.get("configurable")
@@ -368,6 +384,13 @@ def prepare_run_config(
         merged_metadata.pop(key, None)
     if metadata is not None:
         merged_metadata.update(metadata)
+    run_origin = RunOrigin.resolve(
+        origin or source,
+        inherited=configurable.get("origin") or merged_metadata.get("origin"),
+        fallback=configurable.get("source") if source is None else None,
+    ).value
+    configurable["origin"] = run_origin
+    merged_metadata["origin"] = run_origin
     merged_metadata.update(_slack_channel_metadata(configurable))
     merged_metadata["ls_repo_provider"] = "github"
     merged_metadata["created_by"] = None
@@ -375,7 +398,7 @@ def prepare_run_config(
     started_at = merged_metadata.setdefault("invocation_started_at", datetime.now(UTC).isoformat())
     configurable = with_invocation_id(configurable, invocation_id)
     configurable.setdefault("invocation_started_at", started_at)
-    configurable[V3_STREAMING_CONFIG_KEY] = True
+    configurable[V3_STREAMING_CONFIG_KEY] = False
     configurable.setdefault("background_task_completion", False)
     run_config["configurable"] = configurable
     run_config["metadata"] = with_invocation_id(merged_metadata, invocation_id)
@@ -418,8 +441,6 @@ async def _run_user_metadata(
             metadata.update(user.billing_trace_metadata())
             if user.email:
                 metadata["user_email"] = user.email
-            if user.github_login:
-                metadata["ls_attribution_identifier"] = user.github_login
     except Exception:
         logger.warning("Could not resolve run user for trace metadata", exc_info=True)
     return metadata
@@ -431,10 +452,13 @@ async def prepare_durable_run(
     metadata: Mapping[str, object] | None,
     *,
     source: str,
+    origin: str | None = None,
     as_sender: bool = False,
 ) -> LangGraphRunConfig:
     """The config and metadata a durable run starts with, wherever it is created.
 
+    Origin names this trigger, or the captured cause of deferred work, never the thread.
+    ``origin`` overrides an execution source inherited from another turn.
     Reviews are attributed to the PR author; other runs to the config's person.
     A run acts as the config's person (``ACTING_USER_KEY``) only when they started it:
     ``as_sender`` for a message they
@@ -450,19 +474,27 @@ async def prepare_durable_run(
     execution_user_id = run_metadata.get("user_id")
     if execution_user_id is not None and (as_sender or channel_of(run_metadata) is not None):
         run_metadata[ACTING_USER_KEY] = execution_user_id
-    billing = await recorded.billing_metadata()
-    if assistant_id in _PULL_REQUEST_GRAPHS and billing is None:
-        billing = {"billing_bucket": "system"}
+        run_metadata[SENDER_USER_KEY] = execution_user_id
+    billing = (
+        await recorded.billing_metadata() or {"billing_bucket": "system"}
+        if assistant_id in _PULL_REQUEST_GRAPHS
+        else None
+    )
     if billing is not None:
-        for key in BILLING_USER_FIELDS:
+        for key in (*BILLING_USER_FIELDS, ATTRIBUTION_FIELD):
             run_metadata.pop(key, None)
         run_metadata.update(billing)
-    elif channel_of(run_metadata) is not None and run_metadata["billing_bucket"] != "user":
+    elif (
+        channel_of(run_metadata) is not None
+        and run_metadata["billing_bucket"] != "user"
+        # An automation's run is its creator's or Robin's own, whichever thread it is on.
+        and source != "schedule"
+    ):
         run_metadata["billing_bucket"] = "channel"
     conversation_type = _slack_conversation_type(source, config)
     if conversation_type is not None:
         run_metadata["slack_conversation_type"] = conversation_type
-    run_config = prepare_run_config(config, run_metadata)
+    run_config = prepare_run_config(config, run_metadata, source=source, origin=origin)
     if execution_user_id is None:
         configurable = run_config["configurable"]
         if isinstance(configurable, dict):
@@ -485,7 +517,9 @@ async def create_durable_run(
     if_not_exists: str = "create",
     after_seconds: int | float | None = None,
     source_context: SourceContext | None = None,
+    origin: str | None = None,
     as_sender: bool = False,
+    run_format: RunFormat = SERVER_STREAM,
 ) -> Run:
     """Create a run with Open SWE's durable LangGraph defaults.
 
@@ -499,7 +533,12 @@ async def create_durable_run(
     if thread_title is not None:
         await ensure_titled_thread(client, thread_id, title=thread_title)
     run_config = await prepare_durable_run(
-        assistant_id, config, metadata, source=source, as_sender=as_sender
+        assistant_id,
+        config,
+        metadata,
+        source=source,
+        origin=origin,
+        as_sender=as_sender,
     )
     recorded = RunMetadata.of_run(assistant_id, config)
     create_kwargs: dict[str, Any] = {
@@ -509,9 +548,7 @@ async def create_durable_run(
         "multitask_strategy": multitask_strategy,
         "durability": durability,
         "if_not_exists": if_not_exists,
-        "stream_mode": list(V3_RUN_STREAM_MODES),
-        "stream_subgraphs": True,
-        "stream_resumable": False,
+        **run_format.run_fields(),
     }
     if COMPLETION_WEBHOOK_URL:
         create_kwargs["webhook"] = COMPLETION_WEBHOOK_URL
@@ -554,12 +591,15 @@ async def dispatch_agent_run(
     client: LangGraphClient | None = None,
     multitask_strategy: str = "interrupt",
     source_context: SourceContext | None = None,
+    origin: str | None = None,
+    as_sender: bool = False,
+    run_format: RunFormat = SERVER_STREAM,
 ) -> Run:
     """Create a durable run for ``thread_id`` using the requested multitask strategy.
 
     Routes every Slack / Linear / GitHub / dashboard trigger through one
     contract. ``source`` is for logging/metadata only; ``assistant_id`` selects
-    the graph (``"agent"`` or ``"reviewer"``).
+    the graph (``"agent"`` or ``"reviewer"``); ``as_sender`` as ``create_durable_run``.
     """
     if input is not None and any(
         value is not None for value in (content, context, channels, systems)
@@ -590,4 +630,7 @@ async def dispatch_agent_run(
         client=client,
         multitask_strategy=multitask_strategy,
         source_context=source_context,
+        origin=origin,
+        as_sender=as_sender,
+        run_format=run_format,
     )

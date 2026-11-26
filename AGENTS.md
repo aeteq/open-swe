@@ -19,12 +19,12 @@ The backend is a set of stateless APIs MDA calls: typed endpoints at `/agent-api
 Shape new behavior to fit:
 
 - Control flow (when to nudge, route, stop, refresh) is middleware in `mda/rt`; checks around the file and shell tools go in `rt/file_tools.py`.
-- Work that needs the backend's credentials or data is a named `Endpoint` for that work (`model_choice`, `refresh_github_proxy`), never a generic phase call or an untyped body.
+- Work that needs the backend's credentials or data is a named `Endpoint` for that work (`model_choice`, `sandbox_proxy`), never a generic phase call or an untyped body.
 - Data fixed for a run is worked out once when the backend starts it and sent in the run context (`Catalog`, `openswe/agent_api/client.py`); a call that needs a fact derives it from the token.
 - State kept between calls lives in MDA's run state or PostgreSQL, never in backend memory.
 
 Robin starts three kinds of run (`agent`, `reviewer`, `review-scout`), each a `RunKind` (`openswe/agent_api/run_kinds.py`); MDA plays all of them with its one graph.
-As a run starts, its kind resolves the run's catalog from what only the backend holds, such as thread settings, workspace defaults, the sender's access and credentialed integrations (`agent_catalog`, `reviewer_catalog`, `review_scout_catalog`, `openswe/agent_api/run_catalog.py`); after that, every call is answered from the token (`openswe/agent_api/run_calls.py`).
+As a run starts, its kind resolves the run's catalog from what only the backend holds, such as thread settings, global defaults, the sender's access and credentialed integrations (`agent_catalog`, `reviewer_catalog`, `review_scout_catalog`, `openswe/agent_api/run_catalog.py`); after that, every call is answered from the token (`openswe/agent_api/run_calls.py`).
 The backend never runs middleware around a model call; the only middleware objects it keeps are the preparation and the reporters a named endpoint calls.
 
 ## Conventions
@@ -53,7 +53,11 @@ The backend never runs middleware around a model call; the only middleware objec
   Resolve a provider handle (GitHub login, Slack user id, email) to a `User` where it enters from that provider, and turn it back into a handle only to call that provider or to match its own data (a CODEOWNERS entry, a review's author).
 - Call GitHub through named `RepoClient`/`PullRequestClient` methods (e.g. `pull.comment(body)`); outside `openswe/github/http.py` and `openswe/github/pull_request_status.py`, never pass a REST path or GraphQL query to the transport (`get`, `post`, `patch`, `delete`, `pages`, `graphql`, `request`).
   Open the client as who it acts for, `GitHubClient.as_user(login)` or `GitHubClient.as_app(owner, repo)`; `GitHubClient.connect(token=...)` is only for a token a run was handed.
+- Use `httpx2` for HTTP clients and transports we own; retain `httpx` where an upstream SDK's types or exceptions require it, and keep both exception families in mixed SDK/direct-client paths.
+  CI checks added client and transport constructor calls in `openswe/`, `mda/rt/`, and `scripts/` with `scripts/check_httpx.py`; tests and vendored SDKs are outside its scope.
+  SDK-required constructors may use a trailing `# httpx-sdk: <SDK and required type>` on the call's opening line; an explanation is required and the exception applies only to calls starting on that line.
 - Build a per-call `httpx2.AsyncClient` with `transport=pooled_transport()` (an `aiohttp` session with `connector=pooled_connector(), connector_owner=False`) from `openswe/utils/http_pool.py`, so it reuses the event loop's warm connections instead of opening new ones.
+  Preserve dedicated read/write/stream pools and their limits where isolation is intentional, as in `MdaRuntime`; standalone scripts cannot import the backend pool.
 - Absolute imports across packages; same-package imports may start with one dot.
   Never use parent-relative imports.
 - New dashboard endpoints go in the `router` of the package that owns the feature, never in `openswe/dashboard/routes.py`.
@@ -110,6 +114,19 @@ The backend never runs middleware around a model call; the only middleware objec
   Convert to user-facing errors only at API/tool boundaries.
 - Never discard an error: every `except` re-raises or logs what it swallowed.
 
+## Async side-effect lifecycle
+
+- Define the operation's identity and how it handles duplicate or out-of-order events, partial completion, cancellation, and shutdown.
+  Deduplicate work without losing new information from later events.
+- Persist intent before dispatch and retry through the job queue.
+  A saved intent isn't a delivery receipt.
+  Verify the external outcome before retrying a non-idempotent action.
+- Never await work that may need your lease.
+  After reacquiring a lease, reread state and preserve newer receipts and decisions.
+  Database serialization doesn't order external API completions.
+- On lease loss or shutdown, stop owned work before releasing its claim.
+  Extend behavioral tests for races and lost responses, not helper call order.
+
 ## Testing
 
 Never run the full test suite locally; run only tests related to the change.
@@ -122,6 +139,11 @@ Exception for the tools MDA runs itself (`ToolSpec.runtime_runs`): what those th
 The GitHub channel's switchboard (`mda/rt/github_routes.py`, standard library and `runtime_api` only) keeps the backend's GitHub action sets and its mention pattern, held to `openswe.webhooks.common` by `tests/agent/test_mda_github_routes.py`; the handles themselves come from the backend with each delivery.
 The backend still checks anything that grants access, such as a run's repository, before it signs the run.
 Change the backend's envelope and the copy together.
+
+Check that a change works on production data, not just on the fixtures you wrote for it.
+Before changing how Robin reads or writes an external system (GitHub, Slack, LangSmith, a database), find out what it really answers in production, through its docs, production logs or traces, or a read with the same credentials Robin runs with, and build fixtures from that.
+Include the answers production actually gives: partial data, permission-limited fields, rate limits and missing resources, not only the complete happy path.
+Tell whoever asked what you could not check against production.
 
 Tests are maintenance cost.
 Add one only when you can name a concrete regression existing coverage would miss.
@@ -140,20 +162,3 @@ Add one only when you can name a concrete regression existing coverage would mis
 
 Titles must be Conventional Commits (`<type>(<scope>): <description>`, scope optional), linted by `.github/workflows/pr_lint.yml`.
 Do not include test-running or validation sections in descriptions.
-
-<!-- OPENWIKI:START -->
-
-## OpenWiki
-
-This repository has a generated `openwiki/` evidence index.
-It is optional just-in-time context, not required startup reading.
-
-- Treat source code and tests as authoritative.
-  A brief's unknowns and review items are verification gaps, not automatic requirements.
-- Prefer the narrowest quiet validation that proves the changed behavior.
-  Preserve complete failure output.
-
-The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki.
-Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
-
-<!-- OPENWIKI:END -->

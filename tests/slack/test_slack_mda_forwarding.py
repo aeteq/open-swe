@@ -1,22 +1,21 @@
-"""``/webhooks/slack`` hands MDA's conversations to MDA's Slack channel, and only those;
+"""``/webhooks/slack`` leaves MDA's conversations to MDA's Slack channel, and only those;
 the channel API answers what MDA's Slack channel asks about them."""
 
+import asyncio
 import json
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import httpx
-import httpx2
 import pytest
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import JsonValue
 from runtime_api.slack import (
     SLACK_MOVE_MARKER,
     ActOnSlackMessage,
-    SlackTurnDeclined,
     SlackTurnPrompt,
 )
 from standardwebhooks import Webhook
@@ -25,33 +24,42 @@ from starlette.requests import Request
 
 from openswe import dispatch, event_claims
 from openswe.agent_api.tokens import verify_runtime_token
+from openswe.database import postgres
 from openswe.mda_channels import api as channel_api
+from openswe.routing.store import INTEGRATIONS, SlackChannelBinding
+from openswe.routing.store import is_listening_channel as real_is_listening_channel
 from openswe.slack import ask as slack_ask
+from openswe.slack import bot_triggers, forks, mda_forwarding
 from openswe.slack import channel as slack_channel
 from openswe.slack import events as slack_events
 from openswe.slack import failures as slack_failures
-from openswe.slack import forks, mda_forwarding
 from openswe.slack import routes as slack_routes
 from openswe.slack import webhook as slack_service
 from openswe.slack.allowed_bots import AllowedSlackBot
+from openswe.slack.channels import SlackChannel
 from openswe.slack.dm import CONCIERGE_TS
 from openswe.slack.payloads import SlackChannelContext
 from openswe.slack.request import SlackRequest
+from openswe.threads.identity import ThreadIdentity
+from openswe.users import User
 from openswe.webhooks import common as webhook_common
 from tests.mda_helpers import mda_starts, stub_mda_runtime
+from tests.support.slack_api import SlackAPI
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
 
-_EVENTS_URL = mda_forwarding.TRIGGER_EVENTS_URL
+_PERSISTENT_EVENT_CLAIM = event_claims.claim
 _MDA_THREAD = str(uuid.uuid4())
+# The real sender checks, which the autouse fixture stubs.
+_ACCOUNT_LINK_NEEDED = slack_service.account_link_needed
+_SLACK_LOGIN = slack_service.slack_login
 _DM_THREAD = str(uuid.uuid4())
 _SERVICE_SECRET = "5e" * 32  # noqa: S105 - test value
 # The real lookups, which the fixture below stands in for in the webhook's tests.
 _OWNED_THREAD = mda_forwarding.owned_thread
-_STARTABLE_THREAD = mda_forwarding.startable_thread
-_STARTABLE_CONCIERGE = mda_forwarding.startable_concierge
 _JOIN_CONCIERGE = mda_forwarding.join_concierge
+_CHANNEL_CONTEXT = webhook_common.resolve_slack_channel_context
 
 
 class _FakeBackgroundTasks:
@@ -106,10 +114,13 @@ _SLACK_HEADERS = {
 @pytest.fixture(autouse=True)
 def _patch(monkeypatch: pytest.MonkeyPatch) -> None:
     slack_events.reset_slack_event_claims()
-    monkeypatch.setattr(slack_routes, "allow_solo_thread_followup", AsyncMock(return_value=False))
-    monkeypatch.setattr(slack_routes, "is_kitchen_channel", AsyncMock(return_value=False))
     monkeypatch.setattr(
-        "openswe.incidents.channels.handle_slack_event", AsyncMock(return_value=None)
+        slack_service.INTEGRATIONS, "listens_to_channel", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(slack_routes, "allow_solo_thread_followup", AsyncMock(return_value=False))
+    monkeypatch.setattr(slack_routes, "is_listening_channel", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        "openswe.routing.channel_rules.handle_slack_event", AsyncMock(return_value=None)
     )
 
     async def channel_context(_channel_id: str, *, use_cache: bool = True) -> SlackChannelContext:
@@ -125,8 +136,6 @@ def _patch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(webhook_common, "SLACK_BOT_USER_ID", "BOT")
     monkeypatch.setattr(webhook_common, "SLACK_BOT_USERNAME", "openswe")
     monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=None))
-    monkeypatch.setattr(mda_forwarding, "startable_thread", AsyncMock(return_value=None))
-    monkeypatch.setattr(mda_forwarding, "startable_concierge", AsyncMock(return_value=None))
     monkeypatch.setattr(mda_forwarding, "claim_conversation", AsyncMock(return_value=_MDA_THREAD))
     monkeypatch.setattr(mda_forwarding, "claim_concierge", AsyncMock(return_value=_DM_THREAD))
     monkeypatch.setattr(mda_forwarding, "claim_side", AsyncMock())
@@ -146,59 +155,36 @@ async def _webhook(
     return response, tasks, request
 
 
-async def _refuse(tasks: _FakeBackgroundTasks) -> None:
-    """What the backend does when Trigger Server never takes the forwarded request."""
-    on_refused = tasks.kwargs[0]["on_refused"]
-    assert callable(on_refused)
-    await cast(Callable[[], Awaitable[None]], on_refused)()
-
-
-async def test_a_conversation_for_mda_goes_to_trigger_server_exactly_as_slack_sent_it(
+@pytest.mark.parametrize(("app_id", "mentioned"), [("", True), ("A2", True), ("A2", False)])
+async def test_a_new_conversation_slack_delivers_here_is_answered_here(
     monkeypatch: pytest.MonkeyPatch,
+    app_id: str,
+    mentioned: bool,
 ) -> None:
-    startable = AsyncMock(return_value=_MDA_THREAD)
-    monkeypatch.setattr(mda_forwarding, "startable_thread", startable)
-
-    response, tasks, request = await _webhook(_mention())
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    assert startable.await_args.kwargs["root_ts"] == "1786573369.551099"
-    assert startable.await_args.kwargs["can_start"] is True
-    # MDA's channel gates the person and claims the conversation when it asks for the turn.
-    cast(AsyncMock, slack_service.account_link_needed).assert_not_awaited()
-    cast(AsyncMock, mda_forwarding.claim_conversation).assert_not_awaited()
-    [(task, (url, body, headers))] = tasks.tasks
-    [kwargs] = tasks.kwargs
-    assert (kwargs["thread_id"], kwargs["event_id"]) == (_MDA_THREAD, "Ev-mda")
-    assert callable(kwargs["on_refused"])
-    assert task is mda_forwarding.forward_to_trigger_server
-    assert url == _EVENTS_URL
-    assert body == await request.body()
-    # Only what Trigger Server verifies Slack's signature with: no retry headers.
-    assert headers == {
-        "X-Slack-Signature": "v0=abc",
-        "X-Slack-Request-Timestamp": "1786573369",
-        "Content-Type": "application/json",
-    }
-
-
-async def test_a_new_conversation_trigger_server_refuses_is_answered_here(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(mda_forwarding, "startable_thread", AsyncMock(return_value=_MDA_THREAD))
+    # An environment whose Slack app points at the backend: no Trigger Server takes it.
     process = AsyncMock()
     monkeypatch.setattr(slack_service, "process_slack_mention", process)
-    _response, tasks, _request = await _webhook(_mention())
 
-    await _refuse(tasks)
+    monkeypatch.setattr(slack_routes, "is_listening_channel", AsyncMock(return_value=True))
+    monkeypatch.setattr(slack_routes.AskChannelMessage, "for_robin", AsyncMock(return_value=True))
+    response, tasks, _request = await _webhook(
+        _mention(
+            app_id=app_id,
+            type="app_mention" if mentioned else "message",
+            text="<@BOT> help" if mentioned else "help",
+        )
+    )
 
-    # On the Slack thread's own backend thread, as before MDA: nothing was claimed for MDA.
-    [(request,), kwargs] = [process.await_args.args, process.await_args.kwargs]
-    assert cast(SlackRequest, request).thread_id == "backend-thread"
-    assert kwargs == {"repo": None}
+    assert response == {"status": "accepted", "message": "Slack mention queued"}
+    [(task, (request, repo))] = tasks.tasks
+    assert task is process
+    request = cast(SlackRequest, request)
+    assert request.thread_id == "backend-thread"
+    assert (request.user_id, request.triggering_bot_id) == ("U1", "")
+    assert repo is None
 
 
-async def test_a_message_in_mdas_conversation_trigger_server_refuses_gets_an_error_reply(
+async def test_a_message_in_mdas_conversation_slack_delivers_here_gets_an_error_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
@@ -206,10 +192,12 @@ async def test_a_message_in_mdas_conversation_trigger_server_refuses_gets_an_err
     monkeypatch.setattr(slack_service, "notify_slack_processing_error", notify)
     process = AsyncMock()
     monkeypatch.setattr(slack_service, "process_slack_mention", process)
-    _response, tasks, _request = await _webhook(_mention(thread_ts="1786573300.000001"))
 
-    await _refuse(tasks)
+    response, tasks, _request = await _webhook(_mention(thread_ts="1786573300.000001"))
 
+    assert cast(dict[str, str], response)["status"] == "ignored"
+    [(report, args)] = tasks.tasks
+    await cast(Callable[..., Awaitable[None]], report)(*args)
     [request, repo, error] = notify.await_args.args
     assert cast(SlackRequest, request).thread_id == _MDA_THREAD
     assert repo is None
@@ -218,10 +206,9 @@ async def test_a_message_in_mdas_conversation_trigger_server_refuses_gets_an_err
 
 
 @pytest.mark.parametrize("failure", ["repo lookup fails", "duplicate delivery"])
-async def test_a_message_that_never_reaches_mda_is_not_forwarded(
+async def test_a_message_that_fails_or_repeats_starts_nothing(
     monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    monkeypatch.setattr(mda_forwarding, "startable_thread", AsyncMock(return_value=_MDA_THREAD))
     if failure == "repo lookup fails":
         monkeypatch.setattr(
             webhook_common, "get_slack_repo_config", AsyncMock(side_effect=RuntimeError("down"))
@@ -250,19 +237,6 @@ _BOT = AllowedSlackBot(
 )
 
 
-async def test_an_allowed_bots_mention_goes_to_mda(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(slack_routes, "resolve_allowed_slack_bot", AsyncMock(return_value=_BOT))
-    startable = AsyncMock(return_value=_MDA_THREAD)
-    monkeypatch.setattr(mda_forwarding, "startable_thread", startable)
-
-    response, tasks, _request = await _webhook(_allowed_bot_mention())
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    assert startable.await_args.kwargs["can_start"] is True
-    [(task, _args)] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-
-
 async def test_a_bot_off_the_allow_list_starts_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(slack_routes, "resolve_allowed_slack_bot", AsyncMock(return_value=None))
 
@@ -282,7 +256,7 @@ async def test_every_other_conversation_stays_on_the_backend() -> None:
 
 
 async def _hand_back(
-    event: dict[str, JsonValue], webhook_id: str = "msg_1"
+    event: dict[str, JsonValue], webhook_id: str = "msg_1", *, automation_only: bool = False
 ) -> tuple[object, _FakeBackgroundTasks]:
     """A message MDA's Slack channel hands back, as ``act_on_slack_message`` gets it."""
     tasks = _FakeBackgroundTasks()
@@ -290,7 +264,9 @@ async def _hand_back(
         request=cast(Request, _FakeRequest({}, {"webhook-id": webhook_id})),
         background=cast(BackgroundTasks, tasks),
     )
-    message = ActOnSlackMessage(team_id="T1", app_id="A1", delivery_id="d-1", event=event)
+    message = ActOnSlackMessage(
+        team_id="T1", app_id="A1", delivery_id="d-1", event=event, automation_only=automation_only
+    )
     return await slack_channel.act_on_slack_message(call, message), tasks
 
 
@@ -305,19 +281,19 @@ async def test_a_message_mda_hands_back_is_answered_here() -> None:
     [(task, (request, _repo))] = tasks.tasks
     assert task is slack_service.process_slack_mention
     assert request.thread_id == "backend-thread"
-    cast(AsyncMock, mda_forwarding.startable_thread).assert_not_awaited()
 
 
 async def test_a_message_mda_hands_back_never_goes_to_mda_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Even if MDA's channel holds the thread by now, sending it back there would loop.
+    # Even if MDA's channel holds the thread by now, MDA already decided not to take this
+    # message: the backend starts nothing and posts no "won't run" notice.
     monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
     event = cast(dict[str, JsonValue], _mention()["event"])
 
     _acted, tasks = await _hand_back(event)
 
-    assert all(task is not mda_forwarding.forward_to_trigger_server for task, _ in tasks.tasks)
+    assert tasks.tasks == []
 
 
 async def test_a_message_mda_hands_back_again_is_acted_on_once(
@@ -352,29 +328,24 @@ async def test_a_message_mda_hands_back_that_fails_is_run_again(
     released.assert_awaited_once_with("slack_message_call", "act:msg_1")
 
 
-@pytest.mark.parametrize("single_session", ["code_channel", "concierge_dm"])
 async def test_a_reply_in_a_thread_mda_held_stays_with_a_single_session(
-    monkeypatch: pytest.MonkeyPatch, single_session: str
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A code channel or concierge DM turned on after MDA took one of its threads.
+    # Concierge mode turned on after MDA took one of its threads.
     root = "1786573300.000001"
     owned = AsyncMock(side_effect=lambda _channel, ts: _MDA_THREAD if ts == root else None)
     monkeypatch.setattr(mda_forwarding, "owned_thread", owned)
     monkeypatch.setattr(
-        webhook_common, "is_code_channel", AsyncMock(return_value=single_session == "code_channel")
-    )
-    monkeypatch.setattr(
         slack_routes.User,
         "concierge_mode_for_slack",
-        AsyncMock(return_value=single_session == "concierge_dm"),
+        AsyncMock(return_value=True),
     )
     event: dict[str, JsonValue] = {
         "type": "message",
         "text": "and also",
         "thread_ts": "1786573300.000001",
     }
-    if single_session == "concierge_dm":
-        event |= {"channel": "D1", "channel_type": "im"}
+    event |= {"channel": "D1", "channel_type": "im"}
     reply = _mention(**event)
     tasks = _FakeBackgroundTasks()
 
@@ -408,7 +379,7 @@ async def test_a_message_in_mdas_conversation_trigger_server_would_drop_runs_now
     assert tasks.tasks == []
 
 
-async def test_an_edit_in_mdas_conversation_goes_to_trigger_server_as_slack_sent_it(
+async def test_an_edit_in_mdas_conversation_starts_nothing_here(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owned = AsyncMock(return_value=_MDA_THREAD)
@@ -430,16 +401,11 @@ async def test_an_edit_in_mdas_conversation_goes_to_trigger_server_as_slack_sent
         cast(Request, _FakeRequest(edit, dict(_SLACK_HEADERS))), cast(BackgroundTasks, tasks)
     )
 
-    assert response == {"status": "accepted", "message": "Slack edit handed to MDA"}
+    # The conversation is MDA's: an edit Slack delivers here is only logged.
+    assert cast(dict[str, str], response)["status"] == "ignored"
     owned.assert_awaited_once_with("C1", "1786573369.551099")
     claim.assert_not_awaited()
-    [(forward, (_url, body, _headers))] = tasks.tasks
-    [kwargs] = tasks.kwargs
-    assert forward is mda_forwarding.forward_to_trigger_server
-    assert body == json.dumps(edit).encode()
-    assert kwargs["thread_id"] == _MDA_THREAD
-    # The conversation is MDA's: a lost edit is only logged.
-    assert kwargs["on_refused"] is None
+    assert tasks.tasks == []
 
 
 @pytest.mark.parametrize(
@@ -457,29 +423,6 @@ def test_a_claimed_conversations_stub_has_not_started(
 ) -> None:
     """So the message that opens it is still the first mention."""
     assert webhook_common.ThreadRecord(exists=exists, metadata=metadata).started is started
-
-
-_PLAIN: dict[str, JsonValue] = {
-    "subtype": "",
-    "code_channel": False,
-    "breakout": False,
-}
-
-
-@pytest.mark.parametrize(
-    ("message", "starts"),
-    [
-        ({}, True),
-        ({"subtype": "file_share"}, True),
-        ({"subtype": "thread_broadcast"}, False),
-        ({"code_channel": True}, False),
-        ({"breakout": True}, False),
-    ],
-)
-def test_mda_starts_only_conversations_its_slack_channel_can_run(
-    message: dict[str, JsonValue], starts: bool
-) -> None:
-    assert mda_forwarding.mda_can_start(**(_PLAIN | message)) is starts
 
 
 async def _post_endpoint(
@@ -502,102 +445,6 @@ async def _post_endpoint(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         return await client.post(path, content=content, headers=headers)
-
-
-def _trigger_server(
-    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx2.Request], httpx2.Response]
-) -> list[httpx2.Request]:
-    monkeypatch.setattr(mda_forwarding.asyncio, "sleep", AsyncMock())
-    monkeypatch.setattr(mda_forwarding.time, "time", lambda: 1786573369.0)
-    seen: list[httpx2.Request] = []
-
-    def recording(request: httpx2.Request) -> httpx2.Response:
-        seen.append(request)
-        return handler(request)
-
-    monkeypatch.setattr(mda_forwarding, "pooled_transport", lambda: httpx2.MockTransport(recording))
-    return seen
-
-
-async def _forward(on_refused: Callable[[], Awaitable[None]] | None = None) -> None:
-    await mda_forwarding.forward_to_trigger_server(
-        _EVENTS_URL,
-        b"{}",
-        {"X-Slack-Request-Timestamp": "1786573369"},
-        thread_id=_MDA_THREAD,
-        event_id="Ev-1",
-        on_refused=on_refused,
-    )
-
-
-def _outcome(caplog: pytest.LogCaptureFixture) -> dict[str, object]:
-    [record] = [r for r in caplog.records if hasattr(r, "forward_outcome")]
-    keys = ("slack_event_id", "agent_thread_id", "forward_outcome", "status", "attempts")
-    return {key: getattr(record, key) for key in keys}
-
-
-async def test_a_delivered_forward_logs_its_outcome_and_answers_nothing_here(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    answers = iter([httpx2.Response(503), httpx2.Response(200)])
-    _trigger_server(monkeypatch, lambda _request: next(answers))
-    refused = AsyncMock()
-
-    with caplog.at_level("INFO"):
-        await _forward(refused)
-
-    assert _outcome(caplog) == {
-        "slack_event_id": "Ev-1",
-        "agent_thread_id": _MDA_THREAD,
-        "forward_outcome": "delivered",
-        "status": 200,
-        "attempts": 2,
-    }
-    refused.assert_not_awaited()
-
-
-@pytest.mark.parametrize("status", [401, 403])
-async def test_a_refused_forward_is_answered_here(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, status: int
-) -> None:
-    # 401: no Slack app registered for MDA in this environment.
-    seen = _trigger_server(monkeypatch, lambda _request: httpx2.Response(status))
-    refused = AsyncMock()
-
-    await _forward(refused)
-
-    assert len(seen) == 1
-    assert _outcome(caplog)["forward_outcome"] == "refused"
-    refused.assert_awaited_once_with()
-
-
-async def test_a_forward_that_gives_up_is_answered_here(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    seen = _trigger_server(monkeypatch, lambda _request: httpx2.Response(502))
-    refused = AsyncMock()
-
-    await _forward(refused)
-
-    assert len(seen) == 5
-    assert _outcome(caplog) | {"agent_thread_id": None} == {
-        "slack_event_id": "Ev-1",
-        "agent_thread_id": None,
-        "forward_outcome": "gave_up",
-        "status": 502,
-        "attempts": 5,
-    }
-    refused.assert_awaited_once_with()
-
-
-async def test_a_lost_stop_answers_nothing_here(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    _trigger_server(monkeypatch, lambda _request: httpx2.Response(400))
-
-    await _forward()
-
-    assert _outcome(caplog)["forward_outcome"] == "refused"
 
 
 def _api(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
@@ -644,8 +491,8 @@ async def test_the_channel_api_answers_only_mda(monkeypatch: pytest.MonkeyPatch)
 def facts(monkeypatch: pytest.MonkeyPatch) -> dict[str, AsyncMock | Mock]:
     """Open SWE's records as ``slack_message_facts`` reads them: a plain public channel."""
     lookups: dict[str, AsyncMock | Mock] = {
-        "code_channel": AsyncMock(return_value=False),
-        "kitchen": AsyncMock(return_value=False),
+        "watched": AsyncMock(return_value=False),
+        "listening": AsyncMock(return_value=False),
         "concierge": AsyncMock(return_value=False),
         "bot": AsyncMock(return_value=None),
         "solo": AsyncMock(return_value=False),
@@ -653,10 +500,9 @@ def facts(monkeypatch: pytest.MonkeyPatch) -> dict[str, AsyncMock | Mock]:
         "owned": AsyncMock(return_value=None),
         "held": AsyncMock(return_value=None),
         "indexed": AsyncMock(return_value=None),
-        "workspace": AsyncMock(return_value=None),
     }
-    monkeypatch.setattr(webhook_common, "is_code_channel", lookups["code_channel"])
-    monkeypatch.setattr(slack_channel, "is_kitchen_channel", lookups["kitchen"])
+    monkeypatch.setattr(slack_channel, "slack_channel_watched", lookups["watched"])
+    monkeypatch.setattr(slack_channel, "is_listening_channel", lookups["listening"])
     monkeypatch.setattr(slack_channel.User, "concierge_mode_for_slack", lookups["concierge"])
     monkeypatch.setattr(slack_channel, "resolve_allowed_slack_bot", lookups["bot"])
     monkeypatch.setattr(slack_channel, "allow_solo_thread_followup", lookups["solo"])
@@ -664,7 +510,6 @@ def facts(monkeypatch: pytest.MonkeyPatch) -> dict[str, AsyncMock | Mock]:
     monkeypatch.setattr(mda_forwarding, "owned_thread", lookups["owned"])
     monkeypatch.setattr(slack_channel, "lookup_slack_thread_id", lookups["held"])
     monkeypatch.setattr(slack_channel.index, "get", lookups["indexed"])
-    monkeypatch.setattr(slack_channel.WORKSPACES, "get", lookups["workspace"])
     return lookups
 
 
@@ -683,14 +528,14 @@ async def test_facts_of_a_mention_in_a_plain_channel(
     assert answered.json() == {
         "channel": "ok",
         "dm": False,
-        "code_channel": False,
-        "kitchen_channel": False,
+        "listening_channel": False,
+        "automation_channel": False,
         "concierge": False,
+        "bot_trigger_mode": "mentions",
         "allowed_bot": False,
         "bot_name": "",
         "solo_followup": False,
         "conversation": "new",
-        "workspace_known": False,
     }
     # A mention counts toward who talks in the thread, for later untagged replies.
     assert facts["track"].call_args.kwargs["message_ts"] == "1.2"
@@ -710,14 +555,14 @@ async def test_an_untagged_reply_the_agent_answers_is_a_solo_followup(
     facts["track"].assert_not_called()
 
 
-async def test_a_kitchen_channels_message_is_one(
+async def test_a_listening_channels_message_is_one(
     monkeypatch: pytest.MonkeyPatch, facts: dict[str, AsyncMock | Mock]
 ) -> None:
-    facts["kitchen"].return_value = True
+    facts["listening"].return_value = True
 
     answered = await _facts(_api(monkeypatch), text="the nightly build is red")
 
-    assert answered.json()["kitchen_channel"] is True
+    assert answered.json()["listening_channel"] is True
 
 
 async def test_a_concierge_dms_conversation_is_the_dms_one_thread(
@@ -733,8 +578,8 @@ async def test_a_concierge_dms_conversation_is_the_dms_one_thread(
         "concierge": True,
         "conversation": "mda",
     }
-    # A DM has no kitchen and no solo follow-ups.
-    facts["kitchen"].assert_not_awaited()
+    # A DM has no listening and no solo follow-ups.
+    facts["listening"].assert_not_awaited()
     facts["track"].assert_not_called()
 
 
@@ -779,21 +624,6 @@ async def test_facts_say_who_holds_the_conversation(
         facts["indexed"].assert_awaited_once_with(
             mda_forwarding.mda_thread_id("A1", "T1", "C1", "1.2")
         )
-
-
-@pytest.mark.parametrize(("workspace", "known"), [(None, False), (object(), True)])
-async def test_facts_say_whether_a_workspace_tag_names_a_workspace(
-    monkeypatch: pytest.MonkeyPatch,
-    facts: dict[str, AsyncMock | Mock],
-    workspace: object,
-    known: bool,
-) -> None:
-    facts["workspace"].return_value = workspace
-
-    answered = await _facts(_api(monkeypatch), workspace_tag="infra")
-
-    assert answered.json()["workspace_known"] is known
-    facts["workspace"].assert_awaited_once_with("infra")
 
 
 def _channel_is(monkeypatch: pytest.MonkeyPatch, channel: SlackChannelContext) -> None:
@@ -883,7 +713,7 @@ def _start_app(monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     monkeypatch.setattr(event_claims, "claim", claims.claim)
     monkeypatch.setattr(event_claims, "held", claims.is_held)
     monkeypatch.setattr(
-        slack_channel.LangSmithLogin,
+        slack_service.LangSmithLogin,
         "slack_onboarding_url",
         lambda: "https://openswe.test/settings",
     )
@@ -915,9 +745,11 @@ _PROMPT = SlackTurnPrompt(
 
 @pytest.mark.parametrize("interrupts", [True, False])
 async def test_a_turn_gets_its_prompts_facts_and_a_signed_run_for_mdas_prompt(
-    monkeypatch: pytest.MonkeyPatch, interrupts: bool
+    monkeypatch: pytest.MonkeyPatch, slack_api: SlackAPI, interrupts: bool
 ) -> None:
     monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
+    monkeypatch.setattr(webhook_common, "resolve_slack_channel_context", _CHANNEL_CONTEXT)
+    await SlackChannel.save_all({"id": "C1", "name": "engineering"})
     prepare = _prepared(monkeypatch, interrupts=interrupts, prompt=_PROMPT)
     prepare.return_value = (
         slack_service.SlackChannelRun(
@@ -951,6 +783,7 @@ async def test_a_turn_gets_its_prompts_facts_and_a_signed_run_for_mdas_prompt(
     # The run-complete webhook takes the ⏳ off the concierge message it names.
     assert start["run"]["metadata"]["slack_concierge_message_ts"] == "1.1"
     [(request, repo)] = [prepare.await_args.args]
+    assert request.source_message_ts == "1.2"
     assert (request.thread_id, request.thread_ts, request.event_ts, request.text) == (
         _MDA_THREAD,
         "1.2",
@@ -959,7 +792,6 @@ async def test_a_turn_gets_its_prompts_facts_and_a_signed_run_for_mdas_prompt(
     )
     assert repo is None
     assert prepare.await_args.kwargs == {
-        "declines": True,
         "read": slack_service.SlackTurnRead(
             clean_text="@openswe help",
             context_user_ids=["U2", "U1"],
@@ -970,6 +802,76 @@ async def test_a_turn_gets_its_prompts_facts_and_a_signed_run_for_mdas_prompt(
     }
     cast(AsyncMock, slack_service.account_link_needed).assert_awaited_once_with("U1")
     cast(AsyncMock, mda_forwarding.claim_conversation).assert_not_awaited()
+    assert request.channel_context.name == "engineering"
+    assert slack_api.calls == []
+
+
+async def test_a_turn_checks_its_senders_sign_in_once(
+    monkeypatch: pytest.MonkeyPatch, slack_api: SlackAPI
+) -> None:
+    """The gate, the thread's owner and the run's build share one sign-in check and lookup."""
+    monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
+    monkeypatch.setattr(webhook_common, "resolve_slack_channel_context", _CHANNEL_CONTEXT)
+    await SlackChannel.save_all({"id": "C1", "name": "engineering"})
+    monkeypatch.setattr(slack_service, "account_link_needed", _ACCOUNT_LINK_NEEDED)
+    monkeypatch.setattr(slack_service, "slack_login", _SLACK_LOGIN)
+    check = AsyncMock(
+        return_value=slack_service.SlackAuthorization("U1", User(), ThreadIdentity("ada"))
+    )
+    monkeypatch.setattr(slack_service.SlackAuthorization, "_resolve", check)
+    prepare = _prepared(monkeypatch, prompt=_PROMPT)
+    prepared = prepare.return_value
+
+    lookup = AsyncMock(return_value=None)
+    monkeypatch.setattr(User, "_for_identity", lookup)
+
+    async def build(*_args: object, **_kwargs: object) -> object:
+        await slack_service.SlackAuthorization.resolve("U1")
+        # The run's helpers look the sender up again and again.
+        await User.for_identity("slack", "U1")
+        await User.for_identity("slack", "U1")
+        return prepared
+
+    prepare.side_effect = build
+
+    start = await _start(_start_app(monkeypatch))
+
+    assert start["run"] is not None
+    check.assert_awaited_once_with("U1")
+    lookup.assert_awaited_once_with("slack", "U1")
+
+
+async def test_a_sign_in_check_is_shared_only_inside_its_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    check = AsyncMock(
+        side_effect=lambda user_id: slack_service.SlackAuthorization(user_id, None, None)
+    )
+    monkeypatch.setattr(slack_service.SlackAuthorization, "_resolve", check)
+
+    async with slack_service.SlackAuthorization.shared():
+        async with slack_service.SlackAuthorization.shared():
+            await slack_service.SlackAuthorization.resolve("U1")
+        await asyncio.gather(
+            slack_service.SlackAuthorization.resolve("U1"),
+            slack_service.SlackAuthorization.resolve("U2"),
+        )
+    await slack_service.SlackAuthorization.resolve("U1")
+
+    assert [call.args for call in check.await_args_list] == [("U1",), ("U2",), ("U1",)]
+
+
+async def test_a_failed_sign_in_check_is_tried_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    authorization = slack_service.SlackAuthorization("U1", None, None)
+    check = AsyncMock(side_effect=[HTTPException(503), authorization])
+    monkeypatch.setattr(slack_service.SlackAuthorization, "_resolve", check)
+
+    async with slack_service.SlackAuthorization.shared():
+        with pytest.raises(HTTPException):
+            await slack_service.SlackAuthorization.resolve("U1")
+        assert await slack_service.SlackAuthorization.resolve("U1") is authorization
+
+    assert check.await_count == 2
 
 
 async def test_the_attribution_the_runs_hooks_read_rides_in_its_token(
@@ -994,74 +896,124 @@ async def test_the_attribution_the_runs_hooks_read_rides_in_its_token(
 
     token = verify_runtime_token(start["run"]["context"]["__run_token"])
     assert token.metadata["ls_attribution_identifier"] == "ada"
+    assert token.metadata["origin"] == "slack"
     # MDA starts the run: the answer sets none of the metadata keys MDA keeps.
     metadata = mda_starts({key: value for key, value in start["run"].items() if value})["metadata"]
     assert metadata["channel"] == "slack"
+    assert metadata["origin"] == "slack"
     assert not {"user_id", "ls_repo_provider", "ls_attribution_identifier"} & metadata.keys()
 
 
+@pytest.mark.parametrize(
+    ("channel_id", "channel_type", "external"),
+    [("C1", "channel", False), ("C1", "channel", True), ("D1", "im", False)],
+    ids=["internal", "newly external", "dm"],
+)
 async def test_a_new_conversation_is_claimed_once_its_sender_passed_the_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    slack_api: SlackAPI,
+    channel_id: str,
+    channel_type: str,
+    external: bool,
+) -> None:
+    monkeypatch.setattr(webhook_common, "resolve_slack_channel_context", _CHANNEL_CONTEXT)
+    await SlackChannel.save_all(
+        {
+            "id": channel_id,
+            "is_im": channel_type == "im",
+            "is_ext_shared": False,
+            "is_pending_ext_shared": False,
+        }
+    )
+    if channel_type != "im":
+        slack_api.respond(
+            {
+                "ok": True,
+                "channel": {
+                    "id": channel_id,
+                    "is_im": False,
+                    "is_ext_shared": external,
+                    "is_pending_ext_shared": False,
+                },
+            }
+        )
+    prepare = _prepared(monkeypatch, prompt=_PROMPT)
+
+    start = await _start(_start_app(monkeypatch), channel_id=channel_id, channel_type=channel_type)
+
+    assert start["run"] is not None
+    cast(AsyncMock, slack_service.account_link_needed).assert_awaited_once_with("U1")
+    context = SlackChannelContext(
+        id=channel_id,
+        is_im=channel_type == "im",
+        is_ext_shared=external,
+        is_pending_ext_shared=False,
+    )
+    cast(AsyncMock, mda_forwarding.claim_conversation).assert_awaited_once_with(
+        "A1", "T1", channel_id, "1.2", owner_login="ada", channel_context=context
+    )
+    assert prepare.await_args.args[0].channel_context == context
+    assert slack_api.calls == (
+        [] if channel_type == "im" else [("conversations.info", {"channel": channel_id})]
+    )
+
+
+async def test_an_unlinked_ask_sender_can_start_without_a_personal_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _prepared(monkeypatch, prompt=_PROMPT)
+    monkeypatch.setattr(
+        slack_service.INTEGRATIONS, "listens_to_channel", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        slack_service,
+        "account_link_needed",
+        AsyncMock(return_value=slack_service.AccountLinkNeeded("U1", None, "unlinked")),
+    )
+    monkeypatch.setattr(slack_service, "slack_login", AsyncMock(return_value=None))
+    prompt = AsyncMock()
+    monkeypatch.setattr(slack_service.AccountLinkNeeded, "prompt", prompt)
 
     start = await _start(_start_app(monkeypatch))
 
     assert start["run"] is not None
-    cast(AsyncMock, slack_service.account_link_needed).assert_awaited_once_with("U1")
     cast(AsyncMock, mda_forwarding.claim_conversation).assert_awaited_once_with(
-        "A1", "T1", "C1", "1.2", owner_login="ada"
+        "A1",
+        "T1",
+        "C1",
+        "1.2",
+        owner_login=None,
+        channel_context=SlackChannelContext(is_ext_shared=False, is_pending_ext_shared=False),
     )
+    prompt.assert_not_awaited()
 
 
-@pytest.mark.parametrize(
-    ("needed", "reason"), [("unlinked", "sign_in"), ("revoked", "sign_in_again")]
-)
-async def test_a_person_who_cant_run_is_declined_before_anything_is_claimed_once_per_call(
-    monkeypatch: pytest.MonkeyPatch, needed: str, reason: str
+@pytest.mark.parametrize("bot_app_id", ["", "A2"])
+@pytest.mark.parametrize("needed", ["unlinked", "revoked"])
+async def test_a_person_who_cant_run_is_prompted_privately_before_anything_is_claimed_once_per_call(
+    monkeypatch: pytest.MonkeyPatch, needed: str, bot_app_id: str
 ) -> None:
     gate = slack_service.AccountLinkNeeded(
         "U1", None, cast(webhook_common.AccountLinkReason, needed)
     )
+    prompt = AsyncMock()
+    monkeypatch.setattr(slack_service.AccountLinkNeeded, "prompt", prompt)
     monkeypatch.setattr(slack_service, "account_link_needed", AsyncMock(return_value=gate))
     prepare = _prepared(monkeypatch)
     app = _start_app(monkeypatch)
 
-    first = await _start(app)
-    again = await _start(app)
-    other_call = await _start(app, msg_id="msg_delivery-2")
+    first = await _start(app, bot_app_id=bot_app_id)
+    again = await _start(app, bot_app_id=bot_app_id)
+    other_call = await _start(app, msg_id="msg_delivery-2", bot_app_id=bot_app_id)
 
-    declined = {
-        "reason": reason,
-        "settings_url": "https://openswe.test/settings",
-        "message": None,
-    }
-    assert first == _NO_RUN | {"declined": declined}
+    assert first == _NO_RUN
+    prompt.assert_awaited_once_with("C1", "1.2")
     # MDA sends a call again under its webhook ID: the decline was answered already.
     assert again == _NO_RUN
     # Another event of the same message, as Slack sends a mention twice, answers nothing.
     assert other_call == _NO_RUN
     cast(AsyncMock, mda_forwarding.claim_conversation).assert_not_awaited()
     prepare.assert_not_awaited()
-
-
-@pytest.mark.parametrize("reason", ["sign_in", "sign_in_again"])
-async def test_a_turn_the_backend_declines_is_declined_once_per_call(
-    monkeypatch: pytest.MonkeyPatch, reason: Literal["sign_in", "sign_in_again"]
-) -> None:
-    monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
-    prepare = _prepared(monkeypatch)
-    declined = SlackTurnDeclined(reason=reason, settings_url="https://openswe.test/settings")
-    prepare.return_value = (declined, None)
-    app = _start_app(monkeypatch)
-
-    first = await _start(app)
-    again = await _start(app)
-    other_call = await _start(app, msg_id="msg_delivery-2")
-
-    assert first == _NO_RUN | {"declined": declined.model_dump(mode="json")}
-    assert again == _NO_RUN
-    assert other_call == _NO_RUN
 
 
 async def test_a_message_slack_sends_twice_starts_one_turn(
@@ -1101,12 +1053,18 @@ async def test_an_allowed_bots_turn_links_no_account_and_no_person_owns_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     prepare = _prepared(monkeypatch, prompt=_PROMPT)
+    monkeypatch.setattr(slack_channel, "resolve_allowed_slack_bot", AsyncMock(return_value=_BOT))
 
     await _start(_start_app(monkeypatch), user_id="UBOT", bot_id="B1", bot_app_id="A2")
 
     cast(AsyncMock, slack_service.account_link_needed).assert_not_awaited()
     cast(AsyncMock, mda_forwarding.claim_conversation).assert_awaited_once_with(
-        "A1", "T1", "C1", "1.2", owner_login=None
+        "A1",
+        "T1",
+        "C1",
+        "1.2",
+        owner_login=None,
+        channel_context=SlackChannelContext(is_ext_shared=False, is_pending_ext_shared=False),
     )
     request = prepare.await_args.args[0]
     assert (request.triggering_bot_id, request.triggering_bot_app_id) == ("B1", "A2")
@@ -1195,8 +1153,10 @@ async def test_the_call_logs_why_it_starts_no_run(
 
 
 async def test_a_by_the_way_question_runs_on_a_thread_of_its_own(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, slack_api: SlackAPI
 ) -> None:
+    monkeypatch.setattr(webhook_common, "resolve_slack_channel_context", _CHANNEL_CONTEXT)
+    await SlackChannel.save_all({"id": "C1", "name": "engineering"})
     prepare = _prepared(monkeypatch)
     asked = slack_ask.AskChannelRun(
         input={"messages": [{"role": "user", "content": "why?"}]},
@@ -1228,15 +1188,13 @@ async def test_a_by_the_way_question_runs_on_a_thread_of_its_own(
         side,
         "1.0",
     )
+    assert slack_api.calls == []
 
 
 async def test_a_web_breakout_runs_on_a_thread_of_its_own_and_its_thread_hears_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     prepare = _prepared(monkeypatch)
-    monkeypatch.setattr(
-        webhook_common, "get_thread_workspace", AsyncMock(return_value="engineering")
-    )
     notify = AsyncMock()
     monkeypatch.setattr(slack_channel, "notify_web_breakout", notify)
     app = _start_app(monkeypatch)
@@ -1250,7 +1208,6 @@ async def test_a_web_breakout_runs_on_a_thread_of_its_own_and_its_thread_hears_o
     request = prepare.await_args.args[0]
     assert (request.thread_id, request.web_only, request.text) == (side, True, "why is CI red?")
     assert (request.context_channel_id, request.context_thread_ts) == ("C1", "1.2")
-    assert request.inherited_workspace == "engineering"
     # MDA asking again under the same webhook id gets the run, not a second notice.
     notify.assert_awaited_once()
 
@@ -1267,9 +1224,6 @@ async def test_a_question_in_an_mda_conversation_branches_off_its_thread(
     prepare_ask = AsyncMock(return_value=asked)
     monkeypatch.setattr(slack_channel, "prepare_ask_channel_run", prepare_ask)
     monkeypatch.setattr(slack_channel, "notify_web_breakout", AsyncMock())
-    monkeypatch.setattr(
-        webhook_common, "get_thread_workspace", AsyncMock(return_value="engineering")
-    )
     monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
     branches = AsyncMock(return_value=True)
     monkeypatch.setattr(forks, "branches_from", branches)
@@ -1344,6 +1298,7 @@ async def test_a_breakout_opens_its_new_thread_and_runs_its_first_turn_there(
     [(source, command)] = seen
     # Seeded from the Slack thread it was typed in, whoever holds it: nothing is claimed.
     assert source.thread_id == (owner or backend_thread)
+    assert source.source_message_ts == ""
     assert cast(slack_channel.BreakoutCommand, command).instruction == "fix the flaky test"
     cast(AsyncMock, mda_forwarding.claim_conversation).assert_not_awaited()
     cast(AsyncMock, slack_service.account_link_needed).assert_awaited_once_with("U1")
@@ -1438,81 +1393,8 @@ async def test_a_move_outside_an_mda_conversation_starts_nothing(
     assert record.no_run_reason == "move outside an MDA conversation"
 
 
-async def test_a_kitchen_channels_untagged_message_goes_to_mda(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(slack_routes, "is_kitchen_channel", AsyncMock(return_value=True))
-    startable = AsyncMock(return_value=_MDA_THREAD)
-    monkeypatch.setattr(mda_forwarding, "startable_thread", startable)
-    process = AsyncMock()
-    monkeypatch.setattr(slack_service, "process_slack_mention", process)
-
-    response, tasks, _request = await _webhook(
-        _mention(type="message", text="the nightly build is red")
-    )
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    assert startable.await_args.kwargs["can_start"] is True
-    [(task, _)] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-    # Where Trigger Server refuses it, the backend answers it as a kitchen channel's message.
-    await _refuse(tasks)
-    request = cast(SlackRequest, process.await_args.args[0])
-    assert (request.kitchen_channel, request.treat_all_messages_as_mentions) == (True, True)
-
-
-async def test_a_later_untagged_message_in_a_kitchen_thread_follows_it_to_mda(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(slack_routes, "is_kitchen_channel", AsyncMock(return_value=True))
-    monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
-
-    response, tasks, _request = await _webhook(
-        _mention(type="message", text="still red", thread_ts="1786573300.000001")
-    )
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    assert tasks.kwargs[0]["thread_id"] == _MDA_THREAD
-
-
 def _dm(**event: JsonValue) -> dict[str, JsonValue]:
     return _mention(type="message", channel="D1", channel_type="im", text="fix it", **event)
-
-
-async def test_a_new_concierge_dm_goes_to_mda_as_one_conversation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(slack_routes.User, "concierge_mode_for_slack", AsyncMock(return_value=True))
-    startable = AsyncMock(return_value=_DM_THREAD)
-    monkeypatch.setattr(mda_forwarding, "startable_concierge", startable)
-
-    response, tasks, _request = await _webhook(_dm())
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    assert startable.await_args.kwargs == {
-        "app_id": "A1",
-        "team_id": "T1",
-        "channel_id": "D1",
-        "can_start": True,
-    }
-    # MDA's channel claims it and joins its Slack threads when it asks for the turn.
-    cast(AsyncMock, mda_forwarding.claim_concierge).assert_not_awaited()
-    cast(AsyncMock, mda_forwarding.join_concierge).assert_not_awaited()
-    assert tasks.kwargs[0]["thread_id"] == _DM_THREAD
-
-
-async def test_a_concierge_dm_mda_holds_takes_every_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(slack_routes.User, "concierge_mode_for_slack", AsyncMock(return_value=True))
-    owned = AsyncMock(side_effect=lambda _channel, ts: _DM_THREAD if ts == CONCIERGE_TS else None)
-    monkeypatch.setattr(mda_forwarding, "owned_thread", owned)
-
-    response, tasks, _request = await _webhook(_dm(thread_ts="1786573300.000001"))
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    cast(AsyncMock, mda_forwarding.startable_concierge).assert_not_awaited()
-    assert tasks.kwargs[0]["thread_id"] == _DM_THREAD
 
 
 async def test_a_concierge_dm_the_backend_holds_stays_there(
@@ -1623,77 +1505,31 @@ async def _interact(
 
 
 @pytest.mark.parametrize(
-    "value",
-    [
-        {"type": "open_swe_option", "response": "Option B", "user_id": "U1"},
-        {"type": "workflow_push_approval", "action": "approve", "fingerprint": "f1"},
-        {"type": "slack_retry", "response": "a.signed.token"},
-        {"type": "expedited_review", "action": "approve", "fingerprint": "r1"},
-        {"type": "human_review", "action": "review", "fingerprint": "r1"},
-        {"type": "act_as", "action": "approve", "fingerprint": "f1", "thread_id": "t1"},
-    ],
-    ids=["option", "workflow push", "token retry", "expedited review", "human review", "act as"],
-)
-async def test_every_click_goes_to_trigger_server_as_slack_sent_it(
-    monkeypatch: pytest.MonkeyPatch, value: dict[str, JsonValue]
-) -> None:
-    response, tasks, request = await _interact(monkeypatch, _click(value))
-
-    assert response == {"status": "accepted", "message": "Slack click handed to MDA"}
-    [(task, (url, body, headers))] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-    assert url == mda_forwarding.TRIGGER_INTERACTIVITY_URL
-    assert body == await request.body()
-    assert headers == {
-        "X-Slack-Signature": "v0=abc",
-        "X-Slack-Request-Timestamp": "1786573369",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    [kwargs] = tasks.kwargs
-    # One Trigger Server refuses is acted on here.
-    assert (kwargs["thread_id"], kwargs["event_id"]) == ("", "trigger-1")
-    assert callable(kwargs["on_refused"])
-
-
-async def test_a_modal_trigger_server_opened_closes_when_handed_to_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    submission = {
-        "type": "view_submission",
-        "team": {"id": "T1"},
-        "user": {"id": "U1"},
-        "trigger_id": "trigger-1",
-        "view": {"id": "V1", "callback_id": "mda_modal::expedited_review_channel:r1"},
-    }
-
-    response, tasks, _ = await _interact(monkeypatch, submission)
-
-    # Slack shows an error on a submitted modal for any answer but an empty one.
-    assert response == {}
-    [(task, _)] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-
-
-@pytest.mark.parametrize(
     "payload",
     [
         {"type": "message_action", "callback_id": "open_swe_explain", "user": {"id": "U1"}},
-        {"type": "block_suggestion", "container": {"type": "code_channel_view"}, "value": "a"},
-        {
-            "type": "block_actions",
-            "container": {"type": "code_channel_view", "view_id": "V1"},
-            "user": {"id": "U1"},
-            "actions": [],
-        },
         {
             "type": "view_submission",
             "user": {"id": "U1"},
             "view": {"callback_id": "human_review_decline", "private_metadata": "{}"},
         },
+        {
+            "type": "block_actions",
+            "actions": [{"action_id": "open_swe_option_select_review", "type": "button"}],
+        },
+        {
+            "type": "block_actions",
+            "actions": [{"action_id": "open_swe_option_select_accept", "type": "button"}],
+        },
     ],
-    ids=["explain this", "options load", "code channel view", "backend-opened modal"],
+    ids=[
+        "explain this",
+        "backend-opened modal",
+        "review signup link",
+        "review acceptance link",
+    ],
 )
-async def test_explain_this_code_channel_views_and_the_backends_modals_stay_here(
+async def test_explain_this_and_the_backends_modals_stay_here(
     monkeypatch: pytest.MonkeyPatch, payload: dict[str, JsonValue]
 ) -> None:
     act = AsyncMock(return_value={})
@@ -1705,7 +1541,7 @@ async def test_explain_this_code_channel_views_and_the_backends_modals_stay_here
     act.assert_awaited_once()
 
 
-async def test_a_click_trigger_server_refuses_is_acted_on_here(
+async def test_a_click_slack_delivers_here_is_acted_on_after_slack_is_answered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     acted: list[str] = []
@@ -1715,12 +1551,14 @@ async def test_a_click_trigger_server_refuses_is_acted_on_here(
         return {}
 
     monkeypatch.setattr(slack_routes, "act_on_interaction", act)
-    _, tasks, _ = await _interact(
+    response, tasks, _ = await _interact(
         monkeypatch, _click({"type": "expedited_review", "action": "approve", "fingerprint": "r1"})
     )
 
-    await cast(Callable[[], Awaitable[None]], tasks.kwargs[0]["on_refused"])()
-
+    assert response == {"status": "accepted", "message": "Slack click queued"}
+    assert acted == []
+    [(act_here, args)] = tasks.tasks
+    await cast(Callable[..., Awaitable[None]], act_here)(*args)
     assert acted == ["U1"]
 
 
@@ -1794,6 +1632,46 @@ async def test_an_option_click_is_the_persons_message_and_is_acted_on_once(
         _MDA_THREAD,
         "171.6",
     )
+
+
+@pytest.mark.parametrize("original_user_id", ["", "U2"])
+async def test_a_retry_runs_as_the_clicker_with_the_original_message(
+    monkeypatch: pytest.MonkeyPatch, original_user_id: str
+) -> None:
+    from openswe.slack import retry  # noqa: PLC0415
+
+    app = _click_app(monkeypatch)
+    prepare = _prepared(monkeypatch)
+    monkeypatch.setattr(
+        retry,
+        "fetch_slack_thread_message_by_ts",
+        AsyncMock(return_value={"user": original_user_id or "U1", "text": "Fix the bug"}),
+    )
+    monkeypatch.setattr(retry, "is_listening_channel", AsyncMock(return_value=False))
+    repo = AsyncMock(return_value=None)
+    monkeypatch.setattr(webhook_common, "get_slack_repo_config", repo)
+
+    start = await _post_click(
+        app,
+        _plan_click(
+            {
+                "kind": "retry",
+                "thread_ts": "171.1",
+                "message_ts": "171.2",
+                "original_user_id": original_user_id,
+            }
+        ),
+    )
+
+    assert start["run"] is not None
+    request = prepare.await_args.args[0]
+    assert (request.user_id, request.text, request.original_message_ts) == (
+        "U1",
+        "Fix the bug",
+        "171.2",
+    )
+    assert request.target.user_id == (original_user_id or "U1")
+    assert repo.await_args.kwargs["slack_user_id"] == "U1"
 
 
 async def test_a_click_in_a_concierge_dm_runs_on_the_dms_thread(
@@ -2024,8 +1902,7 @@ async def test_a_retry_sends_the_requesters_message_again(
         "fetch_slack_thread_message_by_ts",
         AsyncMock(return_value={"type": "message", "user": "U1", "ts": "171.2", "text": "fix CI"}),
     )
-    monkeypatch.setattr(webhook_common, "is_code_channel", AsyncMock(return_value=False))
-    monkeypatch.setattr(retry, "is_kitchen_channel", AsyncMock(return_value=False))
+    monkeypatch.setattr(retry, "is_listening_channel", AsyncMock(return_value=False))
 
     start = await _post_click(
         app, _plan_click({"kind": "retry", "thread_ts": "171.1", "message_ts": "171.2"})
@@ -2039,27 +1916,6 @@ async def test_a_retry_sends_the_requesters_message_again(
         _MDA_THREAD,
         "171.2",
     )
-
-
-@pytest.mark.parametrize(
-    ("can_start", "held_by", "startable"),
-    [(True, None, True), (True, "backend-thread", False), (False, None, False)],
-    ids=["new", "held", "can't start"],
-)
-async def test_mda_starts_a_concierge_dm_only_while_no_thread_holds_it(
-    monkeypatch: pytest.MonkeyPatch, can_start: bool, held_by: str | None, startable: bool
-) -> None:
-    lookup = AsyncMock(return_value=held_by)
-    monkeypatch.setattr(mda_forwarding, "lookup_slack_thread_id", lookup)
-
-    thread_id = await _STARTABLE_CONCIERGE(
-        app_id="A1", team_id="T1", channel_id="D1", can_start=can_start
-    )
-
-    expected = mda_forwarding.mda_thread_id("A1", "T1", "D1", CONCIERGE_TS)
-    assert thread_id == (expected if startable else None)
-    if can_start:
-        lookup.assert_awaited_once_with("D1", CONCIERGE_TS)
 
 
 async def test_a_slack_thread_another_thread_holds_keeps_it(
@@ -2106,98 +1962,21 @@ async def test_explain_this_through_trigger_server_is_answered_as_before(
 _COMMAND_TS = "1786573369.551099"
 
 
-async def test_a_by_the_way_question_goes_to_mda_on_a_thread_of_its_own(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("text", ["<@BOT> /breakout", "<@BOT> fix it"])
+async def test_any_message_in_an_mda_conversation_starts_nothing_here(
+    monkeypatch: pytest.MonkeyPatch, text: str
 ) -> None:
-    ask = AsyncMock()
-    monkeypatch.setattr(slack_routes, "process_slack_ask", ask)
-
-    response, tasks, _request = await _webhook(_mention(text="<@BOT> /btw how does routing work?"))
-
-    assert response == {"status": "accepted", "message": "Slack by-the-way question handed to MDA"}
-    [(task, (url, _body, _headers))] = tasks.tasks
-    assert (task, url) == (mda_forwarding.forward_to_trigger_server, _EVENTS_URL)
-    assert tasks.kwargs[0]["thread_id"] == mda_forwarding.side_thread_id("C1", _COMMAND_TS)
-    # MDA's channel claims its thread when it asks for the turn.
-    cast(AsyncMock, mda_forwarding.claim_side).assert_not_awaited()
-    ask.assert_not_awaited()
-
-    await _refuse(tasks)
-
-    [question] = ask.await_args.args
-    assert (question.question, question.reply_thread_ts, question.message_ts) == (
-        "how does routing work?",
-        _COMMAND_TS,
-        _COMMAND_TS,
-    )
-
-
-@pytest.mark.parametrize("owner", [None, _MDA_THREAD], ids=["backend", "mda"])
-async def test_a_breakout_into_a_new_thread_goes_to_mda(
-    monkeypatch: pytest.MonkeyPatch, owner: str | None
-) -> None:
-    monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=owner))
-    breakout = AsyncMock()
-    monkeypatch.setattr(slack_routes, "process_slack_breakout", breakout)
+    # MDA's channel tells a move from a turn: the backend starts neither for it.
+    monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
     notify = AsyncMock()
     monkeypatch.setattr(slack_service, "notify_slack_processing_error", notify)
 
-    response, tasks, _request = await _webhook(_mention(text="<@BOT> /breakout fix the flaky test"))
-
-    # Even in a conversation MDA holds, MDA's channel opens it; nothing opens it here first.
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    [(task, _args)] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-    breakout.assert_not_awaited()
-
-    await _refuse(tasks)
-
-    if owner is None:
-        # Refused: the backend breaks out of its own thread, as before MDA.
-        [source, command, _repo] = breakout.await_args.args
-        assert cast(SlackRequest, source).thread_id == "backend-thread"
-        assert command.instruction == "fix the flaky test"
-    else:
-        # A conversation MDA holds hears the message won't run.
-        breakout.assert_not_awaited()
-        notify.assert_awaited_once()
-
-
-async def test_a_web_breakout_goes_to_mda_and_is_answered_here_when_refused(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    web = AsyncMock()
-    monkeypatch.setattr(slack_routes, "process_slack_web", web)
-
-    response, tasks, _request = await _webhook(_mention(text="<@BOT> /breakout:web why is CI red?"))
-
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    [(task, _args)] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-    cast(AsyncMock, mda_forwarding.claim_side).assert_not_awaited()
-
-    await _refuse(tasks)
-
-    [source, command, _repo] = web.await_args.args
-    assert cast(SlackRequest, source).thread_id == "backend-thread"
-    assert command.instruction == "why is CI red?"
-
-
-@pytest.mark.parametrize(
-    "text", ["<@BOT> /breakout", "<@BOT> /breakout <#C2|eng>", "<@BOT> fix it"]
-)
-async def test_any_message_in_an_mda_conversation_goes_there_as_slack_sent_it(
-    monkeypatch: pytest.MonkeyPatch, text: str
-) -> None:
-    # MDA's channel tells a move from a turn: the backend hands over the message as it is.
-    monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
-
     response, tasks, _request = await _webhook(_mention(text=text))
 
-    assert response == {"status": "accepted", "message": "Slack message handed to MDA"}
-    [(task, _args)] = tasks.tasks
-    assert task is mda_forwarding.forward_to_trigger_server
-    assert tasks.kwargs[0]["thread_id"] == _MDA_THREAD
+    assert cast(dict[str, str], response)["status"] == "ignored"
+    [(report, args)] = tasks.tasks
+    await cast(Callable[..., Awaitable[None]], report)(*args)
+    assert cast(SlackRequest, notify.await_args.args[0]).thread_id == _MDA_THREAD
 
 
 @pytest.mark.parametrize("text", ["<@BOT> /breakout", "<@BOT> /breakout:web"])
@@ -2228,23 +2007,6 @@ async def test_a_breakout_into_a_channel_slack_doesnt_know_is_answered_by_the_ba
     assert (command.channel, command.channel_id) == ("#nowhere", "")
 
 
-@pytest.mark.parametrize("indexed", [False, True], ids=["new", "moved away"])
-async def test_a_conversation_that_moved_away_starts_on_the_backend(
-    monkeypatch: pytest.MonkeyPatch, indexed: bool
-) -> None:
-    monkeypatch.setattr(mda_forwarding, "lookup_slack_thread_id", AsyncMock(return_value=None))
-    known = AsyncMock(return_value=object() if indexed else None)
-    monkeypatch.setattr(mda_forwarding.index, "get", known)
-
-    thread_id = await _STARTABLE_THREAD(
-        app_id="A1", team_id="T1", channel_id="C1", root_ts="1.0", can_start=True
-    )
-
-    expected = mda_forwarding.mda_thread_id("A1", "T1", "C1", "1.0")
-    assert thread_id == (None if indexed else expected)
-    known.assert_awaited_once_with(expected)
-
-
 async def test_an_edit_in_an_mda_conversation_reaches_the_agent_as_a_correction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2264,6 +2026,7 @@ async def test_an_edit_in_an_mda_conversation_reaches_the_agent_as_a_correction(
     # The builder notes the correction for a run in progress, or makes it a turn.
     assert request.message_update
     assert (request.original_message_ts, request.event_ts) == ("1.2", "1.9")
+    assert request.source_message_ts == "1.2"
     assert request.thread_id == _MDA_THREAD
     assert prepare.await_args.kwargs["read"] is None
     cast(AsyncMock, mda_forwarding.claim_conversation).assert_not_awaited()
@@ -2280,7 +2043,7 @@ async def test_an_edit_outside_an_mda_conversation_or_eligible_channel_starts_no
     monkeypatch.setattr(mda_forwarding, "owned_thread", AsyncMock(return_value=_MDA_THREAD))
 
     async def external(_channel_id: str, *, use_cache: bool = True) -> SlackChannelContext:
-        return SlackChannelContext(is_ext_shared=True)
+        return SlackChannelContext(is_ext_shared=not use_cache, is_pending_ext_shared=False)
 
     monkeypatch.setattr(webhook_common, "resolve_slack_channel_context", external)
     assert await _start(app, msg_id="msg_delivery-2", kind="edit", text="x") == _NO_RUN
@@ -2314,9 +2077,10 @@ def _reaction(reaction: str, *, removed: bool = False) -> dict[str, JsonValue]:
     }
 
 
+@pytest.mark.parametrize("reaction", ["thumbsup", "bufo-hype"])
 @pytest.mark.parametrize("removed", [False, True])
-async def test_a_feedback_reaction_is_recorded_as_the_webhook_records_it(
-    monkeypatch: pytest.MonkeyPatch, removed: bool
+async def test_any_reaction_is_recorded_as_feedback(
+    monkeypatch: pytest.MonkeyPatch, removed: bool, reaction: str
 ) -> None:
     from openswe.mda_channels import slack_channel_events  # noqa: PLC0415
 
@@ -2326,7 +2090,6 @@ async def test_a_feedback_reaction_is_recorded_as_the_webhook_records_it(
     monkeypatch.setenv("MDA_SERVICE_SECRET", _SERVICE_SECRET)
     app = FastAPI()
     app.include_router(slack_channel_events.router)
-    reaction = next(iter(slack_channel_events.FEEDBACK_REACTIONS))
 
     answered = await _post_endpoint(
         app, _reaction(reaction, removed=removed), signed=True, path="/mda/slack/reactions"
@@ -2342,13 +2105,15 @@ async def test_a_feedback_reaction_is_recorded_as_the_webhook_records_it(
     other.assert_not_awaited()
 
 
-async def test_the_summon_reaction_tags_open_swe_and_any_other_does_nothing(
+async def test_the_summon_reaction_tags_robin_and_is_not_feedback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from openswe.mda_channels import slack_channel_events  # noqa: PLC0415
 
-    summon = AsyncMock()
+    summon, added, taken_back = AsyncMock(), AsyncMock(), AsyncMock()
     monkeypatch.setattr(slack_channel_events, "process_slack_summon_reaction", summon)
+    monkeypatch.setattr(slack_channel_events, "process_slack_reaction_added", added)
+    monkeypatch.setattr(slack_channel_events, "process_slack_reaction_removed", taken_back)
     monkeypatch.setenv("MDA_SERVICE_SECRET", _SERVICE_SECRET)
     app = FastAPI()
     app.include_router(slack_channel_events.router)
@@ -2363,6 +2128,8 @@ async def test_the_summon_reaction_tags_open_swe_and_any_other_does_nothing(
         assert answered.status_code == 200
 
     summon.assert_awaited_once()
+    assert [c.args[0]["reaction"] for c in added.await_args_list] == ["openswe", "tada"]
+    taken_back.assert_not_awaited()
     event = summon.await_args.args[0]
     assert (event.item.channel, event.item.ts) == ("C1", "1.2")
     assert summon.await_args.args[1] == "delivery-7"
@@ -2371,3 +2138,244 @@ async def test_the_summon_reaction_tags_open_swe_and_any_other_does_nothing(
         app, _reaction("tada"), signed=False, path="/mda/slack/reactions"
     )
     assert unsigned.status_code == 401
+
+
+async def test_watched_channel_fact_does_not_change_conversation_routing(
+    monkeypatch: pytest.MonkeyPatch, facts: dict[str, AsyncMock | Mock]
+) -> None:
+    facts["watched"].return_value = True
+    facts["owned"].return_value = _MDA_THREAD
+    app = _api(monkeypatch)
+    answered = await _facts(app)
+    assert answered.json()["automation_channel"] is True
+    assert answered.json()["conversation"] == "mda"
+    reply = await _facts(app, reply_thread_ts="1.0")
+    assert reply.json()["automation_channel"] is False
+
+
+async def test_automation_delivery_does_not_consume_the_normal_slack_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    event = cast(dict[str, JsonValue], _mention(type="message")["event"])
+    launch = AsyncMock()
+    monkeypatch.setattr("openswe.schedules.store.launch_slack_automations", launch)
+    acted, tasks = await _hand_back(event, "automation_1", automation_only=True)
+    assert acted.acted
+    [(task, args)] = tasks.tasks
+    await cast(Callable[..., Awaitable[None]], task)(*args)
+    assert launch.await_args.args[0].event.ts == event["ts"]
+    normal, normal_tasks = await _hand_back(event, "msg_1")
+    assert normal.acted
+    assert any(task is slack_service.process_slack_mention for task, _args in normal_tasks.tasks)
+
+
+@pytest.mark.parametrize("prompt", ["Handle Kitchen alerts", "Answer Ask questions"])
+@pytest.mark.parametrize(
+    ("alert_text", "card", "expected"),
+    [
+        ("An alert", "", "An alert"),
+        ("", "Disk full", "Disk full"),
+        ("Alert", "Disk full", "Alert\nDisk full"),
+    ],
+)
+async def test_true_routes_unmentioned_allowlisted_bots_in_every_listened_channel(
+    monkeypatch: pytest.MonkeyPatch,
+    prompt: str,
+    alert_text: str,
+    card: str,
+    expected: str,
+) -> None:
+    monkeypatch.setattr(
+        bot_triggers,
+        "get_instance_settings",
+        AsyncMock(return_value={"slack_bot_trigger_mode": "true"}),
+    )
+    await SlackChannel.save_all({"id": "C1", "name": "listened-channel"})
+    async with postgres.session() as session:
+        session.add(SlackChannelBinding(channel_id="C1", prompt=prompt))
+    assert await INTEGRATIONS.channel_prompt("C1") == prompt
+    monkeypatch.setattr(
+        INTEGRATIONS,
+        "listens_to_channel",
+        type(INTEGRATIONS).listens_to_channel.__get__(INTEGRATIONS),
+    )
+    monkeypatch.setattr(slack_routes, "is_listening_channel", real_is_listening_channel)
+    monkeypatch.setattr(slack_routes, "resolve_allowed_slack_bot", AsyncMock(return_value=_BOT))
+    monkeypatch.setattr(slack_routes.BotTriggers, "claim", AsyncMock(return_value=True))
+    process = AsyncMock()
+    monkeypatch.setattr(slack_service, "process_slack_mention", process)
+    payload = _mention(
+        type="message",
+        subtype="bot_message",
+        user="UBOT",
+        bot_id="B1",
+        app_id="A2",
+        text=alert_text,
+        attachments=[{"text": card}] if card else [],
+    )
+
+    response, tasks, _request = await _webhook(payload)
+
+    assert response == {"status": "accepted", "message": "Slack mention queued"}
+    [(task, (request, repo))] = tasks.tasks
+    assert task is process
+    assert request.listening_channel is True
+    assert request.explicit_mention is False
+    assert request.thread_ts == request.original_message_ts == "1786573369.551099"
+    assert request.text == expected
+    assert request.triggering_bot_id == "B1"
+    assert repo is None
+
+
+@pytest.mark.parametrize(
+    ("mode", "listed", "self_bot", "subtype", "reply", "budget"),
+    [
+        ("false", True, False, "bot_message", "", True),
+        ("mentions", True, False, "bot_message", "", True),
+        ("true", False, False, "bot_message", "", True),
+        ("true", True, True, "bot_message", "", True),
+        ("true", True, False, "file_share", "", True),
+        ("true", True, False, "bot_message", "1.1", True),
+        ("true", True, False, "bot_message", "", False),
+    ],
+)
+async def test_rejected_bot_events_are_logged_without_starting_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    listed: bool,
+    self_bot: bool,
+    subtype: str,
+    reply: str,
+    budget: bool,
+) -> None:
+    monkeypatch.setattr(
+        bot_triggers,
+        "get_instance_settings",
+        AsyncMock(return_value={"slack_bot_trigger_mode": mode}),
+    )
+    monkeypatch.setattr(bot_triggers, "is_listening_channel", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        slack_routes, "resolve_allowed_slack_bot", AsyncMock(return_value=_BOT if listed else None)
+    )
+    monkeypatch.setattr(slack_routes.BotTriggers, "claim", AsyncMock(return_value=budget))
+    record = AsyncMock()
+    monkeypatch.setattr(slack_routes.EventLog, "record", record)
+    payload = _mention(
+        type="message",
+        subtype=subtype,
+        user="BOT" if self_bot else "UBOT",
+        bot_id="B1",
+        app_id="A2",
+        text="An alert",
+        thread_ts=reply,
+    )
+
+    response, tasks, _request = await _webhook(payload)
+
+    assert response == {
+        "status": "ignored",
+        "reason": "Event from this bot user" if self_bot else "Event from a bot",
+    }
+    assert tasks.tasks == []
+    record.assert_awaited_once()
+
+
+@pytest.mark.parametrize("mode", ["mentions", "true", "false"])
+async def test_facts_report_stored_bot_mode_without_consuming_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    facts: dict[str, AsyncMock | Mock],
+    mode: str,
+) -> None:
+    monkeypatch.setattr(
+        bot_triggers,
+        "get_instance_settings",
+        AsyncMock(return_value={"slack_bot_trigger_mode": mode}),
+    )
+    claim = AsyncMock()
+    monkeypatch.setattr(slack_channel.BotTriggers, "claim", claim)
+    facts["bot"].return_value = _BOT
+
+    response = await _facts(_api(monkeypatch), user_id="UBOT", bot_id="B1", bot_app_id="A2")
+
+    assert response.json()["bot_trigger_mode"] == mode
+    claim.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mode", ["false", "true"])
+async def test_start_turn_rechecks_bot_policy_and_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    monkeypatch.setattr(
+        bot_triggers,
+        "get_instance_settings",
+        AsyncMock(return_value={"slack_bot_trigger_mode": mode}),
+    )
+    monkeypatch.setattr(slack_channel, "resolve_allowed_slack_bot", AsyncMock(return_value=None))
+    prepare = _prepared(monkeypatch, prompt=_PROMPT)
+
+    response = await _start(_start_app(monkeypatch), user_id="UBOT", bot_id="B1", bot_app_id="A2")
+
+    assert response == _NO_RUN
+    prepare.assert_not_awaited()
+
+
+async def test_unmentioned_budget_is_persistent_and_shared_between_entrypoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(event_claims, "claim", _PERSISTENT_EVENT_CLAIM)
+    args = {"team_id": "T1", "channel_id": "C1", "bot_id": "B1", "explicit_mention": False}
+    assert await slack_routes.BotTriggers.claim(**args, message_ts="1.2")
+    assert await slack_channel.BotTriggers.claim(**args, message_ts="1.2")
+    assert not await slack_channel.BotTriggers.claim(**args, message_ts="1.3")
+    assert await slack_routes.BotTriggers.claim(**(args | {"channel_id": "C2"}), message_ts="1.3")
+    assert await slack_routes.BotTriggers.claim(**(args | {"bot_id": "B2"}), message_ts="1.3")
+
+
+async def test_self_app_without_bot_id_is_recorded_without_starting_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = AsyncMock()
+    context = AsyncMock()
+    monkeypatch.setattr(slack_routes.EventLog, "record", record)
+    monkeypatch.setattr(webhook_common, "resolve_slack_channel_context", context)
+
+    response, tasks, _request = await _webhook(_mention(app_id="A1", text="A Robin reply"))
+
+    assert response == {"status": "ignored", "reason": "Event from this bot user"}
+    assert tasks.tasks == []
+    record.assert_awaited_once()
+    context.assert_not_awaited()
+
+
+@pytest.mark.parametrize("mentioned", [True, False])
+async def test_user_token_app_start_uses_the_humans_account(
+    monkeypatch: pytest.MonkeyPatch,
+    mentioned: bool,
+) -> None:
+    prepare = _prepared(monkeypatch, prompt=_PROMPT)
+    resolve = AsyncMock(return_value=None)
+    monkeypatch.setattr(slack_channel, "resolve_allowed_slack_bot", resolve)
+
+    start = await _start(
+        _start_app(monkeypatch),
+        bot_app_id="A2",
+        explicit_mention=mentioned,
+        text="<@BOT> help" if mentioned else "help",
+        listening_channel=not mentioned,
+        treat_all_messages_as_mentions=not mentioned,
+    )
+
+    assert start["run"] is not None
+    cast(AsyncMock, slack_service.account_link_needed).assert_awaited_once_with("U1")
+    cast(AsyncMock, slack_service.slack_login).assert_awaited_with("U1")
+    assert (
+        cast(AsyncMock, mda_forwarding.claim_conversation).await_args.kwargs["owner_login"] == "ada"
+    )
+    request = prepare.await_args.args[0]
+    assert (request.user_id, request.source_message_ts, request.triggering_bot_id) == (
+        "U1",
+        "1.2",
+        "",
+    )
+    resolve.assert_not_awaited()

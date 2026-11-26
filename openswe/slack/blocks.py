@@ -48,6 +48,14 @@ class SectionBlock(TypedDict):
     expand: NotRequired[bool]
 
 
+class ContainerBlock(TypedDict):
+    type: Literal["container"]
+    title: PlainText
+    is_collapsible: bool
+    default_collapsed: bool
+    child_blocks: list[SectionBlock]
+
+
 class MarkdownBlock(TypedDict):
     type: Literal["markdown"]
     text: str
@@ -153,6 +161,7 @@ class InputBlock(TypedDict):
 
 type Block = (
     SectionBlock
+    | ContainerBlock
     | MarkdownBlock
     | ContextBlock
     | DividerBlock
@@ -301,34 +310,6 @@ def conversation_input(
             },
         },
     }
-
-
-def text_input(
-    *,
-    block_id: str,
-    label: str,
-    action_id: str,
-    multiline: bool = False,
-    max_length: int | None = None,
-    placeholder: str | None = None,
-    optional: bool = False,
-) -> InputBlock:
-    element: PlainTextInput = {"type": "plain_text_input", "action_id": action_id}
-    if multiline:
-        element["multiline"] = True
-    if max_length is not None:
-        element["max_length"] = max_length
-    if placeholder is not None:
-        element["placeholder"] = plain_text(placeholder)
-    block: InputBlock = {
-        "type": "input",
-        "block_id": block_id,
-        "label": plain_text(label),
-        "element": element,
-    }
-    if optional:
-        block["optional"] = True
-    return block
 
 
 def modal(

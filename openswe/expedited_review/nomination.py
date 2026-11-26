@@ -1,9 +1,12 @@
 """Expedited review nomination shared by dashboard requests and agent tools."""
 
+import asyncio
 import hashlib
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import Self
 from uuid import UUID
 
 from openswe.audit_logs.context import current_audit_log
@@ -14,8 +17,10 @@ from openswe.expedited_review.eligibility import (
     MAX_FILES,
     ApprovalCondition,
     ChangedFile,
+    EligibleDiff,
     ExcludedHunk,
     Exclusion,
+    ExpeditedDiff,
     Ineligible,
     assess_eligibility,
     fingerprint_matches,
@@ -24,18 +29,22 @@ from openswe.expedited_review.readiness import latest_review_states
 from openswe.github.codeowners import CodeOwners
 from openswe.github.comments import derive_pr_state
 from openswe.github.http import GitHubClient, RepoFileUnreadableError, or_none
+from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest, PullRequestPayload
 from openswe.github.repo_files import RepoSettings
+from openswe.human_review.deadlines import BROADCAST_STEP, schedule
 from openswe.human_review.lifecycle import ReviewCard
 from openswe.human_review.requests import ChannelChoice, HumanReviewRequest
-from openswe.human_review.standard import Origin, summary_line
+from openswe.human_review.standard import Origin
 from openswe.review.approvals import AUTO_APPROVE_RULES_DIR, ApprovalPolicy
 from openswe.review.assessment_feedback import PublishedAssessment
 from openswe.slack.channels import SlackChannel
 from openswe.slack.client import GitHubPrRef, delete_slack_message
+from openswe.slack.diff_image import SlackDiffImage
 from openswe.slack.http import SlackRequestError
 from openswe.users import User
 from openswe.utils.json_types import JsonObject
+from openswe.utils.startup_trace import apm_span
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +54,32 @@ class ExpeditedReviewIneligible(Exception):
 
 
 @dataclass(frozen=True, slots=True)
+class PulledRequest:
+    """A pull request and its changed files as GitHub gave them, read together once for
+    a request that may try expedited review and then fall back to standard review."""
+
+    pull: JsonObject | None
+    files: list[ChangedFile] | None
+
+    @classmethod
+    async def read(cls, pull: PullRequestClient) -> Self:
+        payload, files = await asyncio.gather(
+            or_none(pull.pull()), ChangedFile.of_pull(pull, max_pages=FILE_PAGES)
+        )
+        return cls(payload, files)
+
+
+@dataclass(frozen=True, slots=True)
 class ExpeditedReviewNomination:
     pr_ref: GitHubPrRef
     origin: Origin
     token: str
+    # Read GitHub as the App rather than with ``token``: for callers that already checked
+    # the requester can read the repository, so a token their own dashboard tabs pushed
+    # over GitHub's secondary rate limit can't hold the request up for a minute.
+    read_as_app: bool = False
+    # What the caller already read of the pull request for this request; read here if not.
+    pulled: PulledRequest | None = None
 
     def failure(self, error: str) -> JsonObject:
         return {"success": False, "error": error}
@@ -152,9 +183,7 @@ class ExpeditedReviewNomination:
         return audited.hunks
 
     async def approval_condition(self, author: str, head_sha: str) -> ApprovalCondition | None:
-        """The condition Open SWE's review of ``head_sha`` would approve on, if the author opted in."""
-        if not (await User.preferences_for_login(author)).experimental_conditional_approval:
-            return None
+        """The condition Open SWE's review of ``head_sha`` would approve on."""
         pr_ref = self.pr_ref
         assessment = await PublishedAssessment.latest(pr_ref.owner, pr_ref.repo, pr_ref.number)
         if assessment is None or not assessment.conditional_for_head(head_sha):
@@ -171,6 +200,41 @@ class ExpeditedReviewNomination:
         if condition is None:
             return None, exclusions
         return condition, [*exclusions, *condition.cover(files, exclusions)]
+
+    def event_origin(self, channel_id: str, thread_ts: str) -> JsonObject:
+        origin = self.origin
+        return {
+            "slack_channel_id": channel_id,
+            "slack_thread_ts": thread_ts,
+            "requester_user_id": str(origin.requester.id) if origin.requester else None,
+            "thread_id": origin.thread_id,
+        }
+
+    def nomination_details(
+        self,
+        channel_id: str,
+        thread_ts: str,
+        verdict: EligibleDiff,
+        condition: ApprovalCondition | None,
+        files: list[ChangedFile],
+        displaced: HumanReviewRequest | None,
+    ) -> JsonObject:
+        """Everything the card was nominated on, for the event log."""
+        return {
+            "nominated_in": self.event_origin(channel_id, thread_ts),
+            "changed_lines": verdict.changed_lines,
+            "test_lines": verdict.test_lines,
+            "generated_lines": verdict.generated_lines,
+            "lockfile_lines": verdict.lockfile_lines,
+            "excluded_lines": verdict.excluded_lines,
+            "fingerprint": verdict.fingerprint,
+            "approval_condition": condition.text if condition is not None else "",
+            "files": [
+                {"filename": f.filename, "additions": f.additions, "deletions": f.deletions}
+                for f in files
+            ],
+            "displaced_request_id": str(displaced.id) if displaced is not None else None,
+        }
 
     def audit_pull_request(self, pull_request_id: UUID) -> None:
         """The row may first exist once the card is saved, so the audit entry learns its id then."""
@@ -192,35 +256,42 @@ class ExpeditedReviewNomination:
         pr_ref, origin, token = self.pr_ref, self.origin, self.token
         requester, thread_id = origin.requester, origin.thread_id
         own_channel, own_thread = origin.slack_channel_id, origin.slack_thread_ts
-        async with GitHubClient.connect(token=token) as github:
+        coverage: tuple[ApprovalCondition | None, list[ExcludedHunk]] | None = None
+        author_registered = False
+        span_tags: dict[str, object] = {"pull_request.url": pr_ref.url}
+        async with (
+            GitHubClient.as_app(self.pr_ref.owner, self.pr_ref.repo)
+            if self.read_as_app
+            else GitHubClient.connect(token=self.token)
+        ) as github:
             pull = github.repo(pr_ref.owner, pr_ref.repo).pull_request(pr_ref.number)
-            pr = await or_none(pull.pull())
-            files = await ChangedFile.of_pull(pull, max_pages=FILE_PAGES) if pr else None
+            with apm_span("expedited_review.read_pull_request", span_tags):
+                pulled = self.pulled or await PulledRequest.read(pull)
+            pr, files = pulled.pull, pulled.files
             if not replace_standard and pr:
-                if files is None or isinstance(
-                    assess_eligibility(
-                        files,
-                        (await self.covered(PullRequestPayload.model_validate(pr), files, []))[1],
-                    ),
-                    Ineligible,
-                ):
+                if files is None:
                     raise ExpeditedReviewIneligible("The diff needs standard review.")
-                if (
-                    await User.for_login("github", PullRequestPayload.model_validate(pr).author)
-                    is None
-                ):
+                payload = PullRequestPayload.model_validate(pr)
+                with apm_span("expedited_review.coverage", span_tags):
+                    coverage = await self.covered(payload, files, [])
+                if isinstance(assess_eligibility(files, coverage[1]), Ineligible):
+                    raise ExpeditedReviewIneligible("The diff needs standard review.")
+                if await User.for_login("github", payload.author) is None:
                     raise ExpeditedReviewIneligible("The author needs standard review.")
+                author_registered = True
             if pr and pr.get("state") == "open" and files is not None and len(files) < MAX_FILES:
                 payload = PullRequestPayload.model_validate(pr)
-                states = await latest_review_states(pull, payload.author)
+                with apm_span("expedited_review.review_states", span_tags):
+                    states = await latest_review_states(pull, payload.author)
                 if states is None:
                     return self.failure("Could not read the pull request's reviews")
                 approvers = {login for login, state in states.items() if state == "APPROVED"}
                 if approvers and "CHANGES_REQUESTED" not in states.values():
                     try:
-                        codeowners = await CodeOwners.fetch(
-                            pull.repo, payload.base_ref or None, strict=True
-                        )
+                        with apm_span("expedited_review.codeowners", span_tags):
+                            codeowners = await CodeOwners.fetch(
+                                pull.repo, payload.base_ref or None, strict=True
+                            )
                     except RepoFileUnreadableError:
                         return self.failure(
                             "Could not confirm the pull request's codeowner approvals"
@@ -250,7 +321,11 @@ class ExpeditedReviewNomination:
                 exclusions = await self.resolve_exclusions(excluded, files, pr_ref, payload, token)
             except ValueError as exc:
                 return self.failure(str(exc))
-        condition, exclusions = await self.covered(payload, files, exclusions)
+        condition, exclusions = (
+            coverage
+            if coverage is not None and not excluded
+            else await self.covered(payload, files, exclusions)
+        )
         verdict = assess_eligibility(files, exclusions)
         if isinstance(verdict, Ineligible):
             raise ExpeditedReviewIneligible(
@@ -263,17 +338,21 @@ class ExpeditedReviewNomination:
                 "shows that condition instead of the diff. Otherwise ask for a normal review."
             )
 
-        if await User.for_login("github", payload.author) is None:
+        if not author_registered and await User.for_login("github", payload.author) is None:
             raise ExpeditedReviewIneligible(
                 "Expedited review is only available for PRs authored by Robin users."
             )
-        settings = await RepoSettings.cached(pr_ref.owner, pr_ref.repo)
-        review_channel = settings.channel_for_files([file.filename for file in files])
-        broadcast_target = await SlackChannel.resolve(review_channel) if review_channel else None
+        with apm_span("expedited_review.review_channel", span_tags):
+            settings = await RepoSettings.cached(pr_ref.owner, pr_ref.repo)
+            review_channel = settings.channel_for_files([file.filename for file in files])
+            broadcast_target = (
+                await SlackChannel.resolve(review_channel) if review_channel else None
+            )
         if review_channel and broadcast_target is None:
             return self.failure(
                 f"The configured review channel {review_channel!r} is unavailable to the bot. "
-                "Invite the bot to that channel or update `reviewChannel` in `.open-swe/settings.json`."
+                "Invite the bot to that channel or update `reviewChannel` in `.robin/settings.json` "
+                "(or legacy `.open-swe/settings.json`)."
             )
         broadcast_choice: list[ChannelChoice] = (
             [{"id": broadcast_target.id, "name": broadcast_target.name}]
@@ -300,12 +379,11 @@ class ExpeditedReviewNomination:
             and active.approval_condition == (condition.text if condition is not None else "")
         ):
             self.audit_pull_request(active.pull_request_id)
-            if active.awaiting_ready and not payload.draft:
-                updated = await HumanReviewRequest.transition(
-                    active.id, expected=("open",), awaiting_ready=False
-                )
-                if updated is not None:
-                    active = updated
+            await active.log_event(
+                "expedited.reused",
+                head_sha=head_sha,
+                nominated_in=self.event_origin(channel_id, thread_ts),
+            )
             card = ReviewCard(active)
             if not active.awaiting_ready:
                 await card.refresh()
@@ -336,19 +414,20 @@ class ExpeditedReviewNomination:
         if active is not None:
             displaced = active
 
-        pull_request = await PullRequest.load(pr_ref.owner, pr_ref.repo, pr_ref.number)
-        pull_request.title = payload.title
-        pull_request.body = payload.body or ""
-        pull_request.state = derive_pr_state(
-            state=payload.state, merged=payload.merged, draft=payload.draft
-        )
-        pull_request.head_ref = payload.head_ref
-        pull_request.base_ref = payload.base_ref
-        pull_request.author = payload.author
-        pull_request.author_github_id = payload.author_id
-        pull_request = await pull_request.save()
-        if thread_id:
-            pull_request = await pull_request.link_thread(thread_id, source="expedited_review")
+        with apm_span("expedited_review.record_pull_request", span_tags):
+            pull_request = await PullRequest.load(pr_ref.owner, pr_ref.repo, pr_ref.number)
+            pull_request.title = payload.title
+            pull_request.body = payload.body or ""
+            pull_request.state = derive_pr_state(
+                state=payload.state, merged=payload.merged, draft=payload.draft
+            )
+            pull_request.head_ref = payload.head_ref
+            pull_request.base_ref = payload.base_ref
+            pull_request.author = payload.author
+            pull_request.author_github_id = payload.author_id
+            pull_request = await pull_request.save()
+            if thread_id:
+                pull_request = await pull_request.link_thread(thread_id, source="expedited_review")
         self.audit_pull_request(pull_request.id)
         # One open request per PR, so the displaced one closes before this row is written;
         # it is reopened below if the expedited card cannot be posted.
@@ -364,7 +443,7 @@ class ExpeditedReviewNomination:
             kind="expedited",
             diff_fingerprint=verdict.fingerprint,
             excluded_hunks=exclusions,
-            tldr=summary_line(payload.body or "" if inline_summary is None else inline_summary),
+            tldr=payload.body or "" if inline_summary is None else inline_summary,
             slack_channel_choices=broadcast_choice,
             awaiting_ready=payload.draft,
             slack_channel_id=channel_id,
@@ -379,8 +458,18 @@ class ExpeditedReviewNomination:
             },
             requested_by_user_id=requester.id if requester is not None else None,
         )
+        diff_image: asyncio.Future[str | None] | None = None
         try:
-            approval = await approval.save()
+            if not payload.draft:
+                # Hosting the card's diff image takes seconds, so it runs while the request
+                # is saved; every way out below that posts no card cancels it.
+                diff_image = asyncio.ensure_future(
+                    SlackDiffImage(
+                        ExpeditedDiff(files, exclusions).shown, f"diff-{head_sha[:12]}.png"
+                    ).upload(span_tags)
+                )
+            with apm_span("expedited_review.save_request", span_tags):
+                approval = await approval.save()
             if approval.awaiting_ready:
                 readiness_warning = await ReviewCard(approval).prompt_author_ready()
                 if readiness_warning:
@@ -389,6 +478,12 @@ class ExpeditedReviewNomination:
                         await ReviewCard(displaced).reopen()
                     return self.failure(readiness_warning)
                 await ReviewCard(approval).remove_superseded()
+                await approval.log_event(
+                    "expedited.nominated",
+                    **self.nomination_details(
+                        channel_id, thread_ts, verdict, condition, files, displaced
+                    ),
+                )
                 return {
                     "success": True,
                     "approval_id": str(approval.id),
@@ -400,18 +495,42 @@ class ExpeditedReviewNomination:
                     "next": "The full draft card was sent only to the author by DM. The thread card "
                     "will be posted once they mark it ready. Keep a /baby-sit watch on the PR.",
                 }
-            message_ts = await ReviewCard(approval).post_expedited(title=payload.title, files=files)
+            with apm_span("expedited_review.post_card", span_tags):
+                message_ts = await ReviewCard(approval).post_expedited(
+                    title=payload.title, files=files, diff_image=diff_image
+                )
             approval.slack_message_ts = message_ts
-            card = ReviewCard(await approval.save())
+            with apm_span("expedited_review.save_request", span_tags):
+                card = ReviewCard(await approval.save())
         except SlackRequestError as exc:
+            if diff_image is not None:
+                diff_image.cancel()
             await self.rollback(approval, displaced)
             return self.failure(f"Could not post the approval card in Slack: {exc.code}")
         except BaseException:
+            if diff_image is not None:
+                diff_image.cancel()
             await self.rollback(approval, displaced)
             raise
-        await card.broadcast_configured()
-        await card.remove_superseded()
-        readiness_warning = await card.prompt_author_ready()
+        # Copying the card to the review channel and clearing older ones read GitHub and
+        # Slack again, for seconds; whoever asked for the review waits on neither.
+        with apm_span("expedited_review.schedule_broadcast", span_tags):
+            scheduled = await schedule(card.request, BROADCAST_STEP, timedelta(0))
+        if not scheduled:
+            with apm_span("expedited_review.broadcast", span_tags):
+                await card.broadcast_configured()
+            with apm_span("expedited_review.remove_superseded", span_tags):
+                await card.remove_superseded()
+        with apm_span("expedited_review.prompt_author_ready", span_tags):
+            readiness_warning = await card.prompt_author_ready()
+        with apm_span("expedited_review.log_nomination", span_tags):
+            await card.request.log_event(
+                "expedited.nominated",
+                **self.nomination_details(
+                    channel_id, thread_ts, verdict, condition, files, displaced
+                ),
+                readiness_warning=readiness_warning,
+            )
         next_step = self.next_step(
             reused=False,
             elsewhere=False,
@@ -427,6 +546,7 @@ class ExpeditedReviewNomination:
             "changed_lines": verdict.changed_lines,
             "test_lines": verdict.test_lines,
             "generated_lines": verdict.generated_lines,
+            "lockfile_lines": verdict.lockfile_lines,
             "excluded_lines": verdict.excluded_lines,
             "slack_channel_id": channel_id,
             "slack_channel_name": await SlackChannel.name_for(channel_id),

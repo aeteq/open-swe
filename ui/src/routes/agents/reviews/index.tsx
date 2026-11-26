@@ -1,16 +1,19 @@
 import { Button } from "@langchain/macaw-components/Button"
+import { ArrowLeftIcon } from "@langchain/macaw-components/icons"
 import { Text } from "@langchain/macaw-components/Text"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 import { useEffect } from "react"
 
-import { useSidebarCollapsed } from "@/components/sidebar-layout"
+import { useContextReturn } from "@/lib/contextNavigation"
 import { pageTitle } from "@/lib/pageTitle"
 import { useSession } from "@/lib/session"
 import { cn } from "@/lib/utils"
 import { OpenPullRequests } from "@/features/reviews/OpenPullRequests"
 import { ReviewedPullRequests } from "@/features/reviews/ReviewedPullRequests"
 import { OpenPullRequestInput } from "@/features/reviews/OpenPullRequestInput"
+import { PullRequestWorkspace } from "@/features/reviews/PullRequestWorkspace"
 import { ReviewBookmarklet } from "@/features/reviews/ReviewBookmarklet"
+import { ReviewTabs } from "@/features/reviews/ReviewTabs"
 import {
   parsePullRequestSelection,
   validateReviewsSearch,
@@ -19,11 +22,30 @@ import {
 
 export const Route = createFileRoute("/agents/reviews/")({
   validateSearch: validateReviewsSearch,
+  ssr: false,
+  beforeLoad: ({ search, location }) => {
+    const stored = readStoredRepos()
+    const storedTab = validateReviewsSearch({
+      tab: window.localStorage.getItem(TAB_STORAGE_KEY),
+    }).tab
+    const changes: Partial<ReviewsSearch> = {
+      ...(!search.repo && stored ? { repo: stored } : {}),
+      ...(!search.tab ? { tab: storedTab ?? "mine" } : {}),
+    }
+    if (Object.keys(changes).length)
+      throw redirect({
+        to: "/agents/reviews",
+        search: { ...search, ...changes },
+        hash: location.hash,
+        replace: true,
+      })
+  },
   head: () => ({ meta: [{ title: pageTitle("Pull Requests") }] }),
   component: ReviewsPage,
 })
 
 const REPO_STORAGE_KEY = "open-swe.reviews.repo"
+const TAB_STORAGE_KEY = "open-swe.reviews.tab"
 
 function readStoredRepos(): string[] | undefined {
   try {
@@ -43,24 +65,18 @@ function storeRepos(repos: string[] | undefined) {
   else window.localStorage.removeItem(REPO_STORAGE_KEY)
 }
 
-const tabs = [
-  ["mine", "Mine"],
-  ["to-review", "To Review"],
-  ["all", "All Reviews"],
-] as const
-
 function ReviewsPage() {
   const session = useSession()
+  const returnNavigation = useContextReturn("review-exit")
   const filters = Route.useSearch()
   const navigate = Route.useNavigate()
   const tab = filters.tab ?? "mine"
-  const clearTrafficLights =
-    useSidebarCollapsed() &&
-    typeof window !== "undefined" &&
-    Boolean(window.openSweDesktop)
+  const isDesktop =
+    typeof window !== "undefined" && Boolean(window.openSweDesktop)
   const changeFilters = (changes: Partial<ReviewsSearch>, replace = false) => {
     if ("repo" in changes) storeRepos(changes.repo)
     void navigate({
+      replace,
       search: (previous) => ({
         ...previous,
         ...changes,
@@ -71,70 +87,110 @@ function ReviewsPage() {
           : {}),
         ...("pr" in changes ? { files: undefined, at: undefined } : {}),
       }),
-      replace,
     })
   }
   useEffect(() => {
-    const stored = readStoredRepos()
-    if (!filters.repo && stored) changeFilters({ repo: stored }, true)
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const selection = tab !== "all" ? parsePullRequestSelection(filters.pr) : null
+    if (filters.tab) window.localStorage.setItem(TAB_STORAGE_KEY, filters.tab)
+  }, [filters.tab])
+  const selection = parsePullRequestSelection(filters.pr)
+
+  const back = (
+    <Button
+      size="sm"
+      color="secondary"
+      variant="plain"
+      leftDecorator={ArrowLeftIcon}
+      aria-label={returnNavigation.label}
+      className="border-0"
+      onClick={returnNavigation.returnToOrigin}
+    >
+      <span className={cn(isDesktop && "max-md:sr-only")}>
+        {returnNavigation.label}
+      </span>
+    </Button>
+  )
+  const heading = (
+    <Text as="h1" variant="h3" weight="medium" color="primary">
+      Pull Requests
+    </Text>
+  )
+
+  const header = isDesktop ? (
+    <div
+      data-desktop-drag-region=""
+      className="flex h-11 shrink-0 items-center gap-space-3 border-b border-muted pr-space-3 pl-[80px] [.desktop-fullscreen_&]:pl-space-3 [.version-mismatch_&]:pl-space-3"
+    >
+      {back}
+      <div className="flex items-center gap-space-3 max-lg:hidden">
+        <span aria-hidden className="h-5 border-l border-muted" />
+        {heading}
+      </div>
+      <div className="flex-1" />
+      <ReviewTabs />
+      <div className="flex-1" />
+      <OpenPullRequestInput className="min-w-24 shrink" />
+    </div>
+  ) : (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-space-3",
+        selection && "border-b border-muted px-space-3 py-space-2"
+      )}
+    >
+      {back}
+      {heading}
+      <ReviewTabs />
+      <OpenPullRequestInput />
+      {!selection && (
+        <>
+          <ReviewBookmarklet />
+          <span className="hidden text-xs text-secondary lg:inline">
+            Drag to your bookmarks bar
+          </span>
+        </>
+      )}
+    </div>
+  )
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-0 w-full flex-1 flex-col px-space-5 py-space-5">
+      {isDesktop && !selection && header}
+      <div
+        className={cn(
+          "flex min-h-0 w-full flex-1 flex-col",
+          !selection && "px-space-5 py-space-5"
+        )}
+      >
         <div
           className={cn(
             "mx-auto flex min-h-0 w-full flex-1 flex-col",
             !selection && "max-w-6xl"
           )}
         >
-          <div
-            className={cn(
-              "flex items-center gap-space-3",
-              clearTrafficLights && "relative -top-4",
-              clearTrafficLights &&
-                (selection ? "pl-44" : "pl-[clamp(0px,772px-50vw,176px)]")
-            )}
-          >
-            <Text as="h1" variant="h3" weight="medium" color="primary">
-              Pull Requests
-            </Text>
-            <div className="flex items-center gap-space-1">
-              {tabs.map(([value, label]) => (
-                <Button
-                  key={value}
-                  color="secondary"
-                  variant={tab === value ? "normal" : "plain"}
-                  aria-pressed={tab === value}
-                  onClick={() => {
-                    changeFilters({
-                      tab: value === "mine" ? undefined : value,
-                      page: undefined,
-                      pr: undefined,
-                    })
-                  }}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-            <OpenPullRequestInput />
-            <ReviewBookmarklet />
-            <span className="hidden text-xs text-secondary lg:inline">
-              Drag to your bookmarks bar
-            </span>
-          </div>
+          {!isDesktop && header}
 
           {session.data &&
             (tab === "all" ? (
-              <ReviewedPullRequests
-                page={filters.page ?? 0}
-                onPageChange={(page) =>
-                  changeFilters({ page: page || undefined })
+              <PullRequestWorkspace
+                pr={selection}
+                onClose={() =>
+                  changeFilters({ pr: undefined, queue: undefined })
                 }
-              />
+              >
+                {(onSelect) => (
+                  <ReviewedPullRequests
+                    page={filters.page ?? 0}
+                    selected={filters.pr}
+                    onSelect={(pr) => {
+                      changeFilters({ pr, queue: undefined })
+                      onSelect()
+                    }}
+                    onPageChange={(page) =>
+                      changeFilters({ page: page || undefined })
+                    }
+                  />
+                )}
+              </PullRequestWorkspace>
             ) : (
               <OpenPullRequests
                 key={`${tab}-${Boolean(filters.github)}`}

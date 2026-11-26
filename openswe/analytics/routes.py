@@ -6,6 +6,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from openswe.analytics.gateway import GatewaySpend
+from openswe.analytics.health import UsageHealthPayload
 from openswe.analytics.queries import (
     InvalidUsageCursor,
     SortDirection,
@@ -14,6 +16,7 @@ from openswe.analytics.queries import (
 )
 from openswe.config import ENV
 from openswe.dashboard.deps import ADMIN_DEP, SESSION_DEP, session_is_admin
+from openswe.dashboard.principal import DashboardPrincipal
 
 logger = logging.getLogger(__name__)
 
@@ -25,20 +28,61 @@ class PostHogProject(BaseModel):
     host: str
 
 
+class DatadogRumConfig(BaseModel):
+    application_id: str
+    client_token: str
+    site: str
+
+
 class TelemetryConfig(BaseModel):
     environment: str
     posthog: PostHogProject | None
     segment_write_key: str | None
+    datadog_rum: DatadogRumConfig | None
 
 
 @router.get("/analytics/config")
 async def api_telemetry_config() -> TelemetryConfig:
     key = ENV.POSTHOG_API_KEY.get()
+    application_id = ENV.DD_RUM_APPLICATION_ID.get()
+    client_token = ENV.DD_RUM_CLIENT_TOKEN.get()
     return TelemetryConfig(
         environment=ENV.DD_ENV.get(),
         posthog=PostHogProject(key=key, host=ENV.POSTHOG_HOST.get()) if key else None,
         segment_write_key=ENV.SEGMENT_BROWSER_WRITE_KEY.get().strip() or None,
+        datadog_rum=(
+            DatadogRumConfig(
+                application_id=application_id,
+                client_token=client_token,
+                site=ENV.DD_RUM_SITE.get(),
+            )
+            if application_id and client_token
+            else None
+        ),
     )
+
+
+@router.get("/analytics/gateway-spend")
+async def api_gateway_spend(session: dict[str, object] = SESSION_DEP) -> GatewaySpend:
+    return await GatewaySpend.for_person(DashboardPrincipal.from_session(session))
+
+
+@router.get("/analytics/usage-health")
+async def api_usage_health(
+    period: str | None = "30d",
+    _session: dict[str, object] = SESSION_DEP,
+) -> UsageHealthPayload:
+    from asyncpg import PostgresError
+    from sqlalchemy.exc import SQLAlchemyError
+
+    try:
+        return await UsageHealthPayload.read(period)
+    except (SQLAlchemyError, PostgresError, OSError, RuntimeError, ValueError) as exc:
+        logger.warning(
+            "Usage health report unavailable",
+            extra={"analytics_error_type": type(exc).__name__},
+        )
+        raise HTTPException(503, "Usage analytics is unavailable on this deployment.") from exc
 
 
 @router.get("/agent-usage-leaderboard")

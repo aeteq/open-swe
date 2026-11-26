@@ -36,7 +36,8 @@ from openswe.dashboard.oauth import (
 from openswe.dashboard.principal import DashboardPrincipal
 from openswe.dashboard.profiles import upsert_access_token_from_github_response
 from openswe.encryption import decrypt_token, encrypt_token
-from openswe.users import User
+from openswe.slack.recovery import SlackRecovery
+from openswe.users import AccountConflict, User
 from openswe.utils.dashboard_links import PublicOrigin
 
 
@@ -63,6 +64,7 @@ class GitHubLink:
         redirect_to: str | None,
         desktop_handoff: str | None,
         desktop_port: int | None,
+        slack_recovery: str | None = None,
     ) -> RedirectResponse:
         """Send the browser to GitHub's consent page, which returns to the one callback."""
         client_id = ENV.GITHUB_APP_CLIENT_ID.get()
@@ -74,6 +76,7 @@ class GitHubLink:
             nonce_hash=hash_state_nonce(nonce),
             handoff_challenge=valid_handoff_challenge(desktop_handoff),
             handoff_port=desktop_port,
+            slack_recovery=slack_recovery,
         )
         query = urlencode(
             {
@@ -120,16 +123,29 @@ class GitHubLink:
             raise HTTPException(400, "malformed handoff code")
         return cls(account, email, parsed)
 
-    async def join(self, principal: DashboardPrincipal) -> User:
+    async def join(
+        self, principal: DashboardPrincipal, *, slack_recovery: str | None = None
+    ) -> User:
         """Join the account to the signed-in LangSmith person and keep its tokens for them."""
         if principal.provider != "langsmith":
             raise HTTPException(403, "Sign in with LangSmith to link a GitHub account")
         user = await principal.user()
         if user is None:
             raise HTTPException(401, "Robin account not found — sign in again")
-        joined = await user.join_github(
-            str(self.account.id), login=self.account.login, email=self.email
-        )
+        recovery = await SlackRecovery.read(slack_recovery, user.id) if slack_recovery else None
+        try:
+            joined = await user.join_github(
+                str(self.account.id),
+                login=self.account.login,
+                email=self.email,
+                **({"recovery_slack_id": recovery.slack_user_id} if recovery else {}),
+            )
+        except AccountConflict as exc:
+            if recovery is None:
+                raise
+            raise HTTPException(
+                409, {"code": "slack_recovery_failed", "message": str(exc)}
+            ) from exc
         await upsert_access_token_from_github_response(
             self.account.login, self.email, dict(self.tokens)
         )

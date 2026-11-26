@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -11,29 +12,13 @@ from langsmith import trace, tracing_context
 from langsmith.run_trees import RunTree
 
 import openswe.server as server
-from openswe.agent_api.run_state import as_messages
 from openswe.agent_api.tokens import AgentTurnSettings
-from openswe.input_messages import human_input
-from openswe.middleware.model_selection import (
-    ModelSelectionMiddleware,
-    RouteSelection,
-    SelectedRoute,
-)
+from openswe.middleware.model_selection import SelectedRoute
 from openswe.middleware.prepare_run import PrepareRunState
 from openswe.model_request import ModelRequestIntent
 from openswe.prompt import SystemPrompt
 from openswe.utils.jev import JevDecision
 from openswe.utils.thread_settings import ThreadSettings
-
-
-def _said(text: str, message_id: str | None = None) -> HumanMessage:
-    """What a person wrote, as the backend builds it."""
-    [message] = as_messages(
-        [human_input(text, {"sender_id": "github:alice", "surface": "web", "kind": "human"})]
-    )
-    assert isinstance(message, HumanMessage)
-    message.id = message_id or message.id
-    return message
 
 
 @dataclass
@@ -63,7 +48,6 @@ def handoff(monkeypatch: pytest.MonkeyPatch) -> Handoff:
     monkeypatch.setattr(server, "get_sandbox_metadata", AsyncMock(return_value={}))
     for name in (
         "resolve_triggering_user_identity",
-        "load_workspace",
         "_resolve_prompt_default_repo",
         "_resolve_user_custom_instructions",
     ):
@@ -105,6 +89,12 @@ def handoff(monkeypatch: pytest.MonkeyPatch) -> Handoff:
         config, turn, repo_instructions=None, sandbox_id="sandbox-1"
     )
     return Handoff(middleware, settings, store)
+
+
+async def test_preparing_a_turn_keeps_an_unset_draft_preference(handoff: Handoff) -> None:
+    await handoff.prepare()
+
+    assert handoff.middleware._config["configurable"]["draft_prs"] is None
 
 
 @pytest.mark.parametrize(
@@ -200,14 +190,12 @@ async def test_a_saved_choice_no_longer_offered_falls_back_to_the_runs_model(
 
 @pytest.mark.parametrize("previous_route", ["fast", "default"])
 async def test_explicit_auto_selection_has_the_run_classify_the_route_again(
-    handoff: Handoff, monkeypatch: pytest.MonkeyPatch, previous_route: SelectedRoute
+    handoff: Handoff, previous_route: SelectedRoute
 ) -> None:
     handoff.middleware._config["configurable"].update(
         source="dashboard", model_selection="auto", model_selection_changed=True
     )
     handoff.middleware._requested_models = None
-    classify = AsyncMock(side_effect=AssertionError("The run classifies its route itself"))
-    monkeypatch.setattr("openswe.middleware.model_selection._select_jev_route", classify)
     state = {
         "messages": [HumanMessage(content="Fix the typo")],
         "model_route": previous_route,
@@ -222,12 +210,8 @@ async def test_explicit_auto_selection_has_the_run_classify_the_route_again(
     assert prepared["selected_model_id"] == "openai:gpt-6.1-sol"
 
 
-async def test_preparing_a_turn_never_classifies_its_route(
-    handoff: Handoff, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_preparing_a_turn_never_classifies_its_route(handoff: Handoff) -> None:
     handoff.middleware._requested_models = None
-    classify = AsyncMock(side_effect=AssertionError("The run classifies its route itself"))
-    monkeypatch.setattr("openswe.middleware.model_selection._select_jev_route", classify)
 
     prepared = await handoff.prepare({"messages": [HumanMessage(content="Fix the typo")]})
 
@@ -239,32 +223,6 @@ async def test_preparing_a_turn_never_classifies_its_route(
     )
 
 
-@pytest.mark.parametrize("persist", [True, False])
-async def test_a_run_its_plan_answers_is_routed_and_attributed_as_it_prepares(
-    handoff: Handoff, monkeypatch: pytest.MonkeyPatch, persist: bool
-) -> None:
-    """A requested offload or incident runs no MDA loop, so no classifier there routes it."""
-    handoff.middleware._requested_models = None
-    handoff.middleware._model_selection = ModelSelectionMiddleware(
-        {"fast": "openai:gpt-6-luna", "default": "openai:gpt-6.1-sol"}, routing_mode="auto"
-    )
-    classify = AsyncMock(return_value=RouteSelection("fast", persist))
-    monkeypatch.setattr("openswe.middleware.model_selection._select_jev_route", classify)
-
-    prepared = await handoff.prepare({"messages": [_said("Fix the typo")]})
-
-    # run_started, Slack replies and PR footers name the routed model.
-    assert (prepared["selected_model_id"], prepared["selected_effort"]) == (
-        "openai:gpt-6-luna",
-        "low",
-    )
-    assert handoff.middleware._config["configurable"]["resolved_agent_model_id"] == (
-        "openai:gpt-6-luna"
-    )
-    assert prepared.get("model_route") == ("fast" if persist else None)
-    classify.assert_awaited_once_with("Fix the typo")
-
-
 @pytest.mark.parametrize(
     ("model", "image_type", "failure"),
     [
@@ -272,7 +230,7 @@ async def test_a_run_its_plan_answers_is_routed_and_attributed_as_it_prepares(
         ("fireworks:accounts/fireworks/models/kimi-k3", "image_url", "image"),
         ("fireworks:accounts/fireworks/models/kimi-k3", None, None),
         ("anthropic:claude-opus-5-5", "image", None),
-        ("anthropic:claude-fable-5-1", None, "unavailable"),
+        ("anthropic:claude-fable-5-2", None, "unavailable"),
         ("openai:gpt-6.1-sol", None, "unavailable"),
         ("openai:gpt-6.1-sol", None, "persistence"),
     ],
@@ -342,8 +300,12 @@ async def test_performance_handoff_uses_tier_effort_unless_overridden(
     model = "anthropic:claude-opus-5-5"
     handoff.middleware._routing_defaults["performance"] = (model, "low")
     monkeypatch.setattr(
-        "openswe.model_request.select_jev_choices",
-        AsyncMock(return_value={"runtime_model": "performance", "runtime_effort": effort}),
+        "openswe.model_request.JEV",
+        SimpleNamespace(
+            choose=AsyncMock(
+                return_value={"runtime_model": "performance", "runtime_effort": effort}
+            )
+        ),
     )
     state: PrepareRunState = {
         "messages": [

@@ -18,23 +18,31 @@ import e2e_env  # noqa: E402, F401  - the E2E's environment, before anything rea
 import sandbox_service  # noqa: E402
 
 if not sandbox_service.REAL:
+    from managed_deepagents import _sandbox_proxy as mda_sandbox_proxy
     from managed_deepagents import runtime as mda_runtime
+    from managed_deepagents.sandbox import SandboxDefinition
 
     def _stand_in_claim(
-        _sandbox: object, *, scope_key: str, **_kwargs: object
+        sandbox: SandboxDefinition, *, scope_key: str, **_kwargs: object
     ) -> mda_runtime._SandboxClaim:
         # A stand-in sandbox is ready at once; its first use opens it under the same name.
-        name = sandbox_service.mda_sandbox_name(scope_key)
+        name = sandbox_service.mda_sandbox_name(scope_key, sandbox.options.get("existing_sandbox"))
         return mda_runtime._SandboxClaim(None, None, adopted=False, host_name=name)
 
     def _stand_in_mda_sandbox(
-        _sandbox: object, *, scope_key: str, **_kwargs: object
-    ) -> tuple[sandbox_service.StandInSandbox, str, str]:
-        name = sandbox_service.mda_sandbox_name(scope_key)
-        return sandbox_service.open_mda_sandbox(name), name, name
+        sandbox: SandboxDefinition, *, scope_key: str, **_kwargs: object
+    ) -> tuple[sandbox_service.StandInSandbox, str, bool]:
+        name = sandbox_service.mda_sandbox_name(scope_key, sandbox.options.get("existing_sandbox"))
+        # Not a lead's sandbox a subagent opened from the lead's binding.
+        return sandbox_service.open_mda_sandbox(name), name, False
+
+    def _no_proxy(*_args: object, **_kwargs: object) -> None:
+        # LangSmith holds a sandbox's proxy config; the stand-in has none to write.
+        return None
 
     mda_runtime._claim_langsmith_sandbox = _stand_in_claim
     mda_runtime._create_langsmith_sandbox = _stand_in_mda_sandbox
+    mda_sandbox_proxy.patch_sandbox_proxy_config = _no_proxy
 
 if not os.environ.get("E2E_REAL_LLM"):
     # From the build directory langgraph dev serves. Every model the runtime builds,
@@ -46,7 +54,7 @@ if not os.environ.get("E2E_REAL_LLM"):
 
     LAST_SYSTEM_PROMPT.report_to = f"{BASE_URL}/control/last-system-prompt"
 
-    def _fake_model(_model_id: str, _kwargs_json: str, _use_gateway: bool) -> BaseChatModel:
+    def _fake_model(_model_id: str, _kwargs_json: str) -> BaseChatModel:
         return FakeScriptedChatModel(script=build_script())
 
     models._build = _fake_model

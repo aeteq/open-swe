@@ -1,6 +1,5 @@
 import importlib
 import json
-import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Literal, get_args
@@ -10,7 +9,6 @@ import pytest
 from fastapi import HTTPException
 
 from openswe import run_config
-from openswe.claude_code.hooks import mirror_thread_id
 from openswe.input_messages import human_input, person_introduction
 from openswe.message_queue import QueuedMessage
 from openswe.slack import allowed_bots
@@ -309,8 +307,13 @@ async def test_list_threads_outcomes_and_pagination(
     records[0]["final_message"] = outcome
     records[1]["messages"] = [{"role": "assistant", "content": outcome}]
 
-    async def get_state(thread_id: str) -> dict[str, object] | None:
+    seen_select: list[list[str] | None] = []
+
+    async def get_state(
+        thread_id: str, *, select: list[str] | None = None
+    ) -> dict[str, object] | None:
         assert thread_id not in {"thread-0", "thread-1"}
+        seen_select.append(select)
         if thread_id == "thread-48":
             return None
         return {
@@ -339,6 +342,7 @@ async def test_list_threads_outcomes_and_pagination(
     collected = result["items"]
     assert len(collected) == 50
     if compact:
+        assert seen_select and all(s == ["values.messages"] for s in seen_select)
         assert len(json.dumps(result)) < 20_000
         assert collected[0] == {
             **{key: records[0][key] for key in ("id", "status", "createdAt", "updatedAt", "title")},
@@ -469,6 +473,31 @@ async def test_automation_delivery_refuses_creator_failing_login_gate(
     assert "octocat is no longer authorized" in result["error"]
     post.assert_not_awaited()
     recorded.assert_awaited_once()
+
+
+@pytest.mark.parametrize("rate_limited", [False, True])
+async def test_automation_delivery_reports_unverified_creator_without_sending(
+    monkeypatch: pytest.MonkeyPatch, rate_limited: bool
+) -> None:
+    _automation_run(
+        monkeypatch,
+        {"owner_type": "system", "visibility": "public", "schedule_id": _AUTOMATION_ID},
+    )
+    detail = "GitHub organization membership could not be verified."
+    if rate_limited:
+        detail += " GitHub rate-limited a membership check."
+    post, recorded = _creator_dm(monkeypatch, gate=HTTPException(503, detail))
+
+    result = await slack_channels.slack_post_message("U_CREATOR", "digest")
+
+    assert result["success"] is False
+    assert "Could not verify" in result["error"]
+    assert "no longer authorized" not in result["error"]
+    assert ("rate-limited" in result["error"]) is rate_limited
+    assert "Nothing was delivered" in result["error"]
+    post.assert_not_awaited()
+    recorded.assert_awaited_once()
+    assert recorded.await_args.args[1] in result["error"]
 
 
 async def test_automation_delivery_refuses_unrelated_run(
@@ -824,30 +853,6 @@ async def test_list_threads_resolves_slack_reply_link(
     )
 
 
-async def test_list_threads_resolves_claude_code_session_to_its_mirror(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    owner_id = uuid.uuid4()
-    session_id = str(uuid.uuid4())
-    mirror = mirror_thread_id(owner_id, session_id)
-    monkeypatch.setattr(threads_tool, "_actor", AsyncMock(return_value=_actor()))
-    monkeypatch.setattr(threads_tool, "langgraph_client", lambda: object())
-    monkeypatch.setattr(
-        threads_tool.User, "for_login", AsyncMock(return_value=SimpleNamespace(id=owner_id))
-    )
-
-    async def dashboard_thread(thread_id: str, *args: object, **kwargs: object) -> dict[str, str]:
-        if thread_id != mirror:
-            raise HTTPException(404, "thread not found")
-        return {"id": mirror}
-
-    monkeypatch.setattr(threads_tool, "get_dashboard_thread", dashboard_thread)
-
-    result = await threads_tool.list_threads(query=session_id)
-
-    assert [item["id"] for item in result["items"]] == [mirror]
-
-
 async def test_get_thread_rejects_untrusted_dashboard_url_before_access(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -994,6 +999,28 @@ def test_admin_thread_actions_require_admin() -> None:
     assert "send_message" in admin_actions
 
 
+async def test_manage_thread_renames_with_dashboard_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor = threads_tool._Actor(login="octocat", email=None, name="Octocat")
+    monkeypatch.setattr(threads_tool, "_actor", AsyncMock(return_value=actor))
+    summary = {"id": "thread-1", "title": "[TASK-1] Summary"}
+    monkeypatch.setattr(threads_tool, "get_dashboard_thread", AsyncMock(return_value=summary))
+    rename = AsyncMock(return_value=summary)
+    monkeypatch.setattr(threads_tool.thread_routes, "api_rename_thread", rename)
+    result = await threads_tool.manage_thread("thread-1", "rename", title="  [TASK-1] Summary  ")
+    assert result["success"] is True
+    assert result["thread"]["title"] == summary["title"]
+    rename.assert_awaited_once_with(
+        "thread-1",
+        threads_tool.thread_routes.ThreadRenameBody(title=summary["title"]),
+        session=actor.session,
+    )
+    rename.reset_mock()
+    assert not (await threads_tool.manage_thread("thread-1", "rename", title=" "))["success"]
+    rename.assert_not_awaited()
+
+
 async def test_manage_thread_uses_followup_sender_for_owner_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1086,8 +1113,18 @@ async def test_manage_thread_sends_to_busy_thread_like_the_dashboard(
     assert sent["recipient_thread_id"] == "thread-1"
 
 
+@pytest.mark.parametrize(
+    ("caller_config", "origin"),
+    [
+        ({"origin": "slack", "source": "dashboard"}, "slack"),
+        ({"source": "github_push"}, "github"),
+        ({}, "automation"),
+    ],
+)
 async def test_manage_thread_starts_idle_message_with_fixed_command(
     monkeypatch: pytest.MonkeyPatch,
+    caller_config: dict[str, str],
+    origin: str,
 ) -> None:
     proxy = AsyncMock(
         return_value=(
@@ -1104,7 +1141,9 @@ async def test_manage_thread_starts_idle_message_with_fixed_command(
     )
     monkeypatch.setattr(threads_tool, "proxy_dashboard_thread_commands", proxy)
     monkeypatch.setattr(
-        threads_tool, "_config", lambda: {"configurable": {"thread_id": "coordinator"}}
+        threads_tool,
+        "_config",
+        lambda: {"configurable": {"thread_id": "coordinator", **caller_config}},
     )
 
     result = await threads_tool.manage_thread("thread-1", "send_message", message="Continue")
@@ -1119,6 +1158,7 @@ async def test_manage_thread_starts_idle_message_with_fixed_command(
     assert command["method"] == "run.start"
     assert "plan_mode" not in command["params"]["config"]["configurable"]
     assert awaited.kwargs["relayed_from"] == "coordinator"
+    assert awaited.kwargs["relayed_origin"] == origin
 
 
 async def test_manage_thread_rejects_plan_format_conversion(

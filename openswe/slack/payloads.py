@@ -6,7 +6,7 @@ Only the fields Open SWE reads are declared; everything else is kept
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
@@ -22,6 +22,7 @@ NOISE_SUBTYPES = frozenset(
 _POSTED_SUBTYPES = frozenset(
     {"", "file_share", "thread_broadcast", "bot_message", "message_changed", "me_message"}
 )
+SLACK_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS = 8000
 
 
 class SlackPayload(BaseModel):
@@ -44,7 +45,7 @@ class SlackRef(SlackPayload):
 
 
 class SlackItem(SlackPayload):
-    """``event.item``: the reacted-to message, or a code-channel context-bar item."""
+    """``event.item``: the reacted-to message."""
 
     type: str = ""
     channel: str = ""
@@ -60,20 +61,93 @@ class SlackAssistantThread(SlackPayload):
     action_token: str = ""
 
 
-class SlackMessage(SlackPayload):
-    ts: str = ""
-    thread_ts: str = ""
-    user: str = ""
+class SlackPost(SlackPayload):
+    """What a posted message carries: a message event, or the message an edit wraps."""
+
     text: str | None = None
     subtype: str = ""
     bot_id: str = ""
     app_id: str = ""
-    reply_count: int = 0
     attachments: list[JsonObject] = Field(default_factory=list)
 
     @property
     def is_from_bot(self) -> bool:
         return self.subtype == "bot_message" or bool(self.bot_id)
+
+    def text_for(self, user_id: str, *, include_bot_card: bool = False) -> str | None:
+        """The text, followed by a bot's own card when only the card mentions ``user_id``.
+
+        Set ``include_bot_card`` for admitted bot posts that need no mention.
+        """
+        mention = f"<@{user_id}>"
+        if not self.is_from_bot or (
+            not include_bot_card and (not user_id or mention in (self.text or ""))
+        ):
+            return self.text
+        card = self.card_text_of({**(self.model_extra or {}), "attachments": self.attachments})
+        if not include_bot_card and mention not in card:
+            return self.text
+        return "\n".join(part for part in ((self.text or "").strip(), card) if part)
+
+    @staticmethod
+    def is_forwarded(attachment: Mapping[str, object]) -> bool:
+        """Whether an attachment is another message: shared into this one, or a link's preview."""
+        return any(
+            attachment.get(flag) is True
+            for flag in ("is_share", "is_msg_unfurl", "is_reply_unfurl")
+        )
+
+    @classmethod
+    def card_text_of(cls, message: Mapping[str, object]) -> str:
+        """Readable text of an app message built from blocks or attachments instead of ``text``.
+
+        Another message forwarded into it and a preview of a link, which carries the URL it
+        came from, are someone else's words, so they are left out.
+        """
+        texts = cls._block_texts(message.get("blocks"))
+        for attachment in cls._dicts(message.get("attachments")):
+            if not (
+                cls.is_forwarded(attachment)
+                or attachment.get("is_app_unfurl") is True
+                or attachment.get("from_url")
+            ):
+                texts += cls._attachment_texts(attachment)
+        return "\n".join(texts)[:SLACK_FORWARDED_ATTACHMENT_TEXT_MAX_CHARS]
+
+    @classmethod
+    def _block_texts(cls, blocks: object) -> list[str]:
+        """Text of Block Kit blocks, skipping action buttons."""
+        texts: list[str] = []
+        for block in cls._dicts(blocks):
+            if block.get("type") == "actions":
+                continue
+            items = [block.get("text"), *cls._dicts(block.get("fields"))]
+            items += cls._dicts(block.get("elements"))
+            texts += cls._strings(item.get("text") for item in items if isinstance(item, dict))
+        return texts
+
+    @classmethod
+    def _attachment_texts(cls, attachment: dict[str, object]) -> list[str]:
+        values = [attachment.get(key) for key in ("pretext", "title", "title_link", "text")]
+        for field in cls._dicts(attachment.get("fields")):
+            values += [field.get("title"), field.get("value")]
+        texts = cls._strings(values) + cls._block_texts(attachment.get("blocks"))
+        return texts or cls._strings([attachment.get("fallback")])
+
+    @staticmethod
+    def _strings(values: Iterable[object]) -> list[str]:
+        return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+
+    @staticmethod
+    def _dicts(value: object) -> list[dict[str, object]]:
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+class SlackMessage(SlackPost):
+    ts: str = ""
+    thread_ts: str = ""
+    user: str = ""
+    reply_count: int = 0
 
     @property
     def sort_key(self) -> float:
@@ -88,6 +162,13 @@ class SlackMessage(SlackPayload):
         """A join or topic-change notice, which carries nothing a reader wants."""
         return self.subtype in NOISE_SUBTYPES
 
+    @property
+    def has_attachment(self) -> bool:
+        """Whether a person attached files or shared a message, not just a link Slack previewed."""
+        return bool((self.model_extra or {}).get("files")) or any(
+            attachment.get("is_share") is True for attachment in self.attachments
+        )
+
     def dump(self) -> JsonObject:
         """The raw-shaped mapping the prompt formatter reads.
 
@@ -97,11 +178,10 @@ class SlackMessage(SlackPayload):
         return self.model_dump(mode="json", exclude_none=True)
 
 
-class SlackEvent(SlackPayload):
+class SlackEvent(SlackPost):
     """The ``event`` of an Events API callback, across every event type Open SWE subscribes to."""
 
     type: str = ""
-    subtype: str = ""
     channel: str | SlackRef = ""
     channel_id: str = ""
     channel_type: str = ""
@@ -112,10 +192,6 @@ class SlackEvent(SlackPayload):
     thread_ts: str = ""
     user: str | SlackRef = ""
     user_id: str = ""
-    text: str | None = None
-    bot_id: str = ""
-    app_id: str = ""
-    attachments: list[JsonObject] = Field(default_factory=list)
     action_token: str = ""
     assistant_thread: SlackAssistantThread | None = None
     message: SlackMessage | None = None
@@ -147,10 +223,6 @@ class SlackEvent(SlackPayload):
         if self.action_token:
             return self.action_token
         return self.assistant_thread.action_token if self.assistant_thread else ""
-
-    @property
-    def is_from_bot(self) -> bool:
-        return self.subtype == "bot_message" or bool(self.bot_id)
 
 
 class SlackAuthorization(SlackPayload):
@@ -335,33 +407,6 @@ class SlackButtonValue(SlackPayload):
     subject: str = ""
 
 
-class SlackViewSubmission(SlackPayload):
-    """A submitted modal: which view it was, who submitted it, and what they typed."""
-
-    type: str = ""
-    trigger_id: str = ""
-    view: SlackView = Field(default_factory=SlackView)
-    user: SlackInteractionUser = Field(default_factory=SlackInteractionUser)
-    team: SlackRef = Field(default_factory=SlackRef)
-
-    @property
-    def callback_id(self) -> str:
-        return self.view.callback_id
-
-    @property
-    def metadata(self) -> JsonObject:
-        """``private_metadata`` parsed as JSON; ``{}`` when it is absent or malformed."""
-        if not self.view.private_metadata:
-            return {}
-        return parse_json_object(self.view.private_metadata.encode()) or {}
-
-    def submitted(self, block_id: str, action_id: str) -> str:
-        """What was typed into one input, or ``""`` when it was left empty."""
-        block = self.view.state.values.get(block_id) or {}
-        element = block.get(action_id)
-        return (element.value or "") if element is not None else ""
-
-
 def parse_json_object(body: bytes) -> JsonObject | None:
     try:
         parsed = json.loads(body)
@@ -371,7 +416,7 @@ def parse_json_object(body: bytes) -> JsonObject | None:
 
 
 class SlackChannelContext(SlackPayload):
-    """A channel's identity and description, as prompts and thread metadata carry it.
+    """A channel's cached Slack metadata and sharing flags.
 
     Sharing flags stay ``None`` when Slack did not say, because the operations
     gate has to fail closed on an unknown rather than assume the safe answer.
@@ -387,6 +432,7 @@ class SlackChannelContext(SlackPayload):
     is_pending_ext_shared: bool | None = None
     is_im: bool | None = None
     is_mpim: bool | None = None
+    is_private: bool | None = None
     lookup_retry_after: int | None = Field(default=None, exclude=True)
 
     def dump(self) -> JsonObject:
@@ -399,13 +445,6 @@ class SlackChannelContext(SlackPayload):
         return self.is_im is True or (
             self.is_ext_shared is False and self.is_pending_ext_shared is False
         )
-
-    @property
-    def description_text(self) -> str:
-        """Prompt-safe description text."""
-        if self.description.strip():
-            return self.description.strip()
-        return "\n".join(value.strip() for value in (self.topic, self.purpose) if value.strip())
 
     @property
     def label(self) -> str:
@@ -424,6 +463,7 @@ class SlackChannelPayload(SlackPayload):
     id: str = ""
     name: str = ""
     name_normalized: str = ""
+    creator: str = ""
     topic: str = ""
     purpose: str = ""
     is_channel: bool | None = None
@@ -482,13 +522,7 @@ class SlackChannelPayload(SlackPayload):
 
     @property
     def is_public(self) -> bool:
-        """Whether anybody in the workspace can already read this channel.
-
-        Channel history is fetched with the deployment's bot token, which says
-        nothing about who is asking, so only a channel with no membership to leak
-        may be read that way: not private, not a DM or group DM, and not shared
-        with another organization.
-        """
+        """Whether the channel is public and internal, without checking guest access."""
         return (
             self.is_channel is True
             and self.is_private is False
@@ -515,4 +549,5 @@ class SlackChannelPayload(SlackPayload):
             is_pending_ext_shared=self.is_pending_ext_shared,
             is_im=self.is_im,
             is_mpim=self.is_mpim,
+            is_private=self.is_private,
         )

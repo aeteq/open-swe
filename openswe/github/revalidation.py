@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import httpx2
 
+from openswe.github.metering import REVALIDATED, MeteredTransport
+from openswe.github.quota_gate import QuotaGate
 from openswe.utils.http_pool import pooled_transport
 
 _GITHUB_API_HOST = "api.github.com"
@@ -147,7 +149,7 @@ class RevalidatingTransport(httpx2.AsyncBaseTransport):
             headers=headers,
             content=kept.raw,
             request=request,
-            extensions=not_modified.extensions,
+            extensions={**not_modified.extensions, REVALIDATED: True},
         )
 
     def _get(self, key: str) -> _Kept | None:
@@ -168,4 +170,6 @@ class RevalidatingTransport(httpx2.AsyncBaseTransport):
                 self._bytes -= len(evicted.raw)
 
 
-GITHUB_TRANSPORT = RevalidatingTransport(pooled_transport())
+# Metering is outermost, so each request is logged once with what GitHub finally answered,
+# held ones included; the gate reads a 304's refreshed quota headers off the replay.
+GITHUB_TRANSPORT = MeteredTransport(QuotaGate(RevalidatingTransport(pooled_transport())))

@@ -1,11 +1,13 @@
 import asyncio
 import json
+import threading
+import urllib.request
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-import httpx
+import httpx2
 import pytest
 from fastapi import BackgroundTasks
 from sqlalchemy import text
@@ -17,7 +19,7 @@ from openswe.slack import routes
 from openswe.slack.channels import SlackChannel
 from openswe.slack.payloads import SlackChannelContext
 from openswe.webhooks import common, event_log
-from openswe.webhooks.event_log import RETAINED_DAYS, EventLog, EventRefs
+from openswe.webhooks.event_log import RETAINED_DAYS, EventLog, EventLogQuery, EventRefs
 
 
 async def test_posthog_webhook_excludes_raw_payload_and_keeps_unlinked_events(monkeypatch):
@@ -28,23 +30,17 @@ async def test_posthog_webhook_excludes_raw_payload_and_keeps_unlinked_events(mo
     monkeypatch.setenv("DD_ENV", "staging")
     requests: list[dict[str, object]] = []
 
-    async def respond(request: httpx.Request) -> httpx.Response:
+    async def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(json.loads(request.content))
-        return httpx.Response(200)
+        return httpx2.Response(200)
 
-    client_type = httpx.AsyncClient
-    monkeypatch.setattr(
-        posthog.httpx,
-        "AsyncClient",
-        lambda **kwargs: client_type(**kwargs, transport=httpx.MockTransport(respond)),
-    )
+    monkeypatch.setattr(posthog, "pooled_transport", lambda **kwargs: httpx2.MockTransport(respond))
     event = LoggedEvent(
         source="github",
         event_type="issue_comment",
         delivery_id="delivery-1",
         received_at=datetime.now(UTC),
         user_id=None,
-        workspace_id=None,
         repository_id=None,
         pull_request_id=None,
         payload={
@@ -140,6 +136,98 @@ async def test_posthog_webhook_excludes_raw_payload_and_keeps_unlinked_events(mo
     assert len(requests) == 9
 
 
+class TestPostHogProxy:
+    def system_bypass(self, host: str) -> bool:
+        ready = threading.Event()
+        self.loop.call_soon_threadsafe(ready.set)
+        self.responsive = ready.wait(timeout=1)
+        return urllib.request._proxy_bypass_macosx_sysconf(
+            host, {"exclude_simple": False, "exceptions": ["127.0.0.0/8"]}
+        )
+
+    async def respond(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.connections += 1
+        try:
+            while line := await reader.readline():
+                headers = await reader.readuntil(b"\r\n\r\n")
+                self.requests.append(line.rstrip())
+                if line.startswith(b"CONNECT"):
+                    writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                    await writer.drain()
+                    return
+                for header in headers.split(b"\r\n"):
+                    if header.lower().startswith(b"content-length:"):
+                        await reader.readexactly(int(header.split(b":", 1)[1]))
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            self.closed.put_nowait(None)
+
+    @pytest.mark.parametrize(
+        "scheme,bypass,proxy_name,prefix",
+        [
+            ("http", "", "HTTP_PROXY", "http://"),
+            ("https", "", "HTTPS_PROXY", "http://"),
+            ("http", "127.0.0.1", "HTTP_PROXY", "http://"),
+            ("http", "127.0.0.0/8", "HTTP_PROXY", "http://"),
+            ("http", "system", "HTTP_PROXY", "http://"),
+            ("http", "", "HTTP_PROXY", ""),
+            ("http", "", "ALL_PROXY", "http://"),
+        ],
+    )
+    async def test_capture_routes_through_environment_proxy(
+        self, monkeypatch, scheme, bypass, proxy_name, prefix
+    ):
+        from openswe.analytics import posthog
+        from openswe.utils import http_pool
+        from openswe.utils.http_pool import close_pool
+
+        self.requests: list[bytes] = []
+        self.connections = 0
+        self.closed: asyncio.Queue[None] = asyncio.Queue()
+        for name in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
+            monkeypatch.delenv(name, raising=False)
+            monkeypatch.delenv(name.upper(), raising=False)
+        monkeypatch.setenv("POSTHOG_API_KEY", "test-key")
+        server = await asyncio.start_server(self.respond, "127.0.0.1", 0)
+        async with server:
+            port = server.sockets[0].getsockname()[1]
+            host = f"127.0.0.1:{port}" if bypass else "localhost:1"
+            monkeypatch.setenv("POSTHOG_HOST", f"{scheme}://{host}")
+            proxy = "http://127.0.0.1:1" if bypass else f"{prefix}127.0.0.1:{port}"
+            if bypass == "system":
+                monkeypatch.setattr(http_pool, "getproxies", lambda: {"http": proxy})
+                self.loop = asyncio.get_running_loop()
+                self.responsive = False
+                monkeypatch.setattr(http_pool, "proxy_bypass", self.system_bypass)
+            else:
+                monkeypatch.setenv(proxy_name, proxy)
+                monkeypatch.setenv("NO_PROXY", bypass)
+            try:
+                count = 1 if scheme == "https" else 2
+                for _ in range(count):
+                    await posthog._capture("usage", {"distinct_id": "test-user"})
+                assert self.connections == 1
+                if scheme == "https":
+                    assert self.requests == [b"CONNECT localhost:1 HTTP/1.1"]
+                else:
+                    target = b"/i/v0/e/" if bypass else b"http://localhost:1/i/v0/e/"
+                    assert self.requests == [b"POST " + target + b" HTTP/1.1"] * 2
+                await close_pool()
+                await asyncio.wait_for(self.closed.get(), timeout=2)
+                if scheme == "http":
+                    await posthog._capture("usage", {"distinct_id": "test-user"})
+                    assert self.connections == 2
+            finally:
+                await close_pool()
+                if scheme == "http":
+                    await asyncio.wait_for(self.closed.get(), timeout=2)
+            if bypass == "system":
+                assert self.responsive, "System proxy evaluation blocked the event loop"
+
+
 async def _partitions() -> set[str]:
     async with transaction() as conn:
         rows = await conn.execute(
@@ -185,6 +273,37 @@ async def test_kinds_name_actions_and_narrow_by_prefix(registry_db: None) -> Non
     assert all(kind.payload_shape is None for kind in narrowed)
     (opened,) = await EventLog.kinds(since, source="github", event_type="pull_request.opened")
     assert opened.payload_shape == {"action": "string", "number": "number"}
+    window = {"start_time": since, "end_time": datetime.now(UTC), "source": "github"}
+    prefixed = await EventLog.search(EventLogQuery(**window, event_type_prefix="pull_request"))
+    assert sorted(event.event_type for event in prefixed.items) == [
+        "pull_request.closed",
+        "pull_request.opened",
+        "pull_request.opened",
+    ]
+    pages = []
+    cursor = None
+    while True:
+        page = await EventLog.search(
+            EventLogQuery(**window, event_type_prefix="pull_request", limit=1, cursor=cursor)
+        )
+        pages += page.items
+        if page.cursor is None:
+            break
+        cursor = page.cursor
+    assert len(pages) == 3
+
+    window = {"start_time": since, "end_time": datetime.now(UTC)}
+    first = await EventLog.search(
+        EventLogQuery(**window, source="github", event_type="pull_request.opened", limit=1)
+    )
+    assert [event.payload for event in first.items] == [{"action": "opened", "number": 2}]
+    rest = await EventLog.search(
+        EventLogQuery(
+            **window, source="github", event_type="pull_request.opened", cursor=first.cursor
+        )
+    )
+    assert [event.payload for event in rest.items] == [{"action": "opened", "number": 1}]
+    assert rest.cursor is None
 
 
 async def test_rotation_keeps_the_retained_days_and_tomorrow(registry_db: None) -> None:
@@ -302,17 +421,15 @@ async def test_slack_event_log_reuses_directory_without_fetching_permissions(
 
 
 async def test_record_links_a_github_pr_comment_to_its_rows(registry_db: None) -> None:
-    ids = {name: uuid4() for name in ("user", "workspace", "repository", "pull_request")}
+    ids = {name: uuid4() for name in ("user", "repository", "pull_request")}
     async with transaction() as conn:
         for statement in (
-            "INSERT INTO users (id) VALUES (:user)",
+            "INSERT INTO users (id, display_name) VALUES (:user, 'Ada')",
             "INSERT INTO user_identity (user_id, provider, external_id) "
             "VALUES (:user, 'github', '42')",
-            "INSERT INTO workspace (id, slug, name) VALUES (:workspace, 'acme', 'Acme')",
+            "UPDATE user_identity SET login = 'ada-gh' WHERE user_id = :user",
             "INSERT INTO repository (id, key, full_name) "
             "VALUES (:repository, 'acme/widgets', 'acme/widgets')",
-            "INSERT INTO workspace_repository (repository_id, workspace_id) "
-            "VALUES (:repository, :workspace)",
             "INSERT INTO pull_request (id, repository_id, number, owner, repo) "
             "VALUES (:pull_request, :repository, 7, 'acme', 'widgets')",
         ):
@@ -342,7 +459,19 @@ async def test_record_links_a_github_pr_comment_to_its_rows(registry_db: None) -
                 text("SELECT user_id, workspace_id, repository_id, pull_request_id FROM event_log")
             )
         ).one()
-    assert tuple(row) == (ids["user"], ids["workspace"], ids["repository"], ids["pull_request"])
+    assert tuple(row) == (ids["user"], None, ids["repository"], ids["pull_request"])
+    now = datetime.now(UTC)
+    page = await EventLog.search(
+        EventLogQuery(start_time=now - timedelta(hours=1), end_time=now, user_id=ids["user"])
+    )
+    (event,) = page.items
+    assert (
+        event.user_name,
+        event.repository_name,
+        event.pull_request_name,
+    ) == ("Ada", "acme/widgets", "acme/widgets#7")
+    assert [user.id for user in await EventLog.users("ada-g")] == [ids["user"]]
+    assert await EventLog.users("%") == []
 
 
 async def test_a_delivery_asked_about_again_is_logged_and_wakes_threads_once(
@@ -350,7 +479,7 @@ async def test_a_delivery_asked_about_again_is_logged_and_wakes_threads_once(
 ) -> None:
     from openswe.webhooks.event_subscriptions import EventSubscription
 
-    wake = AsyncMock()
+    wake = AsyncMock(return_value=True)
     monkeypatch.setattr(EventSubscription, "deliver", wake)
     request = Request(
         {
@@ -363,12 +492,6 @@ async def test_a_delivery_asked_about_again_is_logged_and_wakes_threads_once(
     )
     body = json.dumps({"type": "Comment", "action": "create"}).encode()
 
-    # A delivery that wasn't stored gives its claim back, so its retry records it.
-    with monkeypatch.context() as unstored:
-        unstored.setattr(EventLog, "record", AsyncMock(return_value=False))
-        assert not await EventLog.record_once(
-            request, body, "linear", event_type="Comment", delivery_id="delivery-1"
-        )
     for _ in range(2):
         assert await EventLog.record_once(
             request, body, "linear", event_type="Comment", delivery_id="delivery-1"
@@ -377,7 +500,7 @@ async def test_a_delivery_asked_about_again_is_logged_and_wakes_threads_once(
     async with transaction() as conn:
         count = await conn.scalar(text("SELECT count(*) FROM event_log"))
     assert count == 1
-    wake.assert_awaited_once()
+    assert wake.await_count == 1
 
 
 @pytest.mark.parametrize("kind", ["message", "me_message", "edit", "multiple", "unknown"])
@@ -403,7 +526,7 @@ async def test_slack_event_links_a_single_known_pr_without_dispatching(
     )
     monkeypatch.setattr(common, "verify_slack_signature", lambda **kwargs: True)
     monkeypatch.setattr(
-        "openswe.incidents.channels.handle_slack_event", AsyncMock(return_value=None)
+        "openswe.routing.channel_rules.handle_slack_event", AsyncMock(return_value=None)
     )
     monkeypatch.setattr(
         common,
@@ -486,3 +609,102 @@ async def test_slack_event_links_a_single_known_pr_without_dispatching(
                 await conn.execute(text("SELECT thread_ts, pr_url FROM slack_pull_request_link"))
             ).one()
         assert tuple(link) == ("1786573300.000000", "https://github.com/acme/widgets/pull/7")
+
+
+async def test_dropped_events_are_not_stored(monkeypatch: pytest.MonkeyPatch) -> None:
+    from openswe.webhooks import event_log
+
+    monkeypatch.setattr(event_log, "DROPPED_EVENTS", frozenset({"slack:message"}))
+    append = AsyncMock()
+    monkeypatch.setattr(event_log.EventLog, "append", append)
+
+    assert await event_log.EventLog.record_once(
+        MagicMock(), b"{}", "slack", event_type="message", delivery_id="d-1"
+    )
+    assert await event_log.EventLog.record(MagicMock(), b"{}", "slack", event_type="message")
+    append.assert_not_awaited()
+
+
+async def test_dropped_events_match_their_action(monkeypatch: pytest.MonkeyPatch) -> None:
+    from openswe.webhooks import event_log
+
+    monkeypatch.setattr(event_log, "DROPPED_EVENTS", frozenset({"github:check_run.completed"}))
+
+    assert event_log.EventLog.dropped("github", "check_run", action="completed")
+    assert not event_log.EventLog.dropped("github", "check_run", action="created")
+    assert await event_log.EventLog.record(
+        MagicMock(headers={}), b'{"action": "completed"}', "github", event_type="check_run"
+    )
+
+
+class TestConcurrentEventStorage:
+    async def test_retry_waits_for_failed_insert_then_stores(
+        self, registry_db: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from contextlib import asynccontextmanager
+
+        entered, release, concurrent = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        original = event_log.transaction
+        calls = 0
+
+        @asynccontextmanager
+        async def failing_transaction():
+            nonlocal calls
+            calls += 1
+            first = calls == 1
+            async with original() as conn:
+                if not first:
+                    concurrent.set()
+                yield conn
+                if first:
+                    entered.set()
+                    await release.wait()
+                    raise RuntimeError("insert rolled back")
+
+        await EventLog.ensure_partitions()
+        monkeypatch.setattr(event_log, "transaction", failing_transaction)
+        request = Request({"type": "http", "path": "/webhooks/rollout", "headers": []})
+        first = asyncio.create_task(
+            EventLog.record_once(
+                request, b"{}", "deployment", event_type="deployed", delivery_id="concurrent"
+            )
+        )
+        await entered.wait()
+        second = asyncio.create_task(
+            EventLog.record_once(
+                request, b"{}", "deployment", event_type="deployed", delivery_id="concurrent"
+            )
+        )
+        await concurrent.wait()
+        assert not second.done()
+        release.set()
+        assert await first is False
+        assert await second is True
+        async with original() as conn:
+            assert await conn.scalar(text("SELECT count(*) FROM event_log")) == 1
+
+
+async def test_historical_internal_events_remain_admin_only_robin_history(
+    registry_db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(event_log, "_ROTATED_AT", None)
+    since = datetime.now(UTC) - timedelta(hours=1)
+    assert await EventLog.append(
+        "robin", {"current": True}, event_type="history", delivery_id="current"
+    )
+    async with transaction() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO event_log (source, endpoint, event_type, delivery_id, payload) "
+                "VALUES ('workspace', '', 'history', 'historical', '{\"old\": true}'::jsonb)"
+            )
+        )
+    assert await EventLog.kinds(since, source="robin", event_type="history") == []
+    (kind,) = await EventLog.kinds(since, source="robin", event_type="history", admin=True)
+    assert kind.count == 2
+    assert kind.payload_shape == {"old": "boolean"}
+    page = await EventLog.search(
+        EventLogQuery(start_time=since, end_time=datetime.now(UTC), source="robin")
+    )
+    assert len(page.items) == 2
+    assert {item.source for item in page.items} == {"robin"}

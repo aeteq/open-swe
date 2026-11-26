@@ -2,6 +2,7 @@ import {
   CONNECT_MESSAGE,
   HELLO_MESSAGE,
   PROTOCOL_VERSION,
+  type AppRelease,
   type HostContext,
   type HostEvent,
   type Person,
@@ -39,6 +40,7 @@ import {
   PLUGIN_SANDBOX,
   pluginShell,
 } from "@/features/plugins/lib/shell"
+import { productAnalytics } from "@/lib/analytics"
 import { invalidationTopic } from "@/lib/invalidations/topics"
 import { useIsInBaseOrg, useSession } from "@/lib/session"
 import { useResolvedTheme } from "@/lib/theme"
@@ -66,10 +68,13 @@ export function PluginFrame({
   path,
   navigate,
   openThread,
+  openReview,
   setTitle,
   visible,
   confirmLink,
   pickRepositories,
+  newerRelease,
+  updateApp,
   provideTools,
   chooseChat,
   openChat,
@@ -80,11 +85,14 @@ export function PluginFrame({
   path: string
   navigate: (path: string, replace: boolean) => void
   openThread: (threadId: string) => void
+  openReview: (repository: string, number: number) => void
   setTitle: (title: string | null) => void
   /** Whether the frame is on screen; a hidden one shows no toasts. */
   visible: () => boolean
   confirmLink: (url: string) => Promise<boolean>
   pickRepositories: (pick: RepositoryPick) => Promise<Array<string>>
+  newerRelease: () => Promise<AppRelease | null>
+  updateApp: () => Promise<boolean>
   provideTools: (offer: AgentToolOffer, run: ToolRunner) => () => void
   chooseChat: (chat: ChatTarget) => void
   openChat: (draft: string | null, images: Array<ImageChunk>) => void
@@ -138,6 +146,7 @@ export function PluginFrame({
         name: plugin.name,
         displayName: plugin.manifest.displayName,
         version: plugin.manifest.version,
+        release: plugin.version.number,
         permissions: plugin.manifest.permissions,
       },
       user: await me(),
@@ -153,6 +162,7 @@ export function PluginFrame({
       navigate(next, replace)
     },
     openThread,
+    openReview,
     setTitle,
     toast: ({ title, description, intent }) => {
       if (!visible()) return
@@ -165,8 +175,12 @@ export function PluginFrame({
       // Named for the plugin, so it cannot pass for the web UI's own.
       show(`${plugin.manifest.displayName}: ${title}`, { description })
     },
+    track: (action) =>
+      productAnalytics.track("apps_app_action", { app: plugin.name, action }),
     confirmLink,
     pickRepositories,
+    newerRelease,
+    updateApp,
     isInBaseOrg,
     provideTools,
     chooseChat,

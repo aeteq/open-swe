@@ -15,7 +15,7 @@ const FAILURE_DETAIL = "E2E forced save failure";
 
 type InstanceSettings = Record<string, unknown> & {
   review_draft_prs?: boolean | null;
-  review_trace_links?: boolean | null;
+  pr_summaries?: boolean | null;
 };
 
 function deferred() {
@@ -100,7 +100,7 @@ test.describe("optimistic settings saves", () => {
     await writeInstanceSettings(page.request, {
       ...original,
       review_draft_prs: false,
-      review_trace_links: false,
+      pr_summaries: false,
     });
   });
 
@@ -121,41 +121,39 @@ test.describe("optimistic settings saves", () => {
 
     await page.goto("/admin");
     const drafts = settingSwitch(page, "Review Draft PRs");
-    const traceLinks = settingSwitch(page, "Reviewer trace links");
+    const summaries = settingSwitch(page, "PR Summaries");
     await expect(drafts).not.toBeChecked();
-    await expect(traceLinks).not.toBeChecked();
+    await expect(summaries).not.toBeChecked();
 
     await drafts.click();
     await expect(drafts).toBeChecked(QUICK);
     await expect.poll(() => puts.length, QUICK).toBe(1);
 
-    await traceLinks.click();
-    await expect(traceLinks).toBeChecked(QUICK);
+    await summaries.click();
+    await expect(summaries).toBeChecked(QUICK);
     await expect(drafts).toBeChecked(QUICK);
     await expect(drafts).toBeEnabled(QUICK);
-    await expect(traceLinks).toBeEnabled(QUICK);
+    await expect(summaries).toBeEnabled(QUICK);
     expect(puts).toHaveLength(1);
 
     firstPutGate.resolve();
     await expect.poll(() => puts.length, QUICK).toBe(2);
     expect(puts[1]).toMatchObject({
       review_draft_prs: true,
-      review_trace_links: true,
+      pr_summaries: true,
     });
 
     await expect
       .poll(async () => {
         const saved = await readInstanceSettings(page.request);
-        return [saved.review_draft_prs, saved.review_trace_links];
+        return [saved.review_draft_prs, saved.pr_summaries];
       }, QUICK)
       .toEqual([true, true]);
     await page.reload();
     await expect(settingSwitch(page, "Review Draft PRs")).toBeChecked(
       PAGE_LOAD,
     );
-    await expect(settingSwitch(page, "Reviewer trace links")).toBeChecked(
-      QUICK,
-    );
+    await expect(settingSwitch(page, "PR Summaries")).toBeChecked(QUICK);
   });
 
   test("a failed save reverts only its own switch", async ({ page }) => {
@@ -173,30 +171,30 @@ test.describe("optimistic settings saves", () => {
 
     await page.goto("/admin");
     const drafts = settingSwitch(page, "Review Draft PRs");
-    const traceLinks = settingSwitch(page, "Reviewer trace links");
+    const summaries = settingSwitch(page, "PR Summaries");
     await expect(drafts).not.toBeChecked();
 
     await drafts.click();
     await expect(drafts).toBeChecked(QUICK);
     await expect.poll(() => puts.length, QUICK).toBe(1);
-    await traceLinks.click();
-    await expect(traceLinks).toBeChecked(QUICK);
+    await summaries.click();
+    await expect(summaries).toBeChecked(QUICK);
 
     const report = watchErrorReport(page);
     firstPutGate.resolve();
     await expect(drafts).not.toBeChecked(QUICK);
     await expectReportedFailure(page, "Couldn't save settings", report);
-    await expect(traceLinks).toBeChecked(QUICK);
+    await expect(summaries).toBeChecked(QUICK);
     await expect.poll(() => puts.length, QUICK).toBe(2);
     expect(puts[1]).toMatchObject({
       review_draft_prs: false,
-      review_trace_links: true,
+      pr_summaries: true,
     });
 
     await expect
       .poll(async () => {
         const saved = await readInstanceSettings(page.request);
-        return [saved.review_draft_prs, saved.review_trace_links];
+        return [saved.review_draft_prs, saved.pr_summaries];
       }, QUICK)
       .toEqual([false, true]);
     await page.reload();
@@ -206,9 +204,7 @@ test.describe("optimistic settings saves", () => {
     await expect(settingSwitch(page, "Review Draft PRs")).not.toBeChecked(
       QUICK,
     );
-    await expect(settingSwitch(page, "Reviewer trace links")).toBeChecked(
-      QUICK,
-    );
+    await expect(settingSwitch(page, "PR Summaries")).toBeChecked(QUICK);
   });
 });
 
@@ -235,6 +231,7 @@ async function seedThread(request: APIRequestContext) {
       if_exists: "raise",
       metadata: {
         participant_logins: { [SAME_USER.login]: true },
+        owner_login: SAME_USER.login,
         title: THREAD_TITLE,
         source: "dashboard",
         origin: "dashboard",
@@ -278,7 +275,9 @@ async function holdOnce(
     }
     seen.count += 1;
     await gate.promise;
+    const response = page.waitForResponse((res) => res.request() === request);
     await answer(route);
+    expect(await (await response).finished()).toBeNull();
     settled.resolve();
   });
   return { release: gate.resolve, seen, settled: settled.promise };
@@ -351,6 +350,7 @@ test.describe("optimistic thread edits", () => {
   });
 
   async function renameTo(page: Page, next: string) {
+    await expect(page.getByTestId("composer-editor")).toBeFocused();
     const titleButton = page.getByRole("button", { name: "Rename thread" });
     await expect(titleButton).toHaveText(THREAD_TITLE);
     await titleButton.click();

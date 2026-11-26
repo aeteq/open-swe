@@ -17,19 +17,21 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import RowMapping, text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from openswe.database.postgres import transaction
 
 logger = logging.getLogger(__name__)
 
 # How long a worker holds a claimed job; another replica takes it after that.
-CLAIM_TTL: Final = timedelta(minutes=30)
+CLAIM_TTL: Final = timedelta(minutes=2)
 MAX_ATTEMPTS: Final = 5
 _RETRY_BASE: Final = timedelta(seconds=30)
 _RETRY_CAP: Final = timedelta(hours=1)
 
 _COLUMNS: Final = (
-    "id, kind, payload, due_at, cron, timezone, key, metadata, attempts, created_at, claim_token"
+    "id, kind, payload, due_at, cron, timezone, key, metadata, attempts, created_at, "
+    "claim_token, locked_until"
 )
 
 
@@ -41,9 +43,9 @@ class Hold(Enum):
     """What a running job learns when it renews its claim."""
 
     HELD = "held"
-    # Queued again under its key: this run finishes unrenewed, and the replacement stays.
     REPLACED = "replaced"
     CANCELLED = "cancelled"
+    LOST = "lost"
 
 
 class Job(BaseModel):
@@ -59,6 +61,7 @@ class Job(BaseModel):
     created_at: datetime
     # The claim a worker's run holds this job under; ``None`` while it waits.
     claim_token: uuid.UUID | None = None
+    locked_until: datetime | None = None
     # When this claim took the job over from one whose lease ran out: its worker
     # died or stalled mid-run.
     lapsed_lease: datetime | None = None
@@ -75,25 +78,82 @@ class Job(BaseModel):
     def next_fire_after(self, moment: datetime) -> datetime:
         if self.cron is None:
             raise ValueError("A one-shot job has no next fire time")
+        # Explicit equal ranges preserve croniter 6's full-cycle meaning of max/step.
+        fields = self.cron.lower().split()
+        for index, (field, maximum) in enumerate(
+            zip(fields, (59, 23, 31, 12, 6, 59, 2099), strict=False)
+        ):
+            segments = []
+            for segment in field.split(","):
+                start, slash, step = segment.partition("/")
+                if slash and (
+                    (start.isdigit() and int(start) == maximum)
+                    or (index, start) in ((3, "dec"), (4, "sat"))
+                ):
+                    segment = f"{maximum}-{maximum}/{step}"
+                segments.append(segment)
+            fields[index] = ",".join(segments)
         local = moment.astimezone(ZoneInfo(self.timezone))
-        return croniter(self.cron, local).get_next(datetime).astimezone(UTC)
+        return croniter(" ".join(fields), local).get_next(datetime).astimezone(UTC)
 
     async def hold(self) -> Hold:
         """Renew this run's claim, unless the job was replaced or cancelled meanwhile."""
+        replaced = None
         async with transaction() as conn:
-            renewed = (
-                await conn.execute(
+            renewed = await conn.scalar(
+                text(
+                    "UPDATE job SET locked_until = clock_timestamp() + CAST(:ttl AS interval), "
+                    f"{_SYSTEM_WRITE} WHERE id = :id AND claim_token = :token "
+                    "AND locked_until > clock_timestamp() RETURNING locked_until"
+                ),
+                {"id": self.id, "token": self.claim_token, "ttl": CLAIM_TTL},
+            )
+            if renewed is None:
+                replaced = await conn.scalar(
                     text(
-                        "UPDATE job SET locked_until = clock_timestamp() + CAST(:ttl AS interval), "
-                        f"{_SYSTEM_WRITE} WHERE id = :id AND claim_token = :token RETURNING 1"
+                        "SELECT claim_token IS DISTINCT FROM CAST(:token AS uuid) "
+                        "AND coalesce(clock_timestamp() < CAST(:lease_until AS timestamptz), false) "
+                        "FROM job WHERE id = :id"
                     ),
-                    {"id": self.id, "token": self.claim_token, "ttl": CLAIM_TTL},
+                    {"id": self.id, "token": self.claim_token, "lease_until": self.locked_until},
                 )
-            ).first()
-            if renewed is not None:
-                return Hold.HELD
-            exists = await conn.scalar(text("SELECT 1 FROM job WHERE id = :id"), {"id": self.id})
-        return Hold.REPLACED if exists else Hold.CANCELLED
+        if renewed is not None:
+            self.locked_until = renewed
+            return Hold.HELD
+        if replaced is None:
+            return Hold.CANCELLED
+        return Hold.REPLACED if replaced else Hold.LOST
+
+    async def release(self, *, interrupted: bool = False) -> None:
+        """Release this claim, preserving recovery state when work may have started."""
+        async with transaction() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE job SET locked_until = CASE WHEN :interrupted "
+                    "THEN clock_timestamp() ELSE NULL END, claim_token = NULL, "
+                    f"{_SYSTEM_WRITE} WHERE id = :id AND claim_token = :token"
+                ),
+                {
+                    "id": self.id,
+                    "token": self.claim_token,
+                    "interrupted": interrupted or self.lapsed_lease is not None,
+                },
+            )
+
+    async def held(self, *, session: AsyncSession) -> bool:
+        """Lock and verify this run's unexpired queue claim before publishing."""
+        if self.claim_token is None:
+            return False
+        return (
+            await session.scalar(
+                text(
+                    "SELECT 1 FROM job WHERE id = :id AND claim_token = :token "
+                    "AND locked_until > clock_timestamp() FOR UPDATE"
+                ),
+                {"id": self.id, "token": self.claim_token},
+            )
+            is not None
+        )
 
     async def finish(self) -> None:
         """Delete a one-shot job, or move a cron job to its next fire time."""
@@ -173,12 +233,28 @@ async def schedule(
     metadata: Mapping[str, JsonValue] | None = None,
     by: uuid.UUID | None = None,
     replace: bool = True,
+    conn: AsyncConnection | None = None,
 ) -> Job:
     """Queue a job; one with ``key`` replaces the job queued under that key before.
 
     With ``replace=False``, an existing keyed job keeps its payload, schedule and claim.
     ``by`` is the person whose action queued it, ``None`` for the system's own work.
+    A supplied ``conn`` keeps the job in the caller's transaction.
     """
+    if conn is None:
+        async with transaction() as connection:
+            return await schedule(
+                kind,
+                payload,
+                due_at=due_at,
+                cron=cron,
+                timezone=timezone,
+                key=key,
+                metadata=metadata,
+                by=by,
+                replace=replace,
+                conn=connection,
+            )
     if cron is not None and not croniter.is_valid(cron):
         raise ValueError(f"Invalid cron schedule: {cron}")
     job = Job(
@@ -204,33 +280,30 @@ async def schedule(
         if replace
         else "key = EXCLUDED.key"
     )
-    async with transaction() as conn:
-        row = (
-            (
-                await conn.execute(
-                    text(
-                        f"""
-                    INSERT INTO job (id, kind, payload, due_at, cron, timezone, key, metadata,
-                                     created_by, updated_by)
-                    VALUES (:id, :kind, CAST(:payload AS jsonb), :due_at, :cron, :timezone,
-                            :key, CAST(:metadata AS jsonb), :by, :by)
-                    ON CONFLICT (key) DO UPDATE SET {updates}
-                    RETURNING {_COLUMNS}
-                    """
-                    ),
-                    {
-                        **job.model_dump(
-                            include={"id", "kind", "due_at", "cron", "timezone", "key"}
-                        ),
-                        "payload": json.dumps(job.payload),
-                        "metadata": json.dumps(job.metadata),
-                        "by": by,
-                    },
-                )
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"""
+                INSERT INTO job (id, kind, payload, due_at, cron, timezone, key, metadata,
+                                 created_by, updated_by)
+                VALUES (:id, :kind, CAST(:payload AS jsonb), :due_at, :cron, :timezone,
+                        :key, CAST(:metadata AS jsonb), :by, :by)
+                ON CONFLICT (key) DO UPDATE SET {updates}
+                RETURNING {_COLUMNS}
+                """
+                ),
+                {
+                    **job.model_dump(include={"id", "kind", "due_at", "cron", "timezone", "key"}),
+                    "payload": json.dumps(job.payload),
+                    "metadata": json.dumps(job.metadata),
+                    "by": by,
+                },
             )
-            .mappings()
-            .one()
         )
+        .mappings()
+        .one()
+    )
     return Job.from_row(row)
 
 

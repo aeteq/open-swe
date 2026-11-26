@@ -4,21 +4,19 @@ request reviewer and the review scout, each named by the run token's assistant i
 MDA plays every kind with its one graph. Each kind names, for the backend: the catalog
 it resolves from the backend's data as a run starts, what readies each turn and what
 its start records, the recorders that hear of its replies and tool calls, the guards on
-its shell commands, and how it reaches its tools by name, the thread's files, its
-skills, its incident and its GitHub credentials.
+its shell commands, and how it reaches its tools by name, its skills and its GitHub
+credentials.
 """
 
 from collections.abc import Sequence
 from typing import ClassVar
 
-from deepagents.backends.protocol import BackendProtocol
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from runtime_api.loop import RunSender, RunStarted
 
 from openswe.agent_api.tokens import RunSettings
-from openswe.incidents.runtime import IncidentSession
 from openswe.sandboxes.tool_runtime import ToolSurface
 from openswe.skill_store.run_skills import RunSkillStores
 
@@ -42,7 +40,7 @@ class RunKind:
 
     async def catalog(self, config: RunnableConfig, surface: ToolSurface) -> None:
         """Resolve a starting run's tools, models, subagents and loop rules into ``surface``,
-        from what only the backend holds: the thread's settings, the workspace's defaults,
+        from what only the backend holds: the thread's settings, the global defaults,
         the sender's access, and the integrations their credentials reach."""
         raise NotImplementedError
 
@@ -55,8 +53,10 @@ class RunKind:
         settings: RunSettings,  # noqa: ARG002
         *,
         sandbox_id: str | None,  # noqa: ARG002
+        sandbox_pending: bool = False,  # noqa: ARG002
     ) -> Sequence[AgentMiddleware]:
-        """What readies a turn of the run, which MDA opened ``sandbox_id`` for."""
+        """What readies a turn of the run, which MDA opened ``sandbox_id`` for, or is still
+        opening a sandbox for (``sandbox_pending``)."""
         return ()
 
     def sender(self, config: RunnableConfig, settings: RunSettings) -> RunSender | None:  # noqa: ARG002
@@ -80,14 +80,6 @@ class RunKind:
     async def skills(self, config: RunnableConfig) -> RunSkillStores | None:  # noqa: ARG002
         return None
 
-    async def files(self, config: RunnableConfig) -> BackendProtocol | None:  # noqa: ARG002
-        """The thread's files as the run's tools reach them; None when it has none here."""
-        return None
-
     async def tool(self, config: RunnableConfig, name: str) -> BaseTool | None:  # noqa: ARG002
         """The tool behind the operation ``name``."""
-        return None
-
-    async def incident(self, config: RunnableConfig) -> IncidentSession | None:  # noqa: ARG002
-        """The incident the run investigates; None for a run that investigates none."""
         return None

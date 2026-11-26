@@ -4,10 +4,15 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-from openswe.dashboard.workspace_settings import get_workspace_settings
-from openswe.expedited_review.nomination import ExpeditedReviewIneligible, ExpeditedReviewNomination
+from openswe.dashboard.settings import get_settings
+from openswe.expedited_review.nomination import (
+    ExpeditedReviewIneligible,
+    ExpeditedReviewNomination,
+    PulledRequest,
+)
 from openswe.github.http import GitHubAppUnavailable
 from openswe.github.pull_request_status import PullRequestClient
+from openswe.github.pull_requests import PullRequestPayload
 from openswe.human_review.requests import HumanReviewRequest
 from openswe.human_review.standard import (
     Origin,
@@ -17,8 +22,12 @@ from openswe.human_review.standard import (
     target_channel,
 )
 from openswe.slack.client import GitHubPrRef
+from openswe.utils.startup_trace import apm_span
 
 logger = logging.getLogger(__name__)
+
+
+_APP_UNAVAILABLE = "Robin cannot reach this repository's GitHub App installation."
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,19 +40,22 @@ class DashboardReviewRequest:
         self, *, channel: str = "", inline_summary: str | None = None
     ) -> RequestResult:
         pr = self.pr_ref
+        span_tags = {"pull_request.url": pr.url}
         active = await HumanReviewRequest.active_for(pr.owner, pr.repo, pr.number)
         if active is not None and active.kind == "expedited":
-            if active.slack_message_ts and not self.origin.asked(active):
+            if (active.slack_message_ts or active.awaiting_ready) and not self.origin.asked(active):
                 return RequestResult(
                     success=True,
                     reused=True,
                     request_id=str(active.id),
                     channel=active.slack_channel_id,
-                    permalink=await active.card_url(),
+                    permalink=await active.permalink(self.origin.requester),
                     auto_merge=active.auto_merge,
                 )
             try:
-                result = await ExpeditedReviewNomination(pr, self.origin, self.token).start(
+                result = await ExpeditedReviewNomination(
+                    pr, self.origin, self.token, read_as_app=True
+                ).start(
                     active.slack_channel_id,
                     active.slack_thread_ts,
                     inline_summary=inline_summary,
@@ -51,51 +63,70 @@ class DashboardReviewRequest:
                 )
             except ExpeditedReviewIneligible as exc:
                 return RequestResult(success=False, error=str(exc))
+            except GitHubAppUnavailable:
+                return RequestResult(success=False, error=_APP_UNAVAILABLE)
             if not result["success"]:
                 return RequestResult(success=False, error=str(result["error"]))
             approval = await HumanReviewRequest.get(UUID(str(result["approval_id"])))
-            if approval is None or not approval.slack_message_ts:
+            if approval is None or (not approval.slack_message_ts and not approval.awaiting_ready):
                 return RequestResult(
                     success=False,
-                    error="The review card is not posted yet. Check the author's readiness prompt in Slack or retry once the pull request is ready.",
+                    error="The review card is not posted yet. Check the author's confirmation prompt in Slack or retry after they confirm the request.",
                 )
             return RequestResult(
                 success=True,
                 reused=approval.id == active.id,
                 request_id=str(approval.id),
                 channel=approval.slack_channel_id,
-                permalink=await approval.card_url(),
+                permalink=await approval.permalink(self.origin.requester),
                 auto_merge=approval.auto_merge,
             )
-        if active is None and (await get_workspace_settings()).expedited_review_enabled:
+        # Read once here, the pull request serves the standard review this falls back to.
+        snapshot: PullRequestPayload | None = None
+        if active is None and (await get_settings()).expedited_review_enabled:
             try:
                 async with PullRequestClient.as_app(pr.owner, pr.repo, pr.number) as pull:
-                    blockers = await review_blockers(pull)
+                    with apm_span("human_review.read_pull_request", span_tags):
+                        # The changed files too, which expedited review reads next.
+                        pulled = await PulledRequest.read(pull)
+                    if pulled.pull is not None:
+                        snapshot = PullRequestPayload.model_validate(pulled.pull)
+                    with apm_span("human_review.blockers", span_tags):
+                        blockers = (
+                            None if snapshot is None else await review_blockers(pull, snapshot)
+                        )
                     if blockers == []:
-                        target = await target_channel(pr, pull, channel)
+                        with apm_span("human_review.target_channel", span_tags):
+                            target = await target_channel(pr, pull, channel, snapshot)
                         if isinstance(target, RequestResult):
                             return target
-                        try:
-                            result = await ExpeditedReviewNomination(
-                                pr, self.origin, self.token
-                            ).start(
-                                target.id,
-                                inline_summary=inline_summary,
-                                replace_standard=False,
-                            )
-                        except ExpeditedReviewIneligible as exc:
-                            logger.info(
-                                "Dashboard review falling back to standard review",
-                                extra={"pr_url": pr.url, "reason": str(exc)},
-                            )
-                        else:
+                        with apm_span("human_review.expedited", span_tags):
+                            try:
+                                result = await ExpeditedReviewNomination(
+                                    pr, self.origin, self.token, read_as_app=True, pulled=pulled
+                                ).start(
+                                    target.id,
+                                    inline_summary=inline_summary,
+                                    replace_standard=False,
+                                )
+                            except ExpeditedReviewIneligible as exc:
+                                logger.info(
+                                    "Dashboard review falling back to standard review",
+                                    extra={"pr_url": pr.url, "reason": str(exc)},
+                                )
+                                result = None
+                        if result is not None:
                             if not result["success"]:
                                 logger.warning(
                                     "Expedited dashboard review failed; requesting standard review",
                                     extra={"pr_url": pr.url, "reason": str(result["error"])},
                                 )
                                 return await request_review(
-                                    pr, self.origin, channel=channel, inline_summary=inline_summary
+                                    pr,
+                                    self.origin,
+                                    channel=channel,
+                                    inline_summary=inline_summary,
+                                    snapshot=snapshot,
                                 )
                             approval = await HumanReviewRequest.get(UUID(result["approval_id"]))
                             return RequestResult(
@@ -104,12 +135,14 @@ class DashboardReviewRequest:
                                 channel=target.id,
                                 channel_name=target.name,
                                 permalink=(
-                                    await approval.card_url() if approval is not None else ""
+                                    await approval.permalink(self.origin.requester)
+                                    if approval
+                                    else ""
                                 ),
                             )
             except GitHubAppUnavailable:
-                return RequestResult(
-                    success=False,
-                    error="Robin cannot reach this repository's GitHub App installation.",
-                )
-        return await request_review(pr, self.origin, channel=channel, inline_summary=inline_summary)
+                return RequestResult(success=False, error=_APP_UNAVAILABLE)
+        with apm_span("human_review.standard", span_tags):
+            return await request_review(
+                pr, self.origin, channel=channel, inline_summary=inline_summary, snapshot=snapshot
+            )

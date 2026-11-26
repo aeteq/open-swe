@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from openswe.dashboard.deps import SESSION_DEP, session_is_admin
+from openswe.dashboard.deps import SESSION_DEP, DashboardReadDep, session_is_admin
 from openswe.dashboard.dev_login import GhUnavailable, dev_login_enabled, gh_credentials
 from openswe.dashboard.github_link import GitHubLink
 from openswe.dashboard.langsmith_login import (
@@ -56,6 +56,7 @@ from openswe.dashboard.profiles import (
 )
 from openswe.dashboard.user_preferences import get_user_preferences
 from openswe.slack.oauth import slack_base_url, slack_oauth_configured
+from openswe.slack.recovery import SlackRecovery
 from openswe.users import User
 from openswe.users.authorization import allowed_orgs
 from openswe.utils.build_info import build_info
@@ -91,7 +92,11 @@ async def auth_login(
 
     Locally, without either, sign in as the `gh` CLI's user.
     """
-    if dev_login_enabled() and not request.query_params.get("desktop"):
+    if (
+        dev_login_enabled()
+        and not langsmith_oauth_configured()
+        and not request.query_params.get("desktop")
+    ):
         return RedirectResponse(
             "/dashboard/api/auth/dev-login?"
             + urlencode({"redirect_to": sanitize_redirect_to(redirect_to)}),
@@ -112,16 +117,30 @@ async def auth_login(
 @router.get("/github/login")
 async def github_link_login(
     redirect_to: str | None = None,
+    slack_recovery: str | None = None,
     desktop_handoff: str | None = None,
     desktop_port: int | None = Query(default=None, ge=1024, le=65535),
     _session: dict[str, Any] = SESSION_DEP,
 ) -> RedirectResponse:
     """Start linking a GitHub account to the signed-in LangSmith person."""
+    if slack_recovery:
+        user = await DashboardPrincipal.from_session(_session).user()
+        if user is None:
+            raise HTTPException(401, "Robin account not found — sign in again")
+        try:
+            await SlackRecovery.read(slack_recovery, user.id)
+        except HTTPException as exc:
+            if exc.status_code != 400 or desktop_handoff:
+                raise
+            return RedirectResponse(
+                await SlackRecovery.redirect(slack_recovery, str(exc.detail)), status_code=302
+            )
     return GitHubLink.authorize(
         GITHUB_AUTHORIZE_URL,
         redirect_to=redirect_to,
         desktop_handoff=desktop_handoff,
         desktop_port=desktop_port,
+        slack_recovery=slack_recovery,
     )
 
 
@@ -132,9 +151,13 @@ async def github_link_desktop_exchange(
     """Finish a desktop GitHub link with the app's own session."""
     claims = redeem_connect_handoff(provider="github", code=body.code, verifier=body.verifier)
     principal = DashboardPrincipal.from_session(session)
-    user = await GitHubLink.from_handoff(claims).join(principal)
-    set_session_cookie(response, GitHubLink.session(principal, user, session.get("email")))
-    return {"connected": True}
+    recovery = claims.get("slack_recovery")
+    user = await GitHubLink.from_handoff(claims).join(
+        principal, slack_recovery=recovery if isinstance(recovery, str) else None
+    )
+    token = GitHubLink.session(principal, user, session.get("email"))
+    set_session_cookie(response, token)
+    return {"connected": True, "session": token, "expires_in": SESSION_TTL_SECONDS}
 
 
 @router.get("/auth/dev-login")
@@ -197,6 +220,8 @@ async def auth_callback(request: Request, state: str, code: str | None = None) -
         raise HTTPException(400, "oauth state mismatch — please retry")
 
     link = await GitHubLink.from_code(code)
+    recovery = state_payload.get("slack_recovery")
+    slack_recovery = recovery if isinstance(recovery, str) else None
     redirect_to = sanitize_redirect_to(state_payload.get("redirect_to")) or frontend_base_url()
     if not langsmith_oauth_configured():
         user = await link.sign_in()
@@ -215,7 +240,9 @@ async def auth_callback(request: Request, state: str, code: str | None = None) -
         # The app finishes the link under the session it holds.
         challenge, port = handoff
         handoff_code = issue_connect_handoff(
-            provider="github", challenge=challenge, claims=link.handoff_claims()
+            provider="github",
+            challenge=challenge,
+            claims={**link.handoff_claims(), "slack_recovery": slack_recovery},
         )
         response = RedirectResponse(desktop_callback_url(port, handoff_code), status_code=302)
         clear_state_cookie(response)
@@ -223,7 +250,19 @@ async def auth_callback(request: Request, state: str, code: str | None = None) -
 
     session = await require_session(request)
     principal = DashboardPrincipal.from_session(session)
-    user = await link.join(principal)
+    try:
+        user = await link.join(principal, slack_recovery=slack_recovery)
+    except HTTPException as exc:
+        if not slack_recovery or exc.status_code not in {400, 409}:
+            raise
+        error = exc.detail["message"] if isinstance(exc.detail, dict) else str(exc.detail)
+        response = RedirectResponse(
+            await SlackRecovery.redirect(slack_recovery, error), status_code=302
+        )
+        clear_state_cookie(response)
+        return response
+    if slack_recovery:
+        redirect_to = f"{frontend_base_url()}/my-settings/connections"
     response = RedirectResponse(redirect_to, status_code=302)
     set_session_cookie(response, GitHubLink.session(principal, user, session.get("email")))
     clear_state_cookie(response)
@@ -268,26 +307,10 @@ async def auth_logout(request: Request) -> Response:
 
 
 @router.get("/me")
-async def me(response: Response, session: dict[str, Any] = SESSION_DEP) -> dict[str, Any]:
-    # Best-effort: this endpoint is what the dashboard boots on, and it must
-    # answer from the session alone when the database is unreachable.
-    principal = DashboardPrincipal.from_session(session)
-    user = None
-    try:
-        user = await principal.user()
-    except HTTPException:
-        raise
-    except Exception:
-        if principal.provider == "langsmith":
-            raise
-        logger.warning(
-            "Could not read the signed-in user's row",
-            extra={"github_login": session["sub"]},
-            exc_info=True,
-        )
-    else:
-        if user is None:
-            raise HTTPException(401, "Robin account not found — sign in again")
+async def me(response: Response, reader: DashboardReadDep) -> dict[str, Any]:
+    session = reader.claims
+    principal = reader.principal
+    user = reader.user
     if user is not None and session_user_id(session) != user.id:
         # The dashboard boots here, so every stale cookie is repaired on its next load.
         set_session_cookie(response, rebind_session(session, str(user.id)))
@@ -296,9 +319,9 @@ async def me(response: Response, session: dict[str, Any] = SESSION_DEP) -> dict[
             extra={"github_login": session["sub"], "user_id": str(user.id)},
         )
     if principal.provider == "langsmith" and user is not None:
-        set_session_cookie(response, GitHubLink.session(principal, user, session.get("email")))
+        set_session_cookie(response, GitHubLink.session(principal, user, reader.email))
         principal = DashboardPrincipal.from_session({**session, "sub": user.session_login})
-    preferences = await get_user_preferences(principal.subject)
+    preferences = await get_user_preferences(principal.subject, session=reader.session)
     return {
         "login": principal.subject,
         "auth_provider": principal.provider,

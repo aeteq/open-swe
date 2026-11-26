@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from openswe import reviewer
-from openswe.dashboard.workspace_settings import WorkspaceSettings
+from openswe.dashboard.settings import Settings
 from openswe.review_scout import graph as scout
 from openswe.sandboxes.tool_runtime import ToolSurface
 from openswe.search_policy import SHELL_SEARCH_EXCLUDED_TOOLS
@@ -24,9 +24,7 @@ async def _planned(kind: str) -> ToolSurface:
     module = reviewer if kind == "reviewer" else scout
     plan = reviewer.reviewer_catalog if kind == "reviewer" else scout.review_scout_catalog
     surface = ToolSurface()
-    with patch.object(
-        module, "cached_workspace_settings", AsyncMock(return_value=WorkspaceSettings({}))
-    ):
+    with patch.object(module, "cached_settings", AsyncMock(return_value=Settings({}))):
         await plan(_base_config(), surface)
     return surface
 
@@ -37,6 +35,21 @@ async def test_the_agent_applies_the_shared_search_policy(
     # The reviewer's and the scout's are MDA's, the same for each of their runs (``rt/kinds.py``).
     surface = await _planned("main")
     assert set(surface.loop.hidden_tools) >= SHELL_SEARCH_EXCLUDED_TOOLS
+
+
+async def test_the_scouts_subagent_only_reads(saved_thread_scope: dict[str, object]) -> None:
+    # With the scout's own tools, a subagent could place hunks and overwrite the
+    # people's-input summary with its brief.
+    surface = await _planned("review-scout")
+
+    (subagent,) = surface.subagents
+    assert subagent.tools is not None
+    assert not {
+        "record_human_input",
+        "walkthrough_plan_chunk",
+        "walkthrough_split_hunks",
+        "walkthrough_move_to_other",
+    } & set(subagent.tools)
 
 
 @pytest.mark.parametrize("kind", _PLANNERS)

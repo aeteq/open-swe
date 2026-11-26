@@ -1,3 +1,4 @@
+import { Accordion, AccordionItem } from "@langchain/macaw-components/Accordion"
 import { Button } from "@langchain/macaw-components/Button"
 import { Card } from "@langchain/macaw-components/Card"
 import { Link } from "@langchain/macaw-components/Link"
@@ -6,9 +7,14 @@ import type { JsonObject, PullRequest } from "@openswe/plugin-sdk"
 import { usePluginHost } from "@openswe/plugin-sdk/react"
 import { ArrowLeftIcon } from "@phosphor-icons/react/dist/ssr/ArrowLeft"
 import { ArrowSquareOutIcon } from "@phosphor-icons/react/dist/ssr/ArrowSquareOut"
-import { useEffect, useState } from "react"
+import { GithubLogoIcon } from "@phosphor-icons/react/dist/ssr/GithubLogo"
+import { useEffect, useState, type MouseEvent } from "react"
 
-import type { FrontendReviewRun, FrontendScenario } from "../lib/capture"
+import type {
+  FrontendReviewRun,
+  FrontendScenario,
+  ShotTheme,
+} from "../lib/capture"
 import {
   chatName,
   clip,
@@ -26,13 +32,22 @@ import {
   errorMessage,
   isForbidden,
   useCaptureChanges,
+  usePeople,
   useRun,
   useRuns,
   useTitle,
+  useVisibleRun,
 } from "../lib/queries"
 import { useRouter } from "../lib/router"
+import { Usage } from "../lib/usage"
+import { MarkdownDescription } from "./MarkdownDescription"
 import { ReportView } from "./ReportView"
+import { Author } from "./Author"
+import { CaptureAction } from "./CaptureAction"
+import { PinButton } from "./PinButton"
+import { RobinIcon } from "./RobinIcon"
 import { ShareRepositories } from "./ShareRepositories"
+import { UpdateBanner } from "./UpdateBanner"
 
 /** One pull request's saved Design QA runs. */
 export function PullRequestPage({
@@ -43,32 +58,62 @@ export function PullRequestPage({
   runId: string | null
 }) {
   const host = usePluginHost()
-  const { navigate } = useRouter()
+  const { inbox, navigate } = useRouter()
   const label = pullRequestLabel(pr)
   useTitle(clip(label, MAX_LABEL))
   const runs = useRuns(pr)
   useCaptureChanges(pr)
+  useEffect(() => Usage.record(host, "pull_opened"), [host])
   const current = runs.data?.pull
   const selectedId = runId ?? runs.data?.runs[0]?.id
   const detail = useRun(pr, selectedId)
-  const run = detail.data
+  const run =
+    useVisibleRun(
+      { repository: repositoryOf(pr), pull: pr.number, run: selectedId ?? "" },
+      detail.data
+    ) ?? undefined
   // The scenario last asked about, kept in the shared context until the person
   // asks about another or opens another run.
-  const [asked, setAsked] = useState<{ run: string; scenario: string } | null>(
-    null
-  )
+  const [asked, setAsked] = useState<{
+    run: string
+    scenario: string
+    theme: ShotTheme
+  } | null>(null)
   const askedScenario =
     run && asked?.run === run.id
       ? run.report?.scenarios.find(({ id }) => id === asked.scenario)
       : undefined
-  usePullRequestChat(pr, run, current, askedScenario)
+  usePullRequestChat(pr, run, current, askedScenario, asked?.theme ?? "light")
+  const author = current?.author ?? null
+  const people = usePeople([author])
   const empty = runs.isSuccess && !selectedId
+  const title = current?.title ?? `Pull request #${pr.number}`
+  const github = pullRequestUrl(pr)
+  const openGitHub = (event: MouseEvent) => {
+    if (event.type === "auxclick" && event.button !== 1) return
+    event.preventDefault()
+    Usage.record(host, "github_opened")
+    void host.nav.openExternal(github)
+  }
+  const openReview = () => {
+    Usage.record(host, "robin_view_opened")
+    return host.nav
+      .openReview(repositoryOf(pr), pr.number)
+      .catch((error: unknown) =>
+        host.ui.toast({
+          title: "Could not open Robin's PR view",
+          description: errorMessage(error),
+          intent: "error",
+        })
+      )
+  }
   const options = (runs.data?.runs ?? []).map(runOption)
   if (run && !options.some((option) => option.value === run.id))
     options.push(runOption(run))
 
   return (
     <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-space-5 p-space-5 max-sm:p-space-3">
+      <UpdateBanner />
       <header className="flex flex-col gap-space-3">
         <Button
           size="sm"
@@ -76,33 +121,121 @@ export function PullRequestPage({
           variant="plain"
           className="self-start"
           leftDecorator={ArrowLeftIcon}
-          onClick={() => navigate({ page: "inbox" })}
+          onClick={() => navigate(inbox)}
         >
           Design QA
         </Button>
         <div className="flex flex-wrap items-end justify-between gap-space-3">
           <div className="min-w-0">
-            <p className="text-xs text-secondary">
-              {label}
-              {current?.draft ? " · Draft" : ""}
-            </p>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-space-2 gap-y-space-1 text-xs text-secondary">
+              <span>
+                {label}
+                {current?.draft ? " (Draft)" : ""}
+              </span>
+              {author && (
+                <>
+                  <Author
+                    login={author}
+                    person={people.get(author.toLowerCase())}
+                  />
+                </>
+              )}
+            </div>
             <h1 className="text-xl font-semibold tracking-tight text-primary">
-              {current?.title ?? `Pull request #${pr.number}`}
+              <a
+                href={github}
+                target="_blank"
+                rel="noreferrer"
+                title="Open on GitHub"
+                className="rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-focus"
+                onClick={openGitHub}
+                onAuxClick={openGitHub}
+              >
+                {title}
+              </a>
             </h1>
           </div>
-          <Link
-            href={pullRequestUrl(pr)}
-            variant="sm"
-            rightDecorator={ArrowSquareOutIcon}
-            onClick={(event) => {
-              event.preventDefault()
-              void host.nav.openExternal(pullRequestUrl(pr))
-            }}
-          >
-            Open on GitHub
-          </Link>
+          <div className="flex max-w-full min-w-0 flex-wrap items-center gap-space-3">
+            {run?.head_url && (
+              <Button
+                size="sm"
+                color="primary"
+                rightDecorator={ArrowSquareOutIcon}
+                onClick={() => void host.nav.openExternal(run.head_url)}
+              >
+                Open preview
+              </Button>
+            )}
+            {runs.isSuccess && (
+              <CaptureAction
+                pr={pr}
+                outcome={runs.data.outcome}
+                currentHeadSha={current?.headSha}
+                hasCapture={runs.data.runs.length > 0}
+                run={runs.data.runs[0]}
+                disabled={current?.state !== "open"}
+              >
+                {options.length > 1 && (
+                  <label className="flex max-w-full min-w-0 flex-wrap items-center gap-space-3 text-xs text-secondary">
+                    Review run
+                    <Select
+                      aria-label="Review run"
+                      size="sm"
+                      triggerClassName="w-auto min-w-0 max-w-full"
+                      value={selectedId}
+                      onChange={(id) => {
+                        if (id) navigate({ page: "pull", pr, run: id })
+                      }}
+                      options={options}
+                    />
+                  </label>
+                )}
+              </CaptureAction>
+            )}
+            <PinButton pr={pr} title={title} />
+            <Link
+              as={
+                <button
+                  type="button"
+                  className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              }
+              variant="sm"
+              className="gap-space-2"
+              leftDecorator={RobinIcon}
+              rightDecorator={ArrowSquareOutIcon}
+              aria-label="Open Robin PR view in a new tab"
+              onClick={() => void openReview()}
+            >
+              Robin PR view
+            </Link>
+            <Link
+              href={github}
+              target="_blank"
+              rel="noreferrer"
+              variant="sm"
+              className="gap-space-2"
+              leftDecorator={GithubLogoIcon}
+              rightDecorator={ArrowSquareOutIcon}
+              aria-label="Open on GitHub in a new tab"
+              onClick={openGitHub}
+              onAuxClick={openGitHub}
+            >
+              GitHub
+            </Link>
+          </div>
         </div>
       </header>
+      {current && !run?.report && (
+        <Accordion>
+          <AccordionItem
+            key={github}
+            title="PR Description"
+            defaultExpanded={false}
+            contents={<MarkdownDescription body={current.body} />}
+          />
+        </Accordion>
+      )}
       {isForbidden(runs.error) || isForbidden(detail.error) ? (
         <ShareRepositories repository={repositoryOf(pr)} />
       ) : runs.isError ? (
@@ -118,24 +251,9 @@ export function PullRequestPage({
           )}
           {empty && (
             <Card role="status" className="p-space-4 text-sm text-secondary">
-              No saved comparisons. Live capture is unavailable until browser
-              network isolation is in place.
+              No saved comparisons. Capture checks the deployed preview and the
+              configured base site, then saves matching screenshots here.
             </Card>
-          )}
-          {options.length > 1 && (
-            <label className="flex items-center gap-space-3 text-xs text-secondary">
-              Review run
-              <Select
-                aria-label="Review run"
-                size="md"
-                triggerClassName="w-auto min-w-0 max-w-full"
-                value={selectedId}
-                onChange={(id) => {
-                  if (id) navigate({ page: "pull", pr, run: id })
-                }}
-                options={options}
-              />
-            </label>
           )}
           {selectedId && detail.isPending && (
             <p role="status" className="text-sm text-secondary">
@@ -148,8 +266,13 @@ export function PullRequestPage({
               pr={pr}
               run={run}
               currentHeadSha={current?.headSha}
-              onAsk={(scenario) =>
-                setAsked({ run: run.id, scenario: scenario.id })
+              description={current?.body}
+              onAsk={(scenario, shots) =>
+                setAsked({
+                  run: run.id,
+                  scenario: scenario.id,
+                  theme: shots.theme,
+                })
               }
             />
           )}
@@ -161,7 +284,7 @@ export function PullRequestPage({
 
 const runOption = (run: FrontendReviewRun) => ({
   value: run.id,
-  label: `${new Date(run.created_at).toLocaleString()} · ${run.status} · ${run.head_sha.slice(0, 7)}`,
+  label: `${new Date(run.created_at).toLocaleString()} (${run.status}, ${run.head_sha.slice(0, 7)})`,
 })
 
 /**
@@ -173,20 +296,23 @@ function usePullRequestChat(
   pr: PullRequestRef,
   run: FrontendReviewRun | undefined,
   current: PullRequest | null | undefined,
-  asked: FrontendScenario | undefined
+  asked: FrontendScenario | undefined,
+  theme: ShotTheme
 ) {
   const host = usePluginHost()
   const name = chatName(pr)
   const repository = repositoryOf(pr)
   const known = { title: current?.title, headSha: current?.headSha }
   const label = clip(
-    asked ? `${pullRequestLabel(pr)} · ${asked.title}` : pullRequestLabel(pr),
+    asked
+      ? `${pullRequestLabel(pr)} · ${asked.title}${theme === "dark" ? " · Dark" : ""}`
+      : pullRequestLabel(pr),
     MAX_LABEL
   )
   const context = run
     ? JSON.stringify(
         asked
-          ? scenarioContext(pr, run, asked, known)
+          ? scenarioContext(pr, run, asked, known, theme)
           : pullRequestContext(pr, run, known)
       )
     : null

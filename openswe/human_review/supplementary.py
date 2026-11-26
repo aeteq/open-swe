@@ -1,6 +1,6 @@
 """Supplementary reviews: specialist reviewers a repository configures alongside engineering review.
 
-Each policy in ``supplementaryReviews`` (``.open-swe/settings.json``) names a GitHub team, the
+Each policy in ``supplementaryReviews`` (``.robin/settings.json``) names a GitHub team, the
 paths it cares about, and the criteria an isolated assessment judges the pull request by. When a
 pull request qualifies, a member of that team is rotated in and notified. Their approval never
 stands in for engineering review.
@@ -24,14 +24,15 @@ from openswe.github.org_membership import team_members
 from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequestPayload
 from openswe.github.repo_files import RepoSettings, SupplementaryReviewPolicy
+from openswe.human_review.coverage import Coverage
 from openswe.human_review.deadlines import schedule
-from openswe.human_review.picking import Coverage, ReviewerAvailability
 from openswe.human_review.requests import (
     SUPPLEMENTARY_REVIEWS_KEY,
     HumanReviewRequest,
     slack_mention,
 )
 from openswe.prompts import prompt
+from openswe.slack.availability import ReviewerAvailability
 from openswe.slack.channels import SlackChannel
 from openswe.slack.client import post_slack_thread_reply_with_ts
 from openswe.slack.dm import send_dm
@@ -233,10 +234,12 @@ class SupplementaryReview:
         if reviews is None:
             return []
         already_reviewed = {login.lower() for login in reviews}
+        posters = await self.request.recent_channel_posters()
         eligible: list[tuple[User, ReviewerAvailability]] = []
         for user in users:
             if (
                 user is None
+                or user.id not in posters
                 or not user.slack_user_id
                 or self.request.is_author(user.id, user.github_login)
                 or self.request.participant(user.id) is not None

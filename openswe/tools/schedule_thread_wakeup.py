@@ -12,7 +12,12 @@ from langgraph_sdk.errors import NotFoundError
 from langgraph_sdk.schema import Config
 from pydantic import JsonValue, TypeAdapter
 
-from openswe.dispatch import COMPLETION_WEBHOOK_URL, prepare_durable_run, prepare_run_config
+from openswe.dispatch import (
+    COMPLETION_WEBHOOK_URL,
+    SERVER_STREAM,
+    prepare_durable_run,
+    prepare_run_config,
+)
 from openswe.input_messages import RunInput, build_run_input
 from openswe.jobs import queue
 from openswe.prompts import prompt
@@ -52,19 +57,6 @@ def _ceil_to_next_minute(value: datetime) -> datetime:
     if rounded == value:
         return rounded
     return rounded + timedelta(minutes=1)
-
-
-def _build_one_shot_cron(fire_time: datetime) -> str:
-    """Build a 5-field cron expression that fires at ``fire_time`` (UTC)."""
-    return " ".join(
-        [
-            str(fire_time.minute),
-            str(fire_time.hour),
-            str(fire_time.day),
-            str(fire_time.month),
-            "*",
-        ]
-    )
 
 
 def _parse_iso(value: object) -> datetime | None:
@@ -247,6 +239,8 @@ async def run_thread_wakeup(
         metadata=prepared["metadata"],
         multitask_strategy="enqueue",
         webhook=COMPLETION_WEBHOOK_URL or None,
+        # ty does not match the server's stream fields to the SDK's per-keyword types.
+        **SERVER_STREAM.run_fields(),  # ty: ignore[invalid-argument-type]
     )
     return run["run_id"]
 
@@ -275,6 +269,7 @@ async def schedule_thread_wakeup(delay_minutes: int, prompt: str | None = None) 
     passthrough_keys = (
         "repo",
         "source",
+        "origin",
         "slack_thread",
         "linear_issue",
         "notion_page",

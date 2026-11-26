@@ -6,7 +6,7 @@ import {
 import { Text } from "@langchain/macaw-components/Text"
 import { Card } from "@langchain/macaw-components/Card"
 import { createFileRoute } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import { Fragment, useState } from "react"
 import { Avatar } from "@langchain/macaw-components/Avatar"
 import { Badge } from "@langchain/macaw-components/Badge"
@@ -14,7 +14,7 @@ import { Banner } from "@langchain/macaw-components/Banner"
 import { Button } from "@langchain/macaw-components/Button"
 import { IconButton } from "@langchain/macaw-components/IconButton"
 import { Select } from "@langchain/macaw-components/Select"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Skeleton } from "@/components/Skeleton"
 import { Tooltip } from "@langchain/macaw-components/Tooltip"
 import zIndices from "@langchain/macaw-components/utils/zIndices"
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ArrowClockwise"
@@ -27,6 +27,7 @@ import { WarningCircleIcon } from "@phosphor-icons/react/dist/ssr/WarningCircle"
 
 import type {
   AnalyticsMetadata,
+  BotActivity,
   PRMergeRateCohort,
   PRMergeRateEffort,
   PRMergeRatePayload,
@@ -36,7 +37,9 @@ import type {
   UsageLeaderboardPeriod,
   UsageLeaderboardRow,
   UsageLeaderboardSort,
+  UsageHealthPayload,
 } from "@/lib/api"
+import { GatewaySpend } from "@/components/GatewaySpend"
 import { TablePagination } from "@/components/TablePagination"
 import { CopyDiagnosticsButton } from "@/components/CopyDiagnosticsButton"
 import { AppShell, SettingsSection } from "@/components/AppShell"
@@ -49,7 +52,7 @@ import {
   metricAvailability,
   type MetricAvailability,
 } from "@/lib/usage-diagnostics"
-import { useSession } from "@/lib/session"
+import { useSession, useSessionPending } from "@/lib/session"
 import { cn, INHERITED_LINK } from "@/lib/utils"
 
 const HELP_TRIGGER_CLASS =
@@ -69,6 +72,17 @@ interface SortableColumn<Key extends string> {
   align: "left" | "right"
   defaultDirection?: SortDirection
   tooltip?: string
+}
+
+interface TableSorting<Key extends string> {
+  sort: Key
+  direction: SortDirection
+}
+
+interface UsageTablePreferences {
+  leaderboard: TableSorting<UsageLeaderboardSort>
+  outcomes: TableSorting<PROutcomesSort>
+  usageScope: UsageScope
 }
 
 type UsageScope = "invocations" | "threads"
@@ -95,6 +109,7 @@ const PERIOD_ITEMS = (
 
 function UsagePage() {
   const session = useSession()
+  const sessionPending = useSessionPending()
   const period =
     (Route.useSearch().period as UsageLeaderboardPeriod | undefined) ?? "7d"
   const navigate = Route.useNavigate()
@@ -107,7 +122,7 @@ function UsagePage() {
     ? period
     : "7d"
 
-  if (session.isLoading) {
+  if (sessionPending) {
     return (
       <main className="p-space-6">
         <Skeleton className="h-64 w-full" />
@@ -118,6 +133,7 @@ function UsagePage() {
 
   return (
     <AppShell user={session.data} title="Usage" className="max-w-5xl">
+      <GatewaySpend userId={session.data.user_id ?? session.data.login} />
       <div
         className="sticky top-0 -mx-space-4 border-b border-default bg-surface-level-1 px-space-4 py-space-3 sm:-mx-space-6 sm:px-space-6"
         style={{ zIndex: zIndices.dashboardHeader }}
@@ -169,6 +185,11 @@ export function UsageAnalytics({
   isAdmin: boolean
 }) {
   const [leaderboardPageSize, setLeaderboardPageSize] = useState(10)
+  const [preferences, setPreferences] = useState<UsageTablePreferences>({
+    leaderboard: { sort: "rank", direction: "asc" },
+    outcomes: { sort: "prs_opened", direction: "desc" },
+    usageScope: "threads",
+  })
 
   return (
     <UsageAnalyticsPeriod
@@ -178,6 +199,10 @@ export function UsageAnalytics({
       isAdmin={isAdmin}
       pageSize={leaderboardPageSize}
       onPageSizeChange={setLeaderboardPageSize}
+      preferences={preferences}
+      onPreferencesChange={(change) =>
+        setPreferences((current) => ({ ...current, ...change }))
+      }
     />
   )
 }
@@ -188,17 +213,22 @@ function UsageAnalyticsPeriod({
   isAdmin,
   pageSize: leaderboardPageSize,
   onPageSizeChange: setLeaderboardPageSize,
+  preferences,
+  onPreferencesChange,
 }: {
   period: UsageLeaderboardPeriod
   login: string
   isAdmin: boolean
   pageSize: number
   onPageSizeChange: (pageSize: number) => void
+  preferences: UsageTablePreferences
+  onPreferencesChange: (change: Partial<UsageTablePreferences>) => void
 }) {
   const [leaderboardPage, setLeaderboardPage] = useState(1)
-  const [sort, setSort] = useState<UsageLeaderboardSort>("rank")
-  const [direction, setDirection] = useState<SortDirection>("asc")
-  const [usageScope, setUsageScope] = useState<UsageScope>("threads")
+  const {
+    leaderboard: { sort, direction },
+    usageScope,
+  } = preferences
   const [leaderboardCursors, setLeaderboardCursors] = useState<
     (string | undefined)[]
   >([undefined])
@@ -242,9 +272,19 @@ function UsageAnalyticsPeriod({
     isAdmin,
     setReportError
   )
-  const refreshing = leaderboard.isFetching || report.isFetching
+  const health = useQuery({
+    queryKey: ["usageHealth", activePeriod, login, isAdmin],
+    queryFn: () => api.usageHealth(activePeriod),
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
+    retry: (count, error) =>
+      !(error instanceof ApiError && error.status >= 400) && count < 2,
+  })
+  const refreshing =
+    leaderboard.isFetching || report.isFetching || health.isFetching
   const refreshNow = () => {
     void leaderboard.refetch()
+    void health.refetch()
     // refetch() resolves on failure too, so the error has to come off the result.
     void report.refetch().then((result) => {
       const error = result.error
@@ -260,15 +300,20 @@ function UsageAnalyticsPeriod({
   const metadata = [
     leaderboard.isError ? undefined : leaderboard.data,
     report.isError ? undefined : report.data?.payload,
+    health.isError ? undefined : health.data,
   ].filter((data): data is NonNullable<typeof data> => data != null)
 
   return (
     <>
-      <PRMergeRateSection report={report} />
+      <PRMergeRateSection
+        report={report}
+        sorting={preferences.outcomes}
+        onSortingChange={(outcomes) => onPreferencesChange({ outcomes })}
+      />
 
       <SettingsSection
         title="Agent Leaderboard"
-        description="Ranked by merged PRs, then agent lines of code and PRs opened."
+        description="People ranked by merged PRs, then agent lines of code and PRs opened. Bot activity is reported separately."
         action={
           <div className="flex items-center gap-space-2">
             <div
@@ -286,19 +331,22 @@ function UsageAnalyticsPeriod({
                   aria-pressed={usageScope === scope}
                   className="capitalize focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
                   onClick={() => {
-                    setUsageScope(scope)
+                    let nextSort = sort
                     if (sort === "invocations" || sort === "threads") {
-                      setSort(scope)
+                      nextSort = scope
                     } else if (
                       sort === "avg_invocation_seconds" ||
                       sort === "avg_thread_seconds"
                     ) {
-                      setSort(
+                      nextSort =
                         scope === "threads"
                           ? "avg_thread_seconds"
                           : "avg_invocation_seconds"
-                      )
                     }
+                    onPreferencesChange({
+                      usageScope: scope,
+                      leaderboard: { sort: nextSort, direction },
+                    })
                     setLeaderboardPage(1)
                     setLeaderboardCursors([undefined])
                   }}
@@ -340,7 +388,7 @@ function UsageAnalyticsPeriod({
           </div>
         ) : !leaderboard.data?.total_members ? (
           <div className="p-space-5 text-center text-xs text-secondary">
-            No Robin Agent usage has been recorded for{" "}
+            No Robin Agent usage by people has been recorded for{" "}
             {PERIOD_LABELS[activePeriod].toLowerCase()} yet.
           </div>
         ) : (
@@ -356,14 +404,17 @@ function UsageAnalyticsPeriod({
             direction={direction}
             isUpdating={leaderboard.isPlaceholderData}
             onSort={(nextSort, nextDirection) => {
-              setDirection(
-                sort === nextSort
-                  ? direction === "asc"
-                    ? "desc"
-                    : "asc"
-                  : nextDirection
-              )
-              setSort(nextSort)
+              onPreferencesChange({
+                leaderboard: {
+                  sort: nextSort,
+                  direction:
+                    sort === nextSort
+                      ? direction === "asc"
+                        ? "desc"
+                        : "asc"
+                      : nextDirection,
+                },
+              })
               setLeaderboardPage(1)
               setLeaderboardCursors([undefined])
             }}
@@ -386,6 +437,15 @@ function UsageAnalyticsPeriod({
           />
         )}
       </SettingsSection>
+
+      {!leaderboard.isError && leaderboard.data?.bot_activity?.accounts ? (
+        <SettingsSection
+          title="Bot Activity"
+          description="Usage attributed to GitHub bot accounts, including automated review triggers. Excluded from people's rankings; PR and human-review attribution is unchanged."
+        >
+          <BotUsage activity={leaderboard.data.bot_activity} />
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection
         title="Reviewer Stats"
@@ -411,6 +471,7 @@ function UsageAnalyticsPeriod({
           </div>
         )}
       </SettingsSection>
+      <UsageHealthSection health={health} />
       <AnalyticsCoverage
         reports={metadata}
         reportPayload={report.data?.payload ?? null}
@@ -422,6 +483,95 @@ function UsageAnalyticsPeriod({
         reportRefreshError={report.isError && !report.data ? null : reportError}
       />
     </>
+  )
+}
+
+function UsageHealthSection({
+  health,
+}: {
+  health: UseQueryResult<UsageHealthPayload, Error>
+}) {
+  const data = health.isError ? undefined : health.data
+
+  return (
+    <SettingsSection
+      title="Usage Health"
+      description="Organization-wide metrics for the selected date range, independent of the leaderboard’s Threads / Invocations view."
+    >
+      {health.isPending ? (
+        <div
+          role="status"
+          aria-label="Loading usage health"
+          className="p-space-4"
+        >
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : health.isError ? (
+        <div className="p-space-4">
+          <Banner
+            intent="error"
+            title="Usage health is unavailable"
+            action={
+              <Button
+                variant="outlined"
+                size="sm"
+                disabled={health.isFetching}
+                onClick={() => void health.refetch()}
+              >
+                Retry usage health
+              </Button>
+            }
+          />
+        </div>
+      ) : data ? (
+        <>
+          <div className="p-space-4">
+            <div
+              className="flex min-w-0 flex-col gap-space-2"
+              aria-label="Prompt cache hit rate"
+            >
+              <Text as="h3" variant="sm" weight="medium">
+                Prompt Cache Hit Rate
+              </Text>
+              <Text variant="h3" className="tabular-nums">
+                {data.cache.hit_rate === null
+                  ? "No data"
+                  : formatPercent(data.cache.hit_rate)}
+              </Text>
+              <Text variant="sm" color="secondary">
+                Cache-read tokens ÷ total prompt tokens, including cache reads
+                and writes.
+              </Text>
+              {data.cache.prompt_tokens !== null &&
+                data.cache.cache_read_tokens !== null && (
+                  <Text variant="xs" color="secondary" className="tabular-nums">
+                    {formatNumber(data.cache.cache_read_tokens)} cached /{" "}
+                    {formatNumber(data.cache.prompt_tokens)} prompt tokens
+                  </Text>
+                )}
+              <Text variant="xs" color="secondary">
+                Runs with both counters:{" "}
+                {formatNumber(data.cache.observed_runs)}. Excluded for missing
+                or inconsistent counters:{" "}
+                {formatNumber(data.cache.missing_usage_runs)}.
+              </Text>
+            </div>
+          </div>
+          <div className="px-space-4 py-space-3">
+            <Banner
+              intent="info"
+              title={
+                data.cache.period_predates_fix
+                  ? "Historical cache coverage is incomplete"
+                  : "Cache coverage reflects reported usage"
+              }
+            >
+              {data.cache.data_note}
+            </Banner>
+          </div>
+        </>
+      ) : null}
+    </SettingsSection>
   )
 }
 
@@ -507,6 +657,7 @@ function AnalyticsCoverage({
             className="shrink-0 focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
             leftDecorator={ArrowClockwiseIcon}
             disabled={refreshing}
+            loading={refreshing}
             onClick={(event) => {
               event.preventDefault()
               onRefresh()
@@ -623,8 +774,12 @@ function usePRMergeRateReport(
 
 function PRMergeRateSection({
   report,
+  sorting,
+  onSortingChange,
 }: {
   report: ReturnType<typeof usePRMergeRateReport>
+  sorting: TableSorting<PROutcomesSort>
+  onSortingChange: (sorting: TableSorting<PROutcomesSort>) => void
 }) {
   const data = report.data?.payload
   const failed = report.isError && !data
@@ -675,6 +830,8 @@ function PRMergeRateSection({
           key={data.period}
           cohorts={data.cohorts}
           maturityDays={data.maturity_days}
+          sorting={sorting}
+          onSortingChange={onSortingChange}
         />
       ) : (
         <p
@@ -1087,15 +1244,17 @@ function PROutcomeCells({
 function PRMergeRateTable({
   cohorts,
   maturityDays,
+  sorting: { sort, direction },
+  onSortingChange,
 }: {
   cohorts: PRMergeRateCohort[]
   maturityDays: number
+  sorting: TableSorting<PROutcomesSort>
+  onSortingChange: (sorting: TableSorting<PROutcomesSort>) => void
 }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  const [sort, setSort] = useState<PROutcomesSort>("prs_opened")
-  const [direction, setDirection] = useState<SortDirection>("desc")
   const sortedCohorts = [...cohorts].sort((a, b) => {
     const aValue = prOutcomeSortValue(a, sort)
     const bValue = prOutcomeSortValue(b, sort)
@@ -1136,14 +1295,15 @@ function PRMergeRateTable({
                   sortKey={sort}
                   sortDirection={direction}
                   onSort={(nextSort, defaultDirection) => {
-                    setDirection(
-                      nextSort === sort
-                        ? direction === "asc"
-                          ? "desc"
-                          : "asc"
-                        : defaultDirection
-                    )
-                    setSort(nextSort)
+                    onSortingChange({
+                      sort: nextSort,
+                      direction:
+                        nextSort === sort
+                          ? direction === "asc"
+                            ? "desc"
+                            : "asc"
+                          : defaultDirection,
+                    })
                     setPage(1)
                   }}
                   className={
@@ -1505,6 +1665,42 @@ function UsageTable({
   )
 }
 
+function BotUsage({ activity }: { activity: BotActivity }) {
+  const cards = [
+    { label: "Bot accounts", value: formatNumber(activity.accounts) },
+    { label: "Invocations", value: formatNumber(activity.invocations) },
+    { label: "Threads", value: formatNumber(activity.threads) },
+    { label: "Tokens", value: formatNumber(activity.total_tokens) },
+  ]
+
+  return (
+    <div className="grid gap-space-3 p-space-4 sm:grid-cols-2 lg:grid-cols-5">
+      {cards.map((card) => (
+        <Card key={card.label} className="bg-surface-level-3 p-space-3">
+          <Text variant="xs" color="secondary">
+            {card.label}
+          </Text>
+          <Text
+            variant="h2"
+            weight="medium"
+            className="mt-space-1 tabular-nums"
+          >
+            {card.value}
+          </Text>
+        </Card>
+      ))}
+      <Card className="bg-surface-level-3 p-space-3">
+        <Text variant="xs" color="secondary">
+          Cost
+        </Text>
+        <div className="mt-space-1 flex justify-end text-lg font-medium tabular-nums">
+          <UsageCost row={activity} />
+        </div>
+      </Card>
+    </div>
+  )
+}
+
 function ReviewerStats({ stats }: { stats: ReviewerStatsPayload }) {
   const cards = [
     {
@@ -1682,7 +1878,17 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat().format(value)
 }
 
-function UsageCost({ row }: { row: UsageLeaderboardRow }) {
+function UsageCost({
+  row,
+}: {
+  row: Pick<
+    UsageLeaderboardRow,
+    | "invocations"
+    | "total_cost_usd"
+    | "invocations_without_cost"
+    | "invocations_with_partial_cost"
+  >
+}) {
   if (row.invocations === 0) return <span>—</span>
 
   const missing = row.invocations_without_cost

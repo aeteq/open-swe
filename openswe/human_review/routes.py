@@ -16,6 +16,7 @@ from openswe.github.pull_request_status import (
     OpenPullRequests,
     pull_request_identity,
 )
+from openswe.github.pull_requests import PullRequestPayload
 from openswe.github.repo_files import RepoSettings
 from openswe.human_review.card import mention
 from openswe.human_review.dashboard import DashboardReviewRequest
@@ -25,6 +26,8 @@ from openswe.human_review.review_queue import ReviewQueue
 from openswe.human_review.standard import Origin, RequestResult, review_blockers
 from openswe.slack.client import GitHubPrRef
 from openswe.users import User
+from openswe.utils.startup_trace import apm_span
+from openswe.utils.timing import RequestTimings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["human-review"])
@@ -88,28 +91,48 @@ class HumanReviewAvailability(BaseModel):
     available: bool
     active: bool
     permalink: str = ""
+    # The open request is a draft's expedited card only its author can see until they mark it ready.
+    awaiting_ready: bool = False
     blockers: list[str] = []
 
 
 @router.get("/repos/{owner}/{repo}/pulls/{number}/human-review")
 async def api_human_review_availability(
-    owner: str, repo: str, number: int, session: dict[str, Any] = SESSION_DEP
+    owner: str,
+    repo: str,
+    number: int,
+    session: dict[str, Any] = SESSION_DEP,
+    active_only: bool = False,
 ) -> HumanReviewAvailability:
     _pr_ref(owner, repo, number)
-    await require_repo_access_for_user(str(session["sub"]), f"{owner}/{repo}")
-    async with GitHubClient.as_app(owner, repo) as github:
-        pull = github.repo(owner, repo).pull_request(number)
-        sha = await or_none(pull.head_sha())
-        if sha is None:
-            raise HTTPException(404, "Pull request is unavailable")
-        settings = await RepoSettings.cached(owner, repo)
-        channel = await settings.channel_for_pr(pull)
-        active = await HumanReviewRequest.active_for(owner, repo, number)
-        blockers = None if active is not None else await review_blockers(pull)
+    login = str(session["sub"])
+    await require_repo_access_for_user(login, f"{owner}/{repo}")
+    active = await HumanReviewRequest.active_for(owner, repo, number)
+    channel = ""
+    blockers = None
+    if not active_only:
+        async with GitHubClient.as_app(owner, repo) as github:
+            pull = github.repo(owner, repo).pull_request(number)
+            settings = await RepoSettings.cached(owner, repo)
+            payload = await or_none(pull.pull())
+            snapshot = PullRequestPayload.model_validate(payload) if payload is not None else None
+            if not settings.review_channel_rules and (snapshot is None or not snapshot.head_sha):
+                raise HTTPException(404, "Pull request is unavailable")
+            channel = await or_none(
+                settings.channel_for_pr(pull, snapshot=snapshot, for_display=True)
+            )
+            if channel is None:
+                raise HTTPException(404, "Pull request is unavailable")
+            blockers = None if active is not None else await review_blockers(pull, snapshot)
     return HumanReviewAvailability(
         available=bool(channel),
         active=active is not None,
-        permalink=await active.card_url() if active is not None else "",
+        permalink=(
+            await active.permalink(await User.for_login("github", login))
+            if active is not None
+            else ""
+        ),
+        awaiting_ready=active is not None and active.awaiting_ready,
         blockers=blockers or [],
     )
 
@@ -125,18 +148,25 @@ async def api_request_human_review(
 ) -> RequestResult:
     pr_ref = _pr_ref(owner, repo, number)
     login = str(session["sub"])
-    requester = await User.for_login("github", login)
-    if requester is None:
-        raise HTTPException(403, "No Robin user record for this login")
-    token = await require_repo_access_for_user(login, f"{owner}/{repo}")
-    options = body or HumanReviewRequestBody()
-    inline_summary = options.inline_summary
-    if inline_summary is not None and not inline_summary.strip():
-        raise HTTPException(422, "inline_summary must not be blank")
-    result = await DashboardReviewRequest(pr_ref, Origin(requester=requester), token).request(
-        channel=options.channel,
-        inline_summary=inline_summary,
-    )
+    span_tags = {"pull_request.url": pr_ref.url}
+    details: dict[str, object] = {"pull_request_url": pr_ref.url}
+    with RequestTimings.logged("Dashboard review request finished", details):
+        with apm_span("human_review.requester", span_tags):
+            requester = await User.for_login("github", login)
+        if requester is None:
+            raise HTTPException(403, "No Robin user record for this login")
+        with apm_span("human_review.repo_access", span_tags):
+            token = await require_repo_access_for_user(login, f"{owner}/{repo}")
+        options = body or HumanReviewRequestBody()
+        inline_summary = options.inline_summary
+        if inline_summary is not None and not inline_summary.strip():
+            raise HTTPException(422, "inline_summary must not be blank")
+        result = await DashboardReviewRequest(pr_ref, Origin(requester=requester), token).request(
+            channel=options.channel,
+            inline_summary=inline_summary,
+        )
+        details["success"] = result.success
+        details["reused"] = result.reused
     if not result.success:
         if result.retry_after_seconds is not None:
             raise HTTPException(

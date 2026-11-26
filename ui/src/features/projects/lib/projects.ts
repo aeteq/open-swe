@@ -17,7 +17,6 @@ export interface ProjectMember {
 export interface Project {
   id: string
   name: string
-  workspace: string
   repo_full_name: string | null
   /** The viewer's own role. */
   role: ProjectRole
@@ -28,7 +27,6 @@ export interface Project {
 
 export interface ProjectChanges {
   name?: string
-  workspace?: string
   /** `""` unbinds the repository. */
   repo_full_name?: string
 }
@@ -37,11 +35,7 @@ const path = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`
 
 export const projectsApi = {
   list: () => agentsRequest<{ projects: Array<Project> }>("/projects"),
-  create: (body: {
-    name: string
-    workspace?: string | null
-    repo_full_name?: string | null
-  }) =>
+  create: (body: { name: string; repo_full_name?: string | null }) =>
     agentsRequest<Project>("/projects", {
       method: "POST",
       body: JSON.stringify(body),
@@ -62,13 +56,6 @@ export const projectsApi = {
     agentsRequest<void>(
       `${path(projectId)}/members/${encodeURIComponent(userId)}`,
       { method: "DELETE" }
-    ),
-  fileThread: (threadId: string, projectId: string | null) =>
-    agentsRequest<void>(
-      projectId
-        ? `${path(projectId)}/threads/${encodeURIComponent(threadId)}`
-        : `/projects/threads/${encodeURIComponent(threadId)}`,
-      { method: projectId ? "PUT" : "DELETE" }
     ),
 }
 
@@ -145,7 +132,6 @@ export function useUpdateProject() {
           ? {
               ...project,
               ...(changes.name ? { name: changes.name } : {}),
-              ...(changes.workspace ? { workspace: changes.workspace } : {}),
               ...(changes.repo_full_name !== undefined
                 ? { repo_full_name: changes.repo_full_name || null }
                 : {}),
@@ -200,14 +186,4 @@ export function useRemoveProjectMember() {
           ),
     "Couldn't remove from project"
   )
-}
-
-export function useFileThreadInProject() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (vars: { threadId: string; projectId: string | null }) =>
-      projectsApi.fileThread(vars.threadId, vars.projectId),
-    meta: { errorTitle: "Couldn't move thread" },
-    onSettled: () => invalidateAgentThreadLists(queryClient),
-  })
 }

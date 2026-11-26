@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const repoRoot = resolve(__dirname, "..", "..");
@@ -14,8 +15,20 @@ const harnessURL = `http://127.0.0.1:${PORT}`;
 const serverEnv = {
   ...process.env,
   E2E_BUSY_HOLD_SECONDS: "8",
+  MDA_AGENT_AUTH_PRINCIPAL_ID: "e2e-local-caller",
   E2E_EXIT_WHEN_ORPHANED: "1",
+  DROPPED_EVENTS: "",
 };
+// Where the servers' output goes, when set (CI uploads it with the report).
+// Playwright drops a server's stdout, which is where the backend and the Managed
+// Deep Agents server log, so a run that fails inside them leaves no trace of why.
+// Appended to, as the auth config starts the backend again for its own spec.
+const serverLogDir = process.env.E2E_SERVER_LOG_DIR;
+if (serverLogDir) mkdirSync(serverLogDir, { recursive: true });
+const logged = (command: string, name: string) =>
+  serverLogDir
+    ? `${command} >> ${JSON.stringify(resolve(serverLogDir, name))} 2>&1`
+    : command;
 // The app's own server, as a deployed browser sees it: it serves the pages and
 // fronts `/dashboard/api/*` itself. Driving the harness origin instead skipped
 // the app server's proxy, which is how a broken proxy shipped past a green run.
@@ -25,9 +38,11 @@ export default defineConfig({
   testDir: "./tests",
   testIgnore: ["desktop.spec.ts", "account_recovery.spec.ts"],
   globalSetup: "./global-setup.ts",
-  fullyParallel: false,
+  fullyParallel: true,
   workers: 1,
   forbidOnly: !!process.env.CI,
+  // One retry in CI keeps a flake from failing the run; CI lists every test that only
+  // passed on retry in the job summary, and failed attempts keep their trace and video.
   retries: process.env.CI ? 1 : 0,
   timeout: 90_000,
   // Nearly every assertion here settles in under two seconds; the handful that
@@ -35,7 +50,11 @@ export default defineConfig({
   // what keeps a genuine failure from burning 60s per assertion before the run
   // goes red.
   expect: { timeout: 20_000 },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    ["json", { outputFile: "playwright-report/results.json" }],
+  ],
   use: {
     baseURL,
     // Recording a trace (DOM snapshots, network, console, source — open with
@@ -43,16 +62,8 @@ export default defineConfig({
     // spec, pass or fail. Default to keeping them only for failures; set
     // E2E_ARTIFACTS=1 to capture everything, which is what you want when
     // debugging a spec that passes but does the wrong thing.
-    trace: process.env.E2E_ARTIFACTS
-      ? "on"
-      : process.env.CI
-        ? "on-first-retry"
-        : "retain-on-failure",
-    video: process.env.E2E_ARTIFACTS
-      ? "on"
-      : process.env.CI
-        ? "on-first-retry"
-        : "retain-on-failure",
+    trace: process.env.E2E_ARTIFACTS ? "on" : "retain-on-failure",
+    video: process.env.E2E_ARTIFACTS ? "on" : "retain-on-failure",
     screenshot: "only-on-failure",
     // SLOW_MO=700 pnpm exec playwright test --headed  → watch it run in human time.
     launchOptions: { slowMo: Number(process.env.SLOW_MO ?? 0) },
@@ -62,7 +73,7 @@ export default defineConfig({
     {
       // The real mda/ project on Managed Deep Agents' local dev server, where
       // every Open SWE thread runs its model loop. Only the LLM is faked.
-      command: "tests/e2e/mda-dev.sh",
+      command: logged("tests/e2e/mda-dev.sh", "mda.log"),
       cwd: repoRoot,
       url: `http://127.0.0.1:${MDA_PORT}/ok`,
       reuseExistingServer: !process.env.CI,
@@ -72,9 +83,11 @@ export default defineConfig({
     {
       // Real langgraph dev: the backend's graphs, hooks and webhook routes + the
       // harness http app (fake GitHub/Slack + mock UIs). Only the LLM is faked.
-      command:
+      command: logged(
         "uv run --extra dev langgraph dev --config tests/e2e/langgraph.e2e.json " +
-        `--port ${PORT} --no-browser --allow-blocking --no-reload`,
+          `--port ${PORT} --no-browser --allow-blocking --no-reload`,
+        "backend.log",
+      ),
       cwd: repoRoot,
       url: `${harnessURL}/mock/github/data`,
       reuseExistingServer: !process.env.CI,

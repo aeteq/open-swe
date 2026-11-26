@@ -1,13 +1,27 @@
 """FastAPI dependencies shared by every dashboard-mounted API router."""
 
-from typing import Any, Protocol
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
+from dataclasses import dataclass
+from itertools import batched
+from typing import Annotated, Any, Protocol
 
 from fastapi import Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import HTTPConnection
 
 from openswe.dashboard.admin import is_admin
-from openswe.dashboard.oauth import require_session
-from openswe.dashboard.principal import DashboardPrincipal
+from openswe.dashboard.oauth import (
+    COOKIE_NAME,
+    SESSION_COOKIE,
+    bind_audit_session,
+    decode_session,
+    require_session,
+)
+from openswe.dashboard.principal import AuthorizedClaims, DashboardPrincipal
 from openswe.dashboard.repo_access import require_repo_access_for_user
+from openswe.users import User
 
 
 def session_is_admin(session: dict[str, Any]) -> bool:
@@ -43,12 +57,60 @@ async def filter_repo_models_for_user[RepoRecordT: RepoScopedRecord](
     records: list[RepoRecordT],
 ) -> list[RepoRecordT]:
     out: list[RepoRecordT] = []
-    for record in records:
-        try:
-            await require_repo_access_for_user(login, record.full_name)
-        except HTTPException as exc:
-            if exc.status_code in {403, 404}:
+    for batch in batched(records, 4, strict=False):
+        results = await asyncio.gather(
+            *(require_repo_access_for_user(login, record.full_name) for record in batch),
+            return_exceptions=True,
+        )
+        for record, result in zip(batch, results, strict=True):
+            if isinstance(result, HTTPException) and result.status_code in {403, 404}:
                 continue
-            raise
-        out.append(record)
+            if isinstance(result, BaseException):
+                raise result
+            out.append(record)
     return out
+
+
+@dataclass
+class DashboardRead:
+    """An authenticated person and the request's short-lived database phase."""
+
+    principal: DashboardPrincipal
+    user: User
+    claims: AuthorizedClaims
+    email: str | None
+    session: AsyncSession
+    scope: AsyncExitStack
+
+    async def close(self) -> None:
+        await self.scope.aclose()
+
+    @classmethod
+    async def open(
+        cls, request: HTTPConnection, _cookie: str | None = Depends(SESSION_COOKIE)
+    ) -> AsyncIterator[DashboardRead]:
+        from openswe.dashboard.langsmith_login import LangSmithLogin
+
+        token = request.cookies.get(COOKIE_NAME)
+        if not token:
+            raise HTTPException(401, "not authenticated")
+        claims = decode_session(token)
+        principal = DashboardPrincipal.from_session(claims)
+        principal.authorize_path(request.url.path, request.scope.get("method", "GET"))
+        login = LangSmithLogin()
+        async with AsyncExitStack() as scope:
+            session, user = await scope.enter_async_context(login.authorized_person(principal))
+            bind_audit_session(request, claims)
+            email = claims.get("email")
+            authorized = AuthorizedClaims(claims, user)
+            yield cls(
+                principal,
+                user,
+                authorized,
+                email if isinstance(email, str) else None,
+                session,
+                scope,
+            )
+
+
+DashboardReadDep = Annotated[DashboardRead, Depends(DashboardRead.open, scope="function")]

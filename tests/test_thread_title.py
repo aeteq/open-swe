@@ -1,5 +1,6 @@
 import asyncio
 import contextvars
+import uuid
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 from unittest.mock import AsyncMock
@@ -19,6 +20,7 @@ from openswe.thread_title import (
     generate_and_store_thread_title,
     schedule_thread_title_generation,
 )
+from openswe.users import User, UserPreferences
 
 # Stands in for LangGraph's stream writer, which travels in a contextvar. A title
 # call that sees a non-default value here is running inside the agent run, and
@@ -118,6 +120,32 @@ async def test_generate_and_store_thread_title_only_replaces_explicit_seed(
     assert threads.metadata == expected
 
 
+@pytest.mark.parametrize("instructions", ["", "Prefix titles with research:, review: or pr:"])
+async def test_title_follows_the_thread_starters_instructions(
+    monkeypatch: pytest.MonkeyPatch, instructions: str
+) -> None:
+    starter = uuid.uuid7()
+    preferences = UserPreferences(thread_title_instructions=instructions)
+    load = AsyncMock(return_value=SimpleNamespace(typed_preferences=preferences))
+    monkeypatch.setattr(User, "get", load)
+    monkeypatch.setattr("openswe.thread_title.mirror_thread_metadata", AsyncMock())
+    threads = _Threads({"source": "dashboard", "title": "fix it", "title_seed": "fix it"})
+    recorder: dict[str, Any] = {}
+
+    await generate_and_store_thread_title(
+        thread_id="thread-123",
+        conversation="fix it",
+        model=cast(BaseChatModel, _Model(recorder)),
+        client=SimpleNamespace(threads=threads),
+        user_id=starter,
+    )
+
+    load.assert_awaited_once_with(starter)
+    system_prompt = recorder["messages"][0].content
+    assert ("<title-instructions>" in system_prompt) is bool(instructions)
+    assert instructions in system_prompt
+
+
 @pytest.mark.parametrize("failure", ["error", "timeout"])
 async def test_title_persistence_failure_is_bounded_and_logged(
     monkeypatch: pytest.MonkeyPatch,
@@ -154,48 +182,6 @@ async def test_title_persistence_failure_is_bounded_and_logged(
     assert record.__dict__["thread_id"] == "thread-123"
     assert record.exc_info is not None
     assert isinstance(record.exc_info[1], TimeoutError if failure == "timeout" else OSError)
-
-
-class _PromotingThreads(_Threads):
-    """Threads whose update promotes the thread into a code channel mid-flight."""
-
-    async def update(self, *, thread_id: str, metadata: dict[str, Any]) -> None:
-        await super().update(thread_id=thread_id, metadata=metadata)
-        self.metadata["source"] = "slack"
-        self.metadata["source_context"] = {
-            "slack_thread": {"channel_id": "C-code", "thread_ts": "0"}
-        }
-
-
-@pytest.mark.asyncio
-async def test_title_generation_renames_channel_promoted_during_update(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A promotion racing the title update must still rename the channel.
-
-    The pre-update metadata snapshot does not carry a Slack location, so the
-    rename decision has to come from a re-read after the update.
-    """
-    threads = _PromotingThreads(
-        {
-            "source": "dashboard",
-            "title": "please review title generation",
-            "title_seed": "please review title generation",
-        }
-    )
-    client = type("Client", (), {"threads": threads})()
-    rename = AsyncMock(return_value=None)
-    monkeypatch.setattr("openswe.thread_title.rename_session", rename)
-    monkeypatch.setattr("openswe.thread_title.is_code_channel", AsyncMock(return_value=True))
-
-    await generate_and_store_thread_title(
-        thread_id="thread-123",
-        conversation="please review title generation",
-        model=cast(BaseChatModel, _Model()),
-        client=client,
-    )
-
-    rename.assert_awaited_once_with("C-code", "Review thread title generation")
 
 
 @pytest.mark.parametrize("suffix", [None, "", " · <https://slack/source|(source)> · <@U1>"])
@@ -241,7 +227,7 @@ async def test_generated_title_updates_only_manual_breakout_roots(
             "C1",
             "200.0",
             f"`/breakout`: Review thread title generation{suffix} "
-            "<https://openswe.langchain.dev/agents/thread-123|Open in Web>",
+            "<https://openswe.langchain.dev/agents/thread-123|Open in Robin>",
             blocks=[
                 {
                     "type": "section",
@@ -255,7 +241,7 @@ async def test_generated_title_updates_only_manual_breakout_roots(
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": "<https://openswe.langchain.dev/agents/thread-123|Open in Web>",
+                            "text": "<https://openswe.langchain.dev/agents/thread-123|Open in Robin>",
                         }
                     ],
                 },
@@ -342,6 +328,7 @@ async def test_haiku_empty_tool_arguments_recover_to_a_stored_title(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     threads = _Threads({"source": "dashboard", "title": "fix it", "title_seed": "fix it"})
+    title = "Preserve complete generated thread titles without cutting off the subject of the conversation"
     model = ChatAnthropic(model="claude-haiku-5-5", api_key="test", effort="high", max_tokens=1024)
 
     async def create(self: ChatAnthropic, payload: dict[str, object]) -> object:
@@ -349,7 +336,7 @@ async def test_haiku_empty_tool_arguments_recover_to_a_stored_title(
         content = (
             [ToolUseBlock(type="tool_use", id="tool-1", name="_ThreadTitle", input={})]
             if "tools" in payload
-            else [TextBlock(type="text", text=' "Repair   thread titles." ')]
+            else [TextBlock(type="text", text=f' "{title.replace(" ", "   ")}." ')]
         )
         response = Message(
             id="message-1",
@@ -371,6 +358,6 @@ async def test_haiku_empty_tool_arguments_recover_to_a_stored_title(
         model=model,
         client=SimpleNamespace(threads=threads),
     )
-    assert threads.metadata["title"] == "Repair thread titles"
+    assert threads.metadata["title"] == title
     assert threads.metadata["title_seed"] is None
-    mirror.assert_awaited_once_with("thread-123", {"title": "Repair thread titles"})
+    mirror.assert_awaited_once_with("thread-123", {"title": title})

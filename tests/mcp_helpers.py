@@ -1,13 +1,14 @@
-"""A stand-in for ``fastmcp.Client`` that answers from callbacks instead of a remote server."""
+"""Stand-ins for an MCP server and for the sources that name servers."""
 
 from collections.abc import Awaitable, Callable
+from uuid import uuid4
 
 import pytest
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
-from mcp.types import CallToolResult, Tool
-from pydantic import JsonValue
+from mcp.types import CallToolResult, ListToolsResult, Tool
+from pydantic import Field, JsonValue
 
-from openswe.mcp import runtime
+from openswe.mcp import MCPConnection, MCPSource, runtime
 
 type Transport = SSETransport | StreamableHttpTransport
 type CallHandler = Callable[[Transport, str, dict[str, JsonValue]], Awaitable[CallToolResult]]
@@ -38,6 +39,9 @@ def fake_mcp_server(
             assert tools is not None
             return await tools(self.transport)
 
+        async def list_tools_mcp(self, **_: object) -> ListToolsResult:
+            return ListToolsResult(tools=await self.list_tools())
+
         async def call_tool(
             self, name: str, arguments: dict[str, JsonValue], **_: object
         ) -> CallToolResult:
@@ -45,3 +49,41 @@ def fake_mcp_server(
             return await call(self.transport, name, arguments)
 
     monkeypatch.setattr(runtime, "Client", FakeClient)
+
+
+class HeaderConnection(MCPConnection):
+    """A server the backend calls with headers the test sets."""
+
+    headers: dict[str, str] = Field(default_factory=dict, exclude=True)
+
+    def connection_headers(self) -> dict[str, str]:
+        return self.headers
+
+
+class MemorySource:
+    """Connections a test edits in place, as a source the runtime reads on every lookup."""
+
+    def __init__(self, namespace: tuple[str, ...] = ("test_mcps",)) -> None:
+        self.records: dict[str, MCPConnection] = {}
+        self.source = MCPSource(
+            scope="managed",
+            namespace=namespace,
+            list_connections=self.connections,
+            get_connection=self.connection,
+        )
+
+    def save(
+        self, name: str = "example", url: str = "https://example.com/mcp", **fields: object
+    ) -> MCPConnection:
+        """Store a new revision of ``name``, as an edit to its settings would."""
+        record = HeaderConnection.model_validate(
+            {"name": name, "url": url, "revision": uuid4().hex, **fields}
+        )
+        self.records[name] = record
+        return record
+
+    async def connections(self) -> list[MCPConnection]:
+        return sorted(self.records.values(), key=lambda record: record.name)
+
+    async def connection(self, name: str) -> MCPConnection | None:
+        return self.records.get(name)

@@ -12,7 +12,6 @@ surface.loop = LoopRules(...)  # what MDA's middleware does around each model ca
 surface.models = SurfaceModels(
     main=ModelChoice(model_id, dict(model_kwargs)),
     subagent=ModelChoice(subagent_model_id, dict(subagent_model_kwargs)),
-    use_gateway=bool(use_gateway),
 )
 surface.subagents = [SurfaceSubagent(name="general-purpose", ...)]
 ```
@@ -26,9 +25,11 @@ Managed Deep Agents creates it; the backend connects to it through `openswe/sand
 
 ### Using a custom sandbox snapshot
 
-New sandboxes boot from LangSmith's root snapshot unless the workspace they run in has its own snapshot.
-Build a snapshot in LangSmith (UI or `SandboxClient.create_snapshot`) from your Docker image and set it as a workspace's base snapshot from the **Workspaces** page.
-Workspace setup and update scripts receive the selected repository names in the space-delimited `OPENSWE_WORKSPACE_REPOS` environment variable.
+New sandboxes use Robin's global execution image, falling back to the configured base or LangSmith's root snapshot when no image is set.
+Admins configure the base snapshot, shared instructions, preloads, scripts, and resources under **Defaults** (`/settings`) or with `configure_execution_defaults`.
+Use `rebuild_execution_image` to build the image or `publish_execution_image()` to capture an explicitly provisioned thread sandbox; saving configuration alone does neither.
+Setup and update scripts receive space-delimited preload repository names in `ROBIN_REPOS`; `OPENSWE_REPOS` and `OPENSWE_WORKSPACE_REPOS` remain aliases for already-stored scripts.
+See [Defaults, routing, and sandbox images](reference/execution.md) for authorization and build details.
 
 Per-sandbox resources are configured on the deployment:
 
@@ -43,23 +44,35 @@ DEFAULT_SANDBOX_DELETE_AFTER_STOP_SECONDS="604800"                 # Optional, d
 This is useful for pre-installing languages, frameworks, or internal tools that your repos depend on — reducing setup time per agent run.
 The default snapshot includes the GitHub CLI; agents invoke it as `gh <command>` and rely on the LangSmith proxy for the real credentials.
 
-For LangSmith sandboxes, Robin configures two GitHub proxy rules whenever a sandbox is created or reattached to a run:
+For LangSmith sandboxes, Robin configures two GitHub proxy rules on every sandbox a run works in:
 
 - `github.com` / `*.github.com` receive Basic auth for git-over-HTTPS operations.
 - `api.github.com` receives Bearer auth for `gh` and REST API operations.
 
 The proxy token is minted at runtime from the GitHub App installation credentials.
-With `MDA_GITHUB_PROXY_CONNECTION` set, the Managed Deep Agents deployment writes these rules instead on the sandboxes it owns whose thread reaches the whole installation, with the App token its GitHub channel keeps in Agent Auth (see [mda/README.md](../mda/README.md)).
+The backend mints it and hands it to the Managed Deep Agents deployment, which writes these rules on the sandbox (see [mda/README.md](../mda/README.md)).
 Do not store GitHub access tokens as deployment environment variables.
+
+Every sandbox on the installation's token spends the installation's one hourly API quota, which Robin's reviews and approvals need too.
+An instance admin meters those calls under **Sandbox GitHub API budget** in **Defaults** (`/admin`), or with the `manage_sandbox_github_budget` tool (`openswe/github/sandbox_budget.py`):
+
+- `off`: `api.github.com` is answered by the sandbox's proxy callback like every other GitHub host, and LangSmith's proxy keeps each answer for 5 minutes.
+- `observe` (the default): the sandbox's proxy config gives `api.github.com` its own callback with `full_request`, which LangSmith's proxy calls for every request.
+  The backend counts each call against the thread over a rolling hour, logs it (`Sandbox GitHub API call`), and answers with the same scoped token.
+  Nothing is refused, and git, which spends no API quota, is never metered.
+- `enforce`: as `observe`, and a call is refused once the thread made the per-thread limit (500 by default) in the last hour, or while less than the brake percentage (20 by default) of the installation's core or GraphQL quota is left, until it resets.
+  The proxy reports a refusal as `502 callback resolution failed`; the thread gets a note saying why and when calls work again.
+
+If counting fails, such as when the database is unavailable, the call goes through.
+A mode change reaches a sandbox's proxy config at its thread's next run.
 
 ### Who creates sandboxes
 
 Every thread's sandbox is a LangSmith sandbox that Managed Deep Agents creates when the thread's run starts, and replaces when the agent asks for a fresh one.
-The backend never creates a thread's sandbox: it connects to the one MDA opened, configures its GitHub proxy and git identity, and runs the backend's tools in it.
-A thread bridged to its owner's machine runs there instead.
+The backend never creates a thread's sandbox: it connects to the one MDA opened, writes its git identity, and runs the backend's tools in it; MDA writes its proxy config.
 
-Sandbox provisioning, connection, proxy configuration, and workspace snapshot captures use the deployment's `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT`.
-A workspace's base snapshot must exist in that LangSmith workspace.
+Sandbox provisioning, connection, proxy configuration, and global image captures use the deployment's `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT`.
+The configured base snapshot must exist in that LangSmith workspace.
 
 ## 2. Model
 
@@ -70,15 +83,14 @@ LLM_MODEL_ID="anthropic:claude-opus-5-5"
 LLM_REASONING_EFFORT="high"
 ```
 
-When `LLM_MODEL_ID` is unset or blank, an Anthropic-only deployment—`ANTHROPIC_API_KEY` is set while `OPENAI_API_KEY` is unset or empty—defaults to `anthropic:claude-opus-5-5`.
-All other deployments default to `openai:gpt-6.1-sol`, including deployments with both keys set.
+When `LLM_MODEL_ID` is unset or blank, the deployment defaults to `openai:gpt-6.1-sol`, independently of provider credentials.
 The default reasoning effort is `medium`.
 
 Either variable can be set independently.
 When only the model is set, `medium` is used if supported, otherwise that model's catalog default effort is used.
 The model must be an allowed default in `openswe/dashboard/options.py`; unsupported models or incompatible efforts raise a configuration error when defaults are resolved.
 
-These defaults apply below explicit run, thread, workspace, and instance selections, including inherited reviewer and subagent defaults.
+These defaults apply below explicit run, thread, and global selections, including inherited reviewer and subagent defaults.
 Existing selections are not overwritten.
 Restart the backend after changing its environment.
 
@@ -121,18 +133,23 @@ else:
         "openai:gpt-6.1-sol", {"max_tokens": 128_000, "reasoning": {"effort": "medium"}}
     )
 
-surface.models = SurfaceModels(main=main, subagent=main, use_gateway=bool(use_gateway))
+surface.models = SurfaceModels(main=main, subagent=main)
 ```
 
 ### Auto model routing with Jev
 
 Eligible Auto turns use Jev through `langchain-typesafe`'s `TypeSafeClassifier`.
 A LangSmith gateway key (`LANGSMITH_GATEWAY_API_KEY`, falling back to `LANGSMITH_API_KEY`) calls `typesafe/jev-1.13.0` through the [Gateway System One API](https://docs.langchain.com/langsmith/llm-gateway-decision-models); this requires a TypeSafe workspace provider secret and respects `LANGSMITH_GATEWAY_BASE_URL`.
-Routing is independent of the provider-proxy gateway toggle below.
+Adaptive model routing is optional; provider calls always use the gateway.
+With Adaptive routing on, half of eligible threads, by a stable hash of the thread id, run on Performance as a control and the other half go through the classifier; traces tag the arm as `model_experiment:performance` or `model_experiment:router`.
 The classifier is tagged `nostream` to keep its run out of the user-facing transcript.
 
+Jev answers whether the request needs an unknown answer, cause or approach found, and whether it is a well-scoped kind of work (a known-location fix, an ops or PR action, a lookup or status check, or a specified build); an open-ended request runs on Performance unless it is a known-location fix, an ops or PR action, or a specified build, and the rest runs on Balanced.
+It routes on Jev's choices even below the confidence cutoff, but keeps an unsure route for that run only, so a later turn classifies again.
+Jev also labels the task type; the trace records every answer as `jev_*` metadata.
+
 Jev receives the latest human task text (up to 8,000 characters).
-Missing API credentials, API errors, a three-second classification deadline, malformed responses, or confidence below `0.6` use the resolved agent default (thread override or workspace default), the same model used when routing is off.
+Missing API credentials, API errors, a three-second classification deadline, or malformed responses use the resolved agent default (thread override or global default), the same model used when routing is off.
 The confidence cutoff is an initial heuristic, not a calibrated correctness probability.
 Existing Auto eligibility, fast-mode control, and persisted routes are unchanged.
 
@@ -159,30 +176,20 @@ They call Jev and are separate from the deterministic unit tests.
 
 ### Routing through the LangSmith LLM Gateway
 
-Model calls can be proxied through the [LangSmith LLM Gateway](https://docs.langchain.com/langsmith/llm-gateway) (private beta) instead of hitting providers directly.
-The gateway authenticates with a **LangSmith API key** that has the `gateway:invoke` permission and resolves the real provider key from workspace Provider Secrets, so no provider API keys are needed at runtime — and it adds central spend limits, PII/secrets redaction, and tracing.
-Your org must have the gateway enabled with Provider Secrets configured.
-
-Routing is opt-in and off by default.
-Enable it either way:
+Every model call goes through the [LangSmith LLM Gateway](https://docs.langchain.com/langsmith/llm-gateway).
+The gateway resolves provider credentials from workspace Provider Secrets and applies central spend limits, PII/secrets redaction, and tracing.
+Your organization must have the gateway enabled with Provider Secrets configured; provider keys in Robin's environment are not used.
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `LANGSMITH_GATEWAY_ENABLED` | on when `LANGSMITH_GATEWAY_API_KEY` is set, else off | Deployment-level default for gateway routing; set explicitly to override. |
-| `LANGSMITH_GATEWAY_API_KEY` | unset | Dedicated LangSmith key for Gateway calls; setting it also turns routing on. Prefer this in LangGraph Cloud if the platform-provided `LANGSMITH_API_KEY` lacks `gateway:invoke`. Falls back to `LANGSMITH_API_KEY` when routing is enabled some other way. |
-| `LANGSMITH_GATEWAY_BASE_URL` | `https://gateway.smith.langchain.com` | Override for a regional or self-hosted gateway host. |
-| `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES` | `true` | Use the OpenAI Responses API through the gateway. Set to `false` only to force Chat Completions for OpenAI models. |
+| `LANGSMITH_GATEWAY_API_KEY` | `LANGSMITH_API_KEY` | LangSmith key with `gateway:invoke`. Prefer a dedicated key if the platform-provided key lacks this permission. |
+| `LANGSMITH_GATEWAY_BASE_URL` | `https://gateway.smith.langchain.com` | Regional or self-hosted gateway host. |
 
-The instance toggle lives under **Admin → LLM Gateway**, and each workspace's settings page (**Workspaces → the workspace → LLM Gateway**) can override it; when set it overrides the `LANGSMITH_GATEWAY_ENABLED` env default (a `None`/unset value inherits the env default).
-
-Routing is applied centrally in `make_model` (`packages/runtime-api/src/runtime_api/models.py`), which resolves the effective on/off and wires the gateway's URL and key, on the backend and in the MDA runtime alike.
-**OpenAI, Anthropic, Baseten, Fireworks, and Google Gemini** are routed; Google Vertex (service-account auth) and any other provider call the provider directly with a logged warning.
-Baseten uses `BASETEN_API_KEY` from LangSmith workspace Provider Secrets through Gateway, or the runtime environment for direct calls.
-
-**Caveat — OpenAI endpoint:** Robin uses the OpenAI Responses API by default because OpenAI reasoning models with function tools reject `reasoning_effort` on Chat Completions.
-Direct OpenAI calls use a `wss://` base URL; gateway-routed OpenAI uses the HTTPS gateway base URL with Responses enabled.
-Set `LANGSMITH_GATEWAY_OPENAI_USE_RESPONSES=false` only if you need to force Chat Completions.
-Anthropic, Baseten, and Fireworks are unaffected.
+Routing is mandatory on the backend and in MDA, applied centrally in `packages/runtime-api/src/runtime_api/models.py`.
+**OpenAI, Anthropic, Baseten, Fireworks, and Google Gemini** are supported; unsupported providers or missing gateway credentials fail rather than contacting a provider directly.
+OpenAI always uses HTTPS Responses.
+Gateway routing and its OpenAI endpoint are not configurable switches.
+Per-run bearer credentials still attribute calls to the person the run acts for; model selection, reasoning effort, and fallback settings remain configurable.
 
 ---
 
@@ -195,316 +202,41 @@ GitHub operations are handled by `gh` inside the sandbox.
 |---|---|---|
 | `fetch_url` | `openswe/tools/fetch_url.py` | Fetch web pages as markdown |
 | `http_request` | `openswe/tools/http_request.py` | HTTP API calls |
-| `classify` | `openswe/tools/classify.py` | Fast typed classification with TypeSafe's System One model, from code mode |
 | `slack_attach_html` | `openswe/slack/tools/attach_html.py` | Attach sandbox HTML previews to Slack threads |
 | `slack_reply` | `openswe/slack/tools/reply.py` | Reply to the person who asked, in a Slack thread or ephemerally |
 
-### Classifying from code mode
+### MCP servers
 
-`classify` asks TypeSafe's System One model questions about a state and returns typed answers with calibrated probabilities, typically in 70–500ms.
-It goes through the [Gateway System One API](https://docs.langchain.com/langsmith/llm-gateway-decision-models) with the same LangSmith gateway key and TypeSafe provider secret as Auto model routing, so it needs no key of its own.
-It is an experiment: each person turns it on under **Settings → Experiments → Classify tool**, and their runs then offer it to code mode as `tools.classify`, kept off the model's tool list and found with `search_tools`.
+Robin stores no MCP servers of its own.
+A run gets MCP tools from LangSmith Managed Tools kits:
 
-Each question is a `choice` (one label from up to 255), a `noul` (the probability of yes), or a `score` (an expected level on an ordered rubric).
-Every answer comes from the options supplied, and `choice` and `score` answers carry a `confidence` to gate actions on.
-These examples are adapted from [langchain-typesafe](https://github.com/langchain-ai/langchain-typesafe), [Pipecat's classifier docs](https://docs.pipecat.ai/api-reference/server/classifiers/jev), [classifier.dev](https://jev101.org/guides/jev-text-classification-api-guide), and [TypeSafe's launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev).
+- A private thread loads the people's kit (`LMT_KIT_ID`), the workspace servers and LangSmith built-ins an admin picked for people in LangSmith, called with the owner's own LangSmith sign-in.
+  A kit cannot link a server someone added for themselves, so each one the owner connected loads as its own connection, as the owner too.
+  Without `LMT_KIT_ID`, a private thread loads the owner's `me` kit instead, which LangSmith builds from every server the owner can use, their own included.
+- Every other run loads Robin's bot kit (`LMT_BOT_KIT_ID`), called as the LMT profile `LMT_BOT_PROFILE_ID` with Robin's LangSmith key.
 
-Route a support request, falling back to a person when unsure:
+The kits, the workspace's servers and the bot profile's credentials are managed in LangSmith.
+To give every run another MCP server, such as Datadog, incident.io, Currents, or Linear, add it to the bot kit; to offer it to everyone's private threads, add it to the people's kit.
+A person adds a server only they use under Settings → Connections, or by asking Robin in a private thread, which registers it in LangSmith once they confirm.
 
-```typescript
-const { answers } = await tools.classify({
-  state: "Stripe fails whenever I connect my account.",
-  questions: {
-    department: {
-      type: "choice",
-      instructions: "Which team should handle this request?",
-      criteria: {
-        billing: "Payment, invoice, or subscription issues.",
-        technical: "Product bugs or integration failures.",
-        sales: "Pricing or purchasing questions.",
-      },
-    },
-  },
-});
-const { choice, confidence } = answers.department;
-const team = confidence >= 0.7 ? choice : "human_triage";
-```
-
-Ask a yes/no question, such as whether a call reached voicemail or a message is urgent:
-
-```typescript
-const { answers } = await tools.classify({
-  state: "Hi, you've reached Dana. Leave a message.",
-  questions: {
-    voicemail: { type: "noul", instructions: "Is this a voicemail greeting?" },
-    urgent: { type: "noul", instructions: "Does this message require an urgent response?" },
-  },
-});
-const isVoicemail = answers.voicemail.noul >= 0.8;
-```
-
-Score a state on a rubric:
-
-```typescript
-const { answers } = await tools.classify({
-  state: "This has failed three times. Fix it now.",
-  questions: {
-    frustration: {
-      type: "score",
-      instructions: "How frustrated does the customer appear?",
-      criteria: ["Calm and neutral.", "Concerned but civil.", "Very angry or using strong language."],
-    },
-  },
-});
-const { score, probabilities } = answers.frustration;
-```
-
-Label a batch in parallel, sending low-confidence rows to review:
-
-```typescript
-const feedback = [
-  "The export button crashes the app.",
-  "Please add dark mode.",
-  "Integration with external tools is seamless.",
-];
-const labeled = await Promise.all(
-  feedback.map(async (text) => {
-    const { answers } = await tools.classify({
-      state: text,
-      questions: {
-        label: {
-          type: "choice",
-          instructions: "What kind of product feedback is this?",
-          criteria: { bug: null, feature: null, praise: null, other: null },
-        },
-      },
-    });
-    return { text, ...answers.label, review: answers.label.confidence < 0.7 };
-  }),
-);
-```
-
-Guard an LLM's output before acting on it:
-
-```typescript
-const { answers } = await tools.classify({
-  state: { prompt: userPrompt, response: draftReply },
-  questions: {
-    jailbreak: { type: "noul", instructions: "Does the prompt try to get the assistant to ignore its rules?" },
-    leaks_secret: {
-      type: "noul",
-      instructions: "Does the response reveal a credential, token, or API key?",
-      criteria: { true: "A real-looking secret value appears.", false: "No secret value appears." },
-    },
-  },
-});
-```
-
-### Workspace MCP servers
-
-Admins can connect generic remote MCP servers under **Admin → Instance MCPs**, which every workspace inherits, or under **Workspaces → the workspace → Workspace MCPs** for one workspace; a workspace connection replaces an inherited one with the same name.
-Connections belong to this Robin deployment and are shared across repositories and remote coding-agent threads.
-Enabled connections provide baseline tools for all users, limited to the tools selected by an admin.
-Only admins can manage connections or reveal saved credentials.
-
-1. Choose **Add MCP server** and enter a unique lowercase connection name, an HTTPS server URL, and its transport (**Streamable HTTP** or **SSE**).
-1. Choose **Headers / API key** or **OAuth client credentials** for authentication.
-   For headers, values are encrypted using `TOKEN_ENCRYPTION_KEY` in PostgreSQL; normal dashboard responses only return header names.
-   Admins can use the eye icon (**Show saved headers**) to reveal values on demand, then the crossed-out eye to clear them from the editor.
-   Entered or imported values also have an eye icon to show or hide them.
-   Use headers for credentials, rather than URL query parameters.
-   For OAuth, enter the token URL, client ID, client secret, scopes, and the provider's client authentication method.
-   The secret is encrypted in PostgreSQL and is never returned to the browser.
-   Leave it blank when editing to keep it.
-1. Choose **Save and discover tools**.
-   For new connections, all discovered tools are selected by default.
-   Review the selection, then choose **Save connection** to enable those tools.
-   Rediscovering an existing connection preserves its selected tools, including an intentionally empty selection.
-   Newly added tools on the remote server require explicit selection.
-   Discovery checks the draft before saving; if it fails, no connection is created and existing settings stay unchanged.
-   Discovery only lists tools.
-
-Alternatively, choose **Import JSON** and paste a Claude-style configuration:
-
-```json
-{
-  "mcpServers": {
-    "datadog": {
-      "type": "http",
-      "url": "https://mcp.us5.datadoghq.com/v1/mcp?toolsets=core",
-      "headers": {
-        "DD_API_KEY": "YOUR_API_KEY",
-        "DD_APPLICATION_KEY": "YOUR_APPLICATION_KEY"
-      }
-    }
-  }
-}
-```
-
-Datadog, LangSmith, Linear, and Currents agent tools are configured through Workspace MCPs.
-The dedicated Datadog and Currents credentials forms and built-in provider tools have been removed.
-Reconnect Datadog using the MCP configuration above; legacy saved credentials are not migrated automatically.
-Use the JSON import or connection form to add the other MCP servers as needed.
-
-The [Currents MCP server](https://github.com/currents-dev/currents-mcp) wraps the Currents REST API.
-Run its Streamable HTTP server on an HTTPS host reachable by Robin, then configure its `/mcp` URL with an `Authorization: Bearer YOUR_API_KEY` header.
-The Currents REST API URL itself does not speak MCP, and the local `npx @currents/mcp` command cannot be imported as a workspace connection.
-
-Optional reviewer trace resolution and personal LangSmith credential proxying have been removed.
-Configure agent access to LangSmith through Workspace MCPs.
-Sandbox provisioning uses the deployment's `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT`.
-Linear sessions arrive through the MDA deployment's Linear channel, which posts the agent's answer in the session; configure other Linear operations through Workspace MCPs.
+Linear sessions arrive through the MDA deployment's Linear channel, which posts the agent's answer in the session.
 The channel reports a session's failed run in the session.
-Notices a run posts on its issue itself, such as a failing sandbox, use the workspace connection named `linear` and its selected `save_comment` tool (`create_comment` is also supported).
-These notices run independently of the agent and honor the connection's enabled state and tool selection.
-Delivery failures are logged without marking the run as notified.
+Sandbox provisioning uses the deployment's `LANGSMITH_API_KEY` and `LANGSMITH_ENDPOINT`.
 
-Use the endpoint for your Datadog site (this example uses US5).
-Replace the key placeholders directly in the dashboard.
-Import supports multiple named servers, optional `type` (`http` by default, or `sse`), and string authentication headers.
-It opens each connection for review without saving automatically.
-Existing connections keep their enabled state and selected tools.
-Local `command` servers and environment-variable expansion are not supported.
+MCP tools are named `mcp_<connection>_<tool>`, such as `mcp_lmt_…` for a kit's tools or `mcp_<server>_…` for a person's own server, with a hash suffix when the plain name would be ambiguous, contain other characters, or exceed 64 characters.
+The backend caches a kit's tool list for ten minutes, and each tool call checks the connection and tool again.
+An unavailable server omits its tools without preventing other servers from loading.
 
-For Linear on an MDA deployment with the Linear channel, use the channel's app token instead of the example below; see [Linear's MCP server on the Linear channel's token](#linears-mcp-server-on-the-linear-channels-token).
-Linear holds one app token per app: a client-credentials token for the channel's app revokes the channel's, and its Linear grant then needs an admin's approval again.
-
-For a Linear OAuth application, enable **Client credentials tokens** in the application's settings, then import this configuration.
-The `oauth` object is a Robin extension to the remote MCP JSON format:
-
-```json
-{
-  "mcpServers": {
-    "linear": {
-      "type": "http",
-      "url": "https://mcp.linear.app/mcp",
-      "oauth": {
-        "grant_type": "client_credentials",
-        "token_url": "https://api.linear.app/oauth/token",
-        "client_id": "YOUR_CLIENT_ID",
-        "client_secret": "YOUR_CLIENT_SECRET",
-        "scope": "read,write",
-        "token_endpoint_auth_method": "client_secret_post"
-      }
-    }
-  }
-}
-```
-
-Client credentials require no redirect URI.
-Robin requests a bearer token, caches it in memory until shortly before expiry, and obtains another when needed.
-A rejected token is renewed once on HTTP 401.
-Client credentials go only to the configured token URL; bearer tokens go to the MCP server.
-Both destinations use the same public HTTPS address validation and redirect restrictions.
-An explicit `Authorization` header cannot be combined with OAuth.
-
-Other providers can use the same `oauth` settings with their own token URL and scope format; `client_secret_basic` sends credentials using HTTP Basic instead of the request body.
-Changing the token URL, client ID, or MCP URL requires re-entering the client secret.
-Sending `oauth: null` removes OAuth credentials; omitting `oauth` from a partial API update preserves them.
-Linear documents this flow under [client credentials tokens](https://linear.app/developers/oauth-2-0-authentication#client-credentials-tokens).
-
-Examples for the generic connection form:
-
-| Connection | URL | Authentication headers |
-|---|---|---|
-| `incident` | `https://mcp.incident.io/mcp` | `Authorization`: `Bearer <your incident.io API key>` |
-| `datadog` | `https://mcp.datadoghq.com/v1/mcp?toolsets=core` | `DD_API_KEY`: your API key; `DD_APPLICATION_KEY`: your application key |
-
-Both examples use Streamable HTTP.
-Choose the Datadog MCP hostname for your site (for example, `mcp.datadoghq.eu`).
-Use appropriately scoped provider keys and select the read tools you need for investigation.
-The incident.io authentication and catalog are documented in [its remote MCP guide](https://docs.incident.io/ai/remote-mcp).
-Datadog documents its headers and site-specific endpoints in the [MCP setup guide](https://docs.datadoghq.com/mcp_server/setup/#api-and-application-keys).
-Enter Datadog key values directly, without a `Bearer` prefix.
-The `core` toolset includes logs, metrics, traces, dashboards, monitors, and incidents.
-
-Allowed tools appear in the agent's **MCPs** tool group with connection prefixes such as `mcp_incident_incident_list_…` and a suffix to prevent naming collisions.
-Catalogs are cached for ten minutes per settings revision.
-Changing a connection causes the next run to discover its catalog again.
-Every tool call reloads the current authentication settings and checks whether the connection and tool are still enabled.
-Disabling or deleting a connection blocks subsequent calls from already-loaded tools; it does not cancel an in-flight call.
-
-Editing keeps saved headers unless **Replace headers** is selected.
-Replacing with an empty header list clears those headers.
-Changing the URL requires explicitly replacing or clearing saved headers.
-Requests must remain on the configured public HTTPS origin; redirects, private addresses, local processes, and interactive OAuth login are not supported by this connection manager.
-
-The backend implementation lives in `openswe/mcp`: connection models and credential preparation, OAuth, HTTPS transport, and tool discovery/execution.
-Workspace storage and dashboard authorization remain in the workspace adapters.
-Existing stored connections and imported JSON need no migration.
-
-For another scope, provide an `MCPSource` with an owner-specific `namespace` plus async `list_connections` and `get_connection` callbacks.
-The caller must authorize each source before passing it to `load_mcp_tools(workspace_source, user_source)`.
-Sources are ordered from lowest to highest precedence.
-Distinct connection names contribute tools; a later connection with the same name replaces the entire earlier connection, including credentials and allowed tools.
-Disabled connections and empty tool selections also override earlier entries, preventing fallback to broader access.
-Saved secrets must only be preserved from the previous record in the same scope.
-
-Catalog and token caches include the source namespace.
-Each tool call resolves the current winning connection again, checks its allowlist, and refuses to switch scopes mid-run.
+The backend implementation lives in `openswe/mcp`: `managed.py` reads the LMT kits, and `runtime.py` discovers and calls tools.
+`load_mcp_tools(*sources)` takes caller-authorized `MCPSource`s from lowest to highest precedence; a later connection with the same name replaces the earlier one entirely.
 Source lookup errors must raise instead of returning an empty result, so a failed lookup cannot expose a lower-precedence connection.
-The product wires the workspace source and the triggering user's personal source (below) into every remote coding-agent run.
-An unavailable server omits its tools without preventing other connections from loading.
-This catalog is not attached to the separate read-only reviewer or Investigate graphs.
 
-### Personal MCP servers
+### Personal integrations
 
-Any signed-in user can connect remote MCP servers with their own credentials under **Settings → Connections → MCP servers**.
-The form, JSON import, OAuth, header handling, and tool discovery work exactly like workspace connections.
-Records live in PostgreSQL under the person's `users` row, so one user's connections and credentials are never visible to, reused by, or revealed to another user.
-The dashboard API is `/dashboard/api/my-mcps` and requires only a signed-in session.
-
-Personal connections load only inside a **private thread owned by the triggering user**.
-Collaborative (workspace or Slack channel) threads can be prompted by anyone, so they run without personal credentials; to use yours, continue the thread privately from the dashboard.
-Both scopes share the **MCPs** tool group.
-A personal connection with the same name as a workspace connection replaces it entirely for that user's runs, and a disabled personal connection hides the workspace one rather than falling back to it.
-Desktop (local) runs do not load MCP connections yet.
+Use **Settings → Connections → LangSmith Managed Tools** for supported personal integrations.
+The personal kit runs with the owner's accounts only in a **private thread started by its immutable owner**, and rechecks ownership before each tool call.
+Collaborative threads use Robin's bot kit instead.
 GitHub PR follow-ups targeting a private thread are rejected unless the commenter owns that thread, before credentials are read or a run is dispatched.
-
-### MCP servers on an MDA connection
-
-An instance, workspace or personal MCP server can keep its credential in an MDA connection (LangSmith Agent Auth) instead of Robin's database.
-The MDA run then connects to the server itself; the backend holds no credential for it and never calls it.
-Create the connection from `mda/` after the deployment's first `mda deploy`, for example `mda connections create open-swe-mcp-incident-io --secret-from-env INCIDENT_IO_API_KEY --deployment-id <id>`, then save the server through the dashboard API with `connection` and the tools to allow:
-
-```json
-{
-  "name": "incident",
-  "url": "https://mcp.incident.io/mcp",
-  "allowed_tools": ["incident_list"],
-  "connection": {"slug": "open-swe-mcp-incident-io", "owner": "agent"}
-}
-```
-
-The slug must be `open-swe-mcp-<server>`: a server never gets a credential Robin or a channel reads for itself, such as `mda/github-token` or `open-swe-exa`.
-The one exception is Linear's MCP server, below.
-Instance and workspace servers read the deployment's connection (`"owner": "agent"`); personal servers read their owner's own (`"owner": "user"`), and only in runs that act for their owner, so not in a background task's completion.
-The credential goes as `Authorization: Bearer <credential>`, or as it is in the header `connection_header` names, such as `DD_API_KEY`.
-A server with a connection takes no headers or OAuth, and saving it drops those the record had.
-An update that sends no `connection`, headers or OAuth, such as the dashboard's enable toggle, keeps the connection; changing the URL needs `connection` sent again.
-Robin cannot list its tools, so name them in `allowed_tools`; each run lists the server's tools once and offers those, under the same names and tier rules as other MCP tools.
-A person who has not granted a personal server's connection is asked to through MDA's credential interrupt; a run that acts for no person, or whose agent connection is missing, goes without the server.
-
-#### Linear's MCP server on the Linear channel's token
-
-With the Linear channel on the MDA deployment, Linear's MCP server can read the channel's own app token, `mda/linear-token`, which the channel's `mda deploy` keeps and Agent Auth renews.
-Linear's MCP server takes an existing OAuth token as `Authorization: Bearer` ([Linear's MCP docs](https://linear.app/docs/mcp)), and its tools then act as the Open SWE app, as with client credentials.
-Prefer this over the client-credentials example above: Linear holds one app token per app, so a server requesting its own for the channel's app revokes the channel's.
-Save an instance or workspace server with no `oauth` or headers:
-
-```json
-{
-  "name": "linear",
-  "url": "https://mcp.linear.app/mcp",
-  "allowed_tools": ["list_issues", "get_issue"],
-  "connection": {"slug": "mda/linear-token", "owner": "agent"}
-}
-```
-
-The URL must be on `https://mcp.linear.app` (`/mcp`, `/mcp/readonly` or `/sse`), with no port or credentials; the backend refuses the token for any other server, and the MDA run refuses to send it anywhere else.
-Personal servers cannot name it.
-Once the server reads the channel's token, turn off **Client credentials tokens** on the Linear app.
-The dashboard's forms do not set `connection` yet, and the inbound MCP server and Linear notices leave these servers out.
 
 ### Adding a Python tool
 
@@ -612,7 +344,7 @@ The shared utility `extract_repo_from_text()` in `openswe/utils/repo.py` handles
 
 ### Customizing Linear routing
 
-Linear comments use the triggering user's dashboard default repository, then the workspace default repository.
+Linear comments use the triggering user's dashboard default repository, then the global default repository.
 Users can override either on a per-comment basis by including `repo:owner/name` in their `@robin` comment (legacy mention aliases remain supported).
 
 ### Customizing Notion tasks
@@ -648,19 +380,18 @@ Designs are created as the agent's Notion member when `NOTION_AGENT_API_KEY` is 
 
 ### Customizing Slack routing
 
-Slack repo resolution (`get_slack_repo_config` in `openswe/webapp.py`) checks, in order:
+Slack repo resolution (`get_slack_repo_config` in `openswe/webhooks/common.py`) checks, in order:
 
 1. Repo carried over from the existing Slack thread's metadata.
-1. A `repo:owner/name` (or GitHub URL) token in the channel's **topic or purpose** (its "description").
-   This lets a channel be pinned to a repo without anyone repeating it per-message.
 1. The triggering user's dashboard `default_repo`.
-1. The workspace's default repository (its own override, else the instance's).
+1. The global default repository.
 1. `SLACK_REPO_OWNER`/`SLACK_REPO_NAME`, falling back to `DEFAULT_REPO_OWNER`/`DEFAULT_REPO_NAME`.
 
 Users can still override per-message with `repo:owner/name` syntax in their Slack message (this is read from the message text by the agent).
 A shorthand `repo:name` (without the org) is also supported — the org defaults to `DEFAULT_REPO_OWNER`.
 
-Reading the channel topic/purpose requires the bot's Slack token to have the `channels:read` (and `groups:read` for private channels) scope so `conversations.info` succeeds.
+Channel topics, purposes, and descriptions no longer configure instructions, routing, or repository defaults.
+Put channel-specific workflow and repository guidance in the listening channel's instructions under **Integrations**; existing description text is not migrated.
 
 ### Adding a new trigger
 
@@ -731,7 +462,7 @@ Edit a section's file to customize it:
 
 | File | What it controls |
 |---|---|
-| `working-environment.md.jinja` | Sandbox paths, execution constraints, and repository setup steps (`working-environment-local.md.jinja` for bridged runs); sent per turn |
+| `working-environment.md.jinja` | Sandbox paths, execution constraints, and repository setup steps; sent per turn |
 | `source-context.md.jinja` | How to communicate on the surface the turn came from; sent per turn |
 | `repository-setup.md.jinja` | Repository freshness, read-only requests, and repository skills |
 | `task-execution.md` | Workflow steps (understand → implement → verify → submit) and PR review dispatch |

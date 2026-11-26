@@ -26,11 +26,11 @@ from uuid import UUID
 
 from langgraph_sdk.schema import MultitaskStrategy
 from managed_deepagents import (
-    ChannelRun,
     GitHubChannelThread,
     GitHubEvent,
     GitHubEventResult,
     GitHubPayload,
+    GitHubRun,
 )
 from pydantic import JsonValue
 from runtime_api.github import (
@@ -98,7 +98,7 @@ async def on_event[Payload: GitHubPayload](
         ),
         msg_id=f"msg_{event.delivery_id}_act",
     )
-    runs: list[ChannelRun] = []
+    runs: list[GitHubRun] = []
     if mention is not None and issue_run is not None and acted.issue_run is not None:
         runs += await _issue_runs(mention, issue_run, acted.issue_run)
     runs += [_thread_run(run) for run in acted.automations]
@@ -124,7 +124,9 @@ async def _automations(delivery: GitHubDelivery, repository: str) -> list[FiredG
     try:
         rules = await ask_backend(
             GITHUB_AUTOMATION_RULES,
-            GitHubAutomationRulesRequest(repository=repository, author=subject.author[:64]),
+            GitHubAutomationRulesRequest(
+                repository=repository, author=subject.author[:64], branches=subject.branches
+            ),
             msg_id=f"msg_{delivery.delivery_id}_automations",
         )
         return subject.fired(rules)
@@ -161,8 +163,7 @@ async def _issue_run_request(
     if not facts.sender_email_known:
         return _no_run("No email mapping for the sender", delivery_id)
     if facts.conversation_started:
-        # A follow-up stays in the workspace its thread started in.
-        return _request(thread_id, mention.follow_up(trusted), facts.thread_workspace)
+        return _request(thread_id, mention.follow_up(trusted))
     comments = mention.with_comment(await mention.comments())
     if unasked := [login for login in mention.logins(comments) if login not in asked]:
         trusted |= frozenset(
@@ -176,14 +177,13 @@ async def _issue_run_request(
                 )
             ).trusted
         )
-    return _request(thread_id, mention.first(comments, trusted), None)
+    return _request(thread_id, mention.first(comments, trusted))
 
 
-def _request(thread_id: UUID, run_input: RunInput, workspace: str | None) -> GitHubIssueRunRequest:
+def _request(thread_id: UUID, run_input: RunInput) -> GitHubIssueRunRequest:
     return GitHubIssueRunRequest(
         thread_id=thread_id,
         input=cast(dict[str, JsonValue], run_input),
-        workspace=workspace,
     )
 
 
@@ -197,14 +197,14 @@ def _no_run(reason: str, delivery_id: str) -> None:
 
 async def _issue_runs(
     mention: IssueMention, request: GitHubIssueRunRequest, planned: PlannedGitHubIssueRun
-) -> list[ChannelRun]:
+) -> list[GitHubRun]:
     """The issue's run on its conversation, or, while it waits, what points it to the decision."""
     if not planned.starts:
         return []
     if planned.run is None or request.input is None:
         return [{"input": ACTS_WHILE_WAITING}]
     await mention.acknowledge()
-    run: ChannelRun = {
+    run: GitHubRun = {
         "input": request.input,
         "context": planned.run.context,
         "metadata": planned.run.metadata,
@@ -216,9 +216,9 @@ async def _issue_runs(
 
 def _thread_run(
     run: GitHubThreadRun, *, multitask_strategy: MultitaskStrategy | None = None
-) -> ChannelRun:
+) -> GitHubRun:
     """A run on the thread the backend planned it on: an automation's, or the pull request's."""
-    started: ChannelRun = {
+    started: GitHubRun = {
         "input": run.input,
         "context": run.context,
         "metadata": run.metadata,

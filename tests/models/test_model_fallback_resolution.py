@@ -6,31 +6,18 @@ from openswe.dashboard import options
 from openswe.dashboard.options import (
     FABLE_MODEL_IDS,
     fable_disabled_fallback,
-    provider_fallback_pair,
 )
 from openswe.dashboard.profiles import normalize_profile_for_response
-from openswe.dashboard.workspace_settings import (
-    WorkspaceSettingsUpdate,
+from openswe.dashboard.settings import (
+    Settings,
+    SettingsUpdate,
+    _set_fields,
+    normalize_settings_for_response,
 )
 
-STALE_ANTHROPIC = "anthropic:claude-opus-5"
 SUPPORTED_ANTHROPIC = "anthropic:claude-opus-5-5"
 SUPPORTED_OPENAI = "openai:gpt-6.1-sol"
-SUPPORTED_ASTRA = "openai:gpt-6-astra"
-SUPPORTED_KIMI = "fireworks:accounts/fireworks/models/kimi-k3"
-DEPRECATED_ANTHROPIC = "anthropic:claude-opus-4-8"
-DEPRECATED_OPENAI = "openai:gpt-5.5"
 DEPRECATED_GLM = "fireworks:accounts/fireworks/models/glm-5p2"
-FABLE = "anthropic:claude-fable-5-1"
-
-
-def test_provider_fallback_preserves_provider_and_effort() -> None:
-    assert provider_fallback_pair(STALE_ANTHROPIC, "xhigh") == (SUPPORTED_ANTHROPIC, "xhigh")
-
-
-@pytest.mark.parametrize("model_id", ["unknown:model", "no-colon", "", None, 123])
-def test_provider_fallback_returns_none_without_provider_match(model_id: object) -> None:
-    assert provider_fallback_pair(model_id, "high") is None
 
 
 @pytest.mark.parametrize(
@@ -56,9 +43,9 @@ def test_profile_response_and_override_defer_deprecated_models(model_id: str, ef
     assert "subagent_reasoning_effort" not in profile
 
 
-def test_workspace_settings_update_rejects_invalid_effort_for_openai_model() -> None:
+def test_global_settings_update_rejects_invalid_effort_for_openai_model() -> None:
     with pytest.raises(ValueError, match="effort 'bogus' not supported"):
-        WorkspaceSettingsUpdate(
+        SettingsUpdate(
             default_agent_model=SUPPORTED_OPENAI,
             default_agent_reasoning_effort="bogus",
         )
@@ -67,12 +54,12 @@ def test_workspace_settings_update_rejects_invalid_effort_for_openai_model() -> 
 @pytest.mark.parametrize(
     ("anthropic_key", "openai_key", "expected"),
     [
-        ("key", "", SUPPORTED_ANTHROPIC),
+        ("key", "", SUPPORTED_OPENAI),
         ("key", "key", SUPPORTED_OPENAI),
         ("", "", SUPPORTED_OPENAI),
     ],
 )
-def test_global_default_matches_available_credentials(
+def test_global_default_ignores_direct_provider_credentials(
     monkeypatch: pytest.MonkeyPatch, anthropic_key: str, openai_key: str, expected: str
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", anthropic_key)
@@ -89,24 +76,33 @@ def test_fable_disabled_fallback_is_non_fable_anthropic() -> None:
     assert effort == "high"
 
 
-def test_retired_deployment_default_keeps_its_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LLM_MODEL_ID", "google_genai:gemini-4-argon")
-    assert options.default_model_pair() == ("google_genai:gemini-4-carbon", "medium")
+def test_unrecognized_stored_settings_fall_back_to_default() -> None:
+    stored = {
+        "default_agent_model": "openai:gpt-6-astra",
+        "default_agent_reasoning_effort": "low",
+        "default_agent_routing_performance_model": "anthropic:claude-fable-5-1",
+        "default_agent_routing_performance_reasoning_effort": "high",
+    }
+    normalized = normalize_settings_for_response(stored)
+    assert normalized["default_agent_model"] is None
+    assert normalized["default_agent_reasoning_effort"] is None
+    assert normalized["default_agent_routing_performance_model"] is None
+    assert normalized["default_agent_routing_performance_reasoning_effort"] is None
 
+    settings = Settings(stored)
+    assert settings.default_model("agent") == options.default_model_pair()
+    assert settings.agent_routing_models["performance"] == options.default_model_pair()
 
-def test_workspace_settings_carry_a_retired_model_to_its_successor() -> None:
-    update = WorkspaceSettingsUpdate(
-        default_agent_model="google_genai:gemini-4-argon", default_agent_reasoning_effort="high"
-    )
-    assert update.default_agent_model == "google_genai:gemini-4-carbon"
-    assert update.default_agent_reasoning_effort == "high"
+    update = SettingsUpdate.model_validate({**_set_fields(stored), "review_draft_prs": True})
+    assert update.default_agent_model is None
+    assert update.review_draft_prs is True
 
 
 def test_an_unknown_model_is_rejected_rather_than_remapped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with pytest.raises(ValueError, match="unsupported agent model"):
-        WorkspaceSettingsUpdate(
+        SettingsUpdate(
             default_agent_model="openai:gpt-6.1-slo", default_agent_reasoning_effort="high"
         )
     monkeypatch.setenv("LLM_MODEL_ID", "openai:gpt-6.1-slo")

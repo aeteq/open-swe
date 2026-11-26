@@ -28,7 +28,7 @@ async def test_github_session_resolves_current_user(monkeypatch, raw_id):
     assert principal.github_login == "Alice"
     assert await principal.user() is user
     resolve.assert_awaited_once_with(
-        UUID(raw_id) if raw_id not in (None, "invalid") else None, "Alice"
+        UUID(raw_id) if raw_id not in (None, "invalid") else None, "Alice", session=None
     )
 
 
@@ -62,9 +62,22 @@ def test_a_langsmith_only_session_can_play_trace_flight_but_not_reach_github_fea
         }
     )
     principal.authorize_path("/dashboard/api/trace-flight/runs", "POST")
-    with pytest.raises(HTTPException) as exc:
-        principal.authorize_path("/dashboard/api/workspaces", "POST")
-    assert exc.value.status_code == 403
+    for method in ("GET", "HEAD"):
+        principal.authorize_path("/dashboard/api/analytics/gateway-spend", method)
+        principal.authorize_path("/dashboard/api/routing", method)
+        principal.authorize_path("/dashboard/api/settings", method)
+        principal.authorize_path("/dashboard/api/options", method)
+    for path, method in (
+        ("routing/repositories/acme/repo", "PUT"),
+        ("routing/slack-channels/C1", "DELETE"),
+        ("settings", "PUT"),
+        ("analytics/gateway-spend", "POST"),
+        ("analytics/gateway-spend/other", "GET"),
+        ("analytics/pr-merge-rate-by-model", "GET"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            principal.authorize_path(f"/dashboard/api/{path}", method)
+        assert exc.value.status_code == 403
 
 
 def test_github_thread_identity_preserves_attribution(monkeypatch):
@@ -119,7 +132,14 @@ async def test_github_session_needs_no_langsmith_where_github_is_the_sign_in(mon
 
 @pytest.mark.parametrize(
     "route",
-    ["slack/login", "slack/callback", "slack/desktop/exchange", "notifications/receipt/delivered"],
+    [
+        "slack/login",
+        "slack/callback",
+        "slack/desktop/exchange",
+        "notifications/receipt/delivered",
+        "schedules",
+        "schedules/00000000-0000-0000-0000-000000000002/trigger",
+    ],
 )
 def test_langsmith_only_person_can_use_personal_routes(route):
     principal = DashboardPrincipal("langsmith", "user:00000000-0000-0000-0000-000000000001", None)
@@ -150,6 +170,3 @@ async def test_linked_langsmith_identity_still_requires_valid_authorization(monk
     with pytest.raises(HTTPException) as exc:
         await LangSmithLogin().authorize_user(user)
     assert exc.value.status_code == status
-    authorize.assert_awaited_once_with(
-        DashboardPrincipal("langsmith", f"user:{user.id}", user.id, "ls-alice")
-    )

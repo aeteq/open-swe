@@ -20,7 +20,7 @@ pytestmark = pytest.mark.usefixtures("registry_db")
 def _backend_acts_on_clicks(monkeypatch: pytest.MonkeyPatch) -> None:
     """These drive the backend's own handling of a click, which ``act_on_slack_click``
     runs for each click MDA's Slack channel hands it."""
-    monkeypatch.setattr(slack_routes, "_answered_here", lambda _interaction: True)
+    monkeypatch.setattr(slack_routes, "_answers_slack", lambda _interaction: True)
 
 
 def _request(payload: dict[str, Any]) -> Request:
@@ -89,7 +89,7 @@ def _option_payload() -> dict[str, Any]:
                 {"type": "actions", "elements": [action]},
                 {
                     "type": "context",
-                    "elements": [{"type": "mrkdwn", "text": "Open in Web"}],
+                    "elements": [{"type": "mrkdwn", "text": "Open in Robin"}],
                 },
             ],
         },
@@ -121,7 +121,7 @@ async def test_selected_option_updates_original_message(monkeypatch: pytest.Monk
             },
             {
                 "type": "context",
-                "elements": [{"type": "mrkdwn", "text": "Open in Web"}],
+                "elements": [{"type": "mrkdwn", "text": "Open in Robin"}],
             },
         ],
     )
@@ -208,134 +208,16 @@ async def test_option_interaction_schedules_update_only_for_authorized_actor(
         "Option B",
     )
     process.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("reader", [True, False])
-async def test_next_in_a_review_guide_counts_only_for_its_reader(
-    monkeypatch: pytest.MonkeyPatch, reader: bool
-) -> None:
-    payload = _option_payload()
-    payload["actions"][0]["value"] = json.dumps({"type": "open_swe_option", "response": "Next"})
-    update = AsyncMock()
-    advance = AsyncMock()
-    guide = SimpleNamespace(is_reader=AsyncMock(return_value=reader))
-    monkeypatch.setattr(slack_routes.common, "verify_slack_signature", lambda **_kwargs: True)
-    monkeypatch.setattr(slack_routes.common, "is_code_channel", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        slack_routes.common, "lookup_slack_thread_id", AsyncMock(return_value="thread-1")
-    )
-    monkeypatch.setattr(
-        slack_routes.common,
-        "resolve_slack_channel_context",
-        AsyncMock(
-            return_value=SlackChannelContext(
-                name="proj-open-swe", is_ext_shared=False, is_pending_ext_shared=False
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        slack_routes.ReviewGuideSession, "for_channel", AsyncMock(return_value=guide)
-    )
-    monkeypatch.setattr(slack_routes, "_update_selected_option_message", update)
-    monkeypatch.setattr(slack_routes, "advance", advance)
-    background_tasks = BackgroundTasks()
-
-    result = await slack_routes.slack_interactivity(_request(payload), background_tasks)
-
-    guide.is_reader.assert_awaited_once_with("U1")
-    if not reader:
-        assert result["status"] == "ignored"
-        assert background_tasks.tasks == []
-        return
-    assert [task.func for task in background_tasks.tasks] == [update, advance]
-    await background_tasks()
-    advance.assert_awaited_once_with("C1", "2.0")
-
-
-@pytest.mark.asyncio
-async def test_code_channel_view_action_routes_to_channel_session(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    payload = {
-        "type": "block_actions",
-        "trigger_id": "trigger-view-1",
-        "container": {
-            "type": "code_channel_view",
-            "channel_id": "C-code",
-            "view_id": "V-plan",
-        },
-        "user": {"id": "U1"},
-        "actions": [
-            {
-                "type": "button",
-                "action_id": "approve-plan",
-                "action_ts": "1786574000.000003",
-                "value": "approve",
-            }
-        ],
-    }
-    process = AsyncMock()
-    monkeypatch.setattr(slack_routes.common, "verify_slack_signature", lambda **_kwargs: True)
-    monkeypatch.setattr(slack_routes.common, "is_code_channel", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        slack_routes.common, "lookup_slack_thread_id", AsyncMock(return_value="thread-1")
-    )
-    monkeypatch.setattr(slack_routes.common, "claim_slack_event", AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        slack_routes.common,
-        "resolve_slack_channel_context",
-        AsyncMock(return_value=SlackChannelContext()),
-    )
-    monkeypatch.setattr(
-        slack_routes.common,
-        "get_slack_repo_config",
-        AsyncMock(return_value={"owner": "langchain-ai", "name": "open-swe"}),
-    )
-    monkeypatch.setattr(slack_routes.service, "process_slack_mention", process)
-    background_tasks = BackgroundTasks()
-
-    result = await slack_routes.slack_interactivity(_request(payload), background_tasks)
-    await background_tasks()
-
-    assert result["status"] == "accepted"
-    assert process.await_args is not None
-    event_data = process.await_args.args[0]
-    assert event_data.thread_ts == "0"
-    assert event_data.explicit_request is True
-    assert "approve-plan" in event_data.text
-
-
-@pytest.mark.asyncio
-async def test_code_channel_external_select_returns_registered_suggestions(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    payload = {
-        "type": "block_suggestion",
-        "container": {
-            "type": "code_channel_view",
-            "channel_id": "C-code",
-            "view_id": "V-plan",
-        },
-        "action_id": "repository",
-        "value": "open",
-    }
-    options = [{"text": {"type": "plain_text", "text": "open-swe"}, "value": "open-swe"}]
-    get_suggestions = AsyncMock(return_value=options)
-    monkeypatch.setattr(slack_routes.common, "verify_slack_signature", lambda **_kwargs: True)
-    monkeypatch.setattr(slack_routes.common, "get_block_suggestions", get_suggestions)
-
-    result = await slack_routes.slack_interactivity(_request(payload), BackgroundTasks())
-
-    assert result == {"options": options}
-    get_suggestions.assert_awaited_once_with("C-code", "V-plan", "repository", "open")
+    request = process.await_args.args[0]
+    assert (request.user_id, request.text, request.thread_id) == ("U1", "Option B", "thread-1")
+    assert repo.await_args.kwargs["slack_user_id"] == "U1"
 
 
 @pytest.mark.parametrize(
     "channel_id,thread_ts,message_ts",
     [("C1", "1.0", "1.5"), ("C1", "0", "1.5"), ("D1", "0", "1.5"), ("C1", "1.0", "")],
 )
-async def test_retry_is_requester_scoped_and_dispatches_only_once(
+async def test_retry_is_channel_scoped_and_dispatches_only_once(
     monkeypatch: pytest.MonkeyPatch,
     memory_event_claims: MemoryEventClaims,
     channel_id: str,
@@ -351,13 +233,9 @@ async def test_retry_is_requester_scoped_and_dispatches_only_once(
     monkeypatch.setattr(
         slack_routes.common, "resolve_slack_thread_id", AsyncMock(return_value="thread-1")
     )
-    monkeypatch.setattr(slack_routes.common, "get_slack_repo_config", AsyncMock(return_value=None))
-    monkeypatch.setattr(
-        slack_routes.common,
-        "is_code_channel",
-        AsyncMock(return_value=thread_ts == "0" and channel_id.startswith("C")),
-    )
-    monkeypatch.setattr(retry, "is_kitchen_channel", AsyncMock(return_value=False))
+    repo = AsyncMock(return_value=None)
+    monkeypatch.setattr(slack_routes.common, "get_slack_repo_config", repo)
+    monkeypatch.setattr(retry, "is_listening_channel", AsyncMock(return_value=False))
     update = AsyncMock()
     monkeypatch.setattr(slack_routes.common, "update_slack_message", update)
     notify = AsyncMock()
@@ -377,7 +255,7 @@ async def test_retry_is_requester_scoped_and_dispatches_only_once(
     blocks = retry_request.blocks("Unexpected error")
     assert blocks is not None
     payload = _option_payload()
-    payload["channel"]["id"] = channel_id
+    payload["channel"]["id"] = "C-other"
     payload["actions"][0]["value"] = blocks[1]["elements"][0]["value"]
     payload["message"]["blocks"] = blocks
     payload["user"]["id"] = "U2"
@@ -389,14 +267,16 @@ async def test_retry_is_requester_scoped_and_dispatches_only_once(
     update.assert_not_awaited()
     notify.assert_awaited_once()
 
-    payload["user"]["id"] = "U1"
+    payload["channel"]["id"] = channel_id
     assert (await slack_routes.slack_interactivity(_request(payload), background)).get(
         "status"
     ) == "accepted"
     await background()
     assert process.await_args is not None
     request = process.await_args.args[0]
-    assert request.user_id == "U1"
+    assert request.user_id == "U2"
+    assert request.target.user_id == "U1"
+    assert repo.await_args.kwargs["slack_user_id"] == "U2"
     assert request.thread_ts == thread_ts
     assert request.text == ("Fix the bug" if message_ts else "Retry")
     assert request.turn_context == ("" if message_ts else retry.prompt("runs/slack-retry").strip())
@@ -404,7 +284,6 @@ async def test_retry_is_requester_scoped_and_dispatches_only_once(
     assert request.original_message_ts == message_ts
     assert request.source_message_ts == message_ts
     assert request.explicit_request
-    assert request.code_channel == (thread_ts == "0" and channel_id.startswith("C"))
     assert request.concierge_mode == (channel_id.startswith("D") and thread_ts == "0")
     assert (await slack_routes.slack_interactivity(_request(payload), BackgroundTasks())).get(
         "status"

@@ -17,6 +17,7 @@ its own.
 import asyncio
 import logging
 import os
+import socket
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -28,6 +29,7 @@ from langchain_core.messages import (
     AIMessage,
     BaseMessage,
     HumanMessage,
+    ToolMessage,
     add_notification_metadata,
     messages_to_dict,
 )
@@ -41,10 +43,11 @@ from pydantic import (
     TypeAdapter,
     ValidationError,
 )
-from runtime_api.catalog import Catalog, ToolSpec
+from runtime_api.catalog import Catalog, SandboxSpec, ToolSpec
 from runtime_api.endpoint import Delivery, call
-from runtime_api.loop import VISIBLE_FROM, RunCall
+from runtime_api.loop import VISIBLE_FROM, RunCall, ToolCallReport
 from runtime_api.provenance import Provenance
+from runtime_api.sandbox_setup import GitIdentity
 from runtime_api.tool_search import TOOL_SPECS, ToolNames
 from runtime_api.workers import ADOPT, Adopt
 
@@ -56,6 +59,8 @@ logger = logging.getLogger(__name__)
 
 BACKEND_URL_ENV: Final = "OPEN_SWE_BACKEND_URL"
 # Graph state the backend's hooks read that MDA's own middleware keeps.
+# The graph state the backend's hooks keep, which goes back with every call.
+STATE_KEY: Final = "open_swe_state"
 _FORWARDED_STATE_KEYS: Final = ("run_model_call_count", "thread_model_call_count")
 # What MDA's summarization records; the backend hears only where it cut the conversation.
 _SUMMARIZATION_EVENT: Final = "_summarization_event"
@@ -66,6 +71,20 @@ TOOL_CALL_SLACK_SECONDS: Final = 300.0
 # backend rollout takes; which calls are sent again is each endpoint's ``delivery``.
 _RETRY_SECONDS: Final = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 30.0, 30.0, 30.0, 30.0)
 _GATEWAY_STATUSES: Final = frozenset({502, 503, 504})
+# The firewall between the runtime and the backend forgets a connection after about ten
+# idle minutes and drops the reply to a call held open longer, so a probe goes out
+# every minute while one waits.
+_KEEPALIVE_SECONDS: Final = 60
+_KEEPALIVE: Final = (
+    (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1),
+    # macOS names the idle time TCP_KEEPALIVE; Linux has only TCP_KEEPIDLE.
+    (
+        socket.IPPROTO_TCP,
+        socket.TCP_KEEPIDLE if hasattr(socket, "TCP_KEEPIDLE") else socket.TCP_KEEPALIVE,
+        _KEEPALIVE_SECONDS,
+    ),
+    (socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, _KEEPALIVE_SECONDS),
+)
 _json = TypeAdapter(JsonValue)
 _json_object = TypeAdapter(dict[str, JsonValue])
 _json_list = TypeAdapter(list[JsonValue])
@@ -132,7 +151,7 @@ class BackendRefusedError(BackendCallError):
 
 def held_state(state: Mapping[str, object]) -> dict[str, JsonValue]:
     """The graph state the backend's hooks keep, which goes back with every call."""
-    held = state.get("open_swe_state")
+    held = state.get(STATE_KEY)
     forwarded = {key: state[key] for key in _FORWARDED_STATE_KEYS if key in state}
     event = state.get(_SUMMARIZATION_EVENT)
     cutoff = event.get("cutoff_index") if isinstance(event, Mapping) else None
@@ -221,7 +240,9 @@ class _Connections:
         loop = asyncio.get_running_loop()
         client = self._clients.get(loop)
         if client is None or client.is_closed:
-            client = httpx2.AsyncClient()
+            client = httpx2.AsyncClient(
+                transport=httpx2.AsyncHTTPTransport(socket_options=_KEEPALIVE)
+            )
             self._clients[loop] = client
         return client
 
@@ -267,9 +288,27 @@ class Run:
         self.backend = OpenSweBackend(self)
         # What the run tells the backend happened, until the backend takes it.
         self.outbox = Outbox(self.backend)
+        # The trace of the turn the run plays.
+        self.trace = TurnTrace()
         # The route the run's model calls take, once the run starts; its subagents follow it.
         self.route: str | None = None
+        # Jev's answers about the run's request, for its trace, once the classifier ran.
+        self.classified: dict[str, str] = {}
         self._locals: dict[object, object] = {}
+
+    def tool_finished(self, report: ToolCallReport, result: ToolMessage) -> None:
+        """Tell the backend how a tool call the run made ended, and count it on its trace.
+
+        deepagents answers any shell command that ran with success, and puts its exit code,
+        when known, on the result's artifact.
+        """
+        self.outbox.finished(report, result)
+        self.trace.record_tool(
+            errored=result.status == "error",
+            nonzero_shell_exit=report.name == "execute"
+            and isinstance(result.artifact, Mapping)
+            and result.artifact.get("exit_code", 0) != 0,
+        )
 
     def local[T](self, key: object, make: Callable[[], T]) -> T:
         """Keep a lazily created value for this run alone."""
@@ -319,6 +358,19 @@ class Run:
     def catalog(self) -> Catalog:
         """What the run may do: a launched worker's own catalog once it adopted its run."""
         return self.adopted if self.adopted is not None else self.planned
+
+    @property
+    def sandbox(self) -> SandboxSpec:
+        """The thread's sandbox the run works in, as its catalog names it; every run has one."""
+        sandbox = self.planned.sandbox
+        if sandbox is None:
+            raise BackendCallError("This run has no sandbox")
+        return sandbox
+
+    @property
+    def git_identity(self) -> GitIdentity:
+        """Who commits in the run's sandbox: its thread's owner, or the bot."""
+        return self.sandbox.git_identity
 
     async def adopt(self, thread_id: str, run_id: str | None, instructions: str) -> None:
         """Become this worker thread's run: every later call, tools included, acts as it."""
@@ -378,6 +430,9 @@ class RunContext(BaseModel):
     # A launched task worker's first run: traded for its own run token before anything else.
     worker_grant: str | None = Field(default=None, alias="__worker_grant")
     invocation_id: str | None = None
+    origin: str | None = None
+    owner_ls_user_id: str | None = None
+    visibility: str | None = None
     # JSON, not Catalog: the gRPC runtime serializes only the context's top level.
     catalog: dict[str, JsonValue] | None = Field(default=None, alias="__catalog")
     _run: Run | None = PrivateAttr(default=None)
@@ -473,6 +528,7 @@ class OpenSweBackend:
                     "Backend call timed out",
                     extra={
                         "endpoint": label,
+                        "error_type": type(exc).__name__,
                         "elapsed_seconds": asyncio.get_running_loop().time() - started,
                     },
                 )
@@ -503,6 +559,15 @@ class OpenSweBackend:
                     error = BackendUnavailableError
                 elif status == 403:
                     error = BackendRefusedError
+                logger.warning(
+                    "Backend call failed",
+                    extra={
+                        "endpoint": label,
+                        "error_type": type(exc).__name__,
+                        "status_code": status,
+                        "elapsed_seconds": asyncio.get_running_loop().time() - started,
+                    },
+                )
                 raise error(f"{label} failed ({type(exc).__name__})") from exc
         return _json.validate_python(response.json())
 

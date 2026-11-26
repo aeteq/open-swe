@@ -2,13 +2,14 @@ import { Link as MacawLink } from "@langchain/macaw-components/Link"
 import { Banner } from "@langchain/macaw-components/Banner"
 import { Button } from "@langchain/macaw-components/Button"
 import { Select } from "@langchain/macaw-components/Select"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { SkeletonLines } from "@/components/Skeleton"
 import { Text } from "@langchain/macaw-components/Text"
 import { Textarea } from "@langchain/macaw-components/Textarea"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 
 import { AddRepositoryField } from "@/components/AddRepositoryField"
+import { LoadError } from "@/components/LoadError"
 import type { ReviewApprovalMode, ReviewStyle } from "@/lib/api"
 import { api, connectService, isGithubReauthError } from "@/lib/api"
 import { invalidationTopic } from "@/lib/invalidations/topics"
@@ -126,7 +127,24 @@ export function ReviewStylesPanel() {
   })
 
   if (styles.isLoading) {
-    return <Skeleton className="h-40" />
+    return (
+      <SkeletonLines
+        lines={4}
+        label="Loading review styles"
+        className="gap-space-1"
+        lineClassName="h-8 rounded-md"
+      />
+    )
+  }
+
+  if (styles.isError && !isGithubReauthError(styles.error)) {
+    return (
+      <LoadError
+        title="Couldn't load review styles"
+        error={styles.error}
+        retry={() => void styles.refetch()}
+      />
+    )
   }
 
   const configured = new Set((styles.data ?? []).map((s) => s.full_name))
@@ -148,6 +166,7 @@ export function ReviewStylesPanel() {
   }
 
   const githubReauth =
+    (styles.isError && isGithubReauthError(styles.error)) ||
     (repos.isError && isGithubReauthError(repos.error)) ||
     [saveMode, createStyle, savePrompt, removeStyle]
       .map((m) => m.error)

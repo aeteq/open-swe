@@ -1,4 +1,5 @@
 from typing import Literal
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from openswe.audit_logs import tools
 from openswe.audit_logs.models import AuditLog
 from openswe.run_config import RunConfig
+from openswe.tools import admin_gate
 from openswe.users import User
 
 
@@ -24,9 +26,11 @@ async def test_tool_audit_outcome_without_payloads(
     entries: list[AuditLog] = []
     user = User(id=uuid4())
     monkeypatch.setattr(
-        tools,
+        admin_gate,
         "configurable",
-        lambda: RunConfig(source="dashboard", github_login="alice", thread_id="thread-id"),
+        lambda: RunConfig(
+            source="dashboard", github_login="alice", thread_id="thread-id", run_id="runtime-run-id"
+        ),
     )
 
     async def lookup(*_args: object) -> User:
@@ -42,41 +46,37 @@ async def test_tool_audit_outcome_without_payloads(
     async def mutate(settings: dict[str, str]) -> dict[str, object]:
         return result
 
-    assert await mutate({"token": "argument-secret"}) == result
+    assert await mutate({"token": "argument-secret", "run_id": "argument-secret"}) == result
     (entry,) = entries
     assert entry.operation_succeeded is succeeded
     assert entry.user_id == user.id
     assert entry.enrichments.actor_kind == "agent"
     assert entry.enrichments.thread_id == "thread-id"
+    assert entry.enrichments.run_id == "runtime-run-id"
     assert "argument-secret" not in entry.model_dump_json()
     assert "returned-secret" not in entry.model_dump_json()
 
 
-async def test_mcp_caller_writes_are_attributed_and_filed_under_their_target(
+async def test_mcp_caller_writes_are_attributed_without_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     entries: list[AuditLog] = []
-    filed: list[str] = []
     user = User(id=uuid4())
     monkeypatch.setattr(
-        tools, "configurable", lambda: RunConfig(source="mcp", github_login="alice")
+        admin_gate, "configurable", lambda: RunConfig(source="mcp", github_login="alice")
     )
 
     async def lookup(*_args: object) -> User:
         return user
 
-    async def enrich(_entry: AuditLog, workspace: str) -> None:
-        filed.append(workspace)
-
     async def append(entry: AuditLog) -> None:
         entries.append(entry)
 
     monkeypatch.setattr(User, "for_login", lookup)
-    monkeypatch.setattr(tools, "enrich_workspace", enrich)
     monkeypatch.setattr(tools, "append_safely", append)
 
-    @tools.audit_tool(reads={"status"}, target_workspace="workspace")
-    async def control(action: str, workspace: str) -> dict[str, object]:
+    @tools.audit_tool(reads={"status"})
+    async def control(action: str, secret: str) -> dict[str, object]:
         return {"ok": True}
 
     await control("status", "core")
@@ -84,7 +84,9 @@ async def test_mcp_caller_writes_are_attributed_and_filed_under_their_target(
     await control("edit", "core")
     (entry,) = entries
     assert entry.user_id == user.id
-    assert filed == ["core"]
+    assert entry.enrichments.run_id is None
+    assert "run_id" not in entry.enrichments.model_dump(exclude_none=True)
+    assert "core" not in entry.model_dump_json()
 
 
 async def test_tool_audit_records_exception_but_not_reads_or_background_owner(
@@ -92,9 +94,11 @@ async def test_tool_audit_records_exception_but_not_reads_or_background_owner(
 ) -> None:
     entries: list[AuditLog] = []
     monkeypatch.setattr(
-        tools,
+        admin_gate,
         "configurable",
-        lambda: RunConfig(source="schedule", github_login="schedule-owner"),
+        lambda: RunConfig(
+            source="schedule", github_login="schedule-owner", run_id="scheduled-run-id"
+        ),
     )
 
     async def append(entry: AuditLog) -> None:
@@ -116,23 +120,22 @@ async def test_tool_audit_records_exception_but_not_reads_or_background_owner(
     assert entry.operation_succeeded is False
     assert entry.user_id is None
     assert entry.enrichments.actor_login is None
+    assert entry.enrichments.run_id == "scheduled-run-id"
     assert "exception-secret" not in entry.model_dump_json()
 
 
 @pytest.mark.parametrize(
     ("name", "arguments"),
     [
-        ("create_automation", {"prompt": "secret", "workspace": "secret", "triggers": []}),
+        ("create_automation", {"prompt": "secret", "triggers": []}),
         ("update_automation", {"automation_id": "secret"}),
         ("trigger_automation", {"automation_id": "secret"}),
         ("delete_automation", {"automation_id": "secret"}),
-        ("snapshotctl", {"action": "rebuild", "workspace": "secret"}),
-        (
-            "snapshotctl",
-            {"action": "edit", "workspace": "secret", "setup_script": "secret"},
-        ),
-        ("delete_workspace", {"name": "secret"}),
-        ("configure_repository", {"workspace": "secret", "repo": "secret"}),
+        ("snapshotctl", {"action": "stop"}),
+        ("bind_repository", {"repo": "secret"}),
+        ("unbind_repository", {"repo": "secret"}),
+        ("bind_slack_channel", {"channel_id": "secret", "prompt": "private instructions"}),
+        ("unbind_slack_channel", {"channel_id": "secret"}),
         ("save_organization_skill", {"name": "secret", "description": "secret"}),
         ("delete_organization_skill", {"name": "secret"}),
     ],
@@ -144,7 +147,7 @@ async def test_mcp_admin_mutations_audit_policy_refusals_without_arguments(
     from openswe.tools import access as access_module
 
     entries: list[AuditLog] = []
-    monkeypatch.setattr(tools, "configurable", lambda: RunConfig(source="mcp"))
+    monkeypatch.setattr(admin_gate, "configurable", lambda: RunConfig(source="mcp"))
 
     async def refuse() -> access_module.Access:
         return access_module.Access()
@@ -170,7 +173,7 @@ async def test_opted_in_skill_tool_records_policy_refusal_without_arguments(
     from openswe.tools import user_skills
 
     entries: list[AuditLog] = []
-    monkeypatch.setattr(tools, "configurable", lambda: RunConfig(source="schedule"))
+    monkeypatch.setattr(admin_gate, "configurable", lambda: RunConfig(source="schedule"))
 
     async def refuse() -> access_module.Access:
         return access_module.Access()
@@ -186,3 +189,23 @@ async def test_opted_in_skill_tool_records_policy_refusal_without_arguments(
     assert entry.operation_name == "save_user_skill"
     assert entry.operation_succeeded is False
     assert "secret" not in entry.model_dump_json()
+
+
+async def test_tool_audit_uses_stable_person_id_before_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(id=uuid4())
+    lookup = AsyncMock(return_value=user)
+    mutable_login = AsyncMock()
+    monkeypatch.setattr(User, "get", lookup)
+    monkeypatch.setattr(User, "for_login", mutable_login)
+    monkeypatch.setattr(
+        admin_gate,
+        "configurable",
+        lambda: RunConfig(source="dashboard", user_id=str(user.id), github_login="old-handle"),
+    )
+    entry = AuditLog(operation_name="update_settings")
+    await entry.enrich_tool()
+    assert entry.user_id == user.id
+    lookup.assert_awaited_once_with(user.id)
+    mutable_login.assert_not_awaited()

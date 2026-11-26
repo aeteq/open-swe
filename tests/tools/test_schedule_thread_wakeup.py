@@ -9,6 +9,7 @@ from uuid import UUID
 
 import pytest
 
+from openswe.dispatch import SERVER_STREAM
 from openswe.threads import wake_budget
 from openswe.threads.oswe_thread import OsweThreadState
 from openswe.users import User, UserIdentity
@@ -410,6 +411,7 @@ async def test_queued_wakeups_run_even_when_late(
                     "source": "slack",
                     "github_login": "alice",
                     "invocation_id": "wakeup-invocation",
+                    "origin": "github",
                 }
             },
             "metadata": {"kind": "thread_wakeup", "thread_id": "t1"},
@@ -430,8 +432,14 @@ async def test_queued_wakeups_run_even_when_late(
     assert run["metadata"] == prepared["metadata"]
     assert prepared["metadata"].items() >= actor.billing_trace_metadata().items()
     assert prepared["metadata"]["kind"] == "thread_wakeup"
+    assert prepared["metadata"]["origin"] == "github"
+    assert prepared["configurable"]["source"] == "slack"
     assert run["multitask_strategy"] == "enqueue"
     assert run["webhook"] == "https://example.com/complete"
+    # Old-format, in the server's stream settings, so a thread view can join it.
+    assert prepared["configurable"]["__event_streaming_v2"] is False
+    stream = SERVER_STREAM.run_fields()
+    assert {key: run[key] for key in stream} == stream
     run_input = wakeup_tool._run_input.validate_python(run["input"])
     if lateness_seconds > 90:
         assert run_input["messages"][1:] == original_input["messages"]

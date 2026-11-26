@@ -11,105 +11,28 @@ away from it for not accepting, is skipped.
 import asyncio
 import logging
 from collections import Counter
-from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Self
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
-import httpx2
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 
 from openswe.dashboard.profiles import PROFILES
 from openswe.expedited_review.eligibility import ChangedFile
 from openswe.github.codeowners import CodeOwners
 from openswe.github.http import GitHubAppUnavailable, GitHubClient, RepoClient
-from openswe.github.org_membership import team_members
 from openswe.github.pull_request_status import PullRequestClient
+from openswe.human_review.coverage import Area, Coverage
 from openswe.human_review.requests import HumanReviewRequest
-from openswe.slack.availability import SlackUserInfo
-from openswe.slack.client import get_slack_user_info
+from openswe.slack.availability import ReviewerAvailability
 from openswe.users import User
 
 logger = logging.getLogger(__name__)
 
 HISTORY_WINDOW = timedelta(days=90)
 HISTORY_MAX_FILES = 30
-_HISTORY_CONCURRENCY = 8
-WORK_START = time(9)
-WORK_END = time(18)
-_WORK_DAYS = frozenset(range(5))
-
-
-class _Login(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    login: str
-    type: str = "User"
-
-
-class _Commit(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    author: _Login | None = None
-
-
-_COMMITS = TypeAdapter(list[_Commit])
 
 
 def _is_bot(login: str) -> bool:
     return login.lower().endswith("[bot]")
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewerAvailability:
-    """Slack out-of-office status and Mon–Fri working hours in the person's timezone."""
-
-    zone: ZoneInfo | None
-    out_of_office: bool | None = False
-
-    @property
-    def zone_name(self) -> str:
-        return self.zone.key if self.zone is not None else ""
-
-    def on_shift(self, now: datetime) -> bool:
-        if self.zone is None:
-            return True
-        local = now.astimezone(self.zone)
-        return local.weekday() in _WORK_DAYS and WORK_START <= local.time() < WORK_END
-
-    def next_start(self, now: datetime) -> datetime:
-        """``now`` while on shift, otherwise when the next work day starts."""
-        if self.zone is None or self.on_shift(now):
-            return now
-        local = now.astimezone(self.zone)
-        for offset in range(8):
-            day = local.date() + timedelta(days=offset)
-            start = datetime.combine(day, WORK_START, tzinfo=self.zone)
-            if day.weekday() in _WORK_DAYS and start > local:
-                return start.astimezone(UTC)
-        raise AssertionError("a work day starts within a week")
-
-    @classmethod
-    async def for_user(cls, user: User) -> Self:
-        if not user.slack_user_id:
-            return cls(None)
-        info = await get_slack_user_info(user.slack_user_id)
-        if info is None:
-            return cls(None, None)
-        profile = SlackUserInfo.model_validate(info)
-        away = await profile.out_of_office(datetime.now(UTC))
-        name = profile.tz
-        if not name:
-            return cls(None, away)
-        try:
-            return cls(ZoneInfo(name), away)
-        except ZoneInfoNotFoundError, ValueError:
-            logger.warning(
-                "Unknown Slack timezone; treating the person as always on shift",
-                extra={"slack_user_id": user.slack_user_id, "slack_timezone": name},
-            )
-            return cls(None, away)
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,114 +87,15 @@ class Wait:
     until: datetime
 
 
-@dataclass(frozen=True, slots=True)
-class Area:
-    """Changed files that share one set of CODEOWNERS owners."""
-
-    handles: tuple[str, ...]
-    owners: frozenset[str]
-    files: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class Coverage:
-    """A pull request's owned changed files split by owners, the largest area first.
-
-    The first reviewer comes from the largest area; the rest get one reviewer each after an approval.
-    """
-
-    areas: tuple[Area, ...]
-
-    def uncovered(self, logins: Collection[str]) -> list[Area]:
-        """Areas none of ``logins`` owns."""
-        lowered = {login.lower() for login in logins}
-        return [area for area in self.areas if not area.owners & lowered]
-
-    def of(self, login: str) -> list[Area]:
-        return [area for area in self.areas if login.lower() in area.owners]
-
-    def owned(self) -> Counter[str]:
-        """How many changed files each owner owns."""
-        counts: Counter[str] = Counter()
-        for area in self.areas:
-            for login in area.owners:
-                counts[login] += len(area.files)
-        return counts
-
-    @classmethod
-    async def build(cls, codeowners: CodeOwners, paths: list[str]) -> Self:
-        grouped: dict[tuple[str, ...], list[str]] = {}
-        for path in paths:
-            if handles := codeowners.owners_for(path):
-                grouped.setdefault(handles, []).append(path)
-        teams: dict[str, list[str]] = {}
-        areas: list[Area] = []
-        for handles, files in grouped.items():
-            owners: set[str] = set()
-            for owner in handles:
-                handle = owner.removeprefix("@")
-                if "/" not in handle:
-                    owners.add(handle.lower())
-                    continue
-                if handle not in teams:
-                    org, slug = handle.split("/", 1)
-                    teams[handle] = await team_members(org, slug) or []
-                    logger.info(
-                        "Expanded a CODEOWNERS team",
-                        extra={"github_team": handle, "members": len(teams[handle])},
-                    )
-                owners.update(login.lower() for login in teams[handle])
-            areas.append(Area(handles, frozenset(owners), tuple(files)))
-        return cls(tuple(sorted(areas, key=lambda area: (-len(area.files), area.handles))))
-
-    @classmethod
-    async def load(cls, request: HumanReviewRequest) -> Self | None:
-        """The request's coverage; ``None`` without CODEOWNERS or when GitHub cannot be read."""
-        pr = request.pull_request
-        try:
-            async with PullRequestClient.as_app(pr.owner, pr.repo, pr.number) as pull:
-                files = await ChangedFile.of_pull(pull)
-                if not files:
-                    return None
-                codeowners = await CodeOwners.fetch(pull.repo, pr.base_ref or None)
-        except GitHubAppUnavailable:
-            logger.warning(
-                "No GitHub App token to read code-owner coverage",
-                extra={"request_id": str(request.id)},
-            )
-            return None
-        if codeowners is None:
-            return None
-        return await cls.build(codeowners, [changed.filename for changed in files])
-
-
 async def _touched(repo: RepoClient, ref: str | None, files: list[ChangedFile]) -> Counter[str]:
     since = (datetime.now(UTC) - HISTORY_WINDOW).isoformat()
     busiest = sorted(files, key=lambda f: (-f.changed_lines, f.filename))[:HISTORY_MAX_FILES]
-    gate = asyncio.Semaphore(_HISTORY_CONCURRENCY)
-
-    async def authors(path: str) -> set[str]:
-        async with gate:
-            try:
-                commits = _COMMITS.validate_python(
-                    await repo.commits(path=path, since=since, ref=ref)
-                )
-            except httpx2.HTTPError, ValueError, ValidationError:
-                logger.warning(
-                    "Could not read a changed file's history",
-                    extra={"repository": repo.full_name, "path": path},
-                    exc_info=True,
-                )
-                return set()
-        return {
-            commit.author.login.lower()
-            for commit in commits
-            if commit.author is not None and commit.author.type == "User"
-        }
-
+    authors = await repo.recent_file_authors(
+        [file.filename for file in busiest], since=since, ref=ref
+    )
     touched: Counter[str] = Counter()
-    for logins in await asyncio.gather(*(authors(f.filename) for f in busiest)):
-        touched.update(logins)
+    for file in busiest:
+        touched.update(authors.get(file.filename, set()))
     return touched
 
 
@@ -395,6 +219,7 @@ async def _choose_reviewer(
     author = (pr.author or "").lower()
     logins = sorted(candidates.logins - {author})
     users = await asyncio.gather(*(User.for_login("github", login) for login in logins))
+    posters = await request.recent_channel_posters()
     taken = {p.user_id for p in request.participants if p.decision != "expired"}
     missed = {p.user_id for p in request.participants if p.decision == "expired"}
     people: dict[str, User] = {}
@@ -402,6 +227,8 @@ async def _choose_reviewer(
     for login, user in zip(logins, users, strict=True):
         if user is None:
             skipped[login] = "no_open_swe_account"
+        elif user.id not in posters:
+            skipped[login] = "not_recent_channel_poster"
         elif _is_bot(login):
             skipped[login] = "bot"
         elif not await PROFILES.allows_auto_human_review(user.github_login or login):

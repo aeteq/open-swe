@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 #: channel's thread, which the thread router starts as their principal. The run's
 #: ``user_id`` is whom it is attributed to, which is not whom it acts as.
 ACTING_USER_KEY: Final = "acting_user_id"
+#: Run metadata naming the Open SWE user whose own message started the run, on any thread:
+#: whom its model calls bill to (``LangSmithModelAccess``). The backend writes it under the
+#: same rule as ``ACTING_USER_KEY`` but never drops it with that key: a run on the backend's
+#: own thread starts with the backend's key, so it acts as no one, yet still bills its sender.
+#: A run's token names it only for the person the run is billed to and, if it acts as
+#: anyone, acts as (``MdaRuntime.run_payload``).
+SENDER_USER_KEY: Final = "sender_user_id"
 
 _carried: ContextVar[Mapping[str, str]] = ContextVar(
     "operation_credentials", default=MappingProxyType({})
@@ -53,11 +60,9 @@ class OperationConnection:
         return None if ref is None else _carried.get().get(ref.slug)
 
 
-EXA: Final = OperationConnection(ENV.MDA_EXA_CONNECTION, "agent")
 GITHUB_USER: Final = OperationConnection(ENV.MDA_GITHUB_USER_CONNECTION, "user")
 
 _READ_BY: Final[Mapping[str, tuple[OperationConnection, ...]]] = {
-    "web_search": (EXA,),
     "open_pull_request": (GITHUB_USER,),
 }
 

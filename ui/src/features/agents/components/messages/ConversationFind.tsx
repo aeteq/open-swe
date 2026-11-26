@@ -38,7 +38,9 @@ class ConversationSearch {
       if (
         !(node instanceof Text) ||
         !parent ||
-        parent.closest('button, time, svg, [hidden], [aria-hidden="true"]')
+        parent.closest(
+          'button, time, svg, [hidden], [inert], [aria-hidden="true"], .sr-only, [role="status"], [role="timer"]'
+        )
       )
         continue
       if (!parent.checkVisibility()) continue
@@ -139,9 +141,12 @@ class ConversationSearch {
 export function ConversationFind({
   root,
   hasEarlier,
+  onOpen,
 }: {
   root: RefObject<HTMLDivElement | null>
   hasEarlier: boolean
+  /** Runs as the bar opens, before the first search. */
+  onOpen?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -153,17 +158,19 @@ export function ConversationFind({
   const toggle = useRef<HTMLButtonElement>(null)
 
   const show = useCallback(() => {
-    if (!open)
+    if (!open) {
       previousFocus.current =
         document.activeElement instanceof HTMLElement
           ? document.activeElement
           : null
+      onOpen?.()
+    }
     setOpen(true)
     requestAnimationFrame(() => {
       input.current?.focus()
       input.current?.select()
     })
-  }, [open])
+  }, [onOpen, open])
   const close = () => {
     setOpen(false)
     requestAnimationFrame(() => {

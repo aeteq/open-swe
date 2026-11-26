@@ -9,14 +9,14 @@ from langgraph.runtime import Runtime
 from openswe import reviewer
 from openswe.agent_api.reviewer import ReviewerKind
 from openswe.agent_api.tokens import RunSettings
-from openswe.github.sandbox_access import READ_ONLY_REVIEW_PERMISSIONS
+from openswe.review.diff import MaterializedReviewDiff
 
 
 def test_reviewer_system_prompt_org_guidelines_precede_repo_style() -> None:
     prompt = reviewer._reviewer_system_prompt(
         org_guidelines="Org rule text.",
         repo_style_prompt="Repo rule text.",
-    ).workspace
+    ).execution
     assert prompt.index("Organization-wide review guidelines") < prompt.index(
         "Repository-specific review style"
     )
@@ -25,7 +25,7 @@ def test_reviewer_system_prompt_org_guidelines_precede_repo_style() -> None:
 def test_reviewer_approval_policy_stays_in_system_prompt_after_shared_parts() -> None:
     prompt = reviewer._reviewer_system_prompt(approval_policy="Docs-only changes may merge.")
     assert "Docs-only changes may merge." in prompt.thread
-    assert "Docs-only changes may merge." not in prompt.shared + prompt.workspace
+    assert "Docs-only changes may merge." not in prompt.shared + prompt.execution
     assert "# Approval assessment" in prompt.shared
 
 
@@ -61,7 +61,7 @@ async def _run_prepare(prepare: AgentMiddleware) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_reviewer_limits_sandbox_to_reviewed_repository_in_workspace() -> None:
+async def test_reviewer_limits_sandbox_to_reviewed_repository() -> None:
     config: RunnableConfig = {
         "configurable": {
             "__is_for_execution__": True,
@@ -70,7 +70,6 @@ async def test_reviewer_limits_sandbox_to_reviewed_repository_in_workspace() -> 
             "source": "github",
             "pr_number": 42,
             "base_sha": "base",
-            "workspace": "oss",
         },
         "metadata": {},
     }
@@ -99,18 +98,11 @@ async def test_reviewer_limits_sandbox_to_reviewed_repository_in_workspace() -> 
             new_callable=AsyncMock,
         ),
         patch("openswe.reviewer.fetch_agents_md", new_callable=AsyncMock, return_value=None),
-        patch("openswe.reviewer.make_model", return_value=MagicMock()),
     ):
         prepare = await _planned_prepare(config)
         await prepare.abefore_agent({"messages": []}, None)
 
-    mock_sandbox.assert_awaited_once_with(
-        "reviewer-thread-id",
-        workspace_slug="oss",
-        github_proxy_repositories=["acme/repo"],
-        github_proxy_permissions=READ_ONLY_REVIEW_PERMISSIONS,
-        abandon_unreachable=True,
-    )
+    mock_sandbox.assert_awaited_once_with("reviewer-thread-id", abandon_unreachable=True)
 
 
 @pytest.mark.asyncio
@@ -136,7 +128,6 @@ async def test_reviewer_raises_when_app_installation_token_unavailable() -> None
             new_callable=AsyncMock,
             return_value=MagicMock(),
         ) as mock_sandbox,
-        patch("openswe.reviewer.make_model", return_value=MagicMock()),
     ):
         prepare = await _planned_prepare(config)
         with pytest.raises(RuntimeError, match="installation token unavailable"):
@@ -260,7 +251,6 @@ async def test_reviewer_continues_when_thread_fetch_raises() -> None:
             new_callable=AsyncMock,
             side_effect=RuntimeError("network down"),
         ),
-        patch("openswe.reviewer.make_model", return_value=MagicMock()),
     ):
         prepare = await _planned_prepare(config)
         updates = await _run_prepare(prepare)
@@ -330,7 +320,6 @@ async def test_reviewer_populates_diff_line_set_from_github_api() -> None:
             new_callable=AsyncMock,
             return_value=pr_diff,
         ) as mock_fetch_diff,
-        patch("openswe.reviewer.make_model", return_value=MagicMock()),
     ):
         prepare = await _planned_prepare(config)
         updates = await _run_prepare(prepare)
@@ -343,8 +332,9 @@ async def test_reviewer_populates_diff_line_set_from_github_api() -> None:
 
 
 @pytest.mark.parametrize("repo_ready", [True, False])
+@pytest.mark.parametrize("diff_source", ["incremental", "full", "github"])
 async def test_re_review_context_appends_after_history_without_changing_system_prompt(
-    monkeypatch: pytest.MonkeyPatch, repo_ready: bool
+    monkeypatch: pytest.MonkeyPatch, repo_ready: bool, diff_source: str
 ) -> None:
     from langchain_core.messages import AIMessage, HumanMessage, messages_from_dict
 
@@ -384,10 +374,32 @@ async def test_re_review_context_appends_after_history_without_changing_system_p
     history = [HumanMessage(content="Review this PR"), AIMessage(content="Previous review")]
     state: dict[str, object] = {"messages": history.copy()}
     system_prompts: list[str] = []
-    for last_reviewed, head in (("previous-head", "first-head"), ("first-head", "second-head")):
+    for last_reviewed, head in (("a" * 40, "b" * 40), ("b" * 40, "c" * 40)):
         config["configurable"]["last_reviewed_sha"] = last_reviewed
         config["configurable"]["head_sha"] = head
         config["configurable"]["invocation_id"] = head
+        config["configurable"]["base_sha"] = "0" * 40
+        diff_text = "diff --git a/app.py b/app.py\n@@ -1 +1 @@\n-old\n+new\n"
+        full_diff = diff_source != "incremental"
+        if diff_source == "github":
+            monkeypatch.setattr(reviewer, "fetch_pr_diff", AsyncMock(return_value=diff_text))
+        monkeypatch.setattr(
+            reviewer,
+            "materialize_review_diff",
+            AsyncMock(
+                side_effect=RuntimeError("Local diff unavailable")
+                if diff_source == "github"
+                else None,
+                return_value=MaterializedReviewDiff(
+                    path="/workspace/review.patch",
+                    diff_text=diff_text,
+                    base_ref="0" * 40 if full_diff else last_reviewed,
+                    head_ref=head,
+                    merge_base=full_diff,
+                    cached=False,
+                ),
+            ),
+        )
         monkeypatch.setattr(
             reviewer, "resolve_sandbox_work_dir", AsyncMock(return_value=f"/{head}")
         )
@@ -407,7 +419,6 @@ async def test_re_review_context_appends_after_history_without_changing_system_p
         middleware = reviewer.PrepareReviewerRunMiddleware(
             thread_id="reviewer-cache-thread",
             config=config,
-            use_gateway=False,
             model=reviewer.ReviewerModelChoice("openai:gpt-6.1-sol", {}, None),
         )
         previous = list(state["messages"])
@@ -416,6 +427,8 @@ async def test_re_review_context_appends_after_history_without_changing_system_p
         assert f"previous reviewed SHA: {last_reviewed}" in context.text
         assert f"new HEAD SHA: {head}" in context.text
         assert f"Finding at {head}" in context.text
+        assert ("Review the full pull request diff" in context.text) is full_diff
+        assert result.update["diff_text"] == diff_text
         assert f"/{head}/repo" in context.text
         rendered = result.update["rendered_system_prompt"]
         assert isinstance(rendered, str)

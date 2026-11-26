@@ -4,21 +4,24 @@ Helpers and constants stay in common.py; they are accessed through the module
 object (``common.X``) so tests that monkeypatch them keep working.
 """
 
-from collections.abc import Awaitable, Callable, Iterable, Mapping
-from typing import Any, Final, Protocol
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any, Final, Literal, Protocol
+from uuid import UUID
 
 import httpx
+import httpx2
 from langgraph_sdk.errors import NotFoundError
 from pydantic import AliasChoices, AliasPath, BaseModel, Field, JsonValue, ValidationError
 
+from openswe import event_claims
 from openswe.baby_sit import handle_ci_webhook
 from openswe.dispatch import channel_of
 from openswe.expedited_review.reviews import REVIEW_BODY_PREFIX
 from openswe.github.comments import GitHubAuthError
-from openswe.github.http import GitHubClient
+from openswe.github.http import GitHubClient, RepoClient
 from openswe.github.notifications import notify_slack_review
 from openswe.github.org_membership import OPEN_SWE_GITHUB_LOGINS
-from openswe.github.pull_request_status import PullRequestClient
 from openswe.github.pull_requests import PullRequest, PullRequestEvent, PullRequestPayload
 from openswe.human_review.lifecycle import close_for_pull_request
 from openswe.human_review.requests import HumanReviewRequest
@@ -33,8 +36,11 @@ from openswe.input_messages import (
     system_input,
     system_introduction,
 )
+from openswe.jobs import queue
+from openswe.jobs.queue import Job
 from openswe.notion.notifications import record_pull_request_merged
 from openswe.prompts import prompt
+from openswe.review.approval_withdrawal import ApprovalWithdrawal
 from openswe.review.approvals import (
     ApprovalPolicy,
     approval_mode_for,
@@ -47,8 +53,10 @@ from openswe.review.findings import (
     ReviewerSlackThread,
     reviewer_thread_title,
 )
+from openswe.review.publish import settle_review_check_run
 from openswe.review.reconcile import reconcile_linked_findings
 from openswe.review.shadow import ReviewShadow
+from openswe.review_apps.outcomes import ReviewOutcomes
 from openswe.run_config import Repo, RunConfig
 from openswe.slack.client import GitHubPrRef
 from openswe.source_context import SourceContext
@@ -58,6 +66,7 @@ from openswe.thread_ids import (
     thread_id_from_branch,
 )
 from openswe.threads import index, succession
+from openswe.threads.runtimes import RUNTIMES
 from openswe.threads.store import THREADS
 from openswe.users import User
 from openswe.walkthrough.record import Walkthrough
@@ -207,7 +216,7 @@ async def trigger_pr_review_from_ref(
         return {"success": False, "error": "Pull request metadata is missing base/head SHA"}
 
     thread_id = await succession.succeed(
-        reviewer_thread_id(pr_ref.owner, pr_ref.repo, pr_ref.number)
+        reviewer_thread_id(pr_ref.owner, pr_ref.repo, pr_ref.number), restart_deleted=True
     )
     langgraph_client = common.get_client(url=common.LANGGRAPH_URL)
     if not await common.ensure_thread_exists_for_metadata(
@@ -371,7 +380,7 @@ async def _dispatch_first_review_from_pr_payload(payload: dict[str, Any], *, sou
         common.logger.warning("No GitHub App token available for reviewer dispatch")
         return
 
-    thread_id = await succession.succeed(thread_id)
+    thread_id = await succession.succeed(thread_id, restart_deleted=True)
     langgraph_client = common.get_client(url=common.LANGGRAPH_URL)
     if not await common.ensure_thread_exists_for_metadata(
         thread_id,
@@ -446,9 +455,8 @@ async def _dispatch_first_review_from_pr_payload(payload: dict[str, Any], *, sou
 
 async def process_github_pr_walkthrough(payload: dict[str, object]) -> None:
     """Plan open PRs, including drafts, independently of automatic assessment."""
-    from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
+    from openswe.dashboard.settings_cache import cached_settings
     from openswe.review_scout.launch import ReviewScoutTarget
-    from openswe.workspaces.store import WORKSPACES
 
     event = PullRequestEvent.parse(payload)
     if event is None or event.identity is None:
@@ -457,8 +465,7 @@ async def process_github_pr_walkthrough(payload: dict[str, object]) -> None:
     pull = event.pull_request
     if pull.state == "closed" or not pull.head_sha or not pull.base_sha:
         return
-    workspace = await WORKSPACES.owner_of_repo(f"{owner}/{repo}")
-    settings = await cached_workspace_settings(workspace)
+    settings = await cached_settings()
     if settings.get("implementation_walkthrough_enabled") is True:
         stored = await PullRequest.get(owner, repo, number)
         if stored is not None:
@@ -487,11 +494,10 @@ async def process_github_pr_walkthrough(payload: dict[str, object]) -> None:
         pr_title=pull.title,
         base_sha=pull.base_sha,
         head_sha=pull.head_sha,
-        workspace_slug=workspace,
     )
     try:
         if await target.walkthrough() is None:
-            await target.start()
+            await target.start(origin="github")
     except Exception:
         common.logger.exception("Could not start the PR walkthrough", extra=target.log_extra)
 
@@ -500,7 +506,7 @@ async def process_github_pr_ready(payload: dict[str, Any]) -> None:
     """Auto-review a PR that has just been opened or marked ready-for-review.
 
     Drafts are gated by the PR author's ``review_draft_prs`` profile flag
-    (with the workspace's setting as a fallback).
+    (with the instance setting as a fallback).
     """
     pull_request = payload.get("pull_request", {})
     is_draft = bool(pull_request.get("draft"))
@@ -545,30 +551,9 @@ async def withdraw_superseded_approvals(payload: dict[str, Any]) -> None:
     """Dismiss Open SWE's approvals of earlier commits once new commits reach a pull request."""
     event = PullRequestEvent.parse(payload)
     identity = event.identity if event is not None else None
-    if event is None or identity is None or not event.pull_request.head_sha:
+    if identity is None:
         return
-    try:
-        async with PullRequestClient.as_app(*identity) as pull:
-            refused = await pull.withdraw_open_swe_approvals(
-                reason="New commits were pushed after Robin approved this pull request.",
-                keep_commit=event.pull_request.head_sha,
-            )
-    except Exception:
-        # Later background tasks of this delivery must still run.
-        common.logger.exception(
-            "Could not withdraw Robin approvals of superseded commits",
-            extra={"repository": event.repo_full_name, "pr_number": identity[2]},
-        )
-        return
-    if refused:
-        common.logger.error(
-            "Robin approvals of superseded commits are still standing",
-            extra={
-                "repository": event.repo_full_name,
-                "pr_number": identity[2],
-                "github_review_ids": refused,
-            },
-        )
+    await ApprovalWithdrawal(owner=identity[0], repo=identity[1], number=identity[2]).attempt()
 
 
 async def process_github_pr_close(payload: dict[str, Any]) -> None:
@@ -862,10 +847,17 @@ async def _process_github_head_update(
             details_url=common.dashboard_thread_url(thread_id),
         )
         if unchanged_check_id is not None:
-            await common.complete_review_check_run(
+            await common.track_review_check_run(
+                thread_id,
                 owner=repo_config["owner"],
                 repo=repo_config["name"],
+                token=app_token,
                 check_run_id=unchanged_check_id,
+            )
+            await settle_review_check_run(
+                thread_id=thread_id,
+                owner=repo_config["owner"],
+                repo=repo_config["name"],
                 token=app_token,
                 conclusion="success",
                 title="No new changes to review",
@@ -881,7 +873,7 @@ async def _process_github_head_update(
         )
         return
 
-    thread_id = await succession.succeed(thread_id)
+    thread_id = await succession.succeed(thread_id, restart_deleted=True)
     langgraph_client = common.get_client(url=common.LANGGRAPH_URL)
     if not await common.ensure_thread_exists_for_metadata(
         thread_id,
@@ -980,6 +972,677 @@ async def _process_github_head_update(
     await ReviewShadow.follow(
         RunConfig.parse(configurable), kickoff=re_review_prompt, pr_title=pr_title
     )
+
+
+# Conclusions of a check run that say nothing about whether its preview deployed.
+_UNDECIDED: Final = frozenset({None, "skipped", "cancelled", "neutral"})
+
+
+class PreviewReady:
+    """A pull request's preview is deployed: a review that works for apps does that work
+    now, on the commit the preview serves.
+
+    A review runs as soon as a pull request opens or changes, usually before its preview is
+    up, so apps whose review step browses the preview would otherwise miss it. The checks
+    whose success means a preview serves its pull request's head, such as a deploy
+    workflow's last job, are named in ``review_app_preview_checks``; a skipped one, as on a
+    pull request that builds no preview, starts nothing. When one passes for an open pull
+    request of a private repository Robin reviews automatically, whose head is still that
+    commit and whose review works for an app that browses, Robin queues a reviewer run on
+    the pull request's review thread that does only the apps' work (``reviewer_event``
+    ``"preview_ready"``) and publishes only findings that work turns up. Each named check
+    starts its own run for a commit, so a pull request with several previews gets one run
+    once each is up.
+
+    A queued job (``JOB``) starts the run and comes back to it. It reads what it started
+    from the thread's runs, marked with the commit and check (``MARK``), so a retried job
+    never starts a second one: any other reviewer run on the thread cancels a queued or
+    running one, so the run starts again, up to ``MOST_RUNS`` times, until one finishes.
+    A preview can deploy before Robin has reviewed the pull request, or while it's a
+    draft, so the job looks again every ``WAIT``, up to ``MOST_WAITS`` times.
+
+    GitHub doesn't send a missed completion again, so when Robin names preview
+    checks, a pull request opening or changing also starts a watch on its head
+    (``RECONCILE``): every ``LOOK`` until ``WINDOW`` after,
+    it queues the job of each configured check that passed there, unless that commit's work
+    for it is done (``CLAIMS``).
+    """
+
+    CLAIMS: Final = "review_apps_preview_outcome_done"
+    RECOVER: Final = "review_apps_preview_recover"
+    JOB: Final = "review_apps_on_preview"
+    # The run metadata naming the commit and check a run is for.
+    MARK: Final = "review_apps_preview"
+    # How long after queuing a run Robin looks at whether it finished.
+    FOLLOW_UP: Final = timedelta(minutes=20)
+    MOST_RUNS: Final = 3
+    WAIT: Final = timedelta(minutes=5)
+    MOST_WAITS: Final = 12
+    RECONCILE: Final = "review_apps_preview_reconcile"
+    # How often the watch looks; it only recovers a completion GitHub never sent.
+    LOOK: Final = timedelta(minutes=10)
+    WINDOW: Final = timedelta(hours=1)
+
+    @staticmethod
+    async def checks(repo_config: dict[str, str], *, named: str | None = None) -> frozenset[str]:
+        """The repository's preview checks, or just ``named``, while its reviews work for
+        apps and run automatically. The name is matched on cached settings before the
+        database lookups, since most CI deliveries name another check."""
+        from openswe.dashboard.settings_cache import cached_settings
+
+        if not common.is_repo_allowed(repo_config):
+            return frozenset()
+        settings = await cached_settings()
+        checks = settings.review_app_preview_checks if settings.review_app_releases else frozenset()
+        if named is not None:
+            checks &= {named, named.rsplit(" / ", 1)[-1]}
+        if not checks or not await common.is_repo_auto_review_enabled(repo_config):
+            return frozenset()
+        return checks
+
+    @staticmethod
+    async def _watched(repo_config: dict[str, str]) -> bool:
+        """Whether the instance names preview checks for its apps, read so a
+        failure raises instead of reading as none; true when it can't be read."""
+        from openswe.dashboard.settings import load_instance_settings
+
+        try:
+            settings = await load_instance_settings()
+        except Exception:
+            common.logger.warning("Reading preview checks failed; watching anyway", exc_info=True)
+            return True
+        return bool(settings.review_app_releases and settings.review_app_preview_checks)
+
+    @classmethod
+    async def run(cls, payload: Mapping[str, Any]) -> None:
+        """A check finished: when it's one that means previews are deployed, queue the job
+        for each pull request whose head it checked. A pull request opened or changed:
+        watch its head (``reconcile``)."""
+        repo = payload.get("repository")
+        # Only reviews of private repositories work for apps (``ReviewApps.of``).
+        if not isinstance(repo, dict) or repo.get("private") is not True:
+            return
+        owner = (repo.get("owner") or {}).get("login", "")
+        name = repo.get("name", "")
+        if not owner or not name:
+            return
+        repo_config = {"owner": owner, "name": name}
+        repo_id = common.repo_id_from_payload(dict(payload))
+        pull = payload.get("pull_request")
+        if isinstance(pull, dict):
+            number, head_sha = pull.get("number"), (pull.get("head") or {}).get("sha")
+            if (
+                isinstance(number, int)
+                and isinstance(head_sha, str)
+                and await cls._watched(repo_config)
+            ):
+                await queue.schedule(
+                    cls.RECONCILE,
+                    {
+                        "owner": owner,
+                        "repo": name,
+                        "number": number,
+                        "head_sha": head_sha,
+                        "repo_id": repo_id,
+                        "deadline": (datetime.now(UTC) + cls.WINDOW).isoformat(),
+                    },
+                    due_at=datetime.now(UTC) + cls.LOOK,
+                    key=f"{cls.RECONCILE}:{owner}/{name}#{number}@{head_sha}".lower(),
+                    replace=False,
+                )
+            return
+        check = payload.get("check_run")
+        if not isinstance(check, dict):
+            return
+        head_sha = check.get("head_sha")
+        numbers = [
+            pull["number"]
+            for pull in check.get("pull_requests") or []
+            if isinstance(pull, dict) and isinstance(pull.get("number"), int)
+        ]
+        check_name = check.get("name")
+        if (
+            check.get("conclusion") != "success"
+            or not isinstance(check_name, str)
+            or not isinstance(head_sha, str)
+            or not numbers
+        ):
+            return
+        checks = await cls.checks(repo_config, named=check_name)
+        for number in numbers:
+            for check in checks:
+                await cls.enqueue(owner, name, number, head_sha, check, repo_id)
+
+    @staticmethod
+    def deployed(
+        runs: Sequence[Mapping[str, Any]], check: str, workflows: Mapping[int, int]
+    ) -> bool:
+        """Whether ``check``'s runs on a commit say a preview is up: for some workflow
+        reporting it (``workflows``, by check suite), the latest run that decided anything
+        passed. A run skipped or cancelled, as when editing or labelling the pull request
+        starts the preview's workflow again only to skip its deploy, leaves the deploy
+        before it standing; another workflow's failure under the same name hides nothing."""
+        latest: dict[tuple[object, ...], tuple[int, bool]] = {}
+        for run in runs:
+            name = run.get("name")
+            matches_check = isinstance(name, str) and check in {name, name.rsplit(" / ", 1)[-1]}
+            if not matches_check or run.get("conclusion") in _UNDECIDED:
+                continue
+            app, suite = run.get("app") or {}, run.get("check_suite") or {}
+            suite_id, order = suite.get("id"), run.get("id")
+            source = (
+                app.get("id"),
+                ("workflow", workflows[suite_id])
+                if isinstance(suite_id, int) and suite_id in workflows
+                else ("suite", suite_id),
+            )
+            order = order if isinstance(order, int) else 0
+            if source not in latest or order >= latest[source][0]:
+                latest[source] = (order, run.get("conclusion") == "success")
+        return any(passed for _, passed in latest.values())
+
+    @staticmethod
+    def key(owner: str, repo: str, number: int, head_sha: str, check: str) -> str:
+        return f"{owner}/{repo}#{number}@{head_sha}:{check}".lower()
+
+    @classmethod
+    async def enqueue(
+        cls,
+        owner: str,
+        repo: str,
+        number: int,
+        head_sha: str,
+        check: str,
+        repo_id: JsonValue,
+        *,
+        recovery: bool = False,
+    ) -> bool:
+        """Queue the commit's job for ``check`` unless its work is done, keeping one already
+        queued; whether the work is still to do."""
+        key = cls.key(owner, repo, number, head_sha, check)
+        if await event_claims.held(cls.CLAIMS, key):
+            return False
+        await queue.schedule(
+            cls.JOB,
+            {
+                "owner": owner,
+                "repo": repo,
+                "number": number,
+                "head_sha": head_sha,
+                "check": check,
+                "repo_private": True,
+                "repo_id": repo_id,
+                "recovery": recovery,
+            },
+            key=f"{cls.JOB}:{key}",
+            replace=False,
+        )
+        return True
+
+    @classmethod
+    async def _passed_over_rest(
+        cls, repository: RepoClient, head_sha: str, checks: frozenset[str]
+    ) -> set[str]:
+        """The ``checks`` whose previews are up on ``head_sha``, read over REST for a commit
+        whose check suites hold too many runs to read over GraphQL."""
+        # Called workflows prefix job names, so an exact-name query misses them.
+        runs = await repository.check_runs(head_sha, include_superseded=True)
+        # Telling workflows apart can only hide a pass, never make one, so their identities
+        # are read only once some check has passed.
+        candidates = {check for check in checks if cls.deployed(runs, check, {})}
+        if not candidates:
+            return set()
+        try:
+            workflows = await repository.workflow_ids(head_sha)
+        except httpx2.HTTPError, ValueError:
+            common.logger.warning(
+                "Could not identify preview check workflows",
+                extra={"repository": repository.full_name, "sha": head_sha},
+                exc_info=True,
+            )
+            # Actions reruns can span suites; without workflow identities, an older success
+            # could hide a failed redeploy.
+            runs = [run for run in runs if (run.get("app") or {}).get("slug") != "github-actions"]
+            workflows = {}
+        return {check for check in candidates if cls.deployed(runs, check, workflows)}
+
+    @classmethod
+    async def reconcile(cls, job: Job) -> None:
+        """The watch on a pull request's head. A look that fails waits for the next one
+        instead of raising: the queue's retries would give up well inside ``WINDOW``."""
+        owner, repo, number, head_sha, deadline = (
+            job.payload.get(field) for field in ("owner", "repo", "number", "head_sha", "deadline")
+        )
+        if not (
+            isinstance(owner, str)
+            and isinstance(repo, str)
+            and isinstance(number, int)
+            and isinstance(head_sha, str)
+            and isinstance(deadline, str)
+        ):
+            return
+        again = True
+        try:
+            # None also while the settings can't be read, so the watch goes on.
+            checks = await cls.checks({"owner": owner, "name": repo})
+            if checks:
+                async with GitHubClient.as_app(owner, repo) as github:
+                    repository = github.repo(owner, repo)
+                    head = await repository.pull_request(number).head_checks()
+                    if head.state != "open" or head.sha != head_sha:
+                        return
+                    passed = (
+                        {
+                            check
+                            for check in checks
+                            if cls.deployed(head.runs, check, head.workflows)
+                        }
+                        if head.runs is not None
+                        else await cls._passed_over_rest(repository, head_sha, checks)
+                    )
+                again = passed != checks
+                for check in passed:
+                    again |= await cls.enqueue(
+                        owner,
+                        repo,
+                        number,
+                        head_sha,
+                        check,
+                        job.payload.get("repo_id"),
+                        recovery=job.payload.get("recovery") is True,
+                    )
+        except Exception:
+            common.logger.warning(
+                "Looking for a pull request's deployed previews failed",
+                extra={"repository": f"{owner}/{repo}", "pr_number": number},
+                exc_info=True,
+            )
+        due = datetime.now(UTC) + cls.LOOK
+        if again and due < datetime.fromisoformat(deadline):
+            await queue.schedule(cls.RECONCILE, job.payload, due_at=due, key=job.key)
+
+    @staticmethod
+    async def stop_on_close(payload: Mapping[str, Any]) -> None:
+        """A pull request closed: cancel its apps-only runs still queued or running. What one
+        saves after the close is deleted as it lands (``ReviewApps.save``), and the job
+        starts none again for a closed pull request."""
+        event = PullRequestEvent.parse(payload)
+        identity = event.identity if event is not None else None
+        if identity is None:
+            return
+        thread_id = await index.current_thread_id(reviewer_thread_id(*identity))
+        thread = await index.get(thread_id)
+        if thread is None:
+            return
+        runs = RUNTIMES.runs_on(thread.runtime).client.runs
+        for status in ("pending", "running"):
+            for run in await runs.list(thread_id, status=status, limit=100):
+                if (run.get("metadata") or {}).get("reviewer_event") == "preview_ready":
+                    await runs.cancel(thread_id, run["run_id"])
+
+    @classmethod
+    async def start_job(cls, job: Job) -> None:
+        """The queued job: start the commit's run for its check, or look at the one it
+        started and start it again when another reviewer run cancelled it. Raises, so the
+        queue retries, when GitHub or LangGraph fails."""
+        payload = job.payload
+        owner, repo, number, head_sha, check = (
+            payload.get(field) for field in ("owner", "repo", "number", "head_sha", "check")
+        )
+        if not (
+            isinstance(owner, str)
+            and isinstance(repo, str)
+            and isinstance(number, int)
+            and isinstance(head_sha, str)
+            and isinstance(check, str)
+        ):
+            return
+        repo_config = {"owner": owner, "name": repo}
+        if check not in await cls.checks(repo_config):
+            await cls.request_status(
+                job,
+                "blocked",
+                "Robin no longer enables this preview check or automatic reviews.",
+            )
+            return
+        requested_app = payload.get("app")
+        if isinstance(requested_app, str):
+            from openswe.dashboard.settings_cache import cached_settings
+
+            settings = await cached_settings()
+            if UUID(requested_app) not in settings.review_app_releases:
+                await cls.request_status(
+                    job, "blocked", "This app is no longer approved for instance reviews."
+                )
+                return
+        repo_private = payload.get("repo_private")
+        repo_private = repo_private if isinstance(repo_private, bool) else None
+        repo_id = payload.get("repo_id")
+        app_token, _ = await common.reviewer_token_for_repo(
+            repo_config,
+            repo_private=repo_private,
+            repo_id=repo_id if isinstance(repo_id, int) else None,
+        )
+        if not app_token:
+            raise RuntimeError("No GitHub token to read the pull request")
+        pr_ref = GitHubPrRef(
+            owner=owner,
+            repo=repo,
+            number=number,
+            url=f"https://github.com/{owner}/{repo}/pull/{number}",
+        )
+        pr = await common.fetch_github_pr_metadata(pr_ref, token=app_token)
+        if pr is None:
+            raise RuntimeError("Could not read the pull request")
+        if common.repo_private_from_pr_metadata(pr) is not True:
+            await cls.request_status(job, "blocked", "App reviews require a private repository.")
+            return
+        if pr.get("state") != "open":
+            await cls.request_status(job, "started", "")
+            return
+        if (pr.get("head") or {}).get("sha") != head_sha:
+            await cls.request_status(
+                job,
+                "blocked",
+                "The pull request's head changed. Request capture on the current commit.",
+            )
+            return
+        thread_id = await index.current_thread_id(reviewer_thread_id(owner, repo, number))
+        thread = await index.get(thread_id)
+        metadata = await common.get_thread_metadata_safe(thread_id)
+        draft_blocked = bool(pr.get("draft")) and not await common.draft_review_enabled_for_author(
+            str((pr.get("user") or {}).get("login") or ""), repo_config
+        )
+        if (
+            thread is None
+            or metadata is None
+            or metadata.get("kind") != common.REVIEWER_THREAD_KIND
+            or draft_blocked
+        ):
+            # Robin hasn't reviewed it yet, as when its preview deployed first, or it's a draft.
+            await cls.request_status(
+                job, "blocked", "Waiting for an eligible Robin review of this pull request."
+            )
+            await cls._wait(job)
+            return
+        mark = f"{head_sha}:{check}"
+        request_id = payload.get("request_id")
+        if isinstance(request_id, str):
+            mark += f":{request_id}"
+        runs = RUNTIMES.runs_on(thread.runtime).client.runs
+        recent = await runs.list(thread_id, limit=50)
+        pending_same_preview = any(
+            run.get("status") in ("pending", "running")
+            and (
+                (run.get("metadata") or {}).get(cls.MARK) == f"{head_sha}:{check}"
+                or (
+                    (run.get("metadata") or {}).get("review_app_check") == check
+                    and str((run.get("metadata") or {}).get(cls.MARK, "")).startswith(
+                        f"{head_sha}:"
+                    )
+                )
+            )
+            for run in recent
+        )
+        if pending_same_preview:
+            await cls._again(job, payload, cls.FOLLOW_UP)
+            return
+        started = [run for run in recent if (run.get("metadata") or {}).get(cls.MARK) == mark]
+        # Recorded once the commit's work is over, so the watch doesn't queue it again.
+        done = cls.key(owner, repo, number, head_sha, check)
+        recorded = [run for run in started if (run.get("metadata") or {}).get("review_apps")]
+        for run in recorded:
+            settled = []
+            for app in (run.get("metadata") or {})["review_apps"]:
+                outcomes = ReviewOutcomes(UUID(app), f"{owner}/{repo}".lower(), number)
+                settled.append(await outcomes.settled(run["run_id"], head_sha, check))
+            if all(settled):
+                await event_claims.claim(cls.CLAIMS, done, ttl=timedelta(days=7))
+                return
+        if len(recorded) >= cls.MOST_RUNS:
+            # Each exhausted attempt has an explicit failure that the app can show and retry.
+            await event_claims.claim(cls.CLAIMS, done, ttl=timedelta(days=7))
+            return
+        legacy_run = any(not (run.get("metadata") or {}).get("review_apps") for run in started)
+        if not isinstance(request_id, str) and (payload.get("recovery") is True or legacy_run):
+            # Legacy success has no verified outcome. Recover gradually rather than trust it.
+            group = f"{owner}/{repo}:".lower()
+            admitted = await event_claims.claim_within_limit(
+                cls.RECOVER + ":starts",
+                f"{group}{done}:{len(recorded)}",
+                ttl=timedelta(hours=1),
+                group=group,
+                limit=5,
+                within=timedelta(hours=1),
+            )
+            if admitted == "limited":
+                await cls._again(job, payload, timedelta(hours=1))
+                return
+        queued = await cls._start(
+            thread_id, repo_config, number, pr, mark=mark, check=check, repo_private=repo_private
+        )
+        if queued is None:
+            # No app the review works for browses.
+            await cls.request_status(
+                job, "blocked", "No approved browser review app is available for this repository."
+            )
+            await event_claims.claim(cls.CLAIMS, done, ttl=timedelta(days=7))
+            return
+        await cls.request_status(job, "started", "")
+        latest = await common.fetch_github_pr_metadata(pr_ref, token=app_token)
+        if latest is not None and latest.get("state") != "open":
+            # It closed as the run was queued, so closing's own cancel (``stop_on_close``) may
+            # have looked before the run was there. A run queued on a ``local`` thread's
+            # successor is on Managed Deep Agents (``succession``).
+            queued_thread, queued_run = queued
+            on = runs if queued_thread == thread_id else RUNTIMES.mda.client.runs
+            await on.cancel(queued_thread, queued_run)
+            return
+        await cls._again(job, payload, cls.FOLLOW_UP)
+
+    @classmethod
+    async def request_status(
+        cls, job: Job, status: Literal["started", "blocked", "failed"], reason: str
+    ) -> None:
+        app, request_id = job.payload.get("app"), job.payload.get("request_id")
+        if not isinstance(app, str) or not isinstance(request_id, str):
+            return
+        outcomes = ReviewOutcomes(
+            UUID(app),
+            f"{job.payload['owner']}/{job.payload['repo']}".lower(),
+            int(str(job.payload["number"])),
+        )
+        if status == "started" or await outcomes.closed():
+            await outcomes.delete(request_id)
+        else:
+            await outcomes.finish(request_id, str(job.payload["head_sha"]), status, reason)
+
+    @classmethod
+    async def recover(cls, job: Job) -> None:
+        """Give known reviewed PRs one recovery window, without restarting expired watches."""
+        after = job.payload.get("after")
+        pulls = await PullRequest.preview_candidates(
+            UUID(after) if isinstance(after, str) else None
+        )
+        due: list[PullRequest] = []
+        for pull in pulls:
+            recovery_key = str(pull.id)
+            if await event_claims.held(cls.RECOVER, recovery_key):
+                # Keep the marker while the PR remains open; it expires after it leaves the scan.
+                await event_claims.defer(cls.RECOVER, recovery_key, ttl=timedelta(days=7))
+                continue
+            try:
+                if await cls.checks({"owner": pull.owner, "name": pull.repo}):
+                    due.append(pull)
+            except Exception:
+                cls._recovery_failed(pull)
+        heads = await cls._open_heads(due)
+        for pull in due:
+            head = heads.get(pull.id)
+            if head is None:
+                continue
+            recovery_key = str(pull.id)
+            claimed = False
+            try:
+                claimed = await event_claims.claim(cls.RECOVER, recovery_key, ttl=timedelta(days=7))
+                if not claimed:
+                    continue
+                watch = await queue.schedule(
+                    cls.RECONCILE,
+                    {
+                        "owner": pull.owner,
+                        "repo": pull.repo,
+                        "number": pull.number,
+                        "head_sha": head,
+                        "deadline": (datetime.now(UTC) + cls.WINDOW).isoformat(),
+                        "recovery": True,
+                    },
+                    key=f"{cls.RECONCILE}:{pull.owner}/{pull.repo}#{pull.number}@{head}".lower(),
+                    replace=False,
+                )
+                if watch.payload.get("recovery") is not True:
+                    # An original watch still owns the key; recover after it finishes.
+                    await event_claims.release(cls.RECOVER, recovery_key)
+            except Exception:
+                if claimed:
+                    await event_claims.release(cls.RECOVER, recovery_key)
+                cls._recovery_failed(pull)
+        if len(pulls) == 50:
+            await queue.schedule(
+                cls.RECOVER,
+                {"after": str(pulls[-1].id)},
+                due_at=datetime.now(UTC) + cls.WAIT,
+                key=f"{cls.RECOVER}:{pulls[-1].id}",
+                replace=False,
+            )
+
+    @staticmethod
+    async def _open_heads(pulls: Sequence[PullRequest]) -> dict[UUID, str]:
+        """The head of each of ``pulls`` that is open, read with one query per repository."""
+        by_repo: dict[tuple[str, str], list[PullRequest]] = {}
+        for pull in pulls:
+            by_repo.setdefault((pull.owner, pull.repo), []).append(pull)
+        heads: dict[UUID, str] = {}
+        for (owner, repo), repo_pulls in by_repo.items():
+            try:
+                async with GitHubClient.as_app(owner, repo) as github:
+                    open_heads = await github.repo(owner, repo).open_pull_heads(
+                        [pull.number for pull in repo_pulls]
+                    )
+            except Exception:
+                common.logger.warning(
+                    "Reading pull request heads to recover preview watches failed",
+                    extra={"repository": f"{owner}/{repo}", "pr_count": len(repo_pulls)},
+                    exc_info=True,
+                )
+                continue
+            heads.update(
+                (pull.id, open_heads[pull.number])
+                for pull in repo_pulls
+                if pull.number in open_heads
+            )
+        return heads
+
+    @staticmethod
+    def _recovery_failed(pull: PullRequest) -> None:
+        common.logger.warning(
+            "Recovering a preview watch failed",
+            extra={"repository": f"{pull.owner}/{pull.repo}", "pr_number": pull.number},
+            exc_info=True,
+        )
+
+    @classmethod
+    async def _wait(cls, job: Job) -> None:
+        """Look again in ``WAIT``, until the job has waited ``MOST_WAITS`` times."""
+        waits = job.payload.get("waits")
+        waits = waits if isinstance(waits, int) else 0
+        if waits < cls.MOST_WAITS:
+            await cls._again(job, {**job.payload, "waits": waits + 1}, cls.WAIT)
+
+    @classmethod
+    async def _again(cls, job: Job, payload: Mapping[str, JsonValue], delay: timedelta) -> None:
+        """Run the job again after ``delay``: queued again under its key, it replaces this one."""
+        await queue.schedule(cls.JOB, dict(payload), due_at=datetime.now(UTC) + delay, key=job.key)
+
+    @classmethod
+    async def _start(
+        cls,
+        thread_id: str,
+        repo_config: dict[str, str],
+        number: int,
+        pr: Mapping[str, Any],
+        *,
+        mark: str,
+        check: str,
+        repo_private: bool | None,
+    ) -> tuple[str, str] | None:
+        """Queue the commit's apps-only run on the review thread of ``pr``, open and ready at
+        that commit: the thread and run it queued, or ``None`` when no app the review works
+        for looks at the preview."""
+        # Imported here: it loads the agent stack, which the web app never imports.
+        from openswe.review_apps.apps import ChangedFilesUnavailable, ReviewApps
+
+        head_sha = (pr.get("head") or {}).get("sha", "")
+        base_sha = (pr.get("base") or {}).get("sha", "")
+        pr_url = (
+            pr.get("html_url", "")
+            or f"https://github.com/{repo_config['owner']}/{repo_config['name']}/pull/{number}"
+        )
+        configurable = await common.build_reviewer_configurable(
+            source="github_preview",
+            github_login="",
+            github_user_id=None,
+            repo_config=repo_config,
+            pr_number=number,
+            pr_url=pr_url,
+            base_sha=base_sha,
+            head_sha=head_sha,
+            branch_name=(pr.get("head") or {}).get("ref", ""),
+            repo_private=repo_private,
+            # Not a re-review: with no reviewed commit to start from, the run's diff is the
+            # pull request's own, from its merge base.
+            re_review=False,
+        )
+        configurable["reviewer_event"] = "preview_ready"
+        apps = await ReviewApps.triaged(RunConfig.parse(configurable))
+        if apps is not None and apps.may_browse:
+            # Not knowing whether an app applies isn't knowing it doesn't: the queue retries.
+            raise ChangedFilesUnavailable(f"{repo_config['owner']}/{repo_config['name']}#{number}")
+        if apps is None or not apps.browses:
+            # No app this review works for looks at the preview.
+            return None
+        thread_id = await succession.succeed(thread_id, restart_deleted=True)
+        # Not stored as the thread's current reviewer run: a review it queues behind still
+        # owns the check and settles it if it fails.
+        run = await common.dispatch_agent_run(
+            thread_id,
+            None,
+            configurable,
+            source="github_preview",
+            thread_title=None,
+            input=_github_webhook_run_input(
+                prompt("reviewer/preview-ready-kickoff"),
+                data=_pr_data(repo_config, number, pr_url, base_sha, head_sha),
+            ),
+            assistant_id="reviewer",
+            # So the job finds what it started, and closing the pull request cancels it.
+            metadata={
+                **common.AGENT_VERSION_METADATA,
+                "reviewer_event": "preview_ready",
+                cls.MARK: mark,
+                "review_apps": [str(app.id) for app in apps.apps],
+                "review_app_check": check,
+            },
+            # After a review in progress, never in place of it.
+            multitask_strategy="enqueue",
+        )
+        run_id = run.get("run_id") if isinstance(run, dict) else None
+        if not isinstance(run_id, str):
+            raise RuntimeError("LangGraph returned no run id")
+        for app in apps.apps:
+            outcomes = ReviewOutcomes(app.id, apps.repository, number)
+            await outcomes.queued(run_id, head_sha, check)
+        return thread_id, run_id
 
 
 async def process_github_ci_event(
@@ -1110,9 +1773,13 @@ async def _channel_history(
     it with its first run, so it has no messages to read yet.
     """
     try:
-        if not new and _state_messages(await THREADS.state(pr_thread_id)):
+        if not new and _state_messages(
+            await THREADS.state(pr_thread_id, select=["values.messages"])
+        ):
             return []
-        messages = _state_messages(await THREADS.state(channel_thread_id))
+        messages = _state_messages(
+            await THREADS.state(channel_thread_id, select=["values.messages"])
+        )
     except Exception:  # noqa: BLE001 - the review still runs, without the conversation
         common.logger.warning(
             "Could not read the channel conversation a PR thread continues",
@@ -1499,7 +2166,7 @@ async def process_github_review_thread(payload: dict[str, object]) -> None:
     number = pull_request.get("number")
     if not isinstance(owner, str) or not isinstance(repo, str) or not isinstance(number, int):
         return
-    thread_id = reviewer_thread_id(owner, repo, number)
+    thread_id = await index.current_thread_id(reviewer_thread_id(owner, repo, number))
     metadata = await common.get_thread_metadata_safe(thread_id)
     if metadata is None or metadata.get("kind") != common.REVIEWER_THREAD_KIND:
         return
@@ -1581,7 +2248,7 @@ async def process_github_review_finding_reply(payload: dict[str, Any]) -> None:
     }
     await common.append_finding_interaction(thread_id, finding_id, interaction)
 
-    thread_id = await succession.succeed(thread_id)
+    thread_id = await succession.succeed(thread_id, restart_deleted=True)
     base_sha = pull_request.get("base", {}).get("sha", "")
     head_sha = pull_request.get("head", {}).get("sha", "")
     pr_url = pull_request.get("html_url", "") or pull_request.get("url", "")
@@ -1645,11 +2312,11 @@ async def conversation_started(thread_id: str) -> bool:
     and the first run would never see the issue.
     """
     try:
-        state = await THREADS.state(thread_id)
+        state = await THREADS.state(thread_id, select=["values.messages"])
     except NotFoundError:
         # Indexed, but no run created it on MDA yet.
         return False
-    except httpx.HTTPStatusError as error:
+    except (httpx.HTTPStatusError, httpx2.HTTPStatusError) as error:
         # A channel's thread is read over HTTP, which says so with a 404.
         if error.response.status_code == httpx.codes.NOT_FOUND:
             return False
@@ -1661,7 +2328,6 @@ async def prepare_github_issue_run(
     payload: dict[str, Any],
     thread_id: str,
     *,
-    workspace: str | None,
     adopt: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict[str, Any] | None:
     """Index the thread an issue mention starts its run on, and the run's configurable.
@@ -1669,8 +2335,7 @@ async def prepare_github_issue_run(
     MDA's GitHub channel writes the run's input; this checks the issue and its
     sender, and writes the thread's metadata. ``thread_id`` is the issue's thread,
     which the channel owns. ``adopt`` indexes it as the channel's before its
-    metadata is written, so the write doesn't create it. ``workspace`` is the one
-    the thread started in, for a follow-up; ``None`` for the repository's own.
+    metadata is written, so the write doesn't create it.
     ``None`` when the run can't start.
     """
     issue = payload.get("issue", {})
@@ -1690,7 +2355,6 @@ async def prepare_github_issue_run(
         return None
     # The thread's App token, cached for the backend's own GitHub calls on it.
     await common.get_or_resolve_thread_github_token(thread_id, "")
-    workspace = workspace or await common.workspace_for_repo_config(repo_config)
     title = issue.get("title", "No title")
     github_issue = {
         "id": issue_id,
@@ -1708,7 +2372,6 @@ async def prepare_github_issue_run(
         github_login=github_login,
         title=title or f"Issue #{issue_number}",
         source_context=SourceContext.parse({"github_issue": github_issue}),
-        workspace=workspace,
         token_repositories=token_repositories,
     )
     if not persisted and token_repositories is not None:
@@ -1723,8 +2386,6 @@ async def prepare_github_issue_run(
         "github_user_id": payload.get("sender", {}).get("id"),
         "repo": repo_config,
         "github_issue": github_issue,
-        "workspace": workspace,
-        "environment": workspace,
     }
 
 
@@ -1755,7 +2416,7 @@ class _HumanReviewEvent(BaseModel):
 
 
 async def settle_human_reviews(payload: dict[str, Any]) -> None:
-    """Re-check the open standard review requests of the pull requests an event names."""
+    """Re-check the open review requests of the pull requests an event names."""
     try:
         event = _HumanReviewEvent.model_validate(payload)
     except ValidationError:

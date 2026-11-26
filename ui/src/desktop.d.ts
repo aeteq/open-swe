@@ -1,10 +1,3 @@
-import type { ThreadPrDiffFile } from "@/features/agents/lib/api"
-import type {
-  WorkspaceFileIndex,
-  WorkspacePath,
-} from "@/features/agents/lib/workspaceFiles"
-import type { AgentPullRequest } from "@/features/agents/lib/types"
-
 export type DesktopCommandId =
   | "new-thread"
   | "show-command-palette"
@@ -12,144 +5,29 @@ export type DesktopCommandId =
   | "show-keyboard-shortcuts"
   | "toggle-sidebar"
 
-export interface DesktopProject {
-  cwd: string
-  name: string
-  addedAt: number
-  /** Terminal/panel scope for the project itself, before a thread exists. */
-  scopeId: string
-  /** The Open SWE project this folder belongs to; older desktop builds omit it. */
-  projectId?: string | null
-  /** The GitHub repository the folder is a clone of, if any; older builds omit it. */
-  repo?: string | null
-}
+/** A native menu the shell puts dashboard commands in; `app` is the macOS app menu, File elsewhere. */
+export type DesktopMenu =
+  | "app"
+  | "file"
+  | "edit"
+  | "view"
+  | "go"
+  | "thread"
+  | "pull-request"
+  | "help"
 
-/**
- * What this Mac knows about one of its "This Mac" threads: the checkout the
- * cloud agent works in, through `bridgeId`. `id` is the cloud thread id.
- */
-export interface DesktopLocalThread {
+export interface DesktopMenuCommand {
   id: string
-  cwd: string
-  worktreePath: string | null
-  managedTaskFolder?: boolean
-  /** Worktrees this app created for the thread, removed when it is discarded. */
-  ownedWorktrees: Array<string>
-  bridgeId: string | null
-  createdAt: number
-  updatedAt: number
-}
-
-export type DesktopWorkspaceMode = "local" | "worktree"
-
-export interface DesktopProjectRef {
-  name: string
-  current: boolean
-  isDefault: boolean
-  worktreePath: string | null
-}
-
-export interface DesktopLocalDiff {
-  status: "ready" | "missing" | "error"
-  truncated: boolean
-  files: Array<ThreadPrDiffFile>
-  repository?: { branch: string | null; pr: AgentPullRequest | null }
-}
-
-export type DesktopTerminalStatus = "starting" | "running" | "exited" | "error"
-export interface DesktopTerminalTarget {
-  localSessionId: string
-  terminalId: string
-}
-export interface DesktopTerminalSessionSnapshot extends DesktopTerminalTarget {
-  cwd: string
-  status: DesktopTerminalStatus
-  pid: number | null
-  history: string
-  exitCode: number | null
-  exitSignal: number | null
-  hasRunningSubprocess: boolean
   label: string
-  updatedAt: string
-  sequence: number
+  group: string
+  menu: DesktopMenu
+  /** Registered as the item's native accelerator when it has a modifier. */
+  shortcut?: string
 }
-export interface DesktopTerminalSummary extends DesktopTerminalTarget {
-  cwd: string
-  status: DesktopTerminalStatus
-  pid: number | null
-  exitCode: number | null
-  exitSignal: number | null
-  hasRunningSubprocess: boolean
-  label: string
-  updatedAt: string
-}
-export type DesktopTerminalAttachEvent =
-  | (DesktopTerminalTarget & {
-      type: "started" | "restarted"
-      snapshot: DesktopTerminalSessionSnapshot
-      sequence: number
-    })
-  | (DesktopTerminalTarget & { type: "output"; data: string; sequence: number })
-  | (DesktopTerminalTarget & {
-      type: "exited"
-      exitCode: number | null
-      exitSignal: number | null
-      sequence: number
-    })
-  | (DesktopTerminalTarget & { type: "closed" | "cleared"; sequence: number })
-  | (DesktopTerminalTarget & {
-      type: "error"
-      message: string
-      sequence: number
-    })
-  | (DesktopTerminalTarget & {
-      type: "activity"
-      hasRunningSubprocess: boolean
-      label: string
-      sequence: number
-    })
-export type DesktopTerminalMetadataEvent =
-  | { type: "upsert"; terminal: DesktopTerminalSummary }
-  | (DesktopTerminalTarget & { type: "remove" })
 
 export type DesktopUpdateState = {
   status: "idle" | "downloading" | "ready" | "installing"
   version?: string
-}
-
-export interface DesktopTerminalBridge {
-  attach: (
-    input: DesktopTerminalTarget & {
-      cwd?: string
-      cols?: number
-      rows?: number
-      restartIfNotRunning?: boolean
-    }
-  ) => Promise<DesktopTerminalSessionSnapshot>
-  open: (
-    input: DesktopTerminalTarget & { cwd: string; cols?: number; rows?: number }
-  ) => Promise<DesktopTerminalSessionSnapshot>
-  write: (input: DesktopTerminalTarget & { data: string }) => Promise<void>
-  resize: (
-    input: DesktopTerminalTarget & { cols: number; rows: number }
-  ) => Promise<void>
-  clear: (input: DesktopTerminalTarget) => Promise<void>
-  restart: (
-    input: DesktopTerminalTarget & { cwd: string; cols?: number; rows?: number }
-  ) => Promise<DesktopTerminalSessionSnapshot>
-  detach: (input: DesktopTerminalTarget) => Promise<void>
-  close: (
-    input: DesktopTerminalTarget & { deleteHistory?: boolean }
-  ) => Promise<void>
-  list: (localSessionId: string) => Promise<Array<DesktopTerminalSummary>>
-  subscribeMetadata: (
-    localSessionId: string
-  ) => Promise<Array<DesktopTerminalSummary>>
-  detachMetadata: (localSessionId: string) => Promise<void>
-  onEvent: (callback: (event: DesktopTerminalAttachEvent) => void) => () => void
-  onMetadata: (
-    callback: (event: DesktopTerminalMetadataEvent) => void
-  ) => () => void
 }
 
 declare global {
@@ -169,86 +47,65 @@ declare global {
     }
     openSweDesktop?: {
       isDesktop: true
-      taskWorkspaces?: boolean
       writeClipboard: (value: string) => Promise<void>
       copyPageLink: () => Promise<void>
+      /** Missing before desktop builds that open app pages in the system browser. */
+      openInBrowser?: (path: string) => Promise<void>
       onCommand: (callback: (commandId: DesktopCommandId) => void) => () => void
-      listProjects: () => Promise<Array<DesktopProject>>
-      getProjectBranches: (cwd: string) => Promise<{
-        current: string | null
-        branches: Array<DesktopProjectRef>
-      }>
-      watchProjectHead: (cwd: string | null) => Promise<void>
-      onProjectHeadChanged: (callback: (cwd: string) => void) => () => void
-      checkoutProjectBranch: (input: {
-        cwd: string
-        branch: string
-      }) => Promise<string>
-      setLocalBranch: (input: {
-        threadId: string
-        branch: string
-      }) => Promise<DesktopLocalThread | null>
-      addProject: () => Promise<DesktopProject | null>
-      removeProject: (cwd: string) => Promise<boolean>
-      /** Missing before desktop builds that link folders to Open SWE projects. */
-      linkProject?: (input: {
-        cwd: string
-        projectId: string | null
-      }) => Promise<DesktopProject | null>
+      /**
+       * Missing before desktop builds that list the dashboard's commands in their
+       * menus; resolves to the ids whose shortcut the menu registered.
+       */
+      setMenuCommands?: (
+        commands: ReadonlyArray<DesktopMenuCommand>
+      ) => Promise<Array<string>>
+      /** `viaShortcut` is true when the item's accelerator, not a click, chose it. */
+      onMenuCommand?: (
+        callback: (commandId: string, viaShortcut: boolean) => void
+      ) => () => void
       getVersion: () => Promise<string>
       getUpdateState: () => Promise<DesktopUpdateState>
       installUpdate: () => Promise<boolean>
       onUpdateState: (
         callback: (state: DesktopUpdateState) => void
       ) => () => void
-      onLocalThreadsChanged: (callback: () => void) => () => void
-      onProjectsChanged: (
-        callback: (projects: Array<DesktopProject>) => void
-      ) => () => void
       openExternal: (url: string) => Promise<boolean>
-      connectService: (provider: "slack" | "github") => Promise<boolean>
-      resolveLocalProjectPath: (input: {
-        localSessionId: string
-        path: string
-      }) => Promise<string | null>
+      connectService: (
+        provider: "slack" | "github",
+        options?: { recoveryToken: string }
+      ) => Promise<boolean | { recoveryToken: string; error?: string }>
+      cancelConnectService?: (provider: "slack" | "github") => Promise<void>
       /**
-       * Set up a thread the renderer is about to start in the cloud: its
-       * checkout or a new worktree, and the bridge its agent runs through.
+       * Serve this app's approved local actions; resolves to the bridge id a run
+       * names as `local_access_bridge_id`.
        */
-      prepareLocalThread: (input: {
+      ensureLocalAccessBridge?: () => Promise<string>
+      /** Folders (`~/…` under home) this thread may act in without asking, and until when (ms). */
+      localAccessGrants?: (
         threadId: string
-        cwd?: string
-        taskWorkspace?: boolean
-        workspaceMode?: DesktopWorkspaceMode
-        baseBranch?: string | null
-      }) => Promise<{ bridgeId: string; repo: string | null }>
-      /** Move a cloud thread onto a new worktree here; resolves to its bridge id. */
-      takeOverThread: (input: {
-        threadId: string
-        repo: string
-      }) => Promise<string>
-      /** Serve the thread's checkout again before its next run. */
-      ensureLocalBridge: (threadId: string) => Promise<boolean>
-      openTaskFolder?: (threadId: string) => Promise<boolean>
-      getLocalThread: (threadId: string) => Promise<DesktopLocalThread | null>
-      listLocalThreads: () => Promise<Array<DesktopLocalThread>>
-      /** Forget a deleted thread and remove the worktrees this app made for it. */
-      discardLocalThread: (threadId: string) => Promise<boolean>
+      ) => Promise<Array<{ folder: string; until: number }>>
+      revokeLocalAccessGrants?: (threadId: string) => Promise<void>
+      onLocalAccessGrantsChanged?: (callback: () => void) => () => void
+      /** The thread's local actions waiting on the person's OK. */
+      localAccessRequests?: (threadId: string) => Promise<
+        Array<{
+          id: string
+          kind: "read" | "write" | "import" | "execute"
+          concern: string | null
+          createdAt: number
+        }>
+      >
+      pendingLocalAccessThreads?: () => Promise<string[]>
+      setLocalAccessThread?: (
+        threadId: string,
+        bounds: { x: number; y: number; width: number; height: number } | null
+      ) => Promise<boolean>
+      /** Opens the desktop's own approval panel on a request; only it can decide. */
+      reviewLocalAccessRequest?: (id: string) => Promise<void>
+      onLocalAccessRequestsChanged?: (callback: () => void) => () => void
       setAppearance: (
         appearance: "light" | "dark" | "system"
       ) => Promise<boolean>
-      getLocalDiff: (threadId: string) => Promise<DesktopLocalDiff>
-      getLocalPrDiff: (threadId: string) => Promise<DesktopLocalDiff>
-      getLocalPr: (threadId: string) => Promise<AgentPullRequest | null>
-      getProjectDiff: (cwd: string) => Promise<DesktopLocalDiff>
-      readWorkspacePath: (input: {
-        localSessionId: string
-        relativePath: string
-      }) => Promise<WorkspacePath>
-      listWorkspaceFiles: (
-        localSessionId: string
-      ) => Promise<WorkspaceFileIndex>
-      terminal: DesktopTerminalBridge
     }
   }
 }

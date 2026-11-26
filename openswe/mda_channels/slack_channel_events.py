@@ -5,7 +5,7 @@ channel's creation, rename, archive, unarchive or deletion, nor a reaction. MDA'
 Slack channel takes them with its ``channel`` and ``reaction`` handlers
 (``mda/channels/slack.py``) and POSTs them here, signed with ``MDA_SERVICE_SECRET``.
 The backend does what ``/webhooks/slack`` does with them: it keeps the channel
-directory, incident channels and review guides, records a feedback reaction on the
+directory, the channels a channel name rule joins and review guides, records a feedback reaction on the
 run that posted the message, and treats the summon reaction as its reactor tagging
 Open SWE. It starts no run of MDA's.
 """
@@ -13,13 +13,10 @@ Open SWE. It starts no run of MDA's.
 from fastapi import APIRouter, BackgroundTasks, Depends
 from managed_deepagents import SlackEndpointRequest
 
-from openswe.config import ENV
-from openswe.incidents import channels as incidents
 from openswe.mda_channels.auth import require_mda_channel
-from openswe.review_guide.launch import close_guide_for_channel
+from openswe.routing import channel_rules
 from openswe.slack.channels import DIRECTORY_EVENTS, SlackChannel
 from openswe.slack.feedback import (
-    FEEDBACK_REACTIONS,
     process_slack_reaction_added,
     process_slack_reaction_removed,
 )
@@ -43,19 +40,7 @@ async def slack_channel_event(
         return None
     if kind in DIRECTORY_EVENTS:
         background_tasks.add_task(SlackChannel.observe, kind, channel_id)
-    # Incidents checks the workspace and app as for Slack's own delivery: MDA names
-    # the workspace Trigger Server verified, and the app is this deployment's.
-    await incidents.handle_slack_event(
-        {
-            "event": raw,
-            "team_id": event.get("teamId", ""),
-            "api_app_id": ENV.SLACK_APP_ID.optional() or "",
-            "event_id": event["deliveryId"],
-        },
-        background_tasks,
-    )
-    if kind == "channel_archive":
-        background_tasks.add_task(close_guide_for_channel, channel_id)
+    await channel_rules.handle_slack_event(raw)
     return None
 
 
@@ -66,7 +51,7 @@ async def slack_reaction(call: SlackEndpointRequest, background_tasks: Backgroun
     raw = dict(event["payload"])
     reaction = event.get("reaction")
     delivery_id = event["deliveryId"]
-    if reaction in FEEDBACK_REACTIONS:
+    if reaction and reaction != SUMMON_REACTION:
         process = (
             process_slack_reaction_removed if event.get("removed") else process_slack_reaction_added
         )

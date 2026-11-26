@@ -25,12 +25,12 @@ from datetime import timedelta
 from typing import Any
 
 from langchain_core.messages import convert_to_messages
-from langgraph_sdk.client import LangGraphClient
 from runtime_api.model_errors import LAST_MODEL_ERROR_KEY, code_for_error_type
 
 from openswe import event_claims
 from openswe.agent_cost import finalize_agent_invocation_usage
 from openswe.config import ENV
+from openswe.dashboard.ttft import DashboardRunTimeline
 from openswe.dispatch import FOLLOW_UP_PICKUP_KIND, RunMetadata, channel_of
 from openswe.github.app import get_github_app_installation_token
 from openswe.github.comments import post_github_comment
@@ -38,14 +38,15 @@ from openswe.invocation import resolve_invocation_id
 from openswe.notion.notifications import post_notion_comment
 from openswe.review.findings import REVIEWER_SHADOW_THREAD_KIND, REVIEWER_THREAD_KIND
 from openswe.review.run_failure import ReviewRunFailure
+from openswe.review_apps.outcomes import ReviewOutcomes
 from openswe.slack.client import (
     SANDBOX_UNREACHABLE_NOTICE,
     SlackNotice,
     post_slack_thread_reply,
     remove_slack_reaction,
 )
-from openswe.slack.code_channels import is_code_channel_session, set_session_status
 from openswe.slack.routed_work import RoutedWork
+from openswe.slack.run_timing import SlackRunTimeline
 from openswe.slack.thinking import refresh_slack_background_status
 from openswe.source_context import SourceContext
 from openswe.tasks.messages import TASK_MESSAGE_KIND, TaskMessage
@@ -111,6 +112,7 @@ _REASON_TEXT = {
     "provider_timeout": "a model call timed out",
     "context_too_long": "the conversation outgrew the model's context window",
     "model_unavailable": "the selected model isn't available to this workspace",
+    "model_refused": "the model provider blocked the model's reply",
     "sandbox_unreachable": "the run lost its sandbox",
     "backend_interrupted": "the connection to the Robin backend was interrupted",
     "step_limit": "the run hit its step limit",
@@ -120,6 +122,7 @@ _DEFAULT_FOLLOW_UP = "Send another message and it will pick this back up."
 _REASON_FOLLOW_UP = {
     "context_too_long": "Start a new thread to continue.",
     "model_unavailable": "Pick a different model in Robin Web, then retry.",
+    "model_refused": "Rephrase the request or pick a different model, then retry.",
     "backend_interrupted": "Re-trigger the run to try again.",
     "run_stalled": "Send your message again to retry.",
 }
@@ -332,26 +335,6 @@ async def _finalize_agent_usage_telemetry(
     )
 
 
-async def _settle_code_channel_session(
-    client: LangGraphClient, thread_id: str, metadata: dict[str, Any]
-) -> None:
-    """Return a code channel session to ``active`` once its work stops.
-
-    A later message can already have started another run, so a completion that
-    arrives out of order must not clear the loading UI that run is relying on.
-    """
-    slack_thread = SourceContext.from_metadata(metadata).slack_thread
-    if slack_thread is None or not is_code_channel_session(slack_thread.thread_ts):
-        return
-    try:
-        for status in ("pending", "running"):
-            if await client.runs.list(thread_id, status=status, limit=1):
-                return
-    except Exception:  # noqa: BLE001
-        logger.debug("run-complete: could not list runs for %s", thread_id, exc_info=True)
-    await set_session_status(slack_thread.channel_id, "active")
-
-
 async def _handle_successful_run(
     thread_id: str, run_id: str | None, payload: dict[str, Any]
 ) -> dict[str, str]:
@@ -375,13 +358,8 @@ async def _handle_successful_run(
                 exc_info=True,
                 extra={"run_completion": {"thread_id": thread_id}},
             )
-    if metadata.get("source") == "incidents_agent":
-        from openswe.incidents import turns
-
-        return await turns.handle_run_completion(thread_id, run_id, "success")
     if metadata.get("kind") in {REVIEWER_THREAD_KIND, REVIEWER_SHADOW_THREAD_KIND}:
         return {"status": "ignored", "reason": "not an agent Slack run"}
-    await _settle_code_channel_session(client, thread_id, metadata)
     await refresh_slack_background_status(thread_id)
     # Slack shows no run cost, so nothing refreshes a reply's footer with it.
     return {"status": "ok", "reason": "run settled"}
@@ -471,7 +449,7 @@ def _log_run_failure(thread_id: str, run_id: str | None, status: object, error: 
 
 # MDA channels that report a run's failure in their conversation themselves. The
 # GitHub channel doesn't, so its issues still get Open SWE's failure reply.
-_CHANNELS_REPORTING_FAILURES = frozenset({"linear"})
+_CHANNELS_REPORTING_FAILURES = frozenset({"linear", "slack"})
 
 
 async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
@@ -482,6 +460,10 @@ async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
     run_id = raw_run_id if isinstance(raw_run_id, str) and raw_run_id else None
     if not isinstance(thread_id, str) or not thread_id:
         return {"status": "ignored", "reason": "missing thread_id"}
+    if status in _TERMINAL_RUN_STATUSES:
+        failed = status in _TERMINAL_FAILURE_STATUSES
+        DashboardRunTimeline.settle_in_background(payload, failed=failed)
+        SlackRunTimeline.settle_in_background(payload, failed=failed)
     try:
         await refresh_thread_status(thread_id)
     except Exception:
@@ -494,6 +476,13 @@ async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
     from openswe.review.events import ReviewEvents
 
     await ReviewEvents.completed(thread_id, run_id, status)
+    try:
+        await ReviewOutcomes.completed(thread_id, run_id, status)
+    except Exception:
+        logger.exception(
+            "Could not settle review app work",
+            extra={"thread_id": thread_id, "run_id": run_id},
+        )
     is_worker = False
     if run_id and isinstance(status, str) and status in _TERMINAL_RUN_STATUSES:
         from openswe.tasks.events import worker_finished
@@ -562,11 +551,6 @@ async def handle_run_completion(payload: dict[str, Any]) -> dict[str, str]:
 
     metadata = thread.get("metadata") if isinstance(thread, dict) else None
     metadata = metadata if isinstance(metadata, dict) else {}
-    if metadata.get("source") == "incidents_agent":
-        from openswe.incidents import turns
-
-        return await turns.handle_run_completion(thread_id, run_id, str(status))
-    await _settle_code_channel_session(client, thread_id, metadata)
     await refresh_slack_background_status(thread_id)
     if run_id is None:
         # Payloads without run ids fall back to the old per-thread flag; run-scoped

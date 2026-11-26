@@ -1,20 +1,20 @@
 import { useQuery } from "@tanstack/react-query"
-import { PlusIcon, XIcon } from "@langchain/macaw-components/icons"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Banner } from "@langchain/macaw-components/Banner"
+import { createPortal } from "react-dom"
+import { Text } from "@langchain/macaw-components/Text"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@langchain/macaw-components/DropdownMenu"
-import { IconButton } from "@langchain/macaw-components/IconButton"
-import { ImageSquareIcon } from "@phosphor-icons/react/dist/ssr/ImageSquare"
+  ChatComposer as MacawChatComposer,
+  ChatComposerAttachment,
+  ChatComposerAttachmentMenu,
+  ChatComposerAttachments,
+  ChatComposerToolbar,
+} from "@langchain/macaw-components/ChatComposer"
 
 import { ComposerCommandMenu } from "./ComposerCommandMenu"
 import { FuzzySearch } from "@/lib/fuzzySearch"
 import { ComposerReplyCards } from "./ComposerReplyCards"
 import type { PendingReply } from "./ComposerReplyCards"
-import { ComposerPrimaryActions } from "./ComposerPrimaryActions"
+import { ComposerPrimaryAction, useComposerRun } from "./ComposerPrimaryActions"
 import {
   ComposerPromptEditor,
   mentionReplacementText,
@@ -23,15 +23,8 @@ import {
   ContextWindowMeter,
   type ContextWindowMeterProps,
 } from "./ContextWindowMeter"
-import { WorkspaceSelector } from "./WorkspaceSelector"
 import { ProjectSelector } from "@/features/projects/components/ProjectSelector"
 import type { Project } from "@/features/projects/lib/projects"
-import {
-  LocalBranchSelector,
-  LocalProjectSelector,
-  LocalWorkspaceSelector,
-  RunTargetSelector,
-} from "./RunTargetSelector"
 import {
   COMPOSER_PATH_DRAG_MIME,
   detectComposerTrigger,
@@ -44,22 +37,13 @@ import type {
   ComposerPromptEditorHandle,
 } from "./ComposerPromptEditor"
 import type { ComposerSlashCommand, ComposerTrigger } from "./composerTrigger"
-import type { RunTarget } from "./RunTargetSelector"
-import { DropdownMenuItem } from "@/components/MenuItem"
-import type {
-  DesktopProject,
-  DesktopProjectRef,
-  DesktopWorkspaceMode,
-} from "@/desktop"
 import type {
   FollowUpBehavior,
   ModelOption,
   SessionUser,
   Skill,
-  WorkspaceOption,
 } from "@/lib/api"
 import type { ImageChunk } from "@/features/agents/lib/types"
-import { AttachedFile } from "@/features/agents/components/messages/MessageImage"
 import type { PassageReply } from "@/features/agents/utils/passageReply"
 import type { ModelSelection } from "@/features/agents/lib/provider/useModelOptions"
 import { ModelPicker } from "@/features/agents/components/ModelPicker"
@@ -79,11 +63,11 @@ import { cn } from "@/lib/utils"
 
 export type { ActiveRun }
 
-export const MAX_IMAGE_COUNT = 5
-export const MAX_FILE_COUNT = 10
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const MAX_IMAGE_BATCH_BASE64 = 5 * Math.ceil(MAX_IMAGE_BYTES / 3) * 4
+const MAX_FILE_BATCH_BASE64 = 10 * Math.ceil(MAX_IMAGE_BYTES / 3) * 4
 const MAX_MENTION_SUGGESTIONS = 8
-/** Non-image files the agent receives in its sandbox rather than as model input. */
+/** File types sent as they are; any other non-image file is sent as opaque bytes. */
 export const SUPPORTED_FILE_TYPES: ReadonlySet<string> = new Set([
   "application/pdf",
   "text/plain",
@@ -217,45 +201,25 @@ export interface ChatComposerProps {
   followUpBehavior?: FollowUpBehavior
   /** Content to put back in front of whatever is being typed. */
   restoreDraft?: RestoredDraft | null
-  droppedFiles?: { key: number; files: Array<File> } | null
   /** A reply to a passage the user selected; it rides ahead of their next message. */
   addedReply?: { key: number; reply: PassageReply } | null
   models?: Array<ModelOption>
+  modelSelectionEnabled?: boolean
   selection?: ModelSelection | null
   onSelectionChange?: (next: ModelSelection | null) => void
   /** Repos the user can target. When provided with onRepoChange, a repo picker is shown. */
   repos?: Array<{ full_name: string }>
   selectedRepo?: string | null
+  /** While anything the target pickers show is still loading; they hold their place, hidden, rather than appearing or swapping labels in view. */
+  targetPending?: boolean
   onRepoChange?: (repo: string | null) => void
   /** The signed-in person while they must link GitHub; the repo picker then asks them to. */
   gitHubLinkUser?: SessionUser
-  /** Desktop-only execution target. Omit this prop to keep the control out of the web UI. */
-  runTarget?: RunTarget
-  onRunTargetChange?: (next: RunTarget) => void
-  /** The thread is still moving to the run target, checkout and all. */
-  runTargetPending?: boolean
-  localRepos?: Array<DesktopProject>
-  selectedLocalRepoPath?: string | null
-  selectedLocalRepoBranch?: string | null
-  localRepoBranches?: Array<DesktopProjectRef>
-  localWorkspaceMode?: DesktopWorkspaceMode
-  localWorktreeLabel?: string
-  onLocalWorkspaceModeChange?: (next: DesktopWorkspaceMode) => void
-  onSelectLocalRepo?: (cwd: string) => void
-  onClearLocalRepo?: () => void
-  onAddLocalRepo?: () => void
-  onRemoveLocalRepo?: (cwd: string) => void
-  onRefreshLocalRepoBranch?: () => void
-  onSelectLocalRepoBranch?: (branch: string) => void
   /** Projects a new cloud thread can be filed in; the picker shows with `onProjectChange`. */
   projects?: Array<Project>
   selectedProjectId?: string | null
   onProjectChange?: (projectId: string | null) => void
   onCreateProject?: (name: string) => void
-  /** Workspaces a new thread can boot from. The picker appears only when there are several. */
-  workspaceOptions?: Array<WorkspaceOption>
-  selectedWorkspace?: string | null
-  onWorkspaceChange?: (slug: string | null) => void
   /** Paths offered by `@` autocomplete — in a thread, the files the agent has touched. */
   mentionPaths?: Array<string>
   skills?: Array<Skill>
@@ -264,21 +228,21 @@ export interface ChatComposerProps {
   routed?: { route?: string; modelId?: string | null } | null
 }
 
-function isAttachable(file: File): boolean {
-  return (
-    SUPPORTED_IMAGE_TYPES.has(file.type) || SUPPORTED_FILE_TYPES.has(file.type)
-  )
+function attachmentMimeType(file: File): string {
+  return SUPPORTED_IMAGE_TYPES.has(file.type) ||
+    SUPPORTED_FILE_TYPES.has(file.type)
+    ? file.type
+    : "application/octet-stream"
 }
 
 /** An attachment that goes to the sandbox rather than to the model as an image. */
 function isFileChunk(chunk: ImageChunk): boolean {
-  return SUPPORTED_FILE_TYPES.has(chunk.mimeType)
+  return !SUPPORTED_IMAGE_TYPES.has(chunk.mimeType)
 }
 
 function fileToImageChunk(file: File): Promise<ImageChunk | null> {
-  if (!isAttachable(file) || file.size > MAX_IMAGE_BYTES) {
-    return Promise.resolve(null)
-  }
+  if (file.size > MAX_IMAGE_BYTES) return Promise.resolve(null)
+  const mimeType = attachmentMimeType(file)
 
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -286,9 +250,7 @@ function fileToImageChunk(file: File): Promise<ImageChunk | null> {
       const dataUrl = typeof reader.result === "string" ? reader.result : ""
       const base64 = dataUrl.split(",")[1]
       resolve(
-        base64
-          ? { kind: "image", base64, mimeType: file.type, fileName: file.name }
-          : null
+        base64 ? { kind: "image", base64, mimeType, fileName: file.name } : null
       )
     }
     reader.onerror = () => resolve(null)
@@ -364,8 +326,9 @@ export function buildCommandItems(
     )
   }
 
-  const paths: Array<ComposerCommandItem> = mentionPaths
-    .filter((path) => new FuzzySearch(query).matches(path))
+  const search = new FuzzySearch(query)
+  const paths: Array<ComposerCommandItem> = search
+    .rank(mentionPaths, (path) => path)
     .map((path) => ({
       id: `path:${path}`,
       type: "path",
@@ -374,11 +337,17 @@ export function buildCommandItems(
       description: path,
     }))
   const people: Array<ComposerCommandItem> = slackUsers
-    .filter((user) =>
-      [user.name, user.display_name, user.real_name].some((name) =>
-        new FuzzySearch(query).matches(name)
-      )
-    )
+    .map((user) => ({
+      user,
+      score: Math.max(
+        ...[user.name, user.display_name, user.real_name].map((name) =>
+          search.score(name)
+        )
+      ),
+    }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map(({ user }) => user)
     .slice(
       0,
       paths.length > 0 ? MAX_MENTION_SUGGESTIONS / 2 : MAX_MENTION_SUGGESTIONS
@@ -411,38 +380,20 @@ export const ChatComposer = memo(function ChatComposer({
   onSubmit,
   followUpBehavior = "steer",
   restoreDraft = null,
-  droppedFiles = null,
   addedReply = null,
   models = [],
+  modelSelectionEnabled = true,
   selection = null,
   onSelectionChange,
   repos,
   selectedRepo = null,
   onRepoChange,
   gitHubLinkUser,
-  runTarget,
-  onRunTargetChange,
-  runTargetPending,
-  localRepos = [],
-  selectedLocalRepoPath = null,
-  selectedLocalRepoBranch = null,
-  localRepoBranches = [],
-  localWorkspaceMode = "local",
-  localWorktreeLabel,
-  onLocalWorkspaceModeChange,
-  onSelectLocalRepo,
-  onClearLocalRepo,
-  onAddLocalRepo,
-  onRemoveLocalRepo,
-  onRefreshLocalRepoBranch,
-  onSelectLocalRepoBranch,
   projects = [],
   selectedProjectId = null,
+  targetPending = false,
   onProjectChange,
   onCreateProject,
-  workspaceOptions = [],
-  selectedWorkspace = null,
-  onWorkspaceChange,
   mentionPaths = [],
   skills = [],
   contextUsage,
@@ -470,14 +421,15 @@ export const ChatComposer = memo(function ChatComposer({
         { id: `added:${addedReply.key}`, reply: addedReply.reply },
       ])
   }
-  const [dragKind, setDragKind] = useState<"files" | "path" | null>(null)
+  const [draggingPath, setDraggingPath] = useState(false)
+  const composerRef = useRef<HTMLDivElement>(null)
+  const [fileDropTarget, setFileDropTarget] = useState<HTMLElement | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [activeItemId, setActiveItemId] = useState<string | null>(null)
   const [dismissedTriggerKey, setDismissedTriggerKey] = useState<string | null>(
     null
   )
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
-  const [extrasMenuOpen, setExtrasMenuOpen] = useState(false)
   const [composerError, setComposerError] = useState<string | null>(null)
   const composerShortcuts = useMemo(
     () => [
@@ -495,14 +447,18 @@ export const ChatComposer = memo(function ChatComposer({
         group: "Composer",
         showInPalette: false,
       },
-      {
-        id: "open-model-picker",
-        label: "Choose model",
-        aliases: ["model picker", "change model", "reasoning effort"],
-        shortcuts: ["mod+shift+m"],
-        group: "Composer",
-        run: () => setModelPickerOpen(true),
-      },
+      ...(modelSelectionEnabled && models.length > 0
+        ? [
+            {
+              id: "open-model-picker",
+              label: "Choose model",
+              aliases: ["model picker", "change model", "reasoning effort"],
+              shortcuts: ["mod+shift+m"],
+              group: "Composer",
+              run: () => setModelPickerOpen(true),
+            },
+          ]
+        : []),
       ...(activeRun?.running
         ? [
             {
@@ -515,16 +471,23 @@ export const ChatComposer = memo(function ChatComposer({
           ]
         : []),
     ],
-    [activeRun?.running]
+    [activeRun?.running, modelSelectionEnabled, models.length]
   )
   useRegisterAppCommands(composerShortcuts)
 
   const editorRef = useRef<ComposerPromptEditorHandle | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const dragDepthRef = useRef(0)
 
+  const didAutoFocus = useRef(false)
   useEffect(() => {
-    if (autoFocus) editorRef.current?.focus()
+    if (autoFocus && !didAutoFocus.current) {
+      if (
+        !document.activeElement?.closest(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), dialog, [role="dialog"], [role="alertdialog"]'
+        )
+      )
+        editorRef.current?.focus()
+      didAutoFocus.current = true
+    }
   }, [autoFocus])
 
   useEffect(() => {
@@ -562,7 +525,7 @@ export const ChatComposer = memo(function ChatComposer({
             trigger,
             mentionPaths,
             skills,
-            models.length > 0,
+            modelSelectionEnabled && models.length > 0,
             canOffload,
             slackChannels,
             recentSlackChannels,
@@ -572,6 +535,7 @@ export const ChatComposer = memo(function ChatComposer({
     [
       mentionPaths,
       models.length,
+      modelSelectionEnabled,
       skills,
       trigger,
       canOffload,
@@ -589,6 +553,20 @@ export const ChatComposer = memo(function ChatComposer({
     commandItems[0] ??
     null
 
+  const attachmentBase64 = { images: 0, files: 0 }
+  for (const image of pendingImages) {
+    attachmentBase64[isFileChunk(image) ? "files" : "images"] +=
+      image.base64.length
+  }
+  const imageSizeError =
+    attachmentBase64.images > MAX_IMAGE_BATCH_BASE64
+      ? "Images must total 50MB or less. Remove an attachment to send."
+      : null
+  const fileSizeError =
+    attachmentBase64.files > MAX_FILE_BATCH_BASE64
+      ? "Files must total 100MB or less. Remove an attachment to send."
+      : null
+  const attachmentSizeError = imageSizeError ?? fileSizeError
   const imageCount = pendingImages.filter((i) => !isFileChunk(i)).length
   const filesWhileBusy = busy && pendingImages.some(isFileChunk)
   const selectedModelSupportsImages = useMemo(() => {
@@ -600,12 +578,24 @@ export const ChatComposer = memo(function ChatComposer({
     value.trim().length === 0 &&
     pendingImages.length === 0 &&
     pendingReplies.length === 0
-  const canSubmit =
+  const readyToSubmit =
     !disabled &&
     !isSubmitting &&
+    !attachmentSizeError &&
     selectedModelSupportsImages &&
     !filesWhileBusy &&
     !composerEmpty
+  const run = useComposerRun({
+    activeRun,
+    canSubmit: readyToSubmit,
+    onStop,
+    runningLabel:
+      followUpBehavior === "steer" ? "Steer agent" : "Queue message",
+    stoppable,
+    stopOnEscape: !menuOpen && !modelPickerOpen,
+    submitting: isSubmitting,
+  })
+  const canSubmit = readyToSubmit && !run.stopping
 
   const applyPrompt = useCallback((nextValue: string, nextCursor: number) => {
     setValue(nextValue)
@@ -642,17 +632,10 @@ export const ChatComposer = memo(function ChatComposer({
     const replaced = untouched ? (previous?.images ?? []) : []
     if (restoreDraft.images.length > 0 || replaced.length > 0) {
       // oxlint-disable-next-line react/set-state-in-effect
-      setPendingImages((prev) => {
-        const images = [
-          ...restoreDraft.images,
-          ...prev.filter((image) => !replaced.includes(image)),
-        ]
-        // Only a suggestion is held to the limit; the person's own images
-        // coming back (a cancelled queued message) are never dropped.
-        return restoreDraft.replacesSuggestion
-          ? images.slice(0, MAX_IMAGE_COUNT)
-          : images
-      })
+      setPendingImages((prev) => [
+        ...restoreDraft.images,
+        ...prev.filter((image) => !replaced.includes(image)),
+      ])
     }
     const restoredReplies = restoreDraft.replies ?? []
     if (restoredReplies.length > 0) {
@@ -669,7 +652,12 @@ export const ChatComposer = memo(function ChatComposer({
 
   const handleSubmit = useCallback(
     async (options?: SubmitOptions) => {
-      if (submittingRef.current || disabled) return
+      const submissionBlocked =
+        submittingRef.current ||
+        disabled ||
+        run.stopping ||
+        !!attachmentSizeError
+      if (submissionBlocked) return
       // The editor is the source of truth for what is on screen; a keystroke that
       // has not yet round-tripped through state would otherwise be dropped.
       const snapshot = editorRef.current?.readSnapshot()
@@ -708,7 +696,9 @@ export const ChatComposer = memo(function ChatComposer({
     },
     [
       applyPrompt,
+      attachmentSizeError,
       disabled,
+      run.stopping,
       onSubmit,
       pendingImages,
       pendingReplies,
@@ -833,11 +823,6 @@ export const ChatComposer = memo(function ChatComposer({
     ]
   )
 
-  const pendingImagesRef = useRef(pendingImages)
-  useEffect(() => {
-    pendingImagesRef.current = pendingImages
-  }, [pendingImages])
-
   const addFiles = useCallback(async (files: FileList | Array<File>) => {
     const nextImages = await Promise.all(
       Array.from(files).map(fileToImageChunk)
@@ -848,143 +833,99 @@ export const ChatComposer = memo(function ChatComposer({
     const rejected = nextImages.length - validImages.length
     setComposerError(
       rejected
-        ? `${rejected} attachment${rejected > 1 ? "s were" : " was"} skipped: only images, PDF, Word, Excel, PowerPoint and text files up to 10MB are supported.`
+        ? `${rejected} attachment${rejected > 1 ? "s were" : " was"} skipped: attachments must be 10MB or smaller.`
         : null
     )
     if (validImages.length === 0) return
-    const next = [...pendingImagesRef.current, ...validImages]
-    if (
-      next.filter((chunk) => !isFileChunk(chunk)).length > MAX_IMAGE_COUNT ||
-      next.filter(isFileChunk).length > MAX_FILE_COUNT
-    ) {
-      setComposerError(
-        `You can add at most ${MAX_IMAGE_COUNT} images and ${MAX_FILE_COUNT} files to a message. Please select fewer attachments.`
-      )
-      return
-    }
-    setPendingImages(next)
+    setPendingImages((prev) => [...prev, ...validImages])
   }, [])
 
   useEffect(() => {
-    if (droppedFiles)
-      void Promise.resolve().then(() => addFiles(droppedFiles.files))
-  }, [addFiles, droppedFiles])
-
-  const handleFileChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      if (event.target.files) void addFiles(event.target.files)
-      event.target.value = ""
-    },
-    [addFiles]
-  )
-
-  const insertMentionAtEnd = useCallback(
-    (path: string) => {
-      const separator = value.length === 0 || /\s$/.test(value) ? "" : " "
-      const nextValue = `${value}${separator}${mentionReplacementText(path)}`
-      applyPrompt(nextValue, nextValue.length)
+    if (disabled) return
+    const dropZone = composerRef.current?.closest<HTMLElement>(
+      "[data-chat-drop-zone]"
+    )
+    if (!dropZone) return
+    let dragDepth = 0
+    const reset = () => {
+      dragDepth = 0
+      setFileDropTarget(null)
+    }
+    const dragEnter = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return
+      dragDepth += 1
+      setFileDropTarget(dropZone)
+    }
+    const dragOver = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "copy"
+      setFileDropTarget(dropZone)
+    }
+    const dragLeave = () => {
+      dragDepth = Math.max(0, dragDepth - 1)
+      if (dragDepth === 0) reset()
+    }
+    const drop = (event: DragEvent) => {
+      reset()
+      if (
+        event.defaultPrevented ||
+        !event.dataTransfer?.types.includes("Files") ||
+        (event.target instanceof Element &&
+          event.target.closest("[data-chat-composer]"))
+      )
+        return
+      event.preventDefault()
+      void addFiles(Array.from(event.dataTransfer.files))
       editorRef.current?.focusAtEnd()
-    },
-    [applyPrompt, value]
-  )
+    }
+    dropZone.addEventListener("dragenter", dragEnter)
+    dropZone.addEventListener("dragover", dragOver)
+    dropZone.addEventListener("dragleave", dragLeave)
+    dropZone.addEventListener("drop", drop)
+    window.addEventListener("dragend", reset)
+    window.addEventListener("blur", reset)
+    return () => {
+      reset()
+      dropZone.removeEventListener("dragenter", dragEnter)
+      dropZone.removeEventListener("dragover", dragOver)
+      dropZone.removeEventListener("dragleave", dragLeave)
+      dropZone.removeEventListener("drop", drop)
+      window.removeEventListener("dragend", reset)
+      window.removeEventListener("blur", reset)
+    }
+  }, [addFiles, disabled])
 
-  // Two accepted payloads: OS image files, and a repo path dragged out of the
-  // changed-files list. The drop only lands if dragover is also prevented, so
-  // every handler has to agree on what it accepts.
-  const dragKindOf = (
-    event: React.DragEvent<HTMLDivElement>
-  ): "files" | "path" | null => {
-    if (event.dataTransfer.types.includes(COMPOSER_PATH_DRAG_MIME))
-      return "path"
-    if (event.dataTransfer.types.includes("Files")) return "files"
-    return null
+  const handlePathDragOver = (event: React.DragEvent<HTMLFormElement>) => {
+    if (disabled || !event.dataTransfer.types.includes(COMPOSER_PATH_DRAG_MIME))
+      return
+    event.preventDefault()
+    setDraggingPath(true)
   }
 
-  const handleDragEnter = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      const kind = dragKindOf(event)
-      if (!kind) return
-      event.preventDefault()
-      dragDepthRef.current += 1
-      setDragKind(kind)
-    },
-    []
-  )
+  const handlePathDrop = (event: React.DragEvent<HTMLFormElement>) => {
+    setDraggingPath(false)
+    const path = event.dataTransfer.getData(COMPOSER_PATH_DRAG_MIME)
+    if (disabled || !path) return
+    event.preventDefault()
+    const separator = value.length === 0 || /\s$/.test(value) ? "" : " "
+    const nextValue = `${value}${separator}${mentionReplacementText(path)}`
+    applyPrompt(nextValue, nextValue.length)
+    editorRef.current?.focusAtEnd()
+  }
 
-  const handleDragOver = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      const kind = dragKindOf(event)
-      if (!kind) return
-      event.preventDefault()
-      setDragKind(kind)
-    },
-    []
-  )
+  const drawerError = attachmentSizeError ?? composerError
+  const drawerMessage =
+    drawerError ??
+    (!selectedModelSupportsImages
+      ? `The selected model does not accept image input. Remove the image${imageCount > 1 ? "s" : ""} or switch to a vision-enabled model to send.`
+      : filesWhileBusy
+        ? "Files can be sent once the agent finishes its run."
+        : null)
 
-  const handleDragLeave = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      if (!dragKindOf(event)) return
-      event.preventDefault()
-      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-      if (dragDepthRef.current === 0) setDragKind(null)
-    },
-    []
-  )
-
-  const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      const droppedPath = event.dataTransfer.getData(COMPOSER_PATH_DRAG_MIME)
-      if (droppedPath) {
-        event.preventDefault()
-        dragDepthRef.current = 0
-        setDragKind(null)
-        insertMentionAtEnd(droppedPath)
-        return
-      }
-      if (!event.dataTransfer.types.includes("Files")) return
-      event.preventDefault()
-      dragDepthRef.current = 0
-      setDragKind(null)
-      void addFiles(event.dataTransfer.files)
-    },
-    [addFiles, insertMentionAtEnd]
-  )
-
-  const handlePaste = useCallback(
-    (event: React.ClipboardEvent<HTMLElement>) => {
-      const files: Array<File> = []
-      for (const item of Array.from(event.clipboardData.items)) {
-        if (item.kind !== "file") continue
-        const file = item.getAsFile()
-        if (file && isAttachable(file)) files.push(file)
-      }
-      if (files.length === 0) return
-      event.preventDefault()
-      void addFiles(files)
-    },
-    [addFiles]
-  )
-
-  const executionTarget = runTarget &&
-    (runTarget === "local" ||
-      (typeof window !== "undefined" && window.openSweDesktop)) && (
-      <RunTargetSelector
-        onChange={onRunTargetChange}
-        pending={runTargetPending}
-        value={runTarget}
-      />
-    )
-  const targetControls = (onRepoChange || runTarget || onWorkspaceChange) && (
+  const targetControls = onRepoChange && (
     <>
-      {runTarget !== "local" && onWorkspaceChange && (
-        <WorkspaceSelector
-          workspaces={workspaceOptions}
-          selectedSlug={selectedWorkspace}
-          onChange={onWorkspaceChange}
-          side="top"
-        />
-      )}
-      {runTarget !== "local" && onProjectChange && onCreateProject && (
+      {onProjectChange && onCreateProject && (
         <ProjectSelector
           onCreate={onCreateProject}
           onRepoChange={gitHubLinkUser ? undefined : onRepoChange}
@@ -995,100 +936,68 @@ export const ChatComposer = memo(function ChatComposer({
           selectedRepo={selectedRepo}
         />
       )}
-      {runTarget !== "local" && onRepoChange && gitHubLinkUser && (
+      {gitHubLinkUser && (
         <GitHubLinkRepoSelector user={gitHubLinkUser} side="top" />
       )}
-      {runTarget !== "local" &&
-        onRepoChange &&
-        !gitHubLinkUser &&
-        !onProjectChange && (
-          <RepoSelector
-            emptySelectionLabel="Don't work in a repository"
-            noMatchesLabel="No matching repositories"
-            onRepoChange={onRepoChange}
-            placeholder="Select repository"
-            repos={repos}
-            searchPlaceholder="Search repositories…"
-            selectedRepo={selectedRepo}
-            side="top"
-          />
-        )}
-      {runTarget === "local" && (
-        <LocalProjectSelector
-          onAdd={onAddLocalRepo}
-          onClear={onClearLocalRepo}
-          onRemove={onRemoveLocalRepo}
-          onSelect={onSelectLocalRepo}
-          projects={localRepos}
-          selectedPath={selectedLocalRepoPath}
+      {!gitHubLinkUser && !onProjectChange && (
+        <RepoSelector
+          emptySelectionLabel="Don't work in a repository"
+          noMatchesLabel="No matching repositories"
+          onRepoChange={onRepoChange}
+          placeholder="Select repository"
+          repos={repos}
+          searchPlaceholder="Search repositories…"
+          selectedRepo={selectedRepo}
           side="top"
         />
       )}
-      {runTarget === "local" &&
-        localRepoBranches.length > 0 &&
-        onRefreshLocalRepoBranch &&
-        onSelectLocalRepoBranch && (
-          <LocalBranchSelector
-            refs={localRepoBranches}
-            disabled={!selectedLocalRepoPath}
-            onRefresh={onRefreshLocalRepoBranch}
-            onSelectBranch={onSelectLocalRepoBranch}
-            selectedBranch={selectedLocalRepoBranch}
-          />
-        )}
-      {runTarget === "local" &&
-        localRepoBranches.length > 0 &&
-        onSelectLocalRepoBranch && (
-          <LocalWorkspaceSelector
-            onChange={onLocalWorkspaceModeChange}
-            value={localWorkspaceMode}
-            worktreeLabel={localWorktreeLabel}
-          />
-        )}
     </>
   )
 
   return (
     <div
+      ref={composerRef}
       className={cn(
         "relative w-full font-sans text-xs",
         compact ? "max-w-none" : "max-w-2xl"
       )}
     >
-      {composerError && (
-        <div
-          className="mb-space-2 px-space-1 text-xs text-error-secondary"
-          role="alert"
-        >
-          {composerError}
-        </div>
-      )}
-
-      {!selectedModelSupportsImages && (
-        <Banner className="mb-space-2" intent="warning">
-          {`The selected model does not accept image input. Remove the image${
-            imageCount > 1 ? "s" : ""
-          } or switch to a vision-enabled model to send.`}
-        </Banner>
-      )}
-
-      {filesWhileBusy && (
-        <Banner className="mb-space-2" intent="warning">
-          Files can be sent once the agent finishes its run.
-        </Banner>
-      )}
-
-      <div
-        data-chat-composer
-        className={cn(
-          "relative z-floating-bar flex flex-col rounded-2xl border bg-elevated px-space-4 py-space-3 shadow-sm transition-[border-color,box-shadow] duration-slow",
-          compact ? "min-h-[88px]" : "min-h-[106px]",
-          dragKind ? "border-brand" : "border-subtle dark:border-transparent"
+      {fileDropTarget &&
+        !disabled &&
+        createPortal(
+          <div
+            role="status"
+            className="pointer-events-none absolute inset-0 z-drag-overlay flex items-center justify-center bg-surface-level-1/90 p-space-5 font-sans text-primary backdrop-blur-sm"
+          >
+            <Text as="p" variant="h1">
+              Drop to attach
+            </Text>
+          </div>,
+          fileDropTarget
         )}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+      <MacawChatComposer
+        {...run.composer}
+        data-chat-composer
+        aria-label="Message composer"
+        className="relative z-floating-bar"
+        disabled={disabled}
+        submitDisabled={!canSubmit}
+        onSubmit={(event) => {
+          event.preventDefault()
+          void handleSubmit()
+        }}
+        onFilesSelected={(files) => void addFiles(files)}
+        onDragOver={handlePathDragOver}
+        onDragLeave={() => setDraggingPath(false)}
+        onDrop={handlePathDrop}
+        drawerIntent={drawerError ? "error" : "warning"}
+        drawer={
+          drawerMessage && (
+            <p role={drawerError ? "alert" : "status"} className="text-xs">
+              {drawerMessage}
+            </p>
+          )
+        }
       >
         {menuOpen && (
           <ComposerCommandMenu
@@ -1109,26 +1018,16 @@ export const ChatComposer = memo(function ChatComposer({
           />
         )}
 
-        {dragKind && (
+        {draggingPath && (
           <div className="pointer-events-none absolute inset-0 z-drag-overlay flex items-center justify-center rounded-xl bg-elevated/80 backdrop-blur-sm">
             <span className="rounded-md bg-brand-subtle px-space-3 py-space-1 text-xs font-medium text-brand-primary">
-              {dragKind === "path"
-                ? "Drop to mention this file"
-                : "Drop files here"}
+              Drop to mention this file
             </span>
           </div>
         )}
 
-        <input
-          accept={[...SUPPORTED_IMAGE_TYPES, ...SUPPORTED_FILE_TYPES].join(",")}
-          className="hidden"
-          multiple
-          onChange={handleFileChange}
-          ref={fileInputRef}
-          type="file"
-        />
-
         <ComposerReplyCards
+          disabled={disabled}
           replies={pendingReplies}
           onRemove={(id) =>
             setPendingReplies((prev) =>
@@ -1138,38 +1037,28 @@ export const ChatComposer = memo(function ChatComposer({
         />
 
         {pendingImages.length > 0 && (
-          <div className="mb-space-2 flex flex-wrap gap-space-2">
+          <ChatComposerAttachments>
             {pendingImages.map((image, index) => (
-              <div
-                className="group relative"
+              <ChatComposerAttachment
                 key={`${image.fileName ?? "image"}-${index}`}
-              >
-                {isFileChunk(image) ? (
-                  <AttachedFile name={image.fileName || "file"} />
-                ) : (
-                  <img
-                    alt={image.fileName || "Pending image"}
-                    className="size-16 rounded-lg border border-default object-cover"
-                    src={`data:${image.mimeType};base64,${image.base64}`}
-                  />
-                )}
-                <IconButton
-                  className="absolute -top-1.5 -right-1.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
-                  color="secondary"
-                  icon={XIcon}
-                  label="Remove attachment"
-                  onClick={() =>
-                    setPendingImages((prev) =>
-                      prev.filter((_, i) => i !== index)
-                    )
-                  }
-                  round
-                  size="xs"
-                  variant="outlined"
-                />
-              </div>
+                name={image.fileName || (isFileChunk(image) ? "file" : "image")}
+                contentType={image.mimeType}
+                variant={isFileChunk(image) ? "file" : "thumbnail"}
+                disabled={disabled}
+                preview={
+                  isFileChunk(image) ? undefined : (
+                    <img
+                      alt=""
+                      src={`data:${image.mimeType};base64,${image.base64}`}
+                    />
+                  )
+                }
+                onRemove={() =>
+                  setPendingImages((prev) => prev.filter((_, i) => i !== index))
+                }
+              />
             ))}
-          </div>
+          </ChatComposerAttachments>
         )}
 
         <ComposerPromptEditor
@@ -1184,7 +1073,6 @@ export const ChatComposer = memo(function ChatComposer({
             setCursor(nextCursor)
           }}
           onCommandKeyDown={handleCommandKeyDown}
-          onPaste={handlePaste}
           placeholder={
             busy && !disabled
               ? followUpBehavior === "steer"
@@ -1196,41 +1084,11 @@ export const ChatComposer = memo(function ChatComposer({
           value={value}
         />
 
-        <div className="mt-auto grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-end gap-space-1 pt-space-2 text-xs text-secondary">
-          <DropdownMenu onOpenChange={setExtrasMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <IconButton
-                className="size-7 text-tertiary hover:text-primary"
-                color="secondary"
-                icon={PlusIcon}
-                label="More composer options"
-                variant="plain"
-              />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-44"
-              side="top"
-              sideOffset={7}
-            >
-              <DropdownMenuItem
-                className="text-xs"
-                disabled={disabled}
-                onSelect={() => fileInputRef.current?.click()}
-                size="sm"
-              >
-                <ImageSquareIcon
-                  className="size-3.5 shrink-0 text-icon-secondary"
-                  weight="regular"
-                />
-                Attach files
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <div className="flex min-w-0 flex-wrap items-center gap-space-1">
-            {models.length > 0 && (
+        <ChatComposerToolbar
+          modelSelector={
+            modelSelectionEnabled && models.length > 0 ? (
               <ModelPicker
+                disabled={disabled}
                 models={models}
                 onOpenChange={setModelPickerOpen}
                 onSelectionChange={onSelectionChange}
@@ -1238,34 +1096,25 @@ export const ChatComposer = memo(function ChatComposer({
                 requireImageSupport={imageCount > 0}
                 routed={routed}
                 selection={selection}
-                triggerClassName="h-7 max-w-full rounded-md px-space-2 text-xs/relaxed text-tertiary hover:bg-surface-level-2 hover:text-primary"
               />
-            )}
-          </div>
-
-          <div className="flex items-center gap-space-1">
-            <ContextWindowMeter {...contextUsage} />
-          </div>
-
-          <ComposerPrimaryActions
-            activeRun={activeRun}
-            canSubmit={canSubmit}
-            onSubmit={() => void handleSubmit()}
-            runningLabel={
-              followUpBehavior === "steer" ? "Steer agent" : "Queue message"
-            }
-            onStop={onStop}
-            stoppable={stoppable}
-            stopOnEscape={!menuOpen && !modelPickerOpen && !extrasMenuOpen}
-            submitting={isSubmitting}
-          />
-        </div>
-      </div>
+            ) : null
+          }
+          actions={
+            <>
+              <ContextWindowMeter {...contextUsage} />
+              <ComposerPrimaryAction run={run} />
+            </>
+          }
+        >
+          <ChatComposerAttachmentMenu disabled={disabled} />
+        </ChatComposerToolbar>
+      </MacawChatComposer>
 
       {targetControls && (
         <div className="mx-space-3 -mt-space-4 flex min-w-0 items-center gap-space-4 rounded-b-xl border border-t-0 border-subtle bg-surface-level-2 px-space-4 pt-space-5 pb-space-2 text-xs dark:border-transparent">
-          {targetControls}
-          <div className="ml-auto shrink-0">{executionTarget}</div>
+          <div className={cn("contents", targetPending && "invisible")}>
+            {targetControls}
+          </div>
         </div>
       )}
     </div>

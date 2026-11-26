@@ -1,6 +1,6 @@
 {
   "name": "openswe-plugin-design-qa",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Design QA: inspect the saved visual captures of your pull requests in Robin",
   "type": "module",
@@ -11,13 +11,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@langchain/macaw-components": "1.7.2",
-    "@langchain/macaw-tokens": "1.7.2",
+    "@langchain/macaw-components": "1.7.23",
+    "@langchain/macaw-tokens": "1.7.23",
     "@openswe/plugin-sdk": "file:../sdk",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.102.8",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-markdown": "10.1.0",
+    "rehype-sanitize": "6.0.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -29,6 +32,6 @@
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vite-plugin-singlefile": "^2.3.4",
-    "vitest": "^4.1.11"
+    "vitest": "^5.1.0"
   }
 }

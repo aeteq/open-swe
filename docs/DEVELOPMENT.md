@@ -36,7 +36,7 @@ Use a name of your own (GitHub App names are unique), and give it a distinct men
 ## 3. Tunnel for webhooks
 
 Always run an ngrok tunnel when starting Robin locally.
-GitHub and Slack need a public HTTPS hostname that stays the same across restarts.
+GitHub and Slack need a public HTTPS hostname that stays the same across restarts, and so does LangSmith's sandbox proxy, which asks the backend for a sandbox's GitHub credentials as its commands call GitHub.
 Reuse an existing tunnel and its exact configured domain, forwarding to the active backend (normally localhost:2024).
 If no tunnel is running, recover the domain from configuration or prior local runtime notes in the primary checkout before starting one; an automatically assigned hostname will not match existing webhook settings.
 
@@ -52,12 +52,13 @@ For a first-time setup, the free ngrok plan gives you a static domain:
    make tunnel NGROK_DOMAIN=<name>.ngrok-free.dev   # or export NGROK_DOMAIN once in your shell
    ```
 
-`make tunnel` runs `ngrok http 2024` on that domain with [`examples/ngrok/webhooks-only.yml`](../examples/ngrok/webhooks-only.yml) as its traffic policy, so only `/webhooks/*` is reachable from the internet.
+`make tunnel` runs `ngrok http 2024` on that domain with [`examples/ngrok/webhooks-only.yml`](../examples/ngrok/webhooks-only.yml) as its traffic policy, so only routes that check their own credentials are reachable from the internet: `/webhooks/*` (signed by GitHub and Slack), `/dashboard/api/sandbox-proxy-callback` (signed by LangSmith) and `/dashboard/api/sandbox-tools/*` (a sandbox's capability).
 That restriction is not optional.
 Under `langgraph dev` the LangGraph API itself (`/threads`, `/runs`, `/assistants`, `/store`, …) has no authentication at all: the dashboard API checks its session cookie and the webhook endpoints check their signatures, but anyone who can reach port 2024 can read and create threads and runs.
 A tunnel that forwards the whole port publishes exactly that.
 Everything except the webhooks stays on `http://localhost:2024`, where you keep opening the dashboard.
 Check the policy once the backend is up (step 6): `curl https://<name>.ngrok-free.dev/webhooks/slack` answers `{"status":"ok", …}` from the backend, while `/ok` gets ngrok's own 404.
+Without the tunnel and `SANDBOX_PUBLIC_BASE_URL` (step 5), sandboxes get no proxy callback: their commands reach GitHub without credentials, and there is no tool channel.
 
 Preserve the existing webhook traffic policy.
 For local Slack OAuth, also preserve the callback relay: requests to `/dashboard/api/slack/callback` on the ngrok domain must redirect to `http://localhost:2024/dashboard/api/slack/callback` with the complete query string intact.
@@ -83,13 +84,14 @@ LANGSMITH_API_KEY=""            # LangSmith → Settings → API Keys; also used
 LANGSMITH_TRACING="true"        # trace runs to LangSmith
 LANGSMITH_PROJECT=""            # optional project for traces and "View trace" links; default "default"
 
-ANTHROPIC_API_KEY=""            # any provider key; not needed if you use an LLM gateway (e.g. LangSmith Gateway; see the installation guide)
+LANGSMITH_GATEWAY_API_KEY=""    # LangSmith key with gateway:invoke; provider keys live in workspace Provider Secrets
 
 GITHUB_APP_ID=""                # step 2
 GITHUB_APP_CLIENT_ID=""
 GITHUB_APP_CLIENT_SECRET=""
 GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"   # one double-quoted line, \n between the PEM lines
 GITHUB_APP_INSTALLATION_ID=""
+DISABLE_ROBIN_APPROVES="true"
 ALLOWED_GITHUB_USERS=""         # your GitHub login; required unless ALLOWED_GITHUB_ORGS is set
 
 SLACK_BOT_TOKEN=""              # step 4: OAuth & Permissions → Bot User OAuth Token (xoxb-...)
@@ -97,6 +99,7 @@ SLACK_SIGNING_SECRET=""         # Basic Information → App Credentials
 SLACK_BOT_USER_ID=""            # the bot's member id (bot profile → ⋮ → Copy member ID)
 SLACK_BOT_USERNAME=""           # the bot's handle, e.g. robin_you
 SLACK_PUBLIC_BASE_URL="https://<name>.ngrok-free.dev"  # your existing domain from step 3; used by Slack OAuth and the admin manifest
+SANDBOX_PUBLIC_BASE_URL="https://<name>.ngrok-free.dev"  # the same domain; LangSmith's sandbox proxy calls back there for GitHub credentials
 
 TOKEN_ENCRYPTION_KEY=""         # openssl rand -base64 32  (encrypts stored GitHub and Slack tokens)
 DASHBOARD_JWT_SECRET=""         # openssl rand -hex 32     (signs the session cookie and OAuth state)
@@ -112,16 +115,17 @@ Every Robin thread runs its model loop on Managed Deep Agents, from the project 
 Locally that is `make dev-mda` on port 2025, which reads its own `mda/.env`: set `OPEN_SWE_BACKEND_URL=http://localhost:2024` there, plus `LANGSMITH_API_KEY` and the same model key as above ([mda/README.md](../mda/README.md#run-locally)).
 
 `LANGGRAPH_URL` defaults to `http://localhost:2024`, and `DASHBOARD_BASE_URL` / `DASHBOARD_API_BASE_URL` default to it, so none of the three is needed locally.
-Keep them on localhost when setting `SLACK_PUBLIC_BASE_URL` to the tunnel.
-You only need one model credential: either a provider key or a gateway key if you route model calls through an LLM gateway, such as the [LangSmith Gateway](INSTALLATION.md#4-model-providers-and-api-keys).
+Keep them on localhost when setting `SLACK_PUBLIC_BASE_URL` and `SANDBOX_PUBLIC_BASE_URL` to the tunnel.
+Model calls require a [LangSmith Gateway](INSTALLATION.md#4-model-providers-and-api-keys) credential (`LANGSMITH_GATEWAY_API_KEY`, falling back to `LANGSMITH_API_KEY`) with `gateway:invoke`.
+Direct provider keys are not used.
 How the running model is chosen is covered in the same section.
 Linear, if you use it, comes from the [Linear](INSTALLATION.md#linear) section of the installation guide, with your ngrok domain as the URL.
 
 Robin needs a PostgreSQL database for its own tables, and `langgraph dev` does not provide one: it keeps LangGraph's threads and Store in memory, so the platform's Postgres is not there locally.
 In LangGraph's `local_dev` runtime, Robin defaults `POSTGRES_URI` to `postgresql://postgres:postgres@127.0.0.1:5433/postgres`; `make dev` and `make dev-ui` run the matching `postgres:16` container named `open-swe-postgres` when no explicit value is set.
-Docker Compose binds the container to loopback only and keeps its data in the `open-swe-postgres` volume, so stopping or removing the container preserves your local users, workspaces, and settings.
+Docker Compose binds the container to loopback only and keeps its data in the `open-swe-postgres` volume, so stopping or removing the container preserves your local users, integration bindings, and settings.
 `make postgres` starts it on its own; use `docker compose down` to stop it.
-Set `POSTGRES_URI` to skip the container and use any database you can create schemas in — see [Analytics storage](INSTALLATION.md#1-create-the-deployment) for what startup migrations create there, including the `repository`, `users`, and `workspace` tables.
+Set `POSTGRES_URI` to skip the container and use any database you can create schemas in — see [Analytics storage](INSTALLATION.md#1-create-the-deployment) for what startup migrations create there, including the repository, user, and integration-binding tables.
 
 With a database, every thread created from then on is also recorded into the append-only transcript event log and its LangGraph metadata is stamped `transcript: v2`.
 The dashboard reads recorded threads from this log by default for everyone.
@@ -152,10 +156,11 @@ It reloads on code changes only: after editing `.env`, restart it.
 Have the backend front the Vite dev server instead of serving a build:
 
 ```bash
-make dev-ui   # Vite on :3000 and the backend on :2024 forwarding UI requests to it, in one terminal
+make dev-ui   # Vite on :3000, the backend on :2024, and MDA on :2025, in one terminal
 ```
 
-`make dev-ui` runs `make web` and `make dev` side by side, the backend with `DASHBOARD_DEV_SERVER_URL=http://localhost:3000`; Ctrl-C stops both.
+`make dev-ui` runs `make web`, `make dev`, and `make dev-mda` side by side, the backend with `DASHBOARD_DEV_SERVER_URL=http://localhost:3000`; Ctrl-C stops all three.
+Do not also start `make dev-mda` in another terminal; the individual targets remain available for running services separately.
 Open `http://localhost:2024` as usual: the page, its modules, and hot module replacement come from Vite, while `/dashboard/api/*` and the LangGraph routes stay with the backend.
 Nothing else changes, because the browser never leaves port 2024.
 The HMR WebSocket connects straight to Vite's port; the UI's Vite config points the client there.
@@ -164,7 +169,6 @@ The HMR WebSocket connects straight to Vite's port; the UI's Vite config points 
 |---|---|
 | `/` | Dashboard |
 | `POST /webhooks/slack`, `POST /webhooks/slack/interactivity` | Slack events and Block Kit interactions |
-| `POST /webhooks/slack/commands` | The `/robin` slash command (`/oswe` remains an alias) |
 | `POST /mda/channel-api/{endpoint}` | The MDA deployment's channels asking for what needs Robin's data (`runtime_api.linear`, `runtime_api.github`) |
 | `GET /dashboard/api/auth/login`, `GET /dashboard/api/auth/callback` | GitHub login |
 | `/dashboard/api/*` | Dashboard API |
@@ -193,13 +197,12 @@ Within a few seconds you should see a 👀 reaction, a run in your LangSmith pro
 GitHub-triggered runs act as the commenting user, so that account has to have signed in to your local dashboard once.
 The App's **Advanced** tab lists every delivery and its response, and ngrok's inspector at `http://localhost:4040` shows what arrived.
 
-With only the seeded `default` workspace, Slack and GitHub runs land there by default.
-Create additional workspaces from the **Workspaces** page to exercise routing locally: the same order applies as in a deployment (thread, `/workspace:<slug>` on the opening message — `workspace:<slug>` and `env:<slug>` still work, owning repository, bound Slack channel, user default, then `default`); see [How a run picks its workspace](INSTALLATION.md#7-verify-it-works) in the installation guide.
+Use **Defaults** (`/settings`) for global behavior and sandbox configuration, and **Integrations** (`/admin/integrations`) to bind repositories and configure listening Slack channels and their per-channel instructions.
+Bindings do not select different execution settings; see [Defaults, routing, and sandbox images](reference/execution.md).
 
-**Incidents.**
-Follow [Incidents setup](INSTALLATION.md#incidents) to enroll Slack channels.
-Set `SLACK_APP_ID`; anyone in a channel can pause or complete its incident, and asking the agent requires a connected Robin account.
-Incident turns run on the main `agent` graph and are dispatched straight from the Slack webhook, so `make dev` or `make dev-ui` is all that is needed.
+**Channel name rules.**
+Add one under **Integrations** with **Start listening** → **Channels named…**; see [channel name rules](INSTALLATION.md#5-create-the-slack-app).
+A rule's kickoff run is dispatched straight from the Slack webhook on the main `agent` graph, so `make dev` or `make dev-ui` is all that is needed.
 
 Record the worktree, process IDs, fixed tunnel domain, and state location in ignored `logs/local-dev/` notes in the primary checkout so the next session can reuse them.
 
@@ -250,12 +253,6 @@ What still needs the App, and answers `503 GitHub App token unavailable` without
 The reviews list and each PR's preview read as you, so they work.
 
 The `local-gh-dev` skill in `.claude/skills/` walks through the whole loop, including the port and Postgres conflicts between worktrees.
-
-## Mirror your Claude Code sessions
-
-Connect Claude Code from **Settings → Claude Code** on your local dashboard, then run a session with the settings it gives you (`claude --settings ./open-swe-hooks.json`).
-Each hook event lands on the local backend, and the session shows up as a read-only thread.
-See [Mirroring Claude Code sessions](reference/claude-code-sync.md).
 
 ## Dashboard on the Vite dev server directly
 
@@ -332,11 +329,11 @@ The dashboard records three performance spans, in every build, with the same cod
 
 | Span | Starts | Steps | Ends |
 |---|---|---|---|
-| `thread_load` | The navigation to `/agents/:threadId` (or the document's time origin on a full page load, `cold=true`) | `detail` (thread summary, `GET /threads/:id`), `hydrate` (SDK state fetch, `GET /threads/:id/state`), `paint` | First frame after the transcript rendered |
+| `thread_load` | The navigation to `/agents/:threadId` (or the document's time origin on a full page load, `cold=true`) | `detail` (thread summary, `GET /threads/:id`), `hydrate` (SDK state fetch, `GET /threads/:id/state`), `paint` | First frame after the transcript rendered. In the stream view the span stays `open` until the thread's reads settle (at most 10 s later), so run lookups that answer after the paint still count, and it still ends at that frame. |
 | `thread_list_load` | A sidebar list mounts, its filters change, or a folder opens | `data`, `paint` | After a frame with the list or its error state; `scope` distinguishes `pinned`, `recents`, `repositories`, and `folder`, `cached` distinguishes warm loads, `items` counts results, and `outcome` distinguishes success/error. Background refreshes and pagination do not start another span. |
 | `agent_run` | Pressing send (`joined=true` when the run was started elsewhere, e.g. a queued message) | `accepted`, `stream_open`, `first_event`, `generation_start` (first assistant message, so the run is visibly producing thinking or a tool call), `first_text` (first streamed assistant text) | The run's streaming phase ends (`reason`: success, error, interrupt, stopped) |
 
-Each span carries attributes: request time-to-first-byte and the backend's `Server-Timing` phases for the detail and state requests (`detail_srv_thread_get_ms`, `state_srv_get_state_ms`, …), whether the detail came from the sidebar cache, message and chunk counts, time spent in `streamMessagesToUi` (`build_ms`), protocol event and text-delta counts, the lag between the server's event timestamp and receipt (`lag_avg_ms`, includes clock skew, read as a trend), and, in development builds only, React commit time for the transcript while streaming (`commit_ms`).
+Each span carries attributes: request time-to-first-byte and the backend's `Server-Timing` phases for the detail and state requests (`detail_srv_thread_get_ms`, `state_srv_get_state_ms`, …), the SDK state read's download after its headers and its parse (`state_body_ms`, `state_parse_ms`), the SDK's lookups for a run (`running_lookup_1_ms` sent with the state read, `running_lookup_2_ms` after it, `pending_lookup_ms`), whether the transcript painted from a cache before its read answered (`thread_cache_hit`), whether the detail came from the sidebar cache, message and chunk counts, time spent in `streamMessagesToUi` (`build_ms`), protocol event and text-delta counts, the lag between the server's event timestamp and receipt (`lag_avg_ms`, includes clock skew, read as a trend), and, in development builds only, React commit time for the transcript while streaming (`commit_ms`).
 
 **Locally.**
 Spans print to the console in dev builds (`[perf] thread_load 812ms — detail 120 · hydrate 640 · paint 812`).
@@ -349,8 +346,11 @@ Compare cold and warm loads separately (`cold`, `detail_cached`), and reload a f
 With Datadog RUM configured, ended spans are sent as custom duration vitals named `thread_load`, `thread_list_load`, and `agent_run`, attributes in the vital context and `client` (`web` or `desktop`) in the global context.
 Use `@type:vital @vital.name:thread_list_load @context.client:desktop` for desktop list loading, and replace the vital name with `thread_load` for opening an individual thread.
 Filter list measurements by `@context.outcome:success` and compare each `@context.scope` separately.
+`thread_load` and `agent_run` carry `thread_source`, the backend that actually served the thread: `transcript` (the transcript event log) or `stream` (the SDK's `useStream`).
+Threads without transcript metadata always use `stream`, whatever the stored preference.
+Use `@type:vital @vital.name:thread_load @context.thread_source:stream` for useStream loads, and swap in `transcript` to compare.
 Spans completed before RUM finishes initializing are replayed from the bounded local buffer.
-Desktop RUM sessions use local storage because the `open-swe://app` origin cannot use ordinary browser session cookies; web sessions retain the SDK's cookie default.
+Desktop RUM sessions use local storage because the `robin://app` origin cannot use ordinary browser session cookies; web sessions retain the SDK's cookie default.
 Abandoned spans (navigated away, hydration failed) stay local only.
 The backend side of the same picture is the `Server-Timing` header on `GET /dashboard/api/threads/{id}` and `/state` (logged as `thread state timings`) and the `open_swe_dashboard_thread_ttft` histogram, which measures the same thing as `first_text` rather than the first token of any kind.
 
@@ -367,7 +367,7 @@ Ask users to attach that file to a report.
 | `make dev` | `langgraph dev` on port 2024: graphs, webhooks, dashboard API, and the bundled dashboard when a build exists |
 | `make dev-mda` | `mda dev` on port 2025: the Managed Deep Agents runtime every Robin thread runs on |
 | `make mda-cli` | Build the `mda` CLI from the vendored SDK (`make dev-mda` does it first) |
-| `make dev-ui` | `make web` and `make dev` together, the backend fronting Vite so the UI hot-reloads on port 2024 |
+| `make dev-ui` | Vite, the backend, and MDA together; the UI hot-reloads on port 2024 |
 | `make web` | The Vite dev server alone on port 3000 |
 | `make build-dashboard` | Installs the dashboard's dependencies and builds it into `ui/.output/public` |
 | `make tunnel NGROK_DOMAIN=…` | `ngrok http 2024` on your static domain, exposing only `/webhooks/*` |

@@ -3,7 +3,7 @@
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import httpx2
@@ -13,14 +13,16 @@ from sqlalchemy.exc import IntegrityError
 
 from openswe.dashboard import profiles
 from openswe.expedited_review import voting
-from openswe.expedited_review.eligibility import ChangedFile
+from openswe.expedited_review.eligibility import ChangedFile, Exclusion
 from openswe.github import http as github_http
 from openswe.github.http import RepoClient
 from openswe.github.pull_request_status import PullRequestClient
-from openswe.human_review import lifecycle
+from openswe.human_review import lifecycle, standard
+from openswe.human_review.deadlines import BROADCAST_STEP, PUBLISH_STEP, schedule
 from openswe.human_review.lifecycle import ReviewCard
 from openswe.human_review.people import Outcome
 from openswe.human_review.requests import HumanReviewParticipant, HumanReviewRequest
+from openswe.jobs import queue
 from openswe.slack import cards
 from openswe.slack.http import SlackRequestError
 from openswe.users import User
@@ -36,7 +38,8 @@ class _Harness:
         self.review_error: str | None = None
         self.diff_unchanged = True
 
-    async def notify_agent(self, prompt: str, *, title: str) -> bool:
+    async def notify_agent(self, prompt: str, *, title: str, origin: str) -> bool:
+        assert origin == "slack"
         self.agent_prompts.append(prompt)
         return self.wake_succeeds
 
@@ -138,6 +141,7 @@ async def test_new_thread_card_is_its_own_root_and_is_not_reposted(
     monkeypatch.setattr(lifecycle, "channel_choices", AsyncMock(return_value=[]))
     monkeypatch.setattr(lifecycle.ReviewCard, "_channel_choices", AsyncMock(return_value=[]))
     monkeypatch.setattr(HumanReviewRequest, "author_mention", AsyncMock(return_value="@ada"))
+    monkeypatch.setattr(HumanReviewRequest, "author_login", AsyncMock(return_value="ada"))
     monkeypatch.setattr(lifecycle.expedited_card, "open_card", lambda *a, **kw: ("Card", []))
     monkeypatch.setattr(HumanReviewRequest, "save", AsyncMock())
     refreshed = AsyncMock()
@@ -271,10 +275,121 @@ async def test_a_draft_waits_for_its_author_to_mark_it_ready(
     stored = await _stored(approval)
     assert "mark this draft ready" in early.message
     assert "Only the pull request's author" in stranger.message
-    assert "Marked ready" in ready.message
+    assert "Confirmed the Slack review request" in ready.message
     assert harness.marked_ready == ["token-ada"]
     assert not stored.awaiting_ready
     assert stored.approvers == ["grace"]
+
+
+@pytest.mark.parametrize("app_available", [True, False])
+@pytest.mark.parametrize(
+    "draft, token", [(True, "token-ada"), (True, None), (False, "token-ada"), (False, None)]
+)
+async def test_github_readiness_does_not_authorize_posting_its_card(
+    harness: _Harness,
+    open_approval: OpenApproval,
+    monkeypatch: pytest.MonkeyPatch,
+    draft: bool,
+    token: str | None,
+    app_available: bool,
+) -> None:
+    approval = await open_approval(awaiting_ready=True)
+    monkeypatch.setattr(profiles, "get_valid_access_token", AsyncMock(return_value=token))
+    monkeypatch.setattr(
+        PullRequestClient,
+        "pull",
+        AsyncMock(return_value={"state": "open", "draft": draft, "head": {"sha": "def456"}}),
+    )
+
+    assert await standard.settle(await _stored(approval))
+
+    assert (await _stored(approval)).awaiting_ready
+    ReviewCard.refresh.assert_not_awaited()
+
+    if not app_available:
+        monkeypatch.setattr(
+            voting.GitHubClient,
+            "as_app",
+            Mock(side_effect=github_http.GitHubAppUnavailable("temporarily unavailable")),
+        )
+
+    ready = await _click(approval, "U_ADA", decision="ready")
+
+    if (draft or not app_available) and token is None:
+        assert "no GitHub token" in ready.message
+        assert (await _stored(approval)).awaiting_ready
+        ReviewCard.refresh.assert_not_awaited()
+    else:
+        assert ready.dm_card_success
+        assert not (await _stored(approval)).awaiting_ready
+        ReviewCard.refresh.assert_awaited_once()
+    assert harness.marked_ready == ([token] if (draft or not app_available) and token else [])
+
+
+async def test_a_posted_cards_broadcast_runs_once_after_the_request_answers(
+    open_approval: OpenApproval, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Copying the card on and clearing older ones runs from the queue, once per card."""
+    approval = await open_approval()
+    broadcast, cleanup = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(ReviewCard, "broadcast_configured", broadcast)
+    monkeypatch.setattr(ReviewCard, "remove_superseded", cleanup)
+
+    assert await schedule(approval, BROADCAST_STEP, timedelta(0))
+    assert await schedule(approval, BROADCAST_STEP, timedelta(0))
+
+    assert len(await queue.find({"request_id": str(approval.id), "step": BROADCAST_STEP})) == 1
+    broadcast.assert_not_awaited()
+    assert await standard.run_deadline(str(approval.id), BROADCAST_STEP) == {"status": "broadcast"}
+    broadcast.assert_awaited_once()
+    cleanup.assert_awaited_once()
+
+
+@pytest.mark.parametrize("failed_posts", [0, 2])
+async def test_a_failed_card_publish_is_retried_by_its_deadline(
+    open_approval: OpenApproval,
+    monkeypatch: pytest.MonkeyPatch,
+    github_app: AsyncMock,
+    failed_posts: int,
+) -> None:
+    approval = await open_approval()
+    approval.slack_message_ts = ""
+    approval.slack_dm_channel_id = "D_ADA"
+    approval.slack_dm_message_ts = "4.0"
+    approval = await approval.save()
+    monkeypatch.setattr(ChangedFile, "of_pull", AsyncMock(return_value=[]))
+    monkeypatch.setattr(lifecycle, "channel_choices", AsyncMock(return_value=[]))
+    monkeypatch.setattr(lifecycle, "get_slack_permalink", AsyncMock(return_value=None))
+    monkeypatch.setattr(lifecycle, "note_for_concierge", AsyncMock())
+    posted = AsyncMock(side_effect=[*[SlackRequestError("ratelimited")] * failed_posts, "3.0"])
+    monkeypatch.setattr(lifecycle, "post_slack_thread_reply_with_ts", posted)
+    dm_updates: list[str] = []
+
+    async def update_dm(channel: str, ts: str, text: str, **_: object) -> None:
+        if channel != "D_ADA":
+            return
+        dm_updates.append(channel)
+        if len(dm_updates) <= failed_posts + 1:
+            raise SlackRequestError("ratelimited")
+
+    monkeypatch.setattr(lifecycle, "update_slack_message", update_dm)
+
+    await ReviewCard(approval).refresh()
+    if failed_posts:
+        await ReviewCard(approval).refresh()
+        assert not (await _stored(approval)).slack_message_ts
+    else:
+        assert (await _stored(approval)).slack_message_ts == "3.0"
+    [retry] = await queue.find({"request_id": str(approval.id), "step": PUBLISH_STEP})
+    assert retry.payload == {"request_id": str(approval.id), "step": PUBLISH_STEP}
+    if failed_posts:
+        with pytest.raises(RuntimeError, match="confirmation DM"):
+            await standard.run_deadline(str(approval.id), PUBLISH_STEP)
+    assert await standard.run_deadline(str(approval.id), PUBLISH_STEP) == {"status": "published"}
+    assert (await _stored(approval)).slack_message_ts == "3.0"
+    assert posted.await_count == failed_posts + 1
+    assert dm_updates == ["D_ADA"] * (failed_posts + 2)
+    assert (await _stored(approval)).run_config.get("author_dm_status")
 
 
 async def test_readiness_button_is_delivered_only_to_the_author(
@@ -325,13 +440,28 @@ async def test_readiness_button_is_delivered_only_to_the_author(
     assert len(private_messages) == 1
 
 
+@pytest.mark.parametrize(
+    "image_change",
+    [
+        "unchanged",
+        "head",
+        "exclusions",
+        "patch",
+        "counts",
+        "legacy",
+        "failed-upload",
+        "failed-refresh",
+    ],
+)
 async def test_draft_card_is_not_posted_until_ready(
-    open_approval: OpenApproval, monkeypatch: pytest.MonkeyPatch, github_app: AsyncMock
+    open_approval: OpenApproval,
+    monkeypatch: pytest.MonkeyPatch,
+    github_app: AsyncMock,
+    image_change: str,
 ) -> None:
     approval = await open_approval(awaiting_ready=True)
     approval.slack_message_ts = ""
-    approval.slack_dm_channel_id = "D_ADA"
-    approval.slack_dm_message_ts = "4.0"
+    approval.run_config = {"existing_setting": "retained"}
     approval = await approval.save()
     deleted = AsyncMock(return_value=True)
     monkeypatch.setattr(lifecycle, "delete_slack_message", deleted)
@@ -343,27 +473,70 @@ async def test_draft_card_is_not_posted_until_ready(
     posted = AsyncMock(return_value="3.0")
     monkeypatch.setattr(lifecycle, "post_slack_thread_reply_with_ts", posted)
     monkeypatch.setattr(lifecycle, "channel_choices", AsyncMock(return_value=[]))
-    monkeypatch.setattr(ChangedFile, "of_pull", AsyncMock(return_value=[]))
+    files = [
+        ChangedFile(
+            filename="agent/example.py",
+            additions=2,
+            patch="@@ -0,0 +1 @@\n+first\n@@ -4,0 +6 @@\n+second",
+        )
+    ]
+    monkeypatch.setattr(ChangedFile, "of_pull", AsyncMock(return_value=files))
+    uploaded = AsyncMock(
+        side_effect=[
+            None if image_change == "failed-upload" else "F_INITIAL",
+            None if image_change == "failed-refresh" else "F_UPDATED",
+        ]
+    )
+    monkeypatch.setattr(lifecycle.SlackDiffImage, "upload", uploaded)
+    monkeypatch.setattr(
+        lifecycle, "send_dm_with_location", AsyncMock(return_value=("D_ADA", "4.0"))
+    )
+    assert await ReviewCard(approval).prompt_author_ready() is None
+    approval = await _stored(approval)
 
     with pytest.raises(SlackRequestError, match="draft card is author-only"):
         await ReviewCard(approval).post_expedited(title="Fix", files=[])
     await ReviewCard(approval).refresh()
     posted.assert_not_called()
     deleted.assert_not_awaited()
+    if image_change in ("head", "failed-refresh"):
+        approval.head_sha = "def456"
+    elif image_change == "exclusions":
+        approval.excluded_hunks = Exclusion(
+            path=files[0].filename, hunks=[1], guideline="Cosmetic", reason="No behavior change"
+        ).resolve(files)
+    elif image_change == "patch":
+        files[0] = files[0].model_copy(update={"patch": "@@ -0,0 +1 @@\n+replacement"})
+    elif image_change == "counts":
+        files[0] = files[0].model_copy(update={"additions": 3})
+    elif image_change == "legacy":
+        approval.run_config = {"existing_setting": "retained"}
     approval.awaiting_ready = False
     await approval.save()
     await ReviewCard(approval).refresh()
 
     stored = await _stored(approval)
     assert stored.slack_message_ts == "3.0"
+    expected_image = {"unchanged": "F_INITIAL", "failed-refresh": ""}.get(image_change, "F_UPDATED")
+    assert stored.slack_diff_file_id == expected_image
+    assert uploaded.await_count == (1 if image_change == "unchanged" else 2)
+    assert stored.run_config["existing_setting"] == "retained"
+    if expected_image:
+        assert expected_image in str(posted.call_args)
+    else:
+        assert "F_INITIAL" not in str(posted.call_args)
+        assert "+first" in str(posted.call_args)
     assert (stored.slack_dm_channel_id, stored.slack_dm_message_ts) == ("D_ADA", "4.0")
     deleted.assert_not_awaited()
-    assert "Ready for review" in str(updated.call_args)
-    assert "https://origin" in str(updated.call_args)
-    assert "actions" not in str(updated.call_args)
+    [dm_update] = [call for call in updated.await_args_list if call.args[0] == "D_ADA"]
+    assert "Ready for review" in str(dm_update)
+    assert "https://origin" in str(dm_update)
+    assert "actions" not in str(dm_update)
     assert await ReviewCard(await _stored(approval)).refresh_author_dm(None)
     assert await ReviewCard(approval).refresh_author_dm(None)
-    assert updated.await_count == notes.await_count == 1
+    assert (
+        sum(call.args[0] == "D_ADA" for call in updated.await_args_list) == notes.await_count == 1
+    )
     approval.state = "cancelled"
     approval.detail = "dismissed by <@U_ADA>"
     await approval.save()
@@ -387,7 +560,7 @@ async def test_author_only_prompt_delivery_failure_is_reported(
 
     problem = await ReviewCard(await _stored(approval)).prompt_author_ready()
 
-    assert problem is not None and "mark it ready on GitHub" in problem
+    assert problem is not None and "retry sending the prompt" in problem
     assert (await _stored(approval)).awaiting_ready
 
 
@@ -399,7 +572,7 @@ async def test_a_fork_author_without_write_access_can_mark_their_draft_ready(
 
     outcome = await _click(approval, "U_ADA", decision="ready")
 
-    assert "Marked ready" in outcome.message
+    assert "Confirmed the Slack review request" in outcome.message
     assert harness.marked_ready == ["token-ada"]
 
 

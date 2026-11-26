@@ -83,7 +83,6 @@ from langgraph_sdk.errors import NotFoundError  # noqa: E402
 
 from openswe.api.app import app  # noqa: E402
 from openswe.dashboard.oauth import COOKIE_NAME, issue_session  # noqa: E402
-from openswe.slack import mda_forwarding  # noqa: E402
 from openswe.slack.records import lookup_slack_thread_id  # noqa: E402
 from openswe.users import User  # noqa: E402
 from openswe.utils.dashboard_ui import keep_dashboard_ui_last  # noqa: E402
@@ -99,20 +98,6 @@ LAST_SLACK_EVENT: dict[str, Any] = {"payload": None}
 # webhook dedupes against is persisted — so event ids need a per-process salt or
 # a rerun's mentions look like redeliveries of the previous run's.
 EVENT_ID_SALT = uuid.uuid4().hex[:8]
-
-_FORWARD_TO_TRIGGER_SERVER = mda_forwarding.forward_to_trigger_server
-
-
-async def _clicks_stay_here(url: str, *args: Any, **kwargs: Any) -> None:
-    """No Trigger Server knows this Slack app, so it refuses every click the backend
-    forwards, and the backend acts on it after all; anything else goes as before."""
-    if url != mda_forwarding.TRIGGER_INTERACTIVITY_URL:
-        await _FORWARD_TO_TRIGGER_SERVER(url, *args, **kwargs)
-    elif (on_refused := kwargs.get("on_refused")) is not None:
-        await on_refused()
-
-
-mda_forwarding.forward_to_trigger_server = _clicks_stay_here
 
 fakes.seed_bare_remotes()
 
@@ -135,6 +120,7 @@ INBOX_GATE = {"waiting": False, "released": False}
 
 @app.post("/control/reset")
 async def control_reset() -> JSONResponse:
+    await _github_changed()
     fakes.reset()
     INBOX_GATE.update(waiting=False, released=False)
     CURRENT_THREAD["channel"] = DEMO_CHANNEL
@@ -156,6 +142,23 @@ async def control_reset() -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+async def _github_changed() -> None:
+    """Fire every fake pull request's topic, as GitHub's webhooks would on a real change.
+
+    The dashboard shares each pull request's status until its topics fire, and specs
+    change the fake GitHub directly (and reuse its numbers after a reset) without the
+    webhooks that would tell it.
+    """
+    from openswe.github.pull_request_key import PullRequestKey
+    from openswe.ui_invalidations.topics import Topic
+
+    for pull in fakes.PULLS:
+        await Topic.invalidate_pull_request(
+            PullRequestKey.of(pull["owner"], pull["repo"], pull["number"]),
+            *Topic.for_pull_request_event("pull_request"),
+        )
+
+
 async def _cancel_inflight_runs() -> None:
     """Stop runs an earlier spec left going; the single dev worker would queue the next spec's run behind them."""
     client = get_client(url=BASE_URL)
@@ -172,32 +175,6 @@ async def _cancel_inflight_runs() -> None:
             continue
 
 
-@app.post("/control/reset-default-workspace")
-async def control_reset_default_workspace() -> JSONResponse:
-    """Put back the seeded ``default`` workspace, which the app itself refuses to delete."""
-    from sqlalchemy import text
-
-    from openswe.dashboard.workspace_settings import delete_workspace_settings
-    from openswe.database import postgres
-    from openswe.workspaces import store
-    from openswe.workspaces.refresh import remove_refresh_cron
-
-    record = await store.WORKSPACES.get(store.DEFAULT_WORKSPACE_SLUG)
-    if record is not None:
-        await remove_refresh_cron(record)
-        await store._delete_snapshot(record.snapshot_id)
-        await store.WORKSPACES.delete(store.DEFAULT_WORKSPACE_SLUG)
-    async with postgres.transaction() as connection:
-        await connection.execute(
-            text(
-                "INSERT INTO workspace (id, slug, name, created_by) "
-                "VALUES (gen_random_uuid(), 'default', 'Default', 'open-swe')"
-            )
-        )
-    await delete_workspace_settings(store.DEFAULT_WORKSPACE_SLUG)
-    return JSONResponse({"ok": True})
-
-
 async def _reset_durable_pr_state() -> None:
     """Drop the per-pull-request state that outlives the in-memory fakes.
 
@@ -206,13 +183,12 @@ async def _reset_durable_pr_state() -> None:
     pull request: a baby-sit watch would report "already monitored from another
     agent thread", and a stale approval would block a fresh one.
 
-    ``repository`` stays: ``workspace_repository`` references it, so truncating
-    it cascades away the workspace assignments every routable-repo check needs.
+    ``repository`` stays because integration bindings reference it.
     """
     from openswe.baby_sit import WATCHES, stop_watch
 
     for watch in await WATCHES.list_active():
-        await stop_watch(watch.key)
+        await stop_watch(watch.key, thread_id=watch.thread_id)
 
     from sqlalchemy import text
 
@@ -243,7 +219,7 @@ async def control_plans(thread_id: str) -> JSONResponse:
 
 @app.get("/control/snapshots")
 async def control_snapshots() -> JSONResponse:
-    """Snapshot captures/deletes the workspace tools asked the platform for."""
+    """Snapshot captures/deletes requested through the global image lifecycle."""
     return JSONResponse({"captured": fakes.SNAPSHOTS, "deleted": fakes.DELETED_SNAPSHOTS})
 
 
@@ -269,6 +245,7 @@ async def control_repo_private(request: Request) -> JSONResponse:
     body = await request.json()
     value = bool(body.get("private", False))
     fakes.set_repo_private(value)
+    await _github_changed()
     return JSONResponse({"ok": True, "private": value})
 
 
@@ -281,6 +258,7 @@ async def control_pull_request_health(request: Request) -> JSONResponse:
     pull = fakes.update_pull_health(number, body)
     if pull is None:
         raise HTTPException(404, "Pull request not found")
+    await _github_changed()
     return JSONResponse({"ok": True, "pull_request": fakes.pull_health_json(pull)})
 
 
@@ -313,6 +291,7 @@ async def control_repo_merge_methods(request: Request) -> JSONResponse:
     flags = fakes.set_repo_merge_methods(
         owner, name, {flag: flag in enabled for flag in fakes.MERGE_METHOD_FLAGS}
     )
+    await _github_changed()
     return JSONResponse({"ok": True, "repo": f"{owner}/{name}", **flags})
 
 
@@ -358,6 +337,7 @@ async def control_seed_pull_request(request: Request) -> JSONResponse:
         updated_at=body.get("updated_at") if isinstance(body.get("updated_at"), str) else None,
     )
     fakes.update_pull_health(pull["number"], body)
+    await _github_changed()
     return JSONResponse(
         {
             "ok": True,
@@ -481,16 +461,9 @@ async def control_collaborator_permission(request: Request) -> JSONResponse:
 
 @app.post("/control/team-settings")
 async def control_team_settings(request: Request) -> JSONResponse:
-    """Patch workspace settings, then drop the factory's TTL cache so the next
-    run sees them instead of a stale snapshot.
-
-    A patch, not a replace: the settings record is one store item shared by
-    every spec and it outlives the dev server, so writing a bare update would
-    reset unrelated fields — the default agent model included, which the
-    dashboard's first-run onboarding reads — for every spec that follows.
-    """
-    from openswe.dashboard.workspace_settings import (
-        WorkspaceSettingsUpdate,
+    """Patch global settings without resetting unrelated defaults between specs."""
+    from openswe.dashboard.settings import (
+        SettingsUpdate,
         get_instance_settings,
         upsert_instance_settings,
     )
@@ -500,10 +473,10 @@ async def control_team_settings(request: Request) -> JSONResponse:
     current = await get_instance_settings()
     patched = {
         key: body.get(key, current.get(key))
-        for key in WorkspaceSettingsUpdate.model_fields
+        for key in SettingsUpdate.model_fields
         if key in body or key in current
     }
-    settings = await upsert_instance_settings(WorkspaceSettingsUpdate.model_validate(patched))
+    settings = await upsert_instance_settings(SettingsUpdate.model_validate(patched))
     ttl_cache.clear()
     return JSONResponse({"ok": True, "settings": settings})
 
@@ -757,7 +730,7 @@ async def _deliver_slack_interaction(payload: dict[str, Any]) -> httpx2.Response
 async def _slack_send_result(payload: dict[str, Any], resp: httpx2.Response) -> JSONResponse:
     event = payload["event"]
     channel = str(event["channel"])
-    thread_ts = "0" if channel in fakes.CODE_CHANNELS else str(event["thread_ts"])
+    thread_ts = str(event["thread_ts"])
     thread_id = await lookup_slack_thread_id(channel, thread_ts)
     if thread_id is None and channel.startswith("D"):
         # A concierge-mode DM is one conversation keyed on the fixed "0" timestamp.
@@ -1157,22 +1130,16 @@ async def slack_state(channel: str = "") -> JSONResponse:
     selected_channel = (
         current_channel if current_channel != DEMO_CHANNEL else channel or DEMO_CHANNEL
     )
-    channels = [{"id": DEMO_CHANNEL, "name": "demo", "code_channel": False}]
+    channels = [{"id": DEMO_CHANNEL, "name": "demo"}]
     channels.extend(
         {
             "id": message_channel,
             "name": "direct-message"
             if message_channel.startswith("D")
             else message_channel.lower(),
-            "code_channel": False,
         }
         for message_channel in fakes.slack_channels()
-        if message_channel != DEMO_CHANNEL and message_channel not in fakes.CODE_CHANNELS
-    )
-    channels.extend(
-        {**value, "code_channel": True}
-        for value in fakes.CODE_CHANNELS.values()
-        if not value.get("archived")
+        if message_channel != DEMO_CHANNEL
     )
     return JSONResponse({"selected_channel": selected_channel, "channels": channels})
 
@@ -1377,6 +1344,18 @@ def gh_get_repo(owner: str, repo: str) -> JSONResponse:
             **fakes.repo_merge_methods(owner, repo),
         }
     )
+
+
+@app.get("/fake-gh/repos/{owner}/{repo}/labels")
+def gh_list_repo_labels(owner: str, repo: str) -> JSONResponse:  # noqa: ARG001
+    return JSONResponse([])
+
+
+@app.get("/fake-gh/repos/{owner}/{repo}/issues/{number}/labels")
+def gh_list_issue_labels(owner: str, repo: str, number: int) -> JSONResponse:
+    if fakes.find_pull(number, owner, repo) is None:
+        return JSONResponse({"message": "Not Found"}, status_code=404)
+    return JSONResponse([])
 
 
 @app.get("/fake-gh/search/issues")
@@ -1764,6 +1743,35 @@ def gh_graphql(request: Request, body: _JsonBody) -> JSONResponse:
             {"data": {"markPullRequestReadyForReview": {"pullRequest": {"isDraft": False}}}}
         )
     viewer = _token_login(request)
+    if "QueuedPullRequests" in query:
+        data: dict[str, object] = {}
+        for key, number in variables.items():
+            if not key.startswith("number"):
+                continue
+            suffix = key.removeprefix("number")
+            pr = fakes.find_pull(number, variables[f"owner{suffix}"], variables[f"repo{suffix}"])
+            if pr is None:
+                data[f"pull{suffix}"] = None
+                continue
+            reviews = [
+                {"state": review["state"]}
+                for index, raw in enumerate(pr["reviews"])
+                if (review := fakes.review_rest_json(raw, index))["user"]["login"].lower()
+                == variables["reviewer"].lower()
+                and review["state"] in {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
+            ]
+            data[f"pull{suffix}"] = {
+                "pullRequest": {
+                    "state": "MERGED" if pr["merged"] else pr["state"].upper(),
+                    "isDraft": pr["draft"],
+                    "title": pr["title"],
+                    "createdAt": pr["created_at"],
+                    "updatedAt": pr["updated_at"],
+                    "author": {"login": pr["author"]} if pr["author"] else None,
+                    "reviews": {"nodes": reviews[-1:]},
+                }
+            }
+        return JSONResponse({"data": data})
     mutation_input = variables.get("input")
     if "addPullRequestReviewThread" in query and isinstance(mutation_input, dict):
         comment = fakes.add_review_thread(viewer, mutation_input)
@@ -1798,13 +1806,25 @@ def gh_graphql(request: Request, body: _JsonBody) -> JSONResponse:
             }
         )
         return JSONResponse({"data": {"repository": {"object": tree}}})
+    if "query CommitCI(" in query:
+        oid = variables.get("oid")
+        found = fakes.find_pull_by_sha(str(owner), str(repo), oid) if isinstance(oid, str) else None
+        if found is None:
+            return JSONResponse({"errors": [{"type": "NOT_FOUND", "message": "No commit"}]})
+        return JSONResponse({"data": {"repository": {"object": fakes.commit_ci_graphql(found)}}})
     number = variables.get("number")
     if not isinstance(owner, str) or not isinstance(repo, str) or not isinstance(number, int):
         return JSONResponse({"errors": [{"message": "Invalid variables"}]}, status_code=400)
     pr = fakes.find_pull(number, owner, repo)
     if pr is None:
         return JSONResponse({"errors": [{"message": "Pull request not found"}]})
-    if "fullDatabaseId" in query and "reviewThreads" in query:
+    if "PullRequestTitleAndBody" in query:
+        title_and_body = {"title": pr["title"], "body": pr["body"]}
+        return JSONResponse({"data": {"repository": {"pullRequest": title_and_body}}})
+    if "PullRequestTips" in query:
+        tips = {"baseRefOid": fakes.base_sha(pr), "headRefOid": pr["head_sha"]}
+        return JSONResponse({"data": {"repository": {"pullRequest": tips}}})
+    if "PullRequestAllReviewThreads" in query or "PullRequestReviewThreadRoots" in query:
         threads = {
             "nodes": fakes.review_threads_graphql(pr, viewer),
             "pageInfo": {"hasNextPage": False, "endCursor": None},
@@ -1827,6 +1847,53 @@ def gh_graphql(request: Request, body: _JsonBody) -> JSONResponse:
         "pageInfo": {"hasNextPage": False, "endCursor": None},
     }
     pull_request: dict[str, Any] = {"reviewThreads": review_threads}
+    if "PullRequestStatus" in query:
+        reviews: list[dict[str, object]] = []
+        for index, raw in enumerate(pr["reviews"]):
+            review = fakes.review_rest_json(raw, index)
+            user = review["user"]
+            reviews.append(
+                {
+                    "fullDatabaseId": str(review["id"]),
+                    "state": review["state"],
+                    "author": {
+                        "__typename": "Bot" if user["login"].endswith("[bot]") else "User",
+                        "login": user["login"].removesuffix("[bot]"),
+                        "databaseId": user["id"],
+                        "avatarUrl": user["avatar_url"],
+                    },
+                }
+            )
+        pull_request.update(
+            {
+                "title": pr["title"],
+                "state": "MERGED" if pr["merged"] else pr["state"].upper(),
+                "isDraft": pr["draft"],
+                "createdAt": pr["created_at"],
+                "updatedAt": pr["updated_at"],
+                "additions": pr["additions"],
+                "deletions": pr["deletions"],
+                "author": {"__typename": "User", "login": pr["author"]},
+                "mergeable": (
+                    "UNKNOWN"
+                    if pr["mergeable"] is None
+                    else "MERGEABLE"
+                    if pr["mergeable"]
+                    else "CONFLICTING"
+                ),
+                "mergeStateStatus": pr["mergeable_state"].upper(),
+                "autoMergeRequest": None,
+                "headRefName": pr["head"],
+                "headRefOid": pr["head_sha"],
+                "baseRefName": pr["base"],
+                "reviewDecision": pr["review_decision"],
+                "reviews": {
+                    "nodes": reviews,
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                },
+                "commits": {"nodes": [{"commit": fakes.commit_ci_graphql(pr)}]},
+            }
+        )
     if "PullRequestFixReviews" in query:
         pull_request.update(
             {
@@ -1845,6 +1912,14 @@ def gh_graphql(request: Request, body: _JsonBody) -> JSONResponse:
                 },
             }
         )
+    if "query PullRequestCI(" in query:
+        pull_request = {
+            "state": "MERGED" if pr.get("merged") else str(pr.get("state", "open")).upper(),
+            "headRefOid": pr["head_sha"],
+            "headRefName": pr["head"],
+            "baseRefName": pr["base"],
+            "commits": {"nodes": [{"commit": fakes.commit_ci_graphql(pr)}]},
+        }
     if "PullRequestFixChecks" in query:
         pull_request = {
             "commits": {
@@ -2037,8 +2112,7 @@ _CHANNEL_NAMES = {REVIEW_CHANNEL: "reviews"}
 
 @app.get("/fake-slack/conversations.info")
 async def slack_conversations_info(channel: str = "") -> JSONResponse:
-    code_channel = fakes.CODE_CHANNELS.get(channel)
-    name = code_channel["name"] if code_channel else _CHANNEL_NAMES.get(channel, "demo")
+    name = _CHANNEL_NAMES.get(channel, "demo")
     data: dict[str, Any] = {
         "id": channel,
         "name": name,
@@ -2052,8 +2126,6 @@ async def slack_conversations_info(channel: str = "") -> JSONResponse:
         "topic": {"value": "Demo channel topic"},
         "purpose": {"value": "Demo channel purpose"},
     }
-    if code_channel:
-        data["properties"] = {"record_channel": {"record_type": "agent_channel"}}
     return _ok({"channel": data})
 
 
@@ -2097,71 +2169,6 @@ async def slack_conversations_history(channel: str = "") -> JSONResponse:
             ]
         }
     )
-
-
-@app.post("/fake-slack/agents.conversations.create")
-async def slack_create_code_channel(request: Request) -> JSONResponse:
-    channel = fakes.create_code_channel(await request.json())
-    return _ok({"channel": {"id": channel["id"]}})
-
-
-@app.post("/fake-slack/agents.sessions.setStatus")
-async def slack_set_code_channel_status(request: Request) -> JSONResponse:
-    body = await request.json()
-    channel = fakes.update_code_channel(
-        str(body.get("channel_id") or ""), status=body.get("status")
-    )
-    return _ok() if channel else JSONResponse({"ok": False, "error": "channel_not_found"})
-
-
-@app.post("/fake-slack/agents.sessions.rename")
-async def slack_rename_code_channel(request: Request) -> JSONResponse:
-    body = await request.json()
-    channel = fakes.update_code_channel(str(body.get("channel_id") or ""), name=body.get("title"))
-    return _ok() if channel else JSONResponse({"ok": False, "error": "channel_not_found"})
-
-
-@app.post("/fake-slack/agents.conversations.setProperties")
-async def slack_set_code_channel_properties(request: Request) -> JSONResponse:
-    body = await request.json()
-    channel_id = str(body.get("channel_id") or "")
-    code_channel = body.get("code_channel") if isinstance(body.get("code_channel"), dict) else {}
-    values: dict[str, Any] = {}
-    if "context_bar_items" in code_channel:
-        values["context_bar_items"] = code_channel["context_bar_items"]
-    if "summary_message" in code_channel:
-        values["summary_message"] = code_channel["summary_message"]
-    if "agent_resource" in body:
-        values["agent_resource"] = body["agent_resource"]
-    channel = fakes.update_code_channel(channel_id, **values)
-    return _ok() if channel else JSONResponse({"ok": False, "error": "channel_not_found"})
-
-
-@app.post("/fake-slack/agents.conversations.setCommands")
-async def slack_set_code_channel_commands(request: Request) -> JSONResponse:
-    body = await request.json()
-    channel = fakes.update_code_channel(
-        str(body.get("channel_id") or ""), commands=body.get("commands", [])
-    )
-    return _ok() if channel else JSONResponse({"ok": False, "error": "channel_not_found"})
-
-
-@app.post("/fake-slack/agents.conversations.setView")
-async def slack_set_code_channel_view(request: Request) -> JSONResponse:
-    body = await request.json()
-    channel = fakes.CODE_CHANNELS.get(str(body.get("channel_id") or ""))
-    if channel is None:
-        return JSONResponse({"ok": False, "error": "channel_not_found"})
-    view = {**body, "view_id": f"V{len(channel['views']) + 1}"}
-    channel["views"].append(view)
-    return _ok(view)
-
-
-@app.post("/fake-slack/agents.conversations.archive")
-async def slack_archive_code_channel(request: Request) -> JSONResponse:
-    body = await request.json()
-    channel = fakes.update_code_channel(str(body.get("channel_id") or ""), archived=True)
-    return _ok() if channel else JSONResponse({"ok": False, "error": "channel_not_found"})
 
 
 @app.get("/fake-slack/chat.getPermalink")

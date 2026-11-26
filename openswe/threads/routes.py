@@ -2,16 +2,22 @@
 
 import json
 import logging
+import posixpath
 from time import perf_counter
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NoReturn
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+import httpx
+import httpx2
+import orjson
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from openswe.audit_logs.middleware import audit_endpoint
-from openswe.dashboard.deps import ADMIN_DEP, SESSION_DEP, session_is_admin
+from openswe.dashboard.deps import ADMIN_DEP, SESSION_DEP, DashboardRead, session_is_admin
 from openswe.dashboard.oauth import bind_audit_session, decode_upload_ticket
+from openswe.dashboard.ttft import SUBMITTED_AT_HEADER, DashboardClient
 from openswe.github.pull_request_checks import PullRequestState
 from openswe.github.pull_request_context import PullRequestFixScope
 from openswe.github.token_auth import bearer_github_token
@@ -27,6 +33,14 @@ from openswe.threads.diffs import (
     get_dashboard_thread_branch_diff,
     get_dashboard_thread_recovery_patch,
     get_dashboard_thread_working_tree_diff,
+)
+from openswe.threads.file_preview import (
+    ERROR_HEADERS,
+    PREVIEW_MAX_BYTES,
+    ByteRange,
+    FilePreviewGrant,
+    PreviewFileType,
+    PreviewLink,
 )
 from openswe.threads.files import (
     WorkspaceFileIndex,
@@ -47,11 +61,10 @@ from openswe.threads.handlers import (
     get_dashboard_thread_queued_messages,
     get_dashboard_thread_state,
     interrupt_transcript_turns,
-    move_thread,
     rename_dashboard_thread,
     resolve_all_dashboard_threads,
     resolve_dashboard_thread,
-    share_thread_with_workspace,
+    share_thread,
 )
 from openswe.threads.listing import (
     SIDEBAR_ORDERS,
@@ -66,27 +79,32 @@ from openswe.threads.listing import (
 )
 from openswe.threads.machine_reads import machine_thread, machine_threads
 from openswe.threads.pins import THREAD_PINS
-from openswe.threads.principals import PrincipalDep
+from openswe.threads.principals import Principal, PrincipalDep
 from openswe.threads.proxy import (
     proxy_dashboard_thread_commands,
     proxy_dashboard_thread_history,
     proxy_dashboard_thread_run_cancel,
-    proxy_dashboard_thread_run_enqueue,
-    proxy_dashboard_thread_runs_list,
     proxy_dashboard_thread_stream_events,
 )
 from openswe.threads.read_state import THREAD_READ_STATES
 from openswe.threads.runs import (
     SessionCreateBody,
+    ThreadCreateBody,
     ThreadRenameBody,
     ThreadResolveBody,
     create_dashboard_session,
 )
+from openswe.threads.runs_api import SdkRun, ThreadOnRuntime
 from openswe.threads.runtimes import RUNTIMES
 from openswe.threads.session_upload import UPLOAD_REQUEST_BODY, UploadStream, upload_session
-from openswe.threads.store import THREADS
-from openswe.threads.summary import _now_ms, _thread_run_id, assert_thread_readable
-from openswe.utils.timing import server_timing_header
+from openswe.threads.store import MAC_THREAD, THREADS
+from openswe.threads.summary import (
+    ThreadReadPosition,
+    _now_ms,
+    _thread_run_id,
+    assert_thread_readable,
+)
+from openswe.utils.timing import RequestTimings, phase, server_timing_header
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +124,15 @@ async def api_list_threads(
     return await list_dashboard_threads(principal.person, email=principal.email, include_all=all)
 
 
-@router.post("/threads", status_code=201)
+@router.post("/threads", status_code=201, response_model=dict[str, str])
 async def api_create_session(
-    body: SessionCreateBody,
+    body: Annotated[SessionCreateBody | ThreadCreateBody, Body(union_mode="left_to_right")],
     session: dict[str, str] = SESSION_DEP,
-) -> dict[str, str]:
+) -> dict[str, str] | Response:
+    """Start a session from a prompt. The SDK's ``threads.create`` (a ``thread_id`` and no
+    prompt) creates nothing: it gets back a thread the caller can read, and 404 otherwise."""
+    if isinstance(body, ThreadCreateBody):
+        return JSONResponse(await body.existing(session["sub"], email=session.get("email")))
     thread_id = await create_dashboard_session(body, session["sub"], email=session.get("email"))
     if body.start:
         status, content, _ = await proxy_dashboard_thread_commands(
@@ -206,9 +228,10 @@ async def api_reorder_sidebar_threads(
 
 @router.get("/threads/pinned")
 async def api_list_pinned_threads(
-    session: dict[str, Any] = SESSION_DEP,
+    reader: Annotated[DashboardRead, Depends(DashboardRead.open)],
 ) -> list[dict[str, Any]]:
-    return await list_dashboard_pinned_threads(session["sub"], email=session.get("email"))
+    await reader.close()
+    return await list_dashboard_pinned_threads(reader.principal.subject, email=reader.email)
 
 
 class PinnedThreadOrderBody(BaseModel):
@@ -363,9 +386,14 @@ async def api_get_thread_pull_request_context(
 
 class ThreadReadState(BaseModel):
     viewed: bool
+    response_id: str | None = Field(default=None, alias="responseId")
 
 
-@router.put("/threads/{thread_id}/read-state", response_model=ThreadReadState)
+@router.put(
+    "/threads/{thread_id}/read-state",
+    response_model=ThreadReadState,
+    response_model_exclude_unset=True,
+)
 async def api_set_thread_read_state(
     thread_id: str,
     body: ThreadReadState,
@@ -383,14 +411,31 @@ async def api_set_thread_read_state(
         await THREADS.update(
             thread_id, {"latest_run_id": latest.run_id, "latest_run_status": latest.status}
         )
-    await THREAD_READ_STATES.set(
+    run_id = _thread_run_id(thread.metadata, latest.run_id if latest else None)
+    position = ThreadReadPosition(thread.metadata, None, session["sub"], run_id)
+    guarded = "response_id" in body.model_fields_set
+    if (
+        not body.viewed
+        or not guarded
+        or not position.review
+        or body.response_id == position.response_id
+    ):
+        await THREAD_READ_STATES.set(
+            session["sub"],
+            thread_id,
+            viewed=body.viewed,
+            run_id=run_id,
+            viewed_at_ms=_now_ms(),
+            response_id=body.response_id,
+            acknowledge_current=not guarded or position.review,
+        )
+    position = ThreadReadPosition(
+        thread.metadata,
+        await THREAD_READ_STATES.saved(session["sub"], thread_id),
         session["sub"],
-        thread_id,
-        viewed=body.viewed,
-        run_id=_thread_run_id(thread.metadata, latest.run_id if latest else None),
-        viewed_at_ms=_now_ms(),
+        run_id,
     )
-    return body
+    return ThreadReadState(viewed=position.viewed)
 
 
 @router.get("/threads/{thread_id}")
@@ -466,6 +511,49 @@ async def api_get_thread_path(
     )
 
 
+class FilePreviewBody(BaseModel):
+    path: str
+
+
+@router.post("/threads/{thread_id}/files/preview-url")
+async def api_create_thread_file_preview(
+    thread_id: str,
+    body: FilePreviewBody,
+    session: dict[str, object] = SESSION_DEP,
+) -> PreviewLink:
+    """A short-lived link to one file's bytes, or an HTML page's folder, for the Files panel."""
+    return await FilePreviewGrant.mint(thread_id, session, body.path)
+
+
+# No session: the link's token is the credential, and a sandboxed preview frame sends no cookies.
+# Each request, a deck's every asset included, re-checks access and stats the file in the sandbox.
+@router.get("/threads/{thread_id}/files/raw/{token}/{rest:path}")
+async def api_get_thread_file_preview(
+    thread_id: str, token: str, rest: str, request: Request
+) -> Response:
+    try:
+        grant = FilePreviewGrant.decode(token, thread_id)
+        workspace = await grant.open(request.url.path, request.method)
+        file = await grant.stat(workspace, rest)
+        file_type = PreviewFileType.of(file.path)
+        span = ByteRange.of(request.headers.get("range"), file.size)
+        headers = file_type.headers(posixpath.basename(file.path)) | span.headers()
+        content = (
+            await workspace.read(file, span.start, span.end, limit=PREVIEW_MAX_BYTES)
+            if span.length
+            else b""
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            exc.status_code, exc.detail, headers={**ERROR_HEADERS, **(exc.headers or {})}
+        ) from exc
+    return Response(
+        content=content,
+        status_code=206 if span.partial else 200,
+        headers={**headers, "Content-Length": str(len(content))},
+    )
+
+
 @router.get("/threads/{thread_id}/background-work")
 async def api_get_thread_background_work(
     thread_id: str, session: dict[str, Any] = SESSION_DEP
@@ -522,36 +610,21 @@ async def api_rename_thread(
     )
 
 
-@router.post("/threads/{thread_id}/share-to-workspace")
+@router.post("/threads/{thread_id}/share")
 @audit_endpoint
-async def api_share_thread_with_workspace(
+async def api_share_thread(
     thread_id: str,
     session: dict[str, str] = SESSION_DEP,
 ) -> dict[str, object]:
-    return await share_thread_with_workspace(thread_id, session["sub"], email=session.get("email"))
+    return await share_thread(thread_id, session["sub"], email=session.get("email"))
 
 
-class ThreadMoveRequest(BaseModel):
-    """Where to move a thread: onto the caller's machine through a bridge, or to the cloud."""
-
-    sandbox_bridge_id: str | None = None
-    target: Literal["cloud"] | None = None
-
-
-@router.post("/threads/{thread_id}/move")
-@audit_endpoint
-async def api_move_thread(
-    thread_id: str,
-    body: ThreadMoveRequest,
-    session: dict[str, str] = SESSION_DEP,
-) -> dict[str, object]:
-    return await move_thread(
-        thread_id,
-        session["sub"],
-        email=session.get("email"),
-        bridge_id=body.sandbox_bridge_id,
-        target=body.target,
-    )
+@router.post(
+    "/threads/{thread_id}/move", status_code=410, response_model=None, include_in_schema=False
+)
+async def api_move_thread(thread_id: str) -> NoReturn:
+    """Every thread runs in the cloud: there is nowhere to move one."""
+    raise HTTPException(410, MAC_THREAD)
 
 
 @router.post("/threads/{thread_id}/continue-private")
@@ -587,33 +660,81 @@ async def api_list_thread_runs(
     select: Annotated[list[str] | None, Query()] = None,
     session: dict[str, Any] = SESSION_DEP,
 ) -> Response:
-    status_code, content, media_type = await proxy_dashboard_thread_runs_list(
-        thread_id,
-        session["sub"],
-        limit=limit,
-        offset=offset,
-        status=status,
-        select=select,
-        email=session.get("email"),
+    reader = Principal.of_login(session["sub"], session.get("email"))
+    thread = await ThreadOnRuntime.readable(thread_id, reader)
+    params = httpx2.QueryParams(
+        [
+            ("limit", limit),
+            ("offset", offset),
+            *([("status", status)] if status else []),
+            *(("select", field) for field in select or []),
+        ]
     )
-    return Response(content=content, status_code=status_code, media_type=media_type)
+    return await thread.runs(f"/threads/{thread_id}/runs", params)
 
 
 @router.post("/threads/{thread_id}/runs")
 @audit_endpoint
 async def api_create_thread_run(
     thread_id: str,
+    body: SdkRun,
     request: Request,
-    session: dict[str, Any] = SESSION_DEP,
-) -> dict[str, Any]:
-    body = await request.body()
-    return await proxy_dashboard_thread_run_enqueue(
-        thread_id,
-        session["sub"],
-        body,
-        email=session.get("email"),
-        content_type=request.headers.get("content-type", "application/json"),
-    )
+    principal: PrincipalDep,
+) -> Response:
+    """Start a run as ``/commands`` starts a message, answered with the run, unstreamed."""
+    return await body.create(thread_id, principal, request)
+
+
+@router.get("/info")
+async def api_runtime_info(_principal: PrincipalDep) -> Response:
+    """MDA's ``/info``: the features the SDK turns on are MDA's, not this deployment's."""
+    try:
+        status_code, content, headers = await RUNTIMES.mda_runtime.info()
+    except httpx2.TransportError as exc:
+        raise HTTPException(502, "the runtime could not be reached") from exc
+    return Response(content, status_code=status_code, headers=headers)
+
+
+@router.post("/threads/{thread_id}/runs/stream")
+@audit_endpoint
+async def api_stream_thread_run(
+    thread_id: str,
+    body: SdkRun,
+    request: Request,
+    principal: PrincipalDep,
+) -> Response:
+    """Start a run as ``/commands`` starts a message, streamed in the runs API's format."""
+    return await body.stream(thread_id, principal, request)
+
+
+@router.get("/threads/{thread_id}/runs/running/stream")
+async def api_join_running_thread_run(
+    thread_id: str, request: Request, principal: PrincipalDep
+) -> Response:
+    """The run going on the thread, joined before a page opening it has read its head."""
+    thread = await ThreadOnRuntime.readable(thread_id, principal)
+    return await thread.join_running(request)
+
+
+@router.get("/threads/{thread_id}/runs/{run_id}/stream")
+async def api_join_thread_run(
+    thread_id: str, run_id: UUID, request: Request, principal: PrincipalDep
+) -> Response:
+    thread = await ThreadOnRuntime.readable(thread_id, principal)
+    return await thread.join(str(run_id), request)
+
+
+@router.get("/threads/{thread_id}/runs/{run_id}")
+async def api_get_thread_run(thread_id: str, run_id: UUID, principal: PrincipalDep) -> Response:
+    thread = await ThreadOnRuntime.readable(thread_id, principal)
+    return await thread.runs(f"/threads/{thread_id}/runs/{run_id}")
+
+
+@router.get("/threads/{thread_id}/stream")
+async def api_watch_thread(thread_id: str, request: Request, principal: PrincipalDep) -> Response:
+    """The thread's runs as they start and end, for as long as a tab watches it."""
+    thread = await ThreadOnRuntime.readable(thread_id, principal)
+    return await thread.stream_as_sent(f"/threads/{thread_id}/stream", request)
 
 
 @router.post("/threads/{thread_id}/runs/{run_id}/cancel")
@@ -624,6 +745,7 @@ async def api_cancel_thread_run(
     session: dict[str, Any] = SESSION_DEP,
     wait: str = "0",
     action: str = "interrupt",
+    reason: str | None = None,
 ) -> Response:
     status_code, content, media_type = await proxy_dashboard_thread_run_cancel(
         thread_id,
@@ -631,6 +753,7 @@ async def api_cancel_thread_run(
         session["sub"],
         wait=wait,
         action=action,
+        reason=reason,
         email=session.get("email"),
     )
     if status_code < 400:
@@ -670,18 +793,41 @@ async def api_delete_thread(
 
 @router.get("/threads/{thread_id}/state")
 async def api_get_thread_state(
+    request: Request,
     thread_id: str,
-    session: dict[str, Any] = SESSION_DEP,
+    principal: PrincipalDep,
+    select: Annotated[list[str] | None, Query()] = None,
 ) -> Response:
-    timings: dict[str, float] = {}
+    timings = RequestTimings.of(request)
     started = perf_counter()
-    payload = await get_dashboard_thread_state(
-        thread_id, session["sub"], email=session.get("email"), timings=timings
-    )
+    try:
+        payload = await get_dashboard_thread_state(
+            thread_id,
+            principal.login or "",
+            select=select,
+            email=principal.email,
+            timings=timings,
+            principal=principal,
+        )
+    except (httpx.HTTPStatusError, httpx2.HTTPStatusError) as exc:
+        # The runtime validates the read, `select` included, and an old thread the index
+        # still lists may be gone from it: what it refuses goes back as it said.
+        if exc.response.status_code not in (
+            httpx.codes.UNPROCESSABLE_ENTITY,
+            httpx.codes.NOT_FOUND,
+        ):
+            raise
+        return Response(
+            content=exc.response.content,
+            status_code=exc.response.status_code,
+            media_type=exc.response.headers.get("content-type"),
+        )
     timings["total"] = (perf_counter() - started) * 1000
+    with phase(timings, "encode"):
+        body = orjson.dumps(payload)
     header = server_timing_header(timings)
     logger.info("thread state timings thread_id=%s %s", thread_id, header)
-    return JSONResponse(payload, headers={"Server-Timing": header})
+    return Response(body, media_type="application/json", headers={"Server-Timing": header})
 
 
 @router.post("/threads/{thread_id}/stream/events")
@@ -715,7 +861,7 @@ async def api_thread_commands(
 ) -> Response:
     """Every way a thread is started or continued, whoever is asking.
 
-    The dashboard, an API key and a federated workflow all post the same command
+    The dashboard and an API key both post the same command
     here; what differs is the thread the first one stamps.
     """
     body = await request.body()
@@ -726,6 +872,8 @@ async def api_thread_commands(
         email=principal.email,
         content_type=request.headers.get("content-type", "application/json"),
         principal=principal,
+        client=DashboardClient.of_user_agent(request.headers.get("user-agent")),
+        submitted_at=request.headers.get(SUBMITTED_AT_HEADER),
     )
     return Response(content=content, status_code=status_code, media_type=media_type)
 
@@ -737,11 +885,20 @@ async def api_thread_history(
     session: dict[str, Any] = SESSION_DEP,
 ) -> Response:
     body = await request.body()
+    timings: dict[str, float] = {}
+    started = perf_counter()
     status_code, content, media_type = await proxy_dashboard_thread_history(
         thread_id,
         session["sub"],
         body,
         email=session.get("email"),
         content_type=request.headers.get("content-type", "application/json"),
+        timings=timings,
     )
-    return Response(content=content, status_code=status_code, media_type=media_type)
+    timings["total"] = (perf_counter() - started) * 1000
+    return Response(
+        content=content,
+        status_code=status_code,
+        media_type=media_type,
+        headers={"Server-Timing": server_timing_header(timings)},
+    )

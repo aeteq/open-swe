@@ -14,11 +14,18 @@ routed through the same LLM Gateway, so a gateway outage takes out the
 a short shared outage (the gateway's 502 page says "try again in 30 seconds"). Once
 every attempt failed, the run ends with a message saying so instead of a crash: its
 progress is checkpointed, so the person can start it again.
+
+A provider can also refuse a reply or cut it off at its output limit, both as an
+answer rather than an error, or block the request by policy with an error (OpenAI's
+cybersecurity flag is a 400). A refusal or block goes once to the other provider, then
+ends the run with a reply saying so that keeps what the model wrote; a reply cut off at
+the output limit is logged, and a subagent's says so to the agent that delegated.
 """
 
 import asyncio
 import logging
 import random
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -31,16 +38,17 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse
 from langchain_anthropic import ChatAnthropic
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
-from langchain_core.exceptions import ModelError
+from langchain_core.exceptions import ModelError, ModelRefusalError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 from langchain_fireworks import ChatFireworks
-from langchain_openai import ChatOpenAI
 from runtime_api.model_errors import MODEL_FAILURE_REPLY_KEY, classify_exception, exception_fields
 from runtime_api.models import MODEL_CALL_BUDGET
+from runtime_api.provenance import Provenance
 
+from rt.gateway import RUN_GATEWAY
 from rt.model_retries import ModelOutput, ModelRetriesMiddleware
-from rt.tracing import MIDDLEWARE_TRACE_POLICY
+from rt.tracing import MIDDLEWARE_TRACE_POLICY, TurnTrace
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +59,13 @@ PROMPT_CACHE_TTL: Final = "1h"
 # Bindings nest a few deep at most; the bound stops a self-referencing chain.
 _MAX_BINDINGS: Final = 10
 _SUBAGENT_TIMED_OUT: Final = "This subagent could not finish: its model call timed out."
+_SUBAGENT_CUT_OFF: Final = (
+    "This subagent's reply was cut off at the model's output limit ({stop_reason})"
+)
+# A reply the provider stopped at its output limit, by where each provider says so:
+# Anthropic's ``stop_reason``, Chat Completions' (and Fireworks') ``finish_reason``.
+# The Responses API marks it ``incomplete`` instead.
+_OUTPUT_LIMIT_STOPS: Final = {"stop_reason": "max_tokens", "finish_reason": "length"}
 
 # Seconds waited before each attempt after the first; one more attempt than delays.
 # The first failover is immediate: one provider's outage should not delay the other.
@@ -65,6 +80,10 @@ MODEL_OUTAGE_MESSAGE: Final = (
     "502/503/overloaded). This is a temporary provider or gateway outage, not a "
     "problem with your task. My progress so far has been saved — please retrigger "
     "the run in a few minutes to continue."
+)
+MODEL_REFUSAL_MESSAGE: Final = (
+    "The model provider blocked {reply}. Asking the same thing again will likely be "
+    "blocked too: rephrase the request or pick a different model, then retry."
 )
 RETRYABLE_STATUS_CODES: Final = frozenset({408, 409, 425, 429, 500, 502, 503, 504, 529})
 _TRANSIENT_EXCEPTIONS: Final[tuple[type[BaseException], ...]] = (
@@ -105,15 +124,6 @@ def _replayable(block: object, model: object) -> bool:
     if isinstance(model, ChatAnthropic):
         # Anthropic rejects an empty thinking block.
         return not (block.get("type") == "thinking" and not block.get("thinking"))
-    if isinstance(model, ChatOpenAI) and model.store is False:
-        # Without stored responses, OpenAI cannot resolve a reasoning item by id alone.
-        item_id = block.get("id")
-        return not (
-            block.get("type") == "reasoning"
-            and isinstance(item_id, str)
-            and item_id.startswith("rs_")
-            and not block.get("encrypted_content")
-        )
     return True
 
 
@@ -205,6 +215,15 @@ def _nested_str(data: dict[str, Any], *keys: str) -> str | None:
 
 def model_access_message(exc: BaseException) -> str | None:
     """What to tell the person when the workspace may not use the call's model."""
+    if isinstance(exc, (anthropic.APIStatusError, openai.APIStatusError)):
+        provider_message = _nested_str(_error_body(exc), "error", "message") or str(exc)
+        if exc.status_code == 402 and "blocked by gateway policies" in provider_message.lower():
+            return (
+                "The model gateway blocked this request because a spending limit was reached. "
+                "Ask a LangSmith organization admin to review the gateway's cost policies "
+                "and usage before retrying. Sending the same request again will not "
+                "resolve the limit."
+            )
     if isinstance(exc, anthropic.BadRequestError):
         body = _error_body(exc)
         if _nested_str(body, "error", "details", "error_code") == "model_not_available":
@@ -245,11 +264,17 @@ async def call_with_fallback(
     after the first whether it goes to the fallback; a fallback that cannot be built
     leaves the retries to the call's own model. A provider that refuses the workspace
     the model answers with why; any other error that is not transient raises at once.
+    A refused reply or a request the provider blocks by policy goes once to the other
+    model, then answers with what the model wrote and that the provider blocked the rest.
     Once the attempts or ``budget`` run out, the outage message answers instead.
     """
-    if fallback is None:
-        return await handler(request)
-    schedule = tuple(BACKOFF_SCHEDULE if backoff_schedule is None else backoff_schedule)
+    if (unavailable := await RUN_GATEWAY.unavailable()) is not None:
+        return _failure_reply(unavailable, "model_access")
+    schedule = (
+        tuple(BACKOFF_SCHEDULE if backoff_schedule is None else backoff_schedule)
+        if fallback is not None
+        else ()
+    )
     clock = asyncio.get_running_loop()
     deadline = clock.time() + budget.total_seconds()
     fallback_request: ModelRequest | None = None
@@ -265,12 +290,14 @@ async def call_with_fallback(
             if clock.time() + delay >= deadline:
                 break
         try:
-            if attempt % 2 == 1 and fallback_unbuilt:
+            if attempt % 2 == 1 and fallback_unbuilt and fallback is not None:
                 fallback_unbuilt = False
                 try:
                     fallback_request = request.override(model=fallback())
                 except Exception:
-                    logger.exception("Could not build the fallback model; retrying the primary")
+                    logger.exception("Could not build the fallback model")
+            if fallback_request is None and isinstance(last, ModelRefusalError):
+                break
             on_fallback = attempt % 2 == 1 and fallback_request is not None
             attempt_request = fallback_request if on_fallback and fallback_request else request
             if last is not None:
@@ -288,16 +315,41 @@ async def call_with_fallback(
                     extra={"model_access_error": exception_fields(exc)},
                 )
                 return _failure_reply(message, "model_access")
-            if not is_transient(exc):
+            refusal = exc if isinstance(exc, ModelRefusalError) else None
+            if refusal is None and classify_exception(exc) == "model_refused":
+                # A policy block of the request is handled as a refusal of its reply.
+                refusal = ModelRefusalError(str(exc))
+                refusal.__cause__ = exc
+            if refusal is not None:
+                logger.warning(
+                    "Model refused the reply",
+                    extra={"model_refusal": {"attempt": made, **exception_fields(exc)}},
+                )
+                refused = isinstance(last, ModelRefusalError)
+                last = refusal
+                # The reply that answers instead keeps what the model wrote.
+                output.supersede()
+                if fallback is None or refused:
+                    break
+                continue
+            if fallback is None or not is_transient(exc):
                 raise
-            last = exc
             # The next attempt answers instead: what this one streamed is taken back.
             output.supersede()
             logger.warning(
                 "Model call failed transiently",
                 extra={"model_call_retry": {"attempt": made, **exception_fields(exc)}},
             )
+            if isinstance(last, ModelRefusalError):
+                break
+            last = exc
     assert last is not None  # every attempt failed, or the budget ran out after one
+    if isinstance(last, ModelRefusalError):
+        written = last.raw_message.text.strip() if last.raw_message is not None else ""
+        if not written:
+            return _failure_reply(MODEL_REFUSAL_MESSAGE.format(reply="this reply"), "refusal")
+        blocked = MODEL_REFUSAL_MESSAGE.format(reply="the rest of this reply")
+        return _failure_reply(f"{written}\n\n{blocked}", "refusal")
     logger.error(
         "Model call failed after retries across primary and fallback",
         exc_info=last,
@@ -307,10 +359,14 @@ async def call_with_fallback(
 
 
 def _failure_reply(text: str, kind: str) -> ModelResponse:
-    """The answer for a call that could not be made, marked so the loop posts it as it is."""
-    return ModelResponse(
-        result=[AIMessage(content=text, response_metadata={MODEL_FAILURE_REPLY_KEY: kind})]
+    """The answer for a call that could not be made, marked so the loop posts it as it is.
+
+    It has its id before it reaches state, as a model's own reply does, for the transcript.
+    """
+    reply = AIMessage(
+        content=text, id=str(uuid.uuid4()), response_metadata={MODEL_FAILURE_REPLY_KEY: kind}
     )
+    return ModelResponse(result=[reply])
 
 
 class _ModelCallGuard(AgentMiddleware):
@@ -321,13 +377,33 @@ class _ModelCallGuard(AgentMiddleware):
 class ReplayableHistoryMiddleware(_ModelCallGuard):
     """Send each call a history the provider it goes to accepts, in a stable order."""
 
+    @staticmethod
+    def _context_order(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
+        """Keep personal context last within each uninterrupted group of context messages."""
+        ordered: list[AnyMessage] = []
+        personal: list[AnyMessage] = []
+        for message in messages:
+            provenance = Provenance.of(message)
+            if provenance is None or provenance.kind != "context":
+                ordered.extend(personal)
+                personal.clear()
+            elif provenance.sender.startswith("user:") or provenance.sender == "run:recent-threads":
+                personal.append(message)
+                continue
+            ordered.append(message)
+        ordered.extend(personal)
+        return ordered
+
     async def awrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         model = _chat_model(request.model)
-        messages = [_for_provider(message, model) for message in _in_call_order(request.messages)]
+        messages = [
+            _for_provider(message, model)
+            for message in _in_call_order(self._context_order(request.messages))
+        ]
         if any(a is not b for a, b in zip(messages, request.messages, strict=True)):
             request = request.override(messages=messages)
         return await handler(request)
@@ -388,6 +464,69 @@ class SubagentTimeoutReplyMiddleware(_ModelCallGuard):
             )
 
 
+class OutputLimitMiddleware(_ModelCallGuard):
+    """Say when the provider cut a reply off at its output limit.
+
+    The provider answers such a reply as a success. A subagent's reply without tool
+    calls is its final answer, and the agent that delegated to it would take it, or its
+    silence, as finished; it says it was cut off instead, so that agent can ask again
+    in smaller steps. The agent's own reply is left as it is, logged and tagged on the
+    turn's trace.
+    """
+
+    def __init__(self, *, subagent: bool = False) -> None:
+        super().__init__()
+        self._subagent = subagent
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        response = await handler(request)
+        reply = response.result[-1] if response.result else None
+        if not isinstance(reply, AIMessage) or (stop := self.output_limit_stop(reply)) is None:
+            return response
+        logger.warning(
+            "Model reply was cut off at its output limit",
+            extra={
+                "model_output_limit": {
+                    "stop_reason": stop,
+                    "subagent": self._subagent,
+                    "tool_calls": len(reply.tool_calls),
+                    "invalid_tool_calls": len(reply.invalid_tool_calls),
+                    "text_chars": len(reply.text),
+                }
+            },
+        )
+        if not self._subagent:
+            TurnTrace.record_output_limit(stop)
+            return response
+        if reply.tool_calls:
+            return response
+        notice = _SUBAGENT_CUT_OFF.format(stop_reason=stop)
+        written = reply.text.strip()
+        content = f"{written}\n\n[{notice}.]" if written else f"{notice}, before any answer."
+        cut_off = reply.model_copy(update={"content": content, "invalid_tool_calls": []})
+        return ModelResponse(
+            result=[*response.result[:-1], cut_off],
+            structured_response=response.structured_response,
+        )
+
+    @staticmethod
+    def output_limit_stop(reply: AIMessage) -> str | None:
+        """The provider's own stop reason, when it stopped ``reply`` at its output limit."""
+        metadata = reply.response_metadata
+        if metadata.get("status") == "incomplete":
+            details = metadata.get("incomplete_details")
+            if isinstance(details, dict) and details.get("reason") == "max_output_tokens":
+                return "max_output_tokens"
+        for key, stop in _OUTPUT_LIMIT_STOPS.items():
+            if metadata.get(key) == stop:
+                return stop
+        return None
+
+
 class _RunPromptCaching(AnthropicPromptCachingMiddleware):
     """Anthropic's prompt cache, less its breakpoint on the last tool.
 
@@ -432,11 +571,13 @@ def model_call_guards(
     They see the model the call really goes to, the fallback included. Middleware
     owns retries for providers whose SDK retries are disabled. An agent's call that
     still fails raises, so ``call_with_fallback`` tries again and the run-complete
-    webhook sees why; a subagent's timeout becomes its answer. The prompt cache
-    replaces deepagents' own 5m one by name, in place.
+    webhook sees why; a subagent's timeout becomes its answer, as does a reply cut off
+    at the output limit. The prompt cache replaces deepagents' own 5m one by name, in
+    place.
     """
     return [
         *([SubagentTimeoutReplyMiddleware()] if subagent else []),
+        OutputLimitMiddleware(subagent=subagent),
         ReplayableHistoryMiddleware(),
         ModelCallTimeoutMiddleware(timeout_seconds),
         ModelRetriesMiddleware(),

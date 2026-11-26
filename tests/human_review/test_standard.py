@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
@@ -28,12 +28,52 @@ from openswe.human_review.standard import (
 from openswe.slack.blocks import block_payload, section
 from openswe.slack.http import SlackRequestError
 from openswe.users import User, UserIdentity
+from openswe.utils.json_types import JsonObject
 from tests.conftest import FakeUserRecords, serve_threads_from
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
 
 _NOW = datetime(2026, 9, 28, 12, tzinfo=UTC)
+
+
+async def test_only_the_author_gets_a_permalink_to_their_confirmation_dm() -> None:
+    author, other = User(), User()
+    pr = PullRequest(owner="lc", repo="repo", number=7, author_user_id=author.id)
+    request = HumanReviewRequest(
+        pull_request_id=pr.id,
+        head_sha="abc",
+        kind="expedited",
+        slack_channel_id="C1",
+        slack_dm_channel_id="D1",
+        slack_dm_message_ts="4.0",
+        awaiting_ready=True,
+    )
+    request.pull_request = pr
+    lookup = AsyncMock(return_value="https://slack.example.com/dm")
+    with patch("openswe.human_review.requests.get_slack_permalink", lookup):
+        links = [await request.permalink(viewer) for viewer in (author, other, None)]
+    assert links == ["https://slack.example.com/dm", "", ""]
+    lookup.assert_awaited_once_with("D1", "4.0")
+
+
+async def test_the_author_dm_link_survives_a_failed_permalink_lookup() -> None:
+    from openswe.slack.links import SlackLink
+
+    author = User()
+    pr = PullRequest(owner="lc", repo="repo", number=7, author_user_id=author.id)
+    request = HumanReviewRequest(
+        pull_request_id=pr.id,
+        head_sha="abc",
+        kind="expedited",
+        slack_dm_channel_id="D1",
+        slack_dm_message_ts="4.0",
+        awaiting_ready=True,
+    )
+    request.pull_request = pr
+    with patch("openswe.human_review.requests.get_slack_permalink", AsyncMock(return_value=None)):
+        assert await request.permalink(author) == SlackLink("D1", "4.0").url
+        assert await request.permalink(User()) == ""
 
 
 @pytest.mark.parametrize("decision", [None, "picked", "review"])
@@ -213,8 +253,8 @@ async def test_opted_out_reviewer_requires_a_verified_person_naming_them(
     source: str, user_records: FakeUserRecords, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from openswe.human_review import standard
+    from openswe.human_review.coverage import Coverage
     from openswe.human_review.people import Participant
-    from openswe.human_review.picking import Coverage
 
     tool = import_module("openswe.tools.request_human_review")
     reviewer = User(identities=[UserIdentity(provider="github", external_id="2", login="grace")])
@@ -224,6 +264,9 @@ async def test_opted_out_reviewer_requires_a_verified_person_naming_them(
         pull_request_id=pr.id, head_sha="abc", kind="standard", thread_id="picker"
     )
     request.pull_request = pr
+    monkeypatch.setattr(
+        HumanReviewRequest, "recent_channel_posters", AsyncMock(return_value={reviewer.id})
+    )
     user_records.seed("profile", "grace", {"auto_human_review_enabled": False})
     config: dict[str, object] = {
         "thread_id": "picker",
@@ -267,7 +310,7 @@ async def test_opted_out_reviewer_requires_a_verified_person_naming_them(
     monkeypatch.setattr(standard, "_request_github_review", AsyncMock(return_value=True))
     monkeypatch.setattr(standard, "_schedule", AsyncMock(return_value=True))
     monkeypatch.setattr(standard, "_assignment_minutes", AsyncMock(return_value=120))
-    monkeypatch.setattr(standard, "_permalink", AsyncMock(return_value=""))
+    monkeypatch.setattr(HumanReviewRequest, "permalink", AsyncMock(return_value=""))
 
     @asynccontextmanager
     async def locked(*_: object) -> AsyncIterator[tuple[None, HumanReviewRequest]]:
@@ -289,20 +332,28 @@ async def test_opted_out_reviewer_requires_a_verified_person_naming_them(
 
 
 @pytest.mark.parametrize(
-    ("local_time", "out_of_office", "named", "allowed"),
+    ("local_time", "out_of_office", "named", "recent_poster", "allowed", "dms"),
     [
-        ("2026-10-22T03:00:00", False, False, False),
-        ("2026-10-22T09:00:00", False, False, True),
-        ("2026-10-22T12:00:00", True, False, False),
-        ("2026-10-22T03:00:00", False, True, True),
+        ("2026-10-22T03:00:00", False, False, True, False, True),
+        ("2026-10-22T09:00:00", False, False, True, True, True),
+        ("2026-10-22T09:00:00", False, False, True, True, False),
+        ("2026-10-22T12:00:00", True, False, True, False, True),
+        ("2026-10-22T03:00:00", False, True, False, True, True),
+        ("2026-10-22T09:00:00", False, False, False, False, True),
     ],
 )
 async def test_assignment_enforces_availability_before_contacting_reviewer(
-    local_time: str, out_of_office: bool, named: bool, allowed: bool
+    local_time: str,
+    out_of_office: bool,
+    named: bool,
+    recent_poster: bool,
+    allowed: bool,
+    dms: bool,
 ) -> None:
     from openswe.human_review import standard
+    from openswe.human_review.coverage import Coverage
     from openswe.human_review.people import Participant
-    from openswe.human_review.picking import Coverage, ReviewerAvailability
+    from openswe.slack.availability import ReviewerAvailability
 
     zone = ZoneInfo("America/New_York")
     now = datetime.fromisoformat(local_time).replace(tzinfo=zone).astimezone(UTC)
@@ -321,11 +372,17 @@ async def test_assignment_enforces_availability_before_contacting_reviewer(
         yield None, request
 
     with (
+        patch.object(
+            HumanReviewRequest,
+            "recent_channel_posters",
+            AsyncMock(return_value={user.id} if recent_poster else set()),
+        ),
         patch.object(standard, "datetime", wraps=datetime) as clock,
         patch.object(standard, "_github_approvers", AsyncMock(return_value=[])),
         patch.object(Coverage, "load", AsyncMock(return_value=None)),
         patch.object(User, "for_login", AsyncMock(return_value=user)),
         patch.object(standard.PROFILES, "allows_auto_human_review", AsyncMock(return_value=True)),
+        patch.object(standard.PROFILES, "allows_review_request_dms", AsyncMock(return_value=dms)),
         patch.object(
             ReviewerAvailability,
             "for_user",
@@ -341,7 +398,7 @@ async def test_assignment_enforces_availability_before_contacting_reviewer(
         patch.object(standard, "send_dm_with_location", AsyncMock(return_value=None)) as dm,
         patch.object(standard, "_schedule", AsyncMock(return_value=True)) as schedule,
         patch.object(standard, "_assignment_minutes", AsyncMock(return_value=120)),
-        patch.object(standard, "_permalink", AsyncMock(return_value="")),
+        patch.object(HumanReviewRequest, "permalink", AsyncMock(return_value="")),
     ):
         clock.now.return_value = now
         result = await standard.assign(request, "grace", "nearby reviewer", replace=named)
@@ -350,9 +407,16 @@ async def test_assignment_enforces_availability_before_contacting_reviewer(
     assert bool(request.participants) is allowed
     if allowed:
         github_review.assert_awaited_once()
-        dm.assert_awaited_once()
+        assert dm.await_count == int(dms)
     else:
-        assert ("out of office" if out_of_office else "outside working hours") in result.error
+        expected = (
+            "has not authored a top-level message"
+            if not recent_poster
+            else "out of office"
+            if out_of_office
+            else "outside working hours"
+        )
+        assert expected in result.error
         github_review.assert_not_awaited()
         dm.assert_not_awaited()
         schedule.assert_not_awaited()
@@ -464,7 +528,7 @@ def test_requests_are_refused_while_the_pull_request_is_not_reviewable(
 
 
 @pytest.mark.parametrize("minutes,expected", [(120, "waiting"), (15, "woken")])
-async def test_unclaimed_deadline_honors_workspace_timeout(minutes: int, expected: str) -> None:
+async def test_unclaimed_deadline_honors_global_timeout(minutes: int, expected: str) -> None:
     from openswe.human_review.standard import AutoAssignResult, run_deadline
 
     pr = PullRequest(owner="lc", repo="repo", number=7, author="ada")
@@ -476,17 +540,19 @@ async def test_unclaimed_deadline_honors_workspace_timeout(minutes: int, expecte
     )
     request.created_at = datetime.now(UTC) - timedelta(minutes=30)
     request.pull_request = pr
+    assign = AsyncMock(return_value=AutoAssignResult("woken"))
     with (
         patch.object(HumanReviewRequest, "get", AsyncMock(return_value=request)),
         patch("openswe.human_review.standard._assignment_minutes", AsyncMock(return_value=minutes)),
         patch("openswe.human_review.standard._schedule", AsyncMock(return_value=True)),
         patch("openswe.human_review.standard._github_approvers", AsyncMock(return_value=[])),
-        patch(
-            "openswe.human_review.standard.start_auto_assign",
-            AsyncMock(return_value=AutoAssignResult("woken")),
-        ),
+        patch("openswe.human_review.standard.start_auto_assign", assign),
     ):
         assert await run_deadline(str(request.id), "unclaimed") == {"status": expected}
+    if expected == "woken":
+        # The deadline, not whoever asked for the review, starts the picker's run.
+        assert assign.await_args is not None
+        assert assign.await_args.kwargs["origin"] == "automation"
 
 
 def test_nothing_merges_without_an_approval() -> None:
@@ -564,6 +630,90 @@ async def test_merged_card_names_only_actual_approvers(
         assert "linus" not in message
 
 
+@pytest.mark.parametrize("change_at", ["before", "render", "write"])
+@pytest.mark.parametrize("change", ["merged", "summary", "reviewer", "detail"])
+async def test_late_refresh_preserves_the_current_card(
+    change_at: str, change: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pr = await PullRequest(owner="lc", repo="repo", number=7, author="ada").save()
+    request = await HumanReviewRequest(
+        pull_request_id=pr.id,
+        head_sha="abc",
+        kind="standard",
+        slack_channel_id="C1",
+        slack_message_ts="1.0",
+        tldr="Original summary",
+    ).save()
+    paused = asyncio.Event()
+    resume = asyncio.Event()
+    written: tuple[str, list[JsonObject]] | None = None
+
+    async def files(card: ReviewCard) -> list[ChangedFile]:
+        if change_at == "render" and not paused.is_set():
+            paused.set()
+            await resume.wait()
+        return []
+
+    async def update(
+        channel_id: str, message_ts: str, text: str, *, blocks: list[JsonObject]
+    ) -> None:
+        nonlocal written
+        if change_at == "write" and not paused.is_set():
+            paused.set()
+            await resume.wait()
+        written = text, blocks
+
+    async def change_card() -> None:
+        if change == "merged":
+            await ReviewCard(request).retire("merged", "merged")
+            return
+        async with HumanReviewRequest.locked(request.id) as (_, row):
+            assert row is not None
+            if change == "summary":
+                row.tldr = "Updated summary"
+            elif change == "detail":
+                row.detail = "Updated merge hold"
+            else:
+                user = User(display_name="grace")
+                reviewer = HumanReviewParticipant(user_id=user.id, decision="review")
+                reviewer.user = user
+                row.participants.append(reviewer)
+        await ReviewCard(request).refresh()
+
+    monkeypatch.setattr("openswe.human_review.lifecycle.update_slack_message", update)
+    monkeypatch.setattr(ReviewCard, "_review_states", AsyncMock(return_value={}))
+    monkeypatch.setattr(ReviewCard, "_files", files)
+    monkeypatch.setattr(HumanReviewRequest, "author_mention", AsyncMock(return_value="@ada"))
+
+    async with asyncio.timeout(5):
+        if change_at == "before":
+            await change_card()
+            await ReviewCard(request).refresh()
+        else:
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(ReviewCard(request).refresh())
+                await paused.wait()
+                await change_card()
+                resume.set()
+
+    assert written is not None
+    text, blocks = written
+    rendered = str(blocks)
+    if change == "merged":
+        assert "merged" in text
+        assert "Review requested" not in text
+        assert not any(block["type"] == "actions" for block in blocks)
+    else:
+        assert "Review requested" in text
+        if change == "summary":
+            assert "Updated summary" in rendered
+            assert "Original summary" not in rendered
+        elif change == "detail":
+            assert "Updated merge hold" in rendered
+        else:
+            assert "@grace" in rendered
+
+
 @pytest.mark.parametrize("available", [True, False])
 async def test_open_card_counts_only_non_test_files(available: bool) -> None:
     pr = PullRequest(
@@ -593,6 +743,34 @@ async def test_open_card_counts_only_non_test_files(available: bool) -> None:
     assert ("+10 −5 in 1 non-test file" in rendered) is available
     assert "+110" not in rendered
     assert "−55" not in rendered
+
+
+async def test_an_open_card_reads_author_and_review_states_at_once() -> None:
+    pr = PullRequest(owner="o", repo="r", number=1, title="Fix", author="ada", changed_files=1)
+    request = HumanReviewRequest(pull_request_id=pr.id, head_sha="abc", kind="standard")
+    request.pull_request = pr
+    request.requested_by = None
+    both = asyncio.Barrier(2)
+
+    async def states() -> dict[str, str]:
+        await both.wait()
+        return {}
+
+    async def author() -> str:
+        await both.wait()
+        return "@ada"
+
+    with (
+        patch.object(
+            ReviewCard,
+            "_files",
+            AsyncMock(return_value=[ChangedFile(filename="app.py", additions=1)]),
+        ),
+        patch.object(ReviewCard, "_review_states", side_effect=states),
+        patch.object(HumanReviewRequest, "author_mention", side_effect=author),
+    ):
+        _, blocks = await asyncio.wait_for(ReviewCard(request)._render_standard(None), 2)
+    assert blocks
 
 
 @pytest.mark.parametrize("count", [101, 102])
@@ -674,6 +852,7 @@ def test_a_long_description_is_cut_at_a_word_with_an_ellipsis() -> None:
     assert len(line) <= SUMMARY_MAX_CHARS
     assert description.startswith(kept)
     assert description[len(kept)] in {" ", ","}
+    assert summary_line(description, limit=None) == description.strip()
 
 
 @pytest.mark.parametrize(
@@ -709,8 +888,17 @@ async def test_approved_card_collapses_without_closing_the_request(
             "openswe.human_review.lifecycle.latest_review_states", AsyncMock(return_value=states)
         ),
         patch.object(HumanReviewRequest, "author_mention", AsyncMock(return_value="<@U_ada>")),
+        patch.object(
+            ReviewCard,
+            "_files",
+            AsyncMock(side_effect=RuntimeError("GitHub files unavailable"))
+            if collapsed
+            else AsyncMock(return_value=[]),
+        ) as files,
     ):
         text, blocks = await ReviewCard(request).render(None)
+    if collapsed:
+        files.assert_not_awaited()
     assert text.startswith(":white_check_mark: ") is collapsed
     assert (len(blocks) == 1) is collapsed
     assert "<@U_ada>" in str(block_payload(blocks))
@@ -799,18 +987,29 @@ async def test_repo_settings_prefer_the_pull_request_head() -> None:
         settings = await RepoSettings.fetch(_repo(), ref="abc123")
     assert settings.review_channel == "#eng-reviews"
     _client, _method, url = request.await_args.args
-    assert url.endswith("/repos/o/r/contents/.open-swe/settings.json")
+    assert url.endswith("/repos/o/r/contents/.robin/settings.json")
     assert request.await_args.kwargs["params"] == {"ref": "abc123"}
 
 
-async def test_repo_settings_fall_back_to_the_default_branch() -> None:
+async def test_repo_settings_fall_back_to_legacy_then_the_default_branch() -> None:
     request = AsyncMock(
-        side_effect=[_response(404), _response(200, '{"reviewChannel": "#eng-reviews"}')]
+        side_effect=[
+            *[_response(404)] * 3,
+            _response(200, '{"reviewChannel": "#eng-reviews"}'),
+        ]
     )
     with patch("openswe.github.http.github_request", request):
         settings = await RepoSettings.fetch(_repo(), ref="abc123")
     assert settings.review_channel == "#eng-reviews"
-    assert [call.kwargs["params"] for call in request.await_args_list] == [{"ref": "abc123"}, None]
+    assert [
+        (call.args[2].split("/contents/")[1], call.kwargs["params"])
+        for call in request.await_args_list
+    ] == [
+        (".robin/settings.json", {"ref": "abc123"}),
+        (".open-swe/settings.json", {"ref": "abc123"}),
+        (".robin/settings.json", None),
+        (".open-swe/settings.json", None),
+    ]
 
 
 @pytest.mark.parametrize(("status", "text"), [(404, ""), (200, "not json"), (200, "[]")])
@@ -819,6 +1018,17 @@ async def test_missing_or_invalid_settings_have_no_review_channel(status: int, t
         "openswe.github.http.github_request", AsyncMock(return_value=_response(status, text))
     ):
         assert (await RepoSettings.fetch(_repo())).review_channel == ""
+
+
+@pytest.mark.parametrize(("status", "text"), [(200, ""), (200, "not json"), (500, "")])
+async def test_unusable_robin_settings_never_fall_back_to_legacy(status: int, text: str) -> None:
+    request = AsyncMock(
+        side_effect=[_response(status, text), _response(200, '{"reviewChannel": "#old"}')]
+    )
+    with patch("openswe.github.http.github_request", request):
+        settings = await RepoSettings.fetch(_repo())
+    assert settings.review_channel == ""
+    assert request.await_count == 1
 
 
 @pytest.mark.usefixtures("registry_db")
@@ -944,17 +1154,24 @@ async def test_assignment_inbox_is_personal_and_hides_completed_or_inaccessible_
             updated_at="",
         )
 
-    async def pull(self) -> dict[str, object]:
-        author = "ada" if self.number == 10 else "grace"
-        return {
-            "state": "open",
-            "user": {"login": author},
-            "title": f"PR {self.number}",
-            "draft": self.number == 31,
-        }
-
-    async def states(pull, author):
-        return {5: {"ada": "APPROVED"}, 20: {"ada": "CHANGES_REQUESTED"}}.get(pull.number, {})
+    async def graphql(
+        github: GitHubClient, query: str, variables: Mapping[str, object], *, partial: bool
+    ) -> dict[str, object]:
+        assert variables["reviewer"] == "ada"
+        data: dict[str, object] = {}
+        for key, number in variables.items():
+            if key.startswith("number"):
+                review = [{"state": "APPROVED"}] if number == 5 else []
+                data[f"pull{key.removeprefix('number')}"] = {
+                    "pullRequest": {
+                        "state": "OPEN",
+                        "isDraft": number == 31,
+                        "title": f"PR {number}",
+                        "author": {"login": "ada" if number == 10 else "grace"},
+                        "reviews": {"nodes": review},
+                    }
+                }
+        return data
 
     async def tentative(self) -> frozenset[UUID]:
         return frozenset({ada.id} if self.request.pull_request.number in {7, 14} else {grace.id})
@@ -962,13 +1179,12 @@ async def test_assignment_inbox_is_personal_and_hides_completed_or_inaccessible_
     with (
         patch("openswe.human_review.routes.GitHubClient.as_user", as_user),
         patch.object(RepoClient, "info", info),
-        patch.object(PullRequestClient, "pull", pull),
+        patch.object(GitHubClient, "graphql", graphql),
         patch.object(TentativeReviewers, "user_ids", tentative),
         patch(
             "openswe.human_review.review_queue.accessible_repo_full_names",
             AsyncMock(return_value=frozenset({"o/r"})),
         ),
-        patch("openswe.human_review.review_queue.latest_review_states", states),
         patch("openswe.human_review.review_queue.list_open_pull_requests", search),
     ):
         result = await api_review_assignments(page=1, session={"sub": "ada"})
@@ -980,6 +1196,54 @@ async def test_assignment_inbox_is_personal_and_hides_completed_or_inaccessible_
         (22, "draft"),
         (30, "speculative"),
     ]
+
+
+async def test_queued_pull_requests_are_read_in_batched_graphql() -> None:
+    from openswe.github.pull_request_status import QueuedPullRequestRead
+
+    queries: list[Mapping[str, object]] = []
+
+    async def graphql(
+        github: GitHubClient, query: str, variables: Mapping[str, object], *, partial: bool
+    ) -> dict[str, object]:
+        queries.append(variables)
+        return {
+            f"pull{key.removeprefix('number')}": None
+            if number == 7
+            else {
+                "pullRequest": {
+                    "state": "OPEN" if number != 8 else "CLOSED",
+                    "isDraft": False,
+                    "title": f"PR {number}",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "updatedAt": None,
+                    "author": None,
+                    "reviews": {"nodes": [{"state": "DISMISSED"}]},
+                }
+            }
+            for key, number in variables.items()
+            if key.startswith("number")
+        }
+
+    refs = [("o", "r", number) for number in range(1, 121)]
+    request = AsyncMock(side_effect=AssertionError("REST read"))
+    with (
+        patch.object(GitHubClient, "graphql", graphql),
+        patch.object(GitHubClient, "request", request),
+    ):
+        read = await QueuedPullRequestRead.read(GitHubClient(MagicMock()), refs, "ada")
+    assert [len(variables) for variables in queries] == [1 + 3 * 50, 1 + 3 * 50, 1 + 3 * 20]
+    assert read[6] is None
+    assert read[7] == QueuedPullRequestRead(
+        open=False,
+        draft=False,
+        title="PR 8",
+        created_at="2026-01-01T00:00:00Z",
+        updated_at=None,
+        author=None,
+        standing_review="DISMISSED",
+    )
+    assert [found.title if found else None for found in read[118:]] == ["PR 119", "PR 120"]
 
 
 @asynccontextmanager
@@ -1086,7 +1350,7 @@ async def test_review_request_snapshots_merge_mode_and_preserves_it_on_reuse(
     override: bool | None,
     expected: bool,
 ) -> None:
-    from openswe.dashboard.workspace_settings import WorkspaceSettings
+    from openswe.dashboard.settings import Settings
     from openswe.human_review import standard
     from openswe.human_review.standard import Origin
     from openswe.slack.channels import SlackChannel
@@ -1097,17 +1361,18 @@ async def test_review_request_snapshots_merge_mode_and_preserves_it_on_reuse(
     details = MagicMock(head_sha="abc", body="Fix")
     ref = GitHubPrRef(owner="lc", repo="repo", number=7, url=pr.url)
     with (
+        patch.object(standard.PullRequestPayload, "read", AsyncMock(return_value=details)),
         patch.object(standard, "review_blockers", AsyncMock(return_value=[])),
         patch.object(standard, "target_channel", AsyncMock(return_value=SlackChannel(id="C1"))),
         patch.object(standard, "record_pull_request", AsyncMock(return_value=(pr, details))),
         patch.object(
             standard,
-            "_workspace_settings",
-            AsyncMock(return_value=WorkspaceSettings({"human_review_auto_merge_enabled": default})),
+            "get_settings",
+            AsyncMock(return_value=Settings({"human_review_auto_merge_enabled": default})),
         ),
         patch.object(standard, "_assignment_minutes", AsyncMock(return_value=120)),
         patch.object(standard, "_schedule", AsyncMock(return_value=True)) as schedule,
-        patch.object(standard, "_permalink", AsyncMock(return_value="")),
+        patch.object(HumanReviewRequest, "permalink", AsyncMock(return_value="")),
         patch.object(ReviewCard, "post_standard", AsyncMock(return_value="1.0")),
         patch.object(
             standard.SupplementaryReviews,
@@ -1165,8 +1430,8 @@ async def test_only_auto_merge_requests_merge_when_approved(
 ) -> None:
     from openswe.expedited_review.readiness import Readiness
     from openswe.human_review import standard
+    from openswe.human_review.coverage import Coverage
     from openswe.human_review.merging import MergeResult
-    from openswe.human_review.picking import Coverage
 
     async def thread(thread_id: str) -> MagicMock | None:
         if thread_id == "deleted":

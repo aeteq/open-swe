@@ -1,30 +1,27 @@
+import { Button } from "@langchain/macaw-components/Button"
 import {
   ArrowLeftIcon,
   ArticleRegularIcon,
-  CubeRegularIcon,
   GearRegularIcon,
   InfoRegularIcon,
   SlidersHorizontalRegularIcon,
-  WarningRegularIcon,
 } from "@langchain/macaw-components/icons"
 import type { IconComponent } from "@langchain/macaw-components/Icon"
 import { ChartBarIcon } from "@phosphor-icons/react/dist/ssr/ChartBar"
-import { ChartBarHorizontalIcon } from "@phosphor-icons/react/dist/ssr/ChartBarHorizontal"
 import { FileTextIcon } from "@phosphor-icons/react/dist/ssr/FileText"
 import { FlaskIcon } from "@phosphor-icons/react/dist/ssr/Flask"
 import { GitBranchIcon } from "@phosphor-icons/react/dist/ssr/GitBranch"
 import { GitPullRequestIcon } from "@phosphor-icons/react/dist/ssr/GitPullRequest"
 import { LinkIcon } from "@phosphor-icons/react/dist/ssr/Link"
+import { ListBulletsIcon } from "@phosphor-icons/react/dist/ssr/ListBullets"
 import { PaintBrushIcon } from "@phosphor-icons/react/dist/ssr/PaintBrush"
 import { PulseIcon } from "@phosphor-icons/react/dist/ssr/Pulse"
 import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/ssr/PuzzlePiece"
 import { SparkleIcon } from "@phosphor-icons/react/dist/ssr/Sparkle"
-import { TerminalWindowIcon } from "@phosphor-icons/react/dist/ssr/TerminalWindow"
 import { UsersIcon } from "@phosphor-icons/react/dist/ssr/Users"
 import { Link, useRouterState } from "@tanstack/react-router"
 import { Fragment } from "react"
 
-import { useWorkspaceOptions } from "@/features/agents/lib/queries"
 import type { SessionUser } from "@/lib/api"
 import { SidebarUserMenu } from "@/components/SidebarUserMenu"
 import {
@@ -33,7 +30,7 @@ import {
   useSidebarLayout,
 } from "@/components/sidebar-layout"
 import { cn } from "@/lib/utils"
-import { getLastAppLocation, useHrefLinkOptions } from "@/lib/appLocation"
+import { useContextReturn } from "@/lib/contextNavigation"
 
 interface NavItem {
   to: string
@@ -72,19 +69,14 @@ const NAV: Array<NavGroup> = [
         icon: PuzzlePieceIcon,
       },
       {
-        to: "/my-settings/claude-code",
-        label: "Claude Code",
-        icon: TerminalWindowIcon,
-      },
-      {
-        to: "/my-settings/experiments",
-        label: "Experiments",
+        to: "/my-settings/feature-flags",
+        label: "Feature flags",
         icon: FlaskIcon,
       },
     ],
   },
   {
-    heading: "Workspace",
+    heading: "Robin",
     items: [
       {
         to: "/review",
@@ -98,7 +90,6 @@ const NAV: Array<NavGroup> = [
         label: "Repository Instructions",
         icon: FileTextIcon,
       },
-      { to: "/workspaces", label: "Workspaces", icon: CubeRegularIcon },
       { to: "/usage", label: "Usage", icon: ChartBarIcon },
     ],
   },
@@ -112,15 +103,14 @@ const NAV: Array<NavGroup> = [
         label: "Integrations",
         icon: PuzzlePieceIcon,
       },
-      { to: "/admin/incidents", label: "Incidents", icon: WarningRegularIcon },
       { to: "/admin/operations", label: "Operations", icon: PulseIcon },
       {
         to: "/admin/audit-logs",
         label: "Audit Logs",
         icon: ArticleRegularIcon,
       },
+      { to: "/admin/event-log", label: "Event Log", icon: ListBulletsIcon },
       { to: "/admin/users", label: "Users", icon: UsersIcon },
-      { to: "/admin/evals", label: "Evals", icon: ChartBarHorizontalIcon },
     ],
   },
   {
@@ -147,31 +137,9 @@ const ACTIVE_LINK_PROPS = {
   className: "bg-surface-level-2-hover text-primary font-medium",
 }
 
-function WorkspaceNavItems({ onNavigate }: { onNavigate: () => void }) {
-  const options = useWorkspaceOptions()
-  const workspaces = options.data?.workspaces ?? []
-  if (workspaces.length === 0) return null
-  return (
-    <div className="ml-[1.1rem] flex flex-col gap-0.5 border-l border-default pl-space-2">
-      {workspaces.map((workspace) => (
-        <Link
-          key={workspace.slug}
-          to="/workspaces/$slug"
-          params={{ slug: workspace.slug }}
-          onClick={onNavigate}
-          className={cn(LINK_CLASS, "py-space-1")}
-          activeProps={ACTIVE_LINK_PROPS}
-        >
-          <span className="truncate">{workspace.name}</span>
-        </Link>
-      ))}
-    </div>
-  )
-}
-
 export function AppSidebar({ user }: { user: SessionUser }) {
   const layout = useSidebarLayout()
-  const hrefLinkOptions = useHrefLinkOptions()
+  const settings = useContextReturn("settings")
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isDesktop =
     typeof window !== "undefined" && Boolean(window.openSweDesktop)
@@ -179,6 +147,7 @@ export function AppSidebar({ user }: { user: SessionUser }) {
   return (
     <SidebarFrame
       {...layout}
+      historyControls={false}
       className="border-r border-default bg-surface-level-2 text-primary"
     >
       <div
@@ -187,14 +156,20 @@ export function AppSidebar({ user }: { user: SessionUser }) {
           isDesktop ? "pt-13" : "pt-space-4"
         )}
       >
-        <Link
-          {...hrefLinkOptions(getLastAppLocation())}
-          className={cn(LINK_CLASS, "-mx-space-2 font-medium")}
-          onClick={layout.closeOnMobile}
+        <Button
+          size="sm"
+          color="secondary"
+          variant="plain"
+          leftDecorator={ArrowLeftIcon}
+          aria-label="Back to app"
+          className="-mx-space-2 border-0"
+          onClick={() => {
+            layout.closeOnMobile()
+            settings.returnToOrigin()
+          }}
         >
-          <ArrowLeftIcon size={16} weight="regular" />
-          <span>Back to app</span>
-        </Link>
+          Back to app
+        </Button>
         <SidebarCollapseButton onToggle={layout.toggle} />
       </div>
 
@@ -202,7 +177,7 @@ export function AppSidebar({ user }: { user: SessionUser }) {
         {NAV.filter((group) => !group.adminOnly || user.is_admin).map(
           (group) => (
             <div key={group.heading} className="flex flex-col gap-0.5">
-              <span className="px-space-2 pb-space-1 text-xxs font-medium tracking-wide text-tertiary uppercase">
+              <span className="px-space-2 pb-space-1 text-xs font-medium text-quaternary">
                 {group.heading}
               </span>
               {group.items.map((item) => {
@@ -220,9 +195,6 @@ export function AppSidebar({ user }: { user: SessionUser }) {
                       <Icon size={16} weight="regular" />
                       <span>{item.label}</span>
                     </Link>
-                    {item.to === "/workspaces" && user.is_admin && (
-                      <WorkspaceNavItems onNavigate={layout.closeOnMobile} />
-                    )}
                   </Fragment>
                 )
               })}

@@ -4,7 +4,7 @@ import json
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Final
 
-import httpx
+import httpx2
 from pydantic import JsonValue, TypeAdapter
 from starlette.datastructures import Headers
 from starlette.types import Message, Receive, Scope, Send
@@ -14,13 +14,6 @@ _DROPPED_RESPONSE_HEADERS: Final = frozenset(
     {"content-length", "transfer-encoding", "connection", "content-encoding", "keep-alive"}
 )
 _object = TypeAdapter(dict[str, JsonValue])
-
-
-def configurable_of(container: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    """``config.configurable`` of a run-create body, or an empty one."""
-    config = container.get("config")
-    configurable = config.get("configurable") if isinstance(config, dict) else None
-    return _object.validate_python(configurable) if isinstance(configurable, dict) else {}
 
 
 async def read_body(receive: Receive) -> bytes:
@@ -78,7 +71,7 @@ def remote_path(scope: Scope) -> str:
 
 
 async def forward(
-    http: httpx.AsyncClient,
+    http: httpx2.AsyncClient,
     scope: Scope,
     send: Send,
     body: bytes,

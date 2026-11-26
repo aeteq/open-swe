@@ -1,6 +1,5 @@
 import { Input } from "@langchain/macaw-components/Input"
 import { Button } from "@langchain/macaw-components/Button"
-import { LaptopRegularIcon } from "@langchain/macaw-components/icons"
 import { useRef, useState } from "react"
 import {
   ContextMenu,
@@ -13,12 +12,11 @@ import {
   DropdownMenuTrigger,
 } from "@langchain/macaw-components/DropdownMenu"
 import { IconButton } from "@langchain/macaw-components/IconButton"
+import { Skeleton } from "@/components/Skeleton"
 import { Tooltip } from "@langchain/macaw-components/Tooltip"
 import { DotsThreeIcon } from "@phosphor-icons/react/dist/ssr/DotsThree"
 import { FolderIcon } from "@phosphor-icons/react/dist/ssr/Folder"
-import { TerminalIcon } from "@phosphor-icons/react/dist/ssr/Terminal"
 
-import { useLocalThread } from "@/features/agents/lib/desktopLocal"
 import { useSidebarPrefs } from "@/features/agents/lib/sidebarPrefs"
 
 import { useSidebarCollapsed } from "@/components/sidebar-layout"
@@ -36,23 +34,21 @@ import {
   useSetAgentThreadViewed,
   usePinAgentThread,
   useResolveAgentThread,
-  useShareThreadWithWorkspace,
+  useShareThread,
   useSidebarPinnedThreads,
   useSidebarRepos,
 } from "@/features/agents/lib/queries"
 import { copyPageLink } from "@/features/reviews/lib/copyText"
 import type { ThreadVisibility } from "@/lib/api"
 import { useSession } from "@/lib/session"
-import { reportError } from "@/lib/errorReporting"
 import { cn } from "@/lib/utils"
 
 function ThreadRepoIndicator({ thread }: { thread: AgentThread }) {
   const [open, setOpen] = useState(false)
   const { prefs } = useSidebarPrefs()
-  const session = useSession()
   const cloudRepos = useSidebarRepos({
     ...prefs.filters,
-    enabled: Boolean(session.data),
+    enabled: false,
   })
   const repo = thread.repoFullName.trim()
   const repoName =
@@ -87,48 +83,49 @@ function ThreadRepoIndicator({ thread }: { thread: AgentThread }) {
   )
 }
 
-const TARGET_ICONS = {
-  Cloud: null,
-  "This Mac": LaptopRegularIcon,
-  "Local CLI": TerminalIcon,
-}
-
 export function AgentThreadHeader({
-  title,
-  target,
   panelCollapsed,
   thread,
+  startingThread,
   onRename,
   visibility,
   onVisibilityChange,
+  loading = false,
 }: {
-  title?: string | null
-  target: keyof typeof TARGET_ICONS
   panelCollapsed: boolean
   onRename?: (title: string) => Promise<unknown>
   thread?: AgentThread
+  /** The thread is open but its summary, title included, is still on its way. */
+  loading?: boolean
+  /**
+   * A thread whose first run is still being accepted. It is laid out as the
+   * thread it is about to become, so nothing moves on arrival, but offers none
+   * of a thread's actions yet.
+   */
+  startingThread?: AgentThread
   // Visibility of a thread that does not exist yet.
   visibility?: ThreadVisibility
   onVisibilityChange?: (next: ThreadVisibility) => void
 }) {
-  const worktreeThread = useLocalThread(thread?.id ?? "")
+  const shownThread = thread ?? startingThread
+  const title = shownThread?.title
   const sidebarCollapsed = useSidebarCollapsed()
-  const TargetIcon = TARGET_ICONS[target]
   const isDesktop =
     typeof window !== "undefined" && Boolean(window.openSweDesktop)
-  const pinnedThreads = useSidebarPinnedThreads({ enabled: Boolean(thread) })
+  const pinnedThreads = useSidebarPinnedThreads({
+    enabled: Boolean(thread),
+    refetchOnMount: false,
+  })
   const pinThread = usePinAgentThread()
   const resolveThread = useResolveAgentThread()
   const deleteThread = useDeleteAgentThread()
   const setViewed = useSetAgentThreadViewed()
   const continuePrivately = useContinueThreadPrivately()
-  const shareWithWorkspace = useShareThreadWithWorkspace()
+  const shareThread = useShareThread()
   const session = useSession()
-  // A thread on its owner's machine runs commands there, so it stays private.
   const canShare = Boolean(
     thread?.ownerLogin &&
-    thread.ownerLogin.toLowerCase() === session.data?.login.toLowerCase() &&
-    !thread.sandboxBridgeClient
+    thread.ownerLogin.toLowerCase() === session.data?.login.toLowerCase()
   )
   const [shareOpen, setShareOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -183,7 +180,7 @@ export function AgentThreadHeader({
       disabledValues={
         thread.visibility === "private" && !canShare ? ["public"] : []
       }
-      busy={continuePrivately.isPending || shareWithWorkspace.isPending}
+      busy={continuePrivately.isPending || shareThread.isPending}
     />
   ) : visibility ? (
     <ThreadVisibilityMenu
@@ -240,9 +237,10 @@ export function AgentThreadHeader({
           panelCollapsed && "pr-space-8"
         )}
       >
+        {!title && loading && <Skeleton className="ml-space-2 h-4 w-40" />}
         {title && (
           <div className="flex min-w-0 items-center gap-space-1 text-sm font-medium">
-            {thread && <ThreadRepoIndicator thread={thread} />}
+            {shownThread && <ThreadRepoIndicator thread={shownThread} />}
             {draft !== null ? (
               <div className="min-w-0" style={{ width: editorWidth }}>
                 <Input
@@ -288,7 +286,13 @@ export function AgentThreadHeader({
                 <span className="truncate">{savingTitle ?? title}</span>
               </Button>
             ) : (
-              <span className="min-w-0 truncate" title={title}>
+              // Boxed and set like the rename button (Macaw's `Button` tightens
+              // tracking and leading), so the title reads the same once the
+              // thread can be renamed.
+              <span
+                className="min-w-0 truncate border border-transparent px-space-2 py-space-1 leading-[1.15] tracking-tighter"
+                title={title}
+              >
                 {title}
               </span>
             )}
@@ -318,35 +322,6 @@ export function AgentThreadHeader({
           </div>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-space-3">
-          {worktreeThread && window.openSweDesktop?.openTaskFolder && (
-            <IconButton
-              icon={FolderIcon}
-              label="Open task folder"
-              size="sm"
-              color="secondary"
-              variant="plain"
-              data-no-drag=""
-              onClick={() => {
-                void window.openSweDesktop
-                  ?.openTaskFolder?.(worktreeThread.id)
-                  .catch((error: unknown) =>
-                    reportError({
-                      title: "Couldn't open the task folder",
-                      error,
-                    })
-                  )
-              }}
-            />
-          )}
-          <span
-            role="img"
-            aria-label={`Runs on ${target}`}
-            title={target}
-            hidden={!TargetIcon}
-            className="text-icon-secondary"
-          >
-            {TargetIcon && <TargetIcon size={16} weight="regular" />}
-          </span>
           {visibilityMenu}
         </div>
       </div>
@@ -369,10 +344,10 @@ export function AgentThreadHeader({
       <ShareThreadDialog
         open={shareOpen}
         onOpenChange={setShareOpen}
-        busy={shareWithWorkspace.isPending}
+        busy={shareThread.isPending}
         running={thread.status === "running"}
         onConfirm={() =>
-          shareWithWorkspace.mutate(thread.id, {
+          shareThread.mutate(thread.id, {
             onSuccess: () => setShareOpen(false),
           })
         }
@@ -380,18 +355,8 @@ export function AgentThreadHeader({
       <DeleteThreadDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        threadTitle={title ?? ""}
         isDeleting={isDeleting}
         onConfirm={confirmDelete}
-        detail={
-          worktreeThread
-            ? worktreeThread.managedTaskFolder
-              ? `This deletes the conversation. Its task files are kept at ${worktreeThread.cwd}.`
-              : worktreeThread.ownedWorktrees.length
-                ? "This deletes the worktree Robin created for it, including any uncommitted changes in it. Its branch and commits are kept."
-                : "This removes its history but does not revert changes made to your repository."
-            : undefined
-        }
       />
     </>
   )

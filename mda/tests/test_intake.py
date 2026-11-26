@@ -2,6 +2,7 @@ import asyncio
 import socket
 import uuid
 from typing import cast
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -234,8 +235,9 @@ async def test_a_session_turn_starts_the_run_the_backend_planned(
         "@Open SWE fix it",
         "comment-1",
     )
-    # Nothing named, nothing remembered: the instance's default, in the workspace that owns it.
-    assert (plan.repository, plan.workspace) == ("acme/api", None)
+    # Nothing named, nothing remembered: the instance's default.
+    assert plan.repository == "acme/api"
+    assert "workspace" not in plan.model_dump()
     # One run on the session's own thread: a list, as a dict alone would be state.
     assert isinstance(result, list)
     (run,) = cast(list[ChannelRun], result)
@@ -329,33 +331,35 @@ def test_a_reply_named_only_by_id_never_borrows_the_creators_identity(
     assert (turn.turn.author.id, turn.turn.author.email) == (author_id, author_email)
 
 
-_PERSONAL = RepositoryChoice(repository="ada/personal", workspace="ada-space")
+_PERSONAL = RepositoryChoice.model_validate(
+    {"repository": "ada/personal", "workspace": "ada-space"}
+)
 
 
 @pytest.mark.parametrize(
     ("body", "facts", "chosen"),
     [
-        # The turn names it: that wins, in the thread's workspace.
+        # The turn names it: that wins; legacy routing fields are ignored.
         (
             "fix it in repo:acme/web",
             {"thread_repository": "acme/api", "thread_workspace": "core"},
-            ("acme/web", "core"),
+            "acme/web",
         ),
         # A bare name takes the default owner.
-        ("fix it in repo web", {}, ("acme/web", None)),
+        ("fix it in repo web", {}, "acme/web"),
         # A follow-up works where the session does.
-        ("now add a test", {"thread_repository": "acme/api"}, ("acme/api", None)),
+        ("now add a test", {"thread_repository": "acme/api"}, "acme/api"),
         # The issue names it explicitly; an uploaded screenshot is no repository.
-        ("fix it", {"issue": "Crashes in repo:acme/app"}, ("acme/app", None)),
-        # The author's default, in the workspace whose default it is.
-        ("fix it", {"personal_default": _PERSONAL}, ("ada/personal", "ada-space")),
+        ("fix it", {"issue": "Crashes in repo:acme/app"}, "acme/app"),
+        # The author's default.
+        ("fix it", {"personal_default": _PERSONAL}, "ada/personal"),
         # The instance's default comes last.
-        ("fix it", {"instance_default": "acme/main"}, ("acme/main", None)),
+        ("fix it", {"instance_default": "acme/main"}, "acme/main"),
     ],
     ids=["named", "bare-name", "remembered", "issue", "personal", "instance"],
 )
 def test_a_turn_works_in_the_repository_it_names_remembers_or_prefers(
-    body: str, facts: dict[str, object], chosen: tuple[str, str | None]
+    body: str, facts: dict[str, object], chosen: str
 ) -> None:
     issue_text = cast(str, facts.pop("issue", "![shot](https://github.com/user-attachments/x)"))
     event = _created(body, issue={"id": "issue-1", "title": "Bug", "description": issue_text})
@@ -367,7 +371,7 @@ def test_a_turn_works_in_the_repository_it_names_remembers_or_prefers(
         )
     )
     assert isinstance(choice, RepositoryChoice)
-    assert (choice.repository, choice.workspace) == chosen
+    assert choice.repository == chosen
 
 
 @pytest.mark.asyncio
@@ -537,6 +541,120 @@ async def test_an_issue_event_starts_the_automations_it_fires_on_threads_of_thei
             "id": str(uuid.uuid5(uuid.NAMESPACE_URL, automation_id)),
         }
         assert run.get("context") == {"__run_token": "signed"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expanded", [True, False])
+@pytest.mark.parametrize(
+    "state_type", ["unstarted", "completed", "canceled", "duplicate", "triage"]
+)
+async def test_acceptance_uses_the_destination_state(
+    monkeypatch: pytest.MonkeyPatch, expanded: bool, state_type: str
+) -> None:
+    accepted = LinearAutomation(
+        id="accepted",
+        prompt="Fix the SDK issue.",
+        triggers=[LinearTrigger(events=["issue.accepted", "issue.labeled"], labels=["sdk"])],
+    )
+    backend = _Backend(rules=[accepted])
+    monkeypatch.setattr(linear, "ask_backend", backend)
+    monkeypatch.setattr(automations, "ask_backend", backend)
+    payload = _issue("update", labels={"sdk-id": "sdk"})
+    payload["updatedFrom"] = {"triagedAt": None}
+    data = cast(dict[str, object], payload["data"])
+    data.update(triagedAt="2026-11-06T10:00:00Z", stateId="todo-state")
+    if expanded:
+        data["state"] = {"type": state_type, "name": "Destination"}
+    monkeypatch.setattr(automations.connections, "get", AsyncMock(return_value="test-token"))
+    post = AsyncMock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "workflowState": {
+                        "id": "todo-state",
+                        "type": state_type,
+                        "name": "Destination",
+                        "team": {"key": "ENG"},
+                    }
+                }
+            },
+        )
+    )
+    monkeypatch.setattr(automations.httpx2.AsyncClient, "post", post)
+
+    result = await automations.start_automations(_issue_event(payload), _THREAD)
+
+    assert bool(result) is (state_type in {"unstarted", "completed"})
+    if result:
+        (planned,) = backend.automations
+        assert planned.event == "issue.accepted"
+        assert "State: Destination" in planned.prompt
+    assert post.await_count == (0 if expanded else 1)
+    if not expanded:
+        assert post.call_args.kwargs["json"]["variables"] == {"id": "todo-state"}
+
+    backend.automations.clear()
+    payload["updatedFrom"] = {"triagedAt": "2026-11-05T10:00:00Z"}
+    assert await automations.start_automations(_issue_event(payload), _THREAD) is None
+    assert backend.automations == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (200, {"errors": [{"message": "denied"}]}),
+        (
+            200,
+            {
+                "data": {
+                    "workflowState": {
+                        "id": "todo-state",
+                        "type": "unstarted",
+                        "team": {"key": "OTHER"},
+                    }
+                }
+            },
+        ),
+        (503, {}),
+    ],
+)
+async def test_an_unresolved_acceptance_still_starts_the_label_automations(
+    monkeypatch: pytest.MonkeyPatch, status: int, body: dict[str, object]
+) -> None:
+    backend = _Backend(
+        rules=[
+            LinearAutomation(
+                id="accepted",
+                prompt="Fix it",
+                triggers=[LinearTrigger(events=["issue.accepted"])],
+            ),
+            LinearAutomation(
+                id="labeled",
+                prompt="Look at the SDK issue.",
+                triggers=[LinearTrigger(events=["issue.labeled"], labels=["sdk"])],
+            ),
+        ]
+    )
+    monkeypatch.setattr(linear, "ask_backend", backend)
+    monkeypatch.setattr(automations, "ask_backend", backend)
+    monkeypatch.setattr(automations.connections, "get", AsyncMock(return_value="test-token"))
+    monkeypatch.setattr(
+        automations.httpx2.AsyncClient,
+        "post",
+        AsyncMock(return_value=httpx.Response(status, json=body)),
+    )
+    payload = _issue("update", labels={"sdk-id": "sdk"})
+    payload["updatedFrom"] = {"triagedAt": None, "labelIds": []}
+    cast(dict[str, object], payload["data"]).update(
+        triagedAt="2026-11-06T10:00:00Z", stateId="todo-state"
+    )
+
+    assert await automations.start_automations(_issue_event(payload), _THREAD)
+
+    (planned,) = backend.automations
+    assert (planned.automation_id, planned.event) == ("labeled", "issue.labeled")
 
 
 @pytest.mark.asyncio

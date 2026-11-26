@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { AutomationEditor } from "./AutomationEditor"
+import { localTimeZone } from "@/features/automations/lib/cron"
 import { useSession } from "@/lib/session"
 
 const mocks = vi.hoisted(() => ({
@@ -14,15 +15,28 @@ const mocks = vi.hoisted(() => ({
   triggerMutate: vi.fn(),
   navigate: vi.fn(),
   triggerPending: false,
-  workspaces: [
-    { slug: "default", name: "Default", repos: [], is_default: true },
-    { slug: "oss", name: "OSS", repos: ["acme/oss"], is_default: false },
-    { slug: "core", name: "Core", repos: [], is_default: false },
-  ],
+  repositories: [] as Array<{
+    full_name: string
+    private: boolean
+    archived: boolean
+  }>,
 }))
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+  Link: ({
+    children,
+    to,
+    params,
+    ...props
+  }: {
+    children?: React.ReactNode
+    to: string
+    params?: { threadId: string }
+  }) => (
+    <a {...props} href={to.replace("$threadId", params?.threadId ?? "")}>
+      {children}
+    </a>
+  ),
   useNavigate: () => mocks.navigate,
 }))
 vi.mock("@/features/agents/lib/queries", () => ({
@@ -45,9 +59,6 @@ vi.mock("@/features/agents/lib/queries", () => ({
     isPending: mocks.triggerPending,
     mutate: mocks.triggerMutate,
   }),
-  useWorkspaceOptions: () => ({
-    data: { default_slug: "default", workspaces: mocks.workspaces },
-  }),
 }))
 vi.mock("@/features/agents/lib/provider/useModelOptions", () => ({
   useModelOptions: () => ({ models: [], defaultSelection: null }),
@@ -56,7 +67,7 @@ vi.mock("@/features/automations/lib/useUnsavedChangesWarning", () => ({
   useUnsavedChangesWarning: () => vi.fn(),
 }))
 vi.mock("@/lib/profile", () => ({
-  useRepos: () => ({ data: { repositories: [] } }),
+  useRepos: () => ({ data: { repositories: mocks.repositories } }),
 }))
 vi.mock("@/lib/session", () => ({
   useSession: vi.fn(),
@@ -81,28 +92,50 @@ vi.mock("@/features/settings/components/RepoSelector", () => ({
 vi.mock("@/features/automations/components/AutomationRuns", () => ({
   AutomationRuns: () => <div />,
 }))
-vi.mock("@/features/automations/components/TriggerMenu", () => ({
-  TriggerMenu: ({
-    onGitHub,
-    onLinear,
-  }: {
-    onGitHub?: () => void
-    onLinear?: () => void
-  }) =>
-    onGitHub ? (
+vi.mock(
+  "@/features/automations/components/TriggerFields",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/features/automations/components/TriggerFields")
+    >()),
+    TriggerKindMenu: ({
+      onChange,
+    }: {
+      onChange: (kind: "github" | "linear") => void
+    }) => (
       <>
-        <button onClick={onGitHub}>Add GitHub trigger</button>
-        <button onClick={onLinear}>Add Linear trigger</button>
+        <button onClick={() => onChange("github")}>Use GitHub event</button>
+        <button onClick={() => onChange("linear")}>Use Linear issue</button>
       </>
-    ) : null,
-}))
+    ),
+  })
+)
+
+/** Adds a trigger with the + button and switches it to `kind` in its type menu. */
+function addTrigger(kind: "GitHub event" | "Linear issue") {
+  fireEvent.click(screen.getByRole("button", { name: "Add trigger" }))
+  fireEvent.click(
+    screen.getAllByRole("button", { name: `Use ${kind}` }).at(-1)!
+  )
+}
 vi.mock("@/features/agents/components/ModelPicker", () => ({
   ModelPicker: () => <div />,
 }))
+const ORIGINAL_TZ = process.env.TZ
+
+/** Runs the test as a viewer whose browser is in `timezone`. */
+function viewInTimeZone(timezone: string) {
+  process.env.TZ = timezone
+}
+
 afterEach(() => {
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ
+  else process.env.TZ = ORIGINAL_TZ
   cleanup()
+  vi.restoreAllMocks()
   vi.clearAllMocks()
   mocks.triggerPending = false
+  mocks.repositories = []
 })
 
 const TEMPLATE = {
@@ -126,14 +159,111 @@ const SCHEDULE = {
   prompt: "Check dependencies",
   schedule: "0 9 * * *",
   triggers: [{ id: "trigger_1", kind: "schedule" as const, cron: "0 9 * * *" }],
-  scope: "workspace" as const,
-  workspace: "default",
+  scope: "system" as const,
   adminThread: false,
   model: "Default",
   enabled: false,
 }
 
 describe("AutomationEditor", () => {
+  it("keeps legacy schedules in UTC when another field is edited", () => {
+    viewInTimeZone("Europe/London")
+    signInAsAdmin()
+    render(<AutomationEditor mode="edit" schedule={SCHEDULE} />, {
+      wrapper: TooltipProvider,
+    })
+
+    expect(
+      screen.getByRole("combobox", { name: "Time zone" }).textContent
+    ).toContain("UTC")
+    fireEvent.change(screen.getByLabelText("Automation name"), {
+      target: { value: "Renamed" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    expect(mocks.updateMutate.mock.calls[0]?.[0].body.triggers).toEqual([
+      { kind: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+    ])
+  })
+
+  it("edits one schedule's time zone without changing another trigger's zone or cron", () => {
+    viewInTimeZone("Europe/London")
+    signInAsAdmin()
+    render(
+      <AutomationEditor
+        mode="edit"
+        schedule={{
+          ...SCHEDULE,
+          triggers: [
+            {
+              id: "morning",
+              kind: "schedule",
+              cron: "0 9 * * *",
+              timezone: "America/New_York",
+            },
+            {
+              id: "monthly",
+              kind: "schedule",
+              cron: "30 2 1 * *",
+              timezone: "Asia/Kolkata",
+            },
+          ],
+        }}
+      />,
+      { wrapper: TooltipProvider }
+    )
+
+    // A zone saved elsewhere stays selected, and offered, until the viewer picks another.
+    const [morning] = screen.getAllByRole("combobox", { name: "Time zone" })
+    expect(morning!.textContent).toMatch(/E[SD]T/)
+    fireEvent.click(morning!)
+    fireEvent.click(
+      screen.getByRole("option", { name: /Your time zone \(Europe\/London\)/ })
+    )
+    // Picking their own zone leaves the picker in place, so it can be changed back.
+    expect(morning!.textContent).toMatch(/GMT|BST/)
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    expect(mocks.updateMutate.mock.calls[0]?.[0].body.triggers).toEqual([
+      { kind: "schedule", cron: "0 9 * * *", timezone: "Europe/London" },
+      { kind: "schedule", cron: "30 2 1 * *", timezone: "Asia/Kolkata" },
+    ])
+  })
+
+  it("keeps a schedule's time when its frequency changes and back", () => {
+    signInAsAdmin()
+    render(
+      <AutomationEditor
+        mode="edit"
+        schedule={{
+          ...SCHEDULE,
+          triggers: [
+            {
+              id: "afternoon",
+              kind: "schedule",
+              cron: "30 14 * * *",
+              timezone: "UTC",
+            },
+          ],
+        }}
+      />,
+      { wrapper: TooltipProvider }
+    )
+
+    const repeats = screen.getByRole("combobox", { name: "Repeats" })
+    fireEvent.click(repeats)
+    fireEvent.click(screen.getByRole("option", { name: "Hourly" }))
+    fireEvent.click(repeats)
+    fireEvent.click(screen.getByRole("option", { name: "Custom (cron)" }))
+    fireEvent.click(repeats)
+    fireEvent.click(screen.getByRole("option", { name: "Daily" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    expect(mocks.updateMutate.mock.calls[0]?.[0].body.triggers).toEqual([
+      { kind: "schedule", cron: "30 14 * * *", timezone: "UTC" },
+    ])
+  })
+
   it("runs a saved automation, including a paused one, and opens its thread", () => {
     signInAsAdmin()
     mocks.triggerMutate.mockImplementationOnce(
@@ -183,13 +313,19 @@ describe("AutomationEditor", () => {
     ).toBe(true)
   })
 
-  it("shows the admin-thread checkbox only to admins", () => {
+  it("offers system automations and admin threads only to admins", () => {
     vi.mocked(useSession).mockReturnValue({
       data: { is_admin: true },
     } as unknown as ReturnType<typeof useSession>)
 
-    const adminMarkup = renderToStaticMarkup(<AutomationEditor mode="create" />)
+    const adminMarkup = renderToStaticMarkup(
+      <TooltipProvider>
+        <AutomationEditor mode="create" />
+      </TooltipProvider>
+    )
 
+    // An admin's own automation may be an admin thread too, not only a system one.
+    expect(adminMarkup).toContain("System automation")
     expect(adminMarkup).toContain("Run as admin thread")
 
     vi.mocked(useSession).mockReturnValue({
@@ -197,115 +333,55 @@ describe("AutomationEditor", () => {
     } as unknown as ReturnType<typeof useSession>)
 
     const memberMarkup = renderToStaticMarkup(
-      <AutomationEditor mode="create" />
-    )
-
-    expect(memberMarkup).not.toContain("Run as admin thread")
-    expect(memberMarkup).toContain("This workspace automation is read-only")
-    expect(memberMarkup).not.toContain("Save changes")
-  })
-
-  it("shows the workspace an existing automation runs in", () => {
-    vi.mocked(useSession).mockReturnValue({
-      data: { is_admin: true },
-    } as unknown as ReturnType<typeof useSession>)
-
-    const markup = renderToStaticMarkup(
       <TooltipProvider>
-        <AutomationEditor
-          mode="edit"
-          schedule={{
-            id: "sched_1",
-            name: "Nightly",
-            prompt: "Check dependencies",
-            schedule: "0 9 * * *",
-            triggers: [
-              { id: "trigger_1", kind: "schedule", cron: "0 9 * * *" },
-            ],
-            scope: "workspace",
-            workspace: "core",
-            adminThread: false,
-            model: "Default",
-            enabled: true,
-          }}
-        />
+        <AutomationEditor mode="create" />
       </TooltipProvider>
     )
 
-    expect(markup).toContain(">Core<")
-    expect(markup).not.toContain(">OSS<")
+    expect(memberMarkup).not.toContain("System automation")
+    expect(memberMarkup).not.toContain("Run as admin thread")
+    expect(memberMarkup).toContain("Auto")
+    expect(memberMarkup).not.toContain("tokens")
+    expect(memberMarkup).not.toContain("Save changes")
   })
 
-  it("starts a new automation in the default workspace", () => {
+  it("explains Slack history access when choosing the automation owner", () => {
     signInAsAdmin()
     render(<AutomationEditor mode="create" template={TEMPLATE} />, {
       wrapper: TooltipProvider,
     })
 
+    expect(screen.getByText(/Personal runs are private/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox", { name: "System automation" }))
+    expect(screen.getByText(/Scheduled and test runs of system/)).toBeTruthy()
+    expect(screen.getByText(/workspace bot must have access/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("checkbox", { name: "System automation" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+    expect(mocks.createMutate.mock.calls[0]?.[0].system).toBe(false)
+  })
+
+  it("shows a saved automation error and its latest run separately", () => {
+    signInAsAdmin()
+    render(
+      <AutomationEditor
+        mode="edit"
+        schedule={{
+          ...SCHEDULE,
+          lastError: "Permission denied",
+          lastThreadId: "previous-run",
+        }}
+      />,
+      { wrapper: TooltipProvider }
+    )
+
+    expect(screen.getByText("Latest automation error")).toBeTruthy()
+    expect(screen.getByText("Permission denied")).toBeTruthy()
     expect(
-      screen.getByRole("button", { name: "Workspace" }).textContent
-    ).toContain("Default")
-    fireEvent.click(screen.getByRole("button", { name: "Create" }))
-
-    expect(mocks.createMutate.mock.calls[0]?.[0]).toMatchObject({
-      workspace: "default",
-    })
+      screen.getByRole("link", { name: "Open latest run" }).getAttribute("href")
+    ).toBe("/agents/previous-run")
   })
 
-  it("sends a workspace the user picked", () => {
-    signInAsAdmin()
-    render(<AutomationEditor mode="create" template={TEMPLATE} />, {
-      wrapper: TooltipProvider,
-    })
-
-    fireEvent.keyDown(screen.getByRole("button", { name: "Workspace" }), {
-      key: "Enter",
-    })
-    fireEvent.click(screen.getByRole("menuitem", { name: /^Core/ }))
-    fireEvent.click(screen.getByRole("button", { name: "Create" }))
-
-    expect(mocks.createMutate.mock.calls[0]?.[0]).toMatchObject({
-      workspace: "core",
-    })
-  })
-
-  it("lets an automation whose workspace was deleted move to the only one left", () => {
-    signInAsAdmin()
-    const previous = mocks.workspaces
-    mocks.workspaces = [previous[0]!]
-    try {
-      render(
-        <AutomationEditor
-          mode="edit"
-          schedule={{
-            id: "sched_1",
-            name: "Nightly",
-            prompt: "Check dependencies",
-            schedule: "0 9 * * *",
-            triggers: [
-              { id: "trigger_1", kind: "schedule", cron: "0 9 * * *" },
-            ],
-            scope: "workspace",
-            workspace: "gone",
-            adminThread: false,
-            model: "Default",
-            enabled: true,
-          }}
-        />,
-        { wrapper: TooltipProvider }
-      )
-
-      expect(screen.getByText(/gone.*no longer exists/)).toBeTruthy()
-      fireEvent.keyDown(screen.getByRole("button", { name: "Workspace" }), {
-        key: "Enter",
-      })
-      expect(screen.getByRole("menuitem", { name: /^Default/ })).toBeTruthy()
-    } finally {
-      mocks.workspaces = previous
-    }
-  })
-
-  it("saves a GitHub trigger with its own repository beside the schedule", () => {
+  it("saves a GitHub trigger with its own repository and branch filters beside the schedule", () => {
     signInAsAdmin()
     render(
       <AutomationEditor
@@ -316,8 +392,7 @@ describe("AutomationEditor", () => {
           prompt: "Check dependencies",
           schedule: "0 9 * * *",
           triggers: [{ id: "trigger_1", kind: "schedule", cron: "0 9 * * *" }],
-          scope: "workspace",
-          workspace: "default",
+          scope: "system",
           adminThread: false,
           model: "Default",
           enabled: true,
@@ -326,20 +401,154 @@ describe("AutomationEditor", () => {
       { wrapper: TooltipProvider }
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Add GitHub trigger" }))
+    addTrigger("GitHub event")
     fireEvent.click(screen.getByRole("button", { name: "Choose repository" }))
+    // Branch filters are for pull requests, so they show once a PR event is picked.
+    expect(screen.queryByLabelText("Base branches")).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "PR merged" }))
     fireEvent.click(screen.getByRole("button", { name: "PR closed" }))
+    fireEvent.change(screen.getByLabelText("Skip head branches"), {
+      target: { value: "actions/*\n bot/backend-*-bump-* \n\n" },
+    })
+    fireEvent.change(screen.getByLabelText("Base branches"), {
+      target: { value: "main" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
 
     expect(mocks.updateMutate.mock.calls[0]?.[0].body.triggers).toEqual([
-      { kind: "schedule", cron: "0 9 * * *" },
+      { kind: "schedule", cron: "0 9 * * *", timezone: "UTC" },
       {
         kind: "github",
         repo: "acme/oss",
         events: ["pull_request.closed", "pull_request.merged"],
+        head_branches_exclude: ["actions/*", "bot/backend-*-bump-*"],
+        base_branches: ["main"],
       },
     ])
+  })
+
+  it("asks to confirm a GitHub trigger on a public repository before saving it", () => {
+    mocks.repositories = [
+      { full_name: "acme/oss", private: false, archived: false },
+    ]
+    signInAsAdmin()
+    render(<AutomationEditor mode="edit" schedule={SCHEDULE} />, {
+      wrapper: TooltipProvider,
+    })
+
+    addTrigger("GitHub event")
+    fireEvent.click(screen.getByRole("button", { name: "Choose repository" }))
+    fireEvent.click(screen.getByRole("button", { name: "Issue opened" }))
+    // Anyone can write a public repository's issues, so it can't be saved unconfirmed.
+    expect(
+      screen.getByText("Confirm this trigger may run on a public repository.")
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(mocks.updateMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Allow on this public repository" })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    expect(mocks.updateMutate.mock.calls[0]?.[0].body.triggers[1]).toEqual({
+      kind: "github",
+      repo: "acme/oss",
+      events: ["issues.opened"],
+      head_branches_exclude: [],
+      base_branches: [],
+      allow_public_repo: true,
+    })
+  })
+
+  it("keeps a saved GitHub trigger's branch filters when its events change", () => {
+    signInAsAdmin()
+    render(
+      <AutomationEditor
+        mode="edit"
+        schedule={{
+          id: "sched_1",
+          name: "Docs",
+          prompt: "Update the docs",
+          schedule: null,
+          triggers: [
+            {
+              id: "trigger_1",
+              kind: "github",
+              repo: "acme/oss",
+              events: ["pull_request.merged"],
+              head_branches_exclude: ["actions/*", "release-[1,2]"],
+              base_branches: ["main"],
+            },
+          ],
+          scope: "system",
+          adminThread: false,
+          model: "Default",
+          enabled: true,
+        }}
+      />,
+      { wrapper: TooltipProvider }
+    )
+
+    expect(
+      (screen.getByLabelText("Skip head branches") as HTMLTextAreaElement).value
+    ).toBe("actions/*\nrelease-[1,2]")
+    fireEvent.click(screen.getByRole("button", { name: "PR opened" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+
+    expect(mocks.updateMutate.mock.calls[0]?.[0].body.triggers).toEqual([
+      {
+        kind: "github",
+        repo: "acme/oss",
+        events: ["pull_request.opened", "pull_request.merged"],
+        head_branches_exclude: ["actions/*", "release-[1,2]"],
+        base_branches: ["main"],
+      },
+    ])
+  })
+
+  it("refuses to save more branch patterns than the server takes", () => {
+    signInAsAdmin()
+    render(
+      <AutomationEditor
+        mode="edit"
+        schedule={{
+          id: "sched_1",
+          name: "Docs",
+          prompt: "Update the docs",
+          schedule: null,
+          triggers: [
+            {
+              id: "trigger_1",
+              kind: "github",
+              repo: "acme/oss",
+              events: ["pull_request.merged"],
+            },
+          ],
+          scope: "system",
+          adminThread: false,
+          model: "Default",
+          enabled: true,
+        }}
+      />,
+      { wrapper: TooltipProvider }
+    )
+
+    fireEvent.change(screen.getByLabelText("Base branches"), {
+      target: {
+        value: Array.from({ length: 21 }, (_, i) => `release-${i}`).join("\n"),
+      },
+    })
+
+    expect(
+      screen.getByText("Base branches takes at most 20 patterns.")
+    ).toBeTruthy()
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save changes",
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(true)
   })
 
   it("saves a Linear trigger with its team and filters", () => {
@@ -348,7 +557,7 @@ describe("AutomationEditor", () => {
       wrapper: TooltipProvider,
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Add Linear trigger" }))
+    addTrigger("Linear issue")
     fireEvent.change(screen.getByLabelText("Team key"), {
       target: { value: "eng" },
     })
@@ -358,8 +567,9 @@ describe("AutomationEditor", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
 
+    // A new automation's schedule runs in its creator's own time zone.
     expect(mocks.createMutate.mock.calls[0]?.[0].triggers).toEqual([
-      { kind: "schedule", cron: "0 9 * * *" },
+      { kind: "schedule", cron: "0 9 * * *", timezone: localTimeZone() },
       {
         kind: "linear",
         team: "ENG",

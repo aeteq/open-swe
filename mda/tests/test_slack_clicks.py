@@ -145,13 +145,20 @@ class _Slack:
 
 
 def _option(user_id: str | None = "U1") -> dict[str, Any]:
-    return {"type": "open_swe_option", "response": "Option B", "user_id": user_id}
+    return {
+        "type": "open_swe_option",
+        "response": "Option B",
+        **({"user_id": user_id} if user_id is not None else {}),
+    }
 
 
-def test_an_option_answers_for_the_person_it_was_for(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("recipient", "clicker"), [("U1", "U1"), (None, "U2")])
+def test_an_option_runs_as_the_clicker(
+    monkeypatch: pytest.MonkeyPatch, recipient: str | None, clicker: str
+) -> None:
     slack = _Slack(monkeypatch, SlackClickStart(run=_RUN, interrupts=False))
 
-    result = asyncio.run(clicks.start_click(_click(_option()), _THREAD))
+    result = asyncio.run(clicks.start_click(_click(_option(recipient), clicker=clicker), _THREAD))
 
     assert _options(result)["input"] == _RUN.input
     # A click waits behind the work in progress, as the person's message would.
@@ -164,7 +171,7 @@ def test_an_option_answers_for_the_person_it_was_for(monkeypatch: pytest.MonkeyP
     [asked] = slack.asked
     assert asked.click == OptionClick(text="Option B")
     assert (asked.user_id, asked.message_ts, asked.action_ts, asked.team_id) == (
-        "U1",
+        clicker,
         "171.5",
         "171.6",
         "T1",
@@ -250,7 +257,7 @@ def test_a_workflow_push_is_decided_and_an_approval_retries_the_push(
     [asked] = slack.asked
     assert asked.click == WorkflowPushClick(fingerprint="f1", approved=action == "approve")
     [replaced] = slack.posted
-    assert replaced["blocks"][-1]["elements"][0]["text"].startswith(f"Workflow push {status}")
+    assert replaced["blocks"][-1]["elements"][0]["text"].startswith(f"Push {status}")
 
 
 def test_a_workflow_push_the_backend_no_longer_has_tells_the_clicker(
@@ -282,8 +289,10 @@ def _retry(user_id: str = "U1", **fields: object) -> dict[str, Any]:
     }
 
 
+@pytest.mark.parametrize("clicker", ["U1", "U2"])
 def test_a_retry_removes_its_button_before_it_sends_the_request_again(
     monkeypatch: pytest.MonkeyPatch,
+    clicker: str,
 ) -> None:
     slack = _Slack(monkeypatch, SlackClickStart(run=_RUN, interrupts=True))
     retry_message = {
@@ -296,7 +305,7 @@ def test_a_retry_removes_its_button_before_it_sends_the_request_again(
             },
         ],
     }
-    event = _click(_retry())
+    event = _click(_retry(), clicker=clicker)
     event.payload["message"] = retry_message
 
     result = asyncio.run(clicks.start_click(event, _THREAD))
@@ -304,19 +313,22 @@ def test_a_retry_removes_its_button_before_it_sends_the_request_again(
     assert _options(result)["multitask_strategy"] == "interrupt"
     assert [kind for kind, _ in slack.calls] == ["slack", "backend"]
     assert slack.posted[0]["blocks"][-1]["elements"][0]["text"] == "Retrying…"
-    assert slack.asked[0].click == RetryClick(thread_ts="171.1", message_ts="171.2")
+    assert slack.asked[0].user_id == clicker
+    assert slack.asked[0].click == RetryClick(
+        original_user_id="U1", thread_ts="171.1", message_ts="171.2"
+    )
 
 
 @pytest.mark.parametrize(
     "value",
     [
-        _retry(user_id="U2"),
+        _retry(user_id=""),
         _retry(channel_id="C2"),
         _retry(expires_at=1.0),
     ],
-    ids=["someone else's", "another channel's", "expired"],
+    ids=["missing original sender", "another channel's", "expired"],
 )
-def test_a_retry_only_its_requester_may_click_starts_nothing_otherwise(
+def test_an_invalid_retry_starts_nothing(
     monkeypatch: pytest.MonkeyPatch, value: dict[str, Any]
 ) -> None:
     slack = _Slack(monkeypatch, SlackClickStart(run=_RUN))

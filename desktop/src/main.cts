@@ -1,6 +1,4 @@
-const { randomBytes } = require("node:crypto");
 const fs = require("node:fs");
-const { createHash } = require("node:crypto");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -25,51 +23,21 @@ const {
   buildDiagnosticsReport,
   captureProcessConsole,
   diagnosticsFileName,
+  redactSecrets,
   normalizeConsoleMessage,
 } = require("./diagnostics.cjs");
-const { LocalBridges } = require("./local-bridges.cjs");
+const { LocalAccessBridge } = require("./local-access.cjs");
+const { ApprovalQueue } = require("./approval-queue.cjs");
+const { ApprovalPanel } = require("./approval-panel.cjs");
 const { DesktopUi } = require("./desktop-ui.cjs");
-const { LocalThreadStore } = require("./local-thread-store.cjs");
-const {
-  addWorktree,
-  captureCheckpoint,
-  checkoutBranch,
-  checkpointRef,
-  currentBranch,
-  defaultBranch,
-  git,
-  localBranches,
-  deleteRefs,
-  originRepo,
-  readBranchDiff,
-  readDiff,
-  removeWorktree,
-  repoRoot,
-  repositoryMetadata,
-  restoreWorktree,
-  validBranchName,
-  watchProjectHead,
-} = require("./git-diff.cjs");
-const {
-  closeAllTerminals,
-  configureTerminalIpc,
-  closeThreadTerminals,
-  getUserShellEnv,
-} = require("./terminal-manager.cjs");
-const {
-  addProject,
-  linkProject,
-  readProjects,
-  removeProject,
-} = require("./project-store.cjs");
+const { getUserShellEnv } = require("./shell-env.cjs");
 const { beginLogin } = require("./login-server.cjs");
-const {
-  listWorkspaceFiles,
-  readWorkspacePath,
-} = require("./workspace-files.cjs");
-const { isDesktopCommandId } = require("./commands.cjs");
+const { MenuCommands, isDesktopCommandId } = require("./commands.cjs");
+const { FramePolicy } = require("./frame-policy.cjs");
 const { DesktopLinks } = require("./desktop-links.cjs");
 const { DesktopEnvironments } = require("./desktop-environments.cjs");
+const { CloseConfirmation } = require("./close-confirmation.cjs");
+const { LifecycleLog } = require("./lifecycle-log.cjs");
 const {
   APP_ORIGIN,
   APP_URL,
@@ -114,9 +82,31 @@ if (appRuntime.userDataPath) {
 }
 app.setAppUserModelId(appRuntime.appUserModelId);
 
+// Outlives the process, unlike the console buffers: says why a launch ended.
+fs.mkdirSync(app.getPath("userData"), { recursive: true });
+const lifecycleLog = new LifecycleLog(
+  path.join(app.getPath("userData"), "desktop-lifecycle.log"),
+);
+lifecycleLog.watchQuits(app);
+lifecycleLog.record("start", {
+  version: app.getVersion(),
+  packaged: app.isPackaged,
+  platform: `${process.platform}-${process.arch}`,
+  os: require("node:os").release(),
+  argv: redactSecrets(process.argv.slice(1).join(" ")),
+});
+app.on("child-process-gone", (_event, details) =>
+  lifecycleLog.record("child-process-gone", {
+    type: details.type,
+    reason: details.reason,
+    exitCode: details.exitCode,
+    name: details.name,
+  }),
+);
+
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: "open-swe",
+    scheme: "robin",
     privileges: {
       standard: true,
       secure: true,
@@ -157,6 +147,10 @@ const desktopUi = {
   },
 };
 let mainWindow = null;
+const menuCommands = new MenuCommands((commandId, viaShortcut) => {
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send("desktop:menu-command", commandId, viaShortcut);
+});
 
 // Installed builds have no terminal; "Save Diagnostics Report…" exports these.
 const rendererConsole = new ConsoleLogBuffer(2000);
@@ -166,8 +160,18 @@ let setupWindow = null;
 let loginFlow = null;
 const connectFlows = new Map();
 let quitting = false;
-let localThreadStore = null;
-let localBridges = null;
+let localAccessBridge = null;
+// Local actions waiting on the person, decided only in the desktop's own panel.
+const approvalQueue = new ApprovalQueue(() => {
+  approvalPanel.sync();
+  if (mainWindow && !mainWindow.isDestroyed())
+    mainWindow.webContents.send("desktop:local-access-requests-changed");
+});
+const approvalPanel = new ApprovalPanel(
+  approvalQueue,
+  () => mainWindow,
+  (folder) => localAccessBridge?.displayPath(folder) ?? folder,
+);
 type DesktopUpdateState = {
   status: "idle" | "downloading" | "ready" | "installing";
   version?: string;
@@ -178,6 +182,12 @@ function setUpdateState(
   status: DesktopUpdateState["status"],
   version?: string,
 ) {
+  if (status !== updateState.status || version !== updateState.version)
+    lifecycleLog.record("update-state", {
+      from: updateState.status,
+      to: status,
+      version,
+    });
   updateState = { status, ...(version ? { version } : {}) };
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("desktop:update-state", updateState);
@@ -299,174 +309,6 @@ function requireTrustedDesktopIpc(event) {
   if (!isAppUrl(senderUrl)) throw new Error("Forbidden");
 }
 
-function projectsPath() {
-  return path.join(app.getPath("userData"), "desktop-projects.json");
-}
-
-/**
- * Terminal identity for a project itself, so the new-thread screen can open
- * terminals before a thread exists. Short and stable, unlike the cwd.
- */
-function projectScopeId(cwd) {
-  return `project-${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}`;
-}
-
-function withScopeId(project) {
-  return { ...project, scopeId: projectScopeId(project.cwd) };
-}
-
-function worktreesPath() {
-  return path.join(app.getPath("userData"), "worktrees");
-}
-
-function listProjects() {
-  return readProjects(projectsPath()).map(withScopeId);
-}
-
-function projectScopeSession(scopeId) {
-  const project = listProjects().find((item) => item.scopeId === scopeId);
-  return project ? { id: scopeId, cwd: project.cwd } : null;
-}
-
-/** The folders with the GitHub repository each is a clone of, for the dashboard to file them. */
-async function describedProjects() {
-  return Promise.all(
-    listProjects().map(async (project) => ({
-      ...project,
-      repo: await originRepo(project.cwd),
-    })),
-  );
-}
-
-async function sendProjectsChanged() {
-  const projects = await describedProjects();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("desktop:projects-changed", projects);
-  }
-}
-
-function pathIsInside(root, candidate) {
-  const relative = path.relative(root, candidate);
-  return (
-    relative === "" ||
-    (!relative.startsWith(`..${path.sep}`) &&
-      relative !== ".." &&
-      !path.isAbsolute(relative))
-  );
-}
-
-/**
- * Worktrees the app made are the only ones it may take over or delete: one the
- * user created themselves is theirs, and the backend refuses to run in it.
- */
-function managedWorktree(candidate) {
-  return typeof candidate === "string" &&
-    path.isAbsolute(candidate) &&
-    pathIsInside(worktreesPath(), path.normalize(candidate))
-    ? path.normalize(candidate)
-    : null;
-}
-
-function registeredProject(cwd) {
-  try {
-    const canonical = fs.realpathSync(cwd);
-    return listProjects().some((project) => project.cwd === canonical)
-      ? canonical
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function threadRoot(thread) {
-  if (thread?.managedTaskFolder) return localThreadStore.taskRoot(thread);
-  const project = thread ? registeredProject(thread.cwd) : null;
-  if (!project) return null;
-  return thread.worktreePath || project;
-}
-
-async function projectForRepo(repo) {
-  if (typeof repo !== "string" || !repo) return null;
-  for (const project of listProjects()) {
-    const origin = await originRepo(project.cwd);
-    if (origin?.toLowerCase() === repo.toLowerCase()) return project.cwd;
-  }
-  return null;
-}
-
-function resolveLocalProjectPath(localSessionId, value) {
-  const localSession = localThreadStore.get(localSessionId);
-  if (!localSession || typeof value !== "string" || value.length === 0)
-    return null;
-  try {
-    const root = threadRoot(localSession);
-    if (!root) return null;
-    const projectRoot = fs.realpathSync(root);
-    const windowsAbsolute = path.win32.isAbsolute(value);
-    if (windowsAbsolute && process.platform !== "win32") return null;
-    const candidate = fs.realpathSync(
-      path.isAbsolute(value) || windowsAbsolute
-        ? value
-        : path.resolve(projectRoot, value),
-    );
-    if (!pathIsInside(projectRoot, candidate)) return null;
-    const relative = path.relative(projectRoot, candidate);
-    return relative === "" ? "." : relative.split(path.sep).join("/");
-  } catch {
-    return null;
-  }
-}
-
-async function recordLocalCheckpoint(thread) {
-  const repo = await repoRoot(thread.worktreePath || thread.cwd);
-  if (!repo) return thread;
-  const ref = checkpointRef(thread.id);
-  await captureCheckpoint(repo, ref);
-  const branch = await currentBranch(repo);
-  return localThreadStore.setCheckpoint(thread.id, { repo, ref, branch });
-}
-
-async function syncThreadBranch(thread) {
-  if (!thread?.checkpoint.repo) return thread;
-  const branch = await currentBranch(thread.checkpoint.repo);
-  if (!branch || branch === thread.checkpoint.branch) return thread;
-  return (
-    localThreadStore.setCheckpoint(thread.id, {
-      ...thread.checkpoint,
-      branch,
-    }) ?? thread
-  );
-}
-
-/**
- * A worktree thread owns its checkout outright. A thread running in the
- * project's own checkout shares it with every other session, so the branch that
- * happens to be checked out is only this thread's while this thread is running.
- */
-async function diffThread(threadId) {
-  const thread = localThreadStore.get(threadId);
-  if (!thread) return thread;
-  if (thread.worktreePath) return syncThreadBranch(thread);
-  return (await threadRunning(threadId)) ? syncThreadBranch(thread) : thread;
-}
-
-/** Whether the backend has a run in flight on this thread. */
-async function threadRunning(threadId) {
-  if (!backendUrl) throw new Error("Robin is not connected to a backend");
-  const response = await backendFetch(
-    new URL(
-      `/dashboard/api/threads/${encodeURIComponent(threadId)}?mark_viewed=false`,
-      backendUrl,
-    ).toString(),
-    { signal: AbortSignal.timeout(10_000) },
-  );
-  if (response.status === 404) return false;
-  if (!response.ok)
-    throw new Error(`Could not read the thread's status (${response.status})`);
-  const thread = await response.json();
-  return thread?.status === "running";
-}
-
 /**
  * Sends one bridge call to the backend under the app's session. A long poll
  * brings its own abort signal; anything else gives up rather than hold a quit.
@@ -494,161 +336,13 @@ async function sendBridgeRequest(method, apiPath, { body, signal }) {
   return text ? JSON.parse(text) : null;
 }
 
-async function createThreadWorktree(thread, baseBranch) {
-  const repo = await repoRoot(thread.cwd);
-  if (!repo) throw new Error("Local projects must be git repositories");
-  const base =
-    (await validBranchName(repo, baseBranch)) ??
-    (await currentBranch(repo)) ??
-    "HEAD";
-  const token = randomBytes(4).toString("hex");
-  const worktree = path.join(
-    worktreesPath(),
-    `${path.basename(repo)}-${token}`,
-  );
-  await addWorktree(repo, worktree, `open-swe/local-${token}`, base, true);
-  return localThreadStore.setWorktree(thread.id, worktree, true);
-}
-
-function sendLocalThreadsChanged() {
-  if (mainWindow && !mainWindow.isDestroyed())
-    mainWindow.webContents.send("desktop:local-threads-changed");
-}
-
-/**
- * The agent's way out of the user's own checkout: a new branch in a new
- * worktree, which the thread then follows. The checkout itself is untouched.
- */
-async function handoffThreadToWorktree(threadId, params) {
-  const thread = localThreadStore.get(threadId);
-  if (!thread) throw new Error("This thread does not run on This Mac");
-  const repo = await repoRoot(thread.cwd);
-  if (!repo) throw new Error("Local projects must be git repositories");
-  const branch = await validBranchName(repo, params.branch);
-  if (!branch) throw new Error("A valid branch name is required");
-  const ref = (await localBranches(repo)).find((it) => it.name === branch);
-  if (params.user_checkout)
-    return moveThreadToUserCheckout(thread, repo, ref ?? { name: branch });
-  if (ref?.current || ref?.worktreePath)
-    return followCheckedOutBranch(thread, repo, ref);
-  if (thread.worktreePath)
-    throw new Error(
-      `This thread already works in its own worktree at ${thread.worktreePath}`,
-    );
-  const base =
-    (await validBranchName(repo, params.base_ref)) ??
-    (await defaultBranch(repo));
-  if (!base) throw new Error("Pass base_ref: no default branch was found");
-  const fromOrigin = params.start_from_origin !== false;
-  if (fromOrigin) await git(repo, ["fetch", "origin", base], null, 60_000);
-  const startPoint = fromOrigin ? `origin/${base}` : base;
-  const worktree = path.join(
-    worktreesPath(),
-    `${path.basename(repo)}-${randomBytes(4).toString("hex")}`,
-  );
-  await addWorktree(repo, worktree, branch, startPoint);
-  await closeThreadTerminals(threadId);
-  await recordLocalCheckpoint(
-    localThreadStore.setWorktree(threadId, worktree, true),
-  );
-  sendLocalThreadsChanged();
-  return { worktree_path: worktree, branch, base: startPoint };
-}
-
-/** Moves the thread to wherever `ref` is already checked out, as the branch picker does. */
-async function followCheckedOutBranch(thread, repo, ref) {
-  const target = ref.worktreePath ? managedWorktree(ref.worktreePath) : null;
-  if (ref.worktreePath && !target)
-    throw new Error(
-      `“${ref.name}” is checked out in ${ref.worktreePath}, which Robin does not manage.`,
-    );
-  await moveThreadWorkspace(thread, target);
-  sendLocalThreadsChanged();
-  return { worktree_path: target ?? repo, branch: ref.name };
-}
-
-/** Switches the user's own checkout to `ref`, as the project branch picker does, and moves the thread there. */
-async function moveThreadToUserCheckout(thread, repo, ref) {
-  if (ref.worktreePath)
-    throw new Error(
-      `“${ref.name}” is checked out in the worktree ${ref.worktreePath}, so it cannot also be checked out in ${repo}.`,
-    );
-  if (!ref.current) {
-    await git(repo, ["fetch", "origin", ref.name], null, 60_000).catch(
-      (error) => console.warn("Could not fetch the branch", error),
-    );
-    await checkoutBranch(repo, ref.name);
-  }
-  return followCheckedOutBranch(thread, repo, { ...ref, current: true });
-}
-
-/**
- * A branch can only be checked out in one working tree, so a thread starting on
- * one that already has a worktree of this app's runs in that worktree rather
- * than trying to create a second checkout of it.
- */
-async function startThreadWorktree(thread, baseBranch) {
-  const project = await repoRoot(thread.cwd);
-  const existing = project
-    ? (await localBranches(project)).find((ref) => ref.name === baseBranch)
-        ?.worktreePath
-    : null;
-  if (!existing || !managedWorktree(existing))
-    return createThreadWorktree(thread, baseBranch);
-  return localThreadStore.setWorktree(thread.id, existing);
-}
-
-async function moveThreadWorkspace(thread, worktreePath) {
-  if ((thread.worktreePath || null) === worktreePath) return thread;
-  await closeThreadTerminals(thread.id);
-  return recordLocalCheckpoint(
-    localThreadStore.setWorktree(thread.id, worktreePath),
-  );
-}
-
-async function ensureThreadWorktree(thread) {
-  if (!thread?.worktreePath || fs.existsSync(thread.worktreePath))
-    return thread;
-  const repo = registeredProject(thread.cwd) && (await repoRoot(thread.cwd));
-  const branch = thread.checkpoint.branch;
-  if (!repo || !branch) return thread;
-  await restoreWorktree(repo, thread.worktreePath, branch);
-  return thread;
-}
-
-async function discardLocalThread(thread) {
-  await localBridges.close(thread.id);
-  await closeThreadTerminals(thread.id);
-  localThreadStore.delete(thread.id);
-  if (thread.checkpoint.repo && thread.checkpoint.ref)
-    deleteRefs(thread.checkpoint.repo, [thread.checkpoint.ref]);
-  await discardThreadWorktree(thread).catch((error) =>
-    console.warn("Could not remove a local thread's worktree", error),
-  );
-}
-
-/**
- * Every worktree this app made for the thread, including ones it has since
- * moved off, minus any another thread is in or owns.
- */
-async function discardThreadWorktree(thread) {
-  const others = localThreadStore.list().filter((it) => it.id !== thread.id);
-  const owned = thread.ownedWorktrees.filter(
-    (worktree) =>
-      managedWorktree(worktree) &&
-      !others.some(
-        (other) =>
-          other.worktreePath === worktree ||
-          other.ownedWorktrees.includes(worktree),
-      ),
-  );
-  if (!owned.length) return;
-  const repo = await repoRoot(thread.cwd);
-  if (!repo) return;
-  for (const worktree of owned) await removeWorktree(repo, worktree);
-}
-
 function configureDesktopIpc() {
+  ipcMain.handle("desktop:set-menu-commands", (event, commands) => {
+    requireTrustedDesktopIpc(event);
+    if (event.sender !== mainWindow?.webContents) return [];
+    if (menuCommands.publish(commands)) createMenu();
+    return menuCommands.nativeShortcutIds();
+  });
   ipcMain.handle("desktop:write-clipboard", (event, value) => {
     requireTrustedDesktopIpc(event);
     if (typeof value === "string") clipboard.writeText(value);
@@ -662,6 +356,14 @@ function configureDesktopIpc() {
     target.search = source.search;
     target.hash = source.hash;
     clipboard.writeText(target.toString());
+  });
+  ipcMain.handle("desktop:open-in-browser", async (event, pagePath) => {
+    requireTrustedDesktopIpc(event);
+    if (!backendUrl) throw new Error("Robin is not connected to a backend");
+    if (typeof pagePath !== "string") throw new Error("Invalid path");
+    await shell.openExternal(
+      await desktopEnvironments.dashboardPageUrl(backendUrl, pagePath),
+    );
   });
   ipcMain.handle("desktop:version", (event) => {
     requireTrustedDesktopIpc(event);
@@ -687,7 +389,9 @@ function configureDesktopIpc() {
     );
     updateInstallTimer.unref();
     try {
-      await Promise.all([closeAllTerminals(), localBridges?.closeAll()]);
+      await localAccessBridge?.close().finally(() => {
+        localAccessBridge = null;
+      });
       if (!quitting) return false;
       autoUpdater.quitAndInstall(false, true);
       return true;
@@ -697,119 +401,34 @@ function configureDesktopIpc() {
     }
   });
 
-  ipcMain.handle("desktop:projects", (event) => {
-    requireTrustedDesktopIpc(event);
-    return describedProjects();
-  });
+  ipcMain.handle(
+    "desktop:connect-service",
+    async (event, provider, options: unknown) => {
+      requireTrustedDesktopIpc(event);
+      const recoveryToken =
+        options && typeof options === "object" && "recoveryToken" in options
+          ? options.recoveryToken
+          : undefined;
+      if (
+        recoveryToken !== undefined &&
+        (provider !== "github" ||
+          typeof recoveryToken !== "string" ||
+          !recoveryToken ||
+          recoveryToken.length > 16_384)
+      )
+        return false;
+      return startConnectFlow(
+        provider,
+        typeof recoveryToken === "string" ? recoveryToken : undefined,
+      );
+    },
+  );
 
-  ipcMain.handle("desktop:link-project", async (event, input) => {
+  ipcMain.handle("desktop:cancel-connect-service", async (event, provider) => {
     requireTrustedDesktopIpc(event);
-    const cwd = input && typeof input.cwd === "string" ? input.cwd : null;
-    const project = cwd ? registeredProject(cwd) : null;
-    if (!project) throw new Error("Project is not registered");
-    const linked = linkProject(
-      projectsPath(),
-      project,
-      input.projectId ?? null,
-    );
-    await sendProjectsChanged();
-    return linked ? withScopeId(linked) : null;
-  });
-
-  const projectHeadWatches = new Map<number, () => void>();
-  ipcMain.handle("desktop:watch-project-head", async (event, cwd) => {
-    requireTrustedDesktopIpc(event);
-    const sender = event.sender;
-    projectHeadWatches.get(sender.id)?.();
-    const project = typeof cwd === "string" ? registeredProject(cwd) : null;
-    if (!project) return;
-    let disposed = false;
-    let stop: (() => void) | undefined;
-    const close = () => {
-      disposed = true;
-      stop?.();
-      projectHeadWatches.delete(sender.id);
-      sender.removeListener("destroyed", close);
-      sender.removeListener("did-start-navigation", close);
-    };
-    projectHeadWatches.set(sender.id, close);
-    sender.once("destroyed", close);
-    sender.once("did-start-navigation", close);
-    try {
-      stop = await watchProjectHead(project, () => {
-        if (!disposed && !sender.isDestroyed())
-          sender.send("desktop:project-head-changed", cwd);
-      });
-      if (disposed) stop();
-    } catch {
-      if (!disposed) close();
-    }
-  });
-
-  ipcMain.handle("desktop:project-branches", async (event, cwd) => {
-    requireTrustedDesktopIpc(event);
-    const project = typeof cwd === "string" ? registeredProject(cwd) : null;
-    if (!project) return { current: null, branches: [] };
-    const [current, branches] = await Promise.all([
-      currentBranch(project),
-      localBranches(project),
-    ]);
-    return { current, branches };
-  });
-
-  ipcMain.handle("desktop:checkout-project-branch", async (event, input) => {
-    requireTrustedDesktopIpc(event);
-    const project =
-      input && typeof input.cwd === "string"
-        ? registeredProject(input.cwd)
-        : null;
-    if (!project) throw new Error("Project is not registered");
-    return checkoutBranch(project, input.branch);
-  });
-
-  ipcMain.handle("desktop:add-project", async (event) => {
-    requireTrustedDesktopIpc(event);
-    const options = {
-      title: "Add a project from This Mac",
-      properties: ["openDirectory", "createDirectory"],
-    };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
-    if (result.canceled || !result.filePaths[0]) return null;
-    const project = addProject(projectsPath(), result.filePaths[0]);
-    void sendProjectsChanged();
-    return {
-      ...withScopeId(project),
-      repo: await originRepo(project.cwd),
-    };
-  });
-
-  ipcMain.handle("desktop:remove-project", async (event, cwd) => {
-    requireTrustedDesktopIpc(event);
-    const project = listProjects().find((item) => item.cwd === cwd);
-    if (!project) return false;
-    const options = {
-      type: "warning",
-      title: "Remove project",
-      message: `Remove “${project.name}” from Robin?`,
-      detail: `${project.cwd}\n\nThis does not delete files from your Mac.`,
-      buttons: ["Cancel", "Remove"],
-      defaultId: 0,
-      cancelId: 0,
-    };
-    const result = mainWindow
-      ? await dialog.showMessageBox(mainWindow, options)
-      : await dialog.showMessageBox(options);
-    if (result.response !== 1) return false;
-    const removed = removeProject(projectsPath(), project.cwd);
-    if (removed) void sendProjectsChanged();
-    return removed;
-  });
-
-  ipcMain.handle("desktop:connect-service", async (event, provider) => {
-    requireTrustedDesktopIpc(event);
-    return startConnectFlow(provider);
+    if (!isConnectProvider(provider)) return;
+    connectFlows.get(provider)?.cancel();
+    connectFlows.delete(provider);
   });
 
   ipcMain.handle("desktop:open-external", async (event, value) => {
@@ -838,259 +457,65 @@ function configureDesktopIpc() {
     return true;
   });
 
-  ipcMain.handle("desktop:resolve-local-project-path", (event, input) => {
+  ipcMain.handle("desktop:ensure-local-access-bridge", async (event) => {
     requireTrustedDesktopIpc(event);
-    return resolveLocalProjectPath(input?.localSessionId, input?.path);
+    localAccessBridge ??= new LocalAccessBridge({
+      send: sendBridgeRequest,
+      env: getUserShellEnv,
+      log: (message) => console.warn(message),
+      onGrantsChanged: () => {
+        if (mainWindow && !mainWindow.isDestroyed())
+          mainWindow.webContents.send("desktop:local-access-grants-changed");
+      },
+      approve: (request, signal) => approvalQueue.request(request, signal),
+    });
+    return localAccessBridge.ensure();
   });
-  /**
-   * Set up a "This Mac" thread the renderer is about to start in the cloud as
-   * `threadId`: its checkout (or a fresh worktree), the diff baseline, and the
-   * bridge the agent will run its commands through. The renderer names the
-   * bridge and repo on the thread's first `run.start`.
-   */
-  ipcMain.handle("desktop:prepare-local-thread", async (event, input) => {
+  ipcMain.handle("desktop:local-access-requests", (event, threadId) => {
     requireTrustedDesktopIpc(event);
-    const cwd =
-      typeof input?.cwd === "string" ? registeredProject(input.cwd) : null;
-    if (!cwd && input?.taskWorkspace !== true)
-      throw new Error("Choose a folder before starting a local agent");
-    if (!cwd && input?.cwd != null) throw new Error("Folder is not registered");
-    let thread = cwd
-      ? localThreadStore.create({ id: input?.threadId, cwd })
-      : localThreadStore.createTask(input?.threadId);
-    try {
-      if (cwd && input?.workspaceMode === "worktree")
-        thread = await startThreadWorktree(thread, input?.baseBranch);
-      if (!thread.managedTaskFolder)
-        thread = await recordLocalCheckpoint(thread);
-      const [bridgeId, repo] = await Promise.all([
-        localBridges.ensure(thread.id),
-        thread.managedTaskFolder
-          ? Promise.resolve(null)
-          : originRepo(threadRoot(thread)),
-      ]);
-      return { bridgeId, repo };
-    } catch (error) {
-      await discardLocalThread(thread);
-      throw error;
-    }
+    if (typeof threadId !== "string")
+      throw new Error("A thread id is required");
+    // What a thread's card shows; deciding is the approval panel's alone.
+    return approvalQueue
+      .list(threadId)
+      .map(({ id, kind, concern, createdAt }) => ({
+        id,
+        kind,
+        concern,
+        createdAt,
+      }));
   });
-  /**
-   * Move a cloud thread onto This Mac: the worktree it had here, or a fresh one
-   * of the project whose origin is the thread's repository, and the bridge its
-   * next run hands the cloud checkout over through.
-   */
-  ipcMain.handle("desktop:take-over-thread", async (event, input) => {
+  ipcMain.handle(
+    "desktop:set-local-access-thread",
+    (event, threadId, bounds) => {
+      requireTrustedDesktopIpc(event);
+      return approvalPanel.setThread(threadId, bounds);
+    },
+  );
+  ipcMain.handle("desktop:pending-local-access-threads", (event) => {
     requireTrustedDesktopIpc(event);
-    const existing = localThreadStore.get(input?.threadId);
-    if (existing?.managedTaskFolder) return localBridges.ensure(existing.id);
-    if (existing) {
-      // Its worktree and bridge may be the source of a handoff still pending.
-      // A thread that ran in the user's own checkout moves to a worktree, so
-      // the handoff never overwrites that checkout.
-      const thread = existing.worktreePath
-        ? await ensureThreadWorktree(existing)
-        : await recordLocalCheckpoint(
-            await createThreadWorktree(existing, null),
-          );
-      return localBridges.ensure(thread.id);
-    }
-    if (input?.repo != null && typeof input.repo !== "string")
-      throw new Error("Invalid thread repository");
-    if (!input?.repo?.trim()) {
-      const thread = localThreadStore.createTask(input?.threadId);
-      try {
-        return await localBridges.ensure(thread.id);
-      } catch (error) {
-        await discardLocalThread(thread);
-        throw error;
-      }
-    }
-    let cwd = await projectForRepo(input.repo);
-    if (!cwd) {
-      const options = {
-        title: `Choose your checkout of ${input.repo}`,
-        properties: ["openDirectory"],
-      };
-      const result = mainWindow
-        ? await dialog.showOpenDialog(mainWindow, options)
-        : await dialog.showOpenDialog(options);
-      const picked = result.canceled ? null : result.filePaths[0];
-      if (!picked)
-        throw new Error(
-          `Choose a checkout of ${input.repo} to move this thread`,
-        );
-      const origin = await originRepo(picked);
-      if (origin?.toLowerCase() !== input.repo.toLowerCase())
-        throw new Error(`${picked} is not a checkout of ${input.repo}`);
-      cwd = addProject(projectsPath(), picked).cwd;
-      void sendProjectsChanged();
-    }
-    let thread = localThreadStore.create({ id: input?.threadId, cwd });
-    try {
-      thread = await createThreadWorktree(thread, null);
-      thread = await recordLocalCheckpoint(thread);
-      return await localBridges.ensure(thread.id);
-    } catch (error) {
-      await discardLocalThread(thread);
-      throw error;
-    }
+    return approvalQueue.pendingThreads();
   });
-  /** Serve an existing thread's checkout again, before its next run. */
-  ipcMain.handle("desktop:ensure-local-bridge", async (event, threadId) => {
+  ipcMain.handle("desktop:review-local-access-request", (event, id) => {
     requireTrustedDesktopIpc(event);
-    const thread = await ensureThreadWorktree(localThreadStore.get(threadId));
-    if (!thread?.bridgeId)
-      throw new Error("This thread does not run on This Mac");
-    await localBridges.ensure(thread.id);
-    return true;
+    if (typeof id === "string") approvalPanel.review(id);
   });
-  ipcMain.handle("desktop:open-task-folder", async (event, threadId) => {
+  ipcMain.handle("desktop:local-access-grants", (event, threadId) => {
     requireTrustedDesktopIpc(event);
-    const root = threadRoot(localThreadStore.get(threadId));
-    if (!root) throw new Error("Task folder is unavailable");
-    const error = await shell.openPath(root);
-    if (error) throw new Error(error);
-    return true;
-  });
-  ipcMain.handle("desktop:get-local-thread", (event, threadId) => {
-    requireTrustedDesktopIpc(event);
-    return localThreadStore.get(threadId);
-  });
-  ipcMain.handle("desktop:list-local-threads", (event) => {
-    requireTrustedDesktopIpc(event);
-    return localThreadStore.list();
-  });
-  /**
-   * Forget a thread the backend no longer has: stop serving it and remove the
-   * worktrees and refs this app made for it. Its files in the user's own
-   * checkout are theirs and stay.
-   */
-  ipcMain.handle("desktop:discard-local-thread", async (event, threadId) => {
-    requireTrustedDesktopIpc(event);
-    const thread = localThreadStore.get(threadId);
-    if (!thread) return false;
-    await discardLocalThread(thread);
-    return true;
-  });
-  /**
-   * Move a thread onto a branch. A branch already checked out somewhere can
-   * only be worked on there, so the thread follows it: into that worktree, or
-   * back into the project's own checkout. Anything else is checked out in the
-   * tree the thread is already in.
-   */
-  ipcMain.handle("desktop:set-local-branch", async (event, input) => {
-    requireTrustedDesktopIpc(event);
-    const thread = localThreadStore.get(input?.threadId);
-    if (!thread) throw new Error("Local thread not found");
-    const project = registeredProject(thread.cwd);
-    if (!project) throw new Error("Project is not registered");
-    const branch = await validBranchName(project, input?.branch);
-    if (!branch) throw new Error("Branch name is required");
-    if (await threadRunning(thread.id))
-      throw new Error("Stop the local agent before switching its branch");
-
-    const ref = (await localBranches(project)).find(
-      (candidate) => candidate.name === branch,
+    if (typeof threadId !== "string")
+      throw new Error("A thread id is required");
+    return (localAccessBridge?.grants.list(threadId) ?? []).map(
+      ({ folder, until }) => ({
+        folder: localAccessBridge?.displayPath(folder) ?? folder,
+        until,
+      }),
     );
-    if (ref?.worktreePath) {
-      if (!managedWorktree(ref.worktreePath))
-        throw new Error(
-          `“${branch}” is checked out in ${ref.worktreePath}, which Robin does not manage.`,
-        );
-      return moveThreadWorkspace(thread, ref.worktreePath);
-    }
-    if (ref?.current) {
-      return moveThreadWorkspace(thread, null);
-    }
-    const root = threadRoot(thread);
-    await checkoutBranch(root, branch);
-    return syncThreadBranch(thread);
   });
-
-  ipcMain.handle("desktop:get-local-diff", async (event, threadId) => {
+  ipcMain.handle("desktop:revoke-local-access-grants", (event, threadId) => {
     requireTrustedDesktopIpc(event);
-    const thread = await diffThread(threadId);
-    if (
-      !thread ||
-      !registeredProject(thread.cwd) ||
-      !thread.checkpoint.repo ||
-      !thread.checkpoint.ref
-    )
-      return { status: "missing", files: [], truncated: false };
-    try {
-      const [diff, repository] = await Promise.all([
-        readDiff(thread.checkpoint.repo, thread.checkpoint.ref),
-        repositoryMetadata(thread.checkpoint.repo),
-      ]);
-      return { ...diff, repository };
-    } catch {
-      return { status: "error", files: [], truncated: false };
-    }
-  });
-  /** Worktree changes for a project, for screens with no thread yet. */
-  ipcMain.handle("desktop:get-project-diff", async (event, cwd) => {
-    requireTrustedDesktopIpc(event);
-    const project = typeof cwd === "string" ? registeredProject(cwd) : null;
-    const repo = project ? await repoRoot(project) : null;
-    if (!repo) return { status: "missing", files: [], truncated: false };
-    try {
-      const branch = await currentBranch(repo);
-      const [diff, repository] = await Promise.all([
-        readDiff(repo, "HEAD"),
-        repositoryMetadata(repo, undefined, branch),
-      ]);
-      return { ...diff, repository };
-    } catch {
-      return { status: "error", files: [], truncated: false };
-    }
-  });
-  const localWorkspaceRoot = (id: unknown): string => {
-    const root =
-      threadRoot(localThreadStore.get(id)) ?? projectScopeSession(id)?.cwd;
-    if (!root) throw new Error("Local workspace not found");
-    return root;
-  };
-  ipcMain.handle("desktop:read-workspace-path", (event, input) => {
-    requireTrustedDesktopIpc(event);
-    const root = localWorkspaceRoot(input?.localSessionId);
-    return readWorkspacePath(root, input.relativePath);
-  });
-  ipcMain.handle("desktop:list-workspace-files", (event, localSessionId) => {
-    requireTrustedDesktopIpc(event);
-    return listWorkspaceFiles(localWorkspaceRoot(localSessionId));
-  });
-  ipcMain.handle("desktop:get-local-pr-diff", async (event, threadId) => {
-    requireTrustedDesktopIpc(event);
-    const thread = await diffThread(threadId);
-    if (!thread || !registeredProject(thread.cwd) || !thread.checkpoint.repo)
-      return { status: "missing", files: [], truncated: false };
-    try {
-      const repository = await repositoryMetadata(thread.checkpoint.repo);
-      if (!repository.pr)
-        return { status: "missing", files: [], truncated: false, repository };
-      const diff = await readBranchDiff(
-        thread.checkpoint.repo,
-        repository.pr.baseRef,
-        thread.checkpoint.branch,
-      );
-      return { ...diff, repository };
-    } catch {
-      return { status: "error", files: [], truncated: false };
-    }
-  });
-  /** The checked-out branch's pull request, for the composer PR link. */
-  ipcMain.handle("desktop:get-local-pr", async (event, threadId) => {
-    requireTrustedDesktopIpc(event);
-    const thread = await diffThread(threadId);
-    if (!thread || !registeredProject(thread.cwd) || !thread.checkpoint.repo)
-      return null;
-    try {
-      const { pr } = await repositoryMetadata(thread.checkpoint.repo);
-      return pr;
-    } catch {
-      return null;
-    }
+    if (typeof threadId !== "string")
+      throw new Error("A thread id is required");
+    localAccessBridge?.grants.revoke(threadId);
   });
 }
 
@@ -1134,6 +559,15 @@ async function shareBackendSession() {
     (_event, cookie, cause, removed) => {
       if (!isBackendSessionCookie(cookie)) return;
       if (removed && cause === "overwrite") return;
+      if (removed && localAccessBridge) {
+        const previous = localAccessBridge;
+        localAccessBridge = null;
+        void previous
+          .close()
+          .catch((error) =>
+            console.warn("Could not close local access", error),
+          );
+      }
       try {
         if (removed) unshareSession(configPath(), backendUrl, cookie.value);
         else shareSession(configPath(), backendUrl, cookie.value);
@@ -1270,17 +704,37 @@ function escapeHtml(value) {
   });
 }
 
-async function proxyBackendRequest(request) {
+// Electron sets `initiatorOrigin` on protocol requests, outside the standard Request type.
+async function proxyBackendRequest(
+  request: Request & { initiatorOrigin?: string },
+) {
   const source = new URL(request.url);
   const headers = new Headers(request.headers);
   const pageUrl = mainWindow?.webContents.getURL() || "";
   if (!isTrustedProxyRequest(pageUrl)) {
     return new Response("Forbidden", { status: 403 });
   }
+  const credentials = FramePolicy.proxyCredentials(
+    request.method,
+    source.pathname,
+    request.initiatorOrigin,
+  );
+  if (credentials === "forbidden")
+    return new Response("Forbidden", { status: 403 });
+  if (credentials === "method-not-allowed")
+    return new Response("Method not allowed", { status: 405 });
   headers.delete("host");
   headers.set("accept-encoding", "identity");
-  headers.set("origin", APP_ORIGIN);
   const targetUrl = backendRequestUrl(backendUrl, request.url);
+  if (credentials === "anonymous") {
+    headers.delete("cookie");
+    return fetch(targetUrl, {
+      method: request.method,
+      headers,
+      redirect: "manual",
+    });
+  }
+  headers.set("origin", APP_ORIGIN);
   const cookies = await session.defaultSession.cookies.get({ url: targetUrl });
   if (cookies.length) {
     headers.set(
@@ -1404,6 +858,8 @@ async function loadApp(window: Electron.BrowserWindow, url = APP_URL) {
   }
 }
 
+const closeConfirmation = new CloseConfirmation(app, dialog, appRuntime.name);
+
 function createMenu() {
   const backendSettingsItem = {
     label: "Backend URL…",
@@ -1413,12 +869,14 @@ function createMenu() {
   const backendItems = environmentItem
     ? [backendSettingsItem, environmentItem]
     : [backendSettingsItem];
-  const settingsItem = {
-    id: "open-settings",
-    label: "Settings…",
-    accelerator: "CmdOrCtrl+,",
-    click: () => sendDesktopCommand("open-settings"),
-  };
+  const settingsItems = menuCommands.items("app", [
+    {
+      id: "open-settings",
+      label: "Settings…",
+      accelerator: "CmdOrCtrl+,",
+      click: () => sendDesktopCommand("open-settings"),
+    },
+  ]);
   const checkForUpdatesItem = {
     label: "Check for Updates…",
     enabled: app.isPackaged,
@@ -1431,7 +889,7 @@ function createMenu() {
             label: app.name,
             submenu: [
               { role: "about" },
-              settingsItem,
+              ...settingsItems,
               checkForUpdatesItem,
               ...backendItems,
               { type: "separator" },
@@ -1441,7 +899,15 @@ function createMenu() {
               { role: "hideOthers" },
               { role: "unhide" },
               { type: "separator" },
-              { role: "quit" },
+              {
+                label: `Quit ${app.name}`,
+                accelerator: "Command+Q",
+                click: () =>
+                  void closeConfirmation.request(
+                    "quit",
+                    BrowserWindow.getFocusedWindow(),
+                  ),
+              },
             ],
           },
         ]
@@ -1449,22 +915,36 @@ function createMenu() {
     {
       label: "File",
       submenu: [
-        {
-          id: "new-thread",
-          label: "New Thread",
-          click: () => sendDesktopCommand("new-thread"),
-        },
-        {
-          id: "show-command-palette",
-          label: "Search Commands and Threads…",
-          accelerator: "CmdOrCtrl+K",
-          click: () => sendDesktopCommand("show-command-palette"),
-        },
+        ...menuCommands.items("file", [
+          {
+            id: "new-thread",
+            label: "New Thread",
+            accelerator: "CmdOrCtrl+N",
+            click: () => sendDesktopCommand("new-thread"),
+          },
+          {
+            id: "show-command-palette",
+            label: "Search Commands and Threads…",
+            accelerator: "CmdOrCtrl+K",
+            click: () => sendDesktopCommand("show-command-palette"),
+          },
+        ]),
         ...(process.platform === "darwin"
           ? []
-          : [{ type: "separator" }, settingsItem, ...backendItems]),
+          : [{ type: "separator" }, ...settingsItems, ...backendItems]),
         { type: "separator" },
-        { role: process.platform === "darwin" ? "close" : "quit" },
+        ...(process.platform === "darwin"
+          ? [
+              {
+                label: "Close Window",
+                click: () =>
+                  void closeConfirmation.request(
+                    "close",
+                    BrowserWindow.getFocusedWindow(),
+                  ),
+              },
+            ]
+          : [{ role: "quit" }]),
       ],
     },
     {
@@ -1477,17 +957,21 @@ function createMenu() {
         { role: "copy" },
         { role: "paste" },
         { role: "selectAll" },
+        { type: "separator" },
+        ...menuCommands.items("edit"),
       ],
     },
     {
       label: "View",
       submenu: [
-        {
-          id: "toggle-sidebar",
-          label: "Toggle Sidebar",
-          accelerator: "CmdOrCtrl+B",
-          click: () => sendDesktopCommand("toggle-sidebar"),
-        },
+        ...menuCommands.items("view", [
+          {
+            id: "toggle-sidebar",
+            label: "Toggle Sidebar",
+            accelerator: "CmdOrCtrl+B",
+            click: () => sendDesktopCommand("toggle-sidebar"),
+          },
+        ]),
         { type: "separator" },
         {
           label: "Reload",
@@ -1513,6 +997,7 @@ function createMenu() {
         { role: "togglefullscreen" },
       ],
     },
+    ...menuCommands.commandMenus(),
     process.platform === "darwin"
       ? { role: "windowMenu" }
       : {
@@ -1522,12 +1007,14 @@ function createMenu() {
     {
       role: "help",
       submenu: [
-        {
-          id: "show-keyboard-shortcuts",
-          label: "Keyboard Shortcuts",
-          accelerator: "CmdOrCtrl+/",
-          click: () => sendDesktopCommand("show-keyboard-shortcuts"),
-        },
+        ...menuCommands.items("help", [
+          {
+            id: "show-keyboard-shortcuts",
+            label: "Keyboard Shortcuts",
+            accelerator: "CmdOrCtrl+/",
+            click: () => sendDesktopCommand("show-keyboard-shortcuts"),
+          },
+        ]),
         { type: "separator" },
         {
           label: `${appRuntime.name} on GitHub`,
@@ -1584,7 +1071,10 @@ async function startExternalLogin(navigationUrl: string) {
  * browser only to the provider, and redeems the loopback handoff under its own
  * session, which is also what decides whose account the connection lands on.
  */
-async function startConnectFlow(provider) {
+async function startConnectFlow(
+  provider: string,
+  recoveryToken?: string,
+): Promise<boolean | { recoveryToken: string; error?: string }> {
   if (!backendUrl || !isConnectProvider(provider)) return false;
   connectFlows.get(provider)?.cancel();
   connectFlows.delete(provider);
@@ -1593,6 +1083,12 @@ async function startConnectFlow(provider) {
   try {
     flow = await beginLogin({ connect: true });
   } catch (error) {
+    if (recoveryToken) {
+      return {
+        recoveryToken,
+        error: "Could not open a local sign-in listener. Please try again.",
+      };
+    }
     dialog.showErrorBox(
       `${appRuntime.name} could not connect ${provider}`,
       `Could not open a local listener: ${error.message}`,
@@ -1602,18 +1098,44 @@ async function startConnectFlow(provider) {
   connectFlows.set(provider, flow);
   try {
     const started = await backendFetch(
-      connectLoginUrl(backendUrl, provider, flow),
+      connectLoginUrl(backendUrl, provider, flow, recoveryToken),
       { redirect: "manual" },
     );
     const location = started.headers.get("location");
+    if (recoveryToken && started.status === 400) {
+      return {
+        recoveryToken,
+        error:
+          "This recovery link has expired or is no longer valid. Cancel and connect Slack again to restart recovery.",
+      };
+    }
     if (!location) {
       throw new Error(`Backend did not start the flow (${started.status})`);
     }
-    await shell.openExternal(location);
+    const consent = new URL(location);
+    const localConsent =
+      isDevelopment &&
+      consent.protocol === "http:" &&
+      consent.origin === new URL(backendUrl).origin;
+    if (
+      (consent.protocol !== "https:" && !localConsent) ||
+      consent.username ||
+      consent.password
+    ) {
+      throw new Error("Backend returned an invalid consent URL");
+    }
+    await shell.openExternal(consent.href);
 
     const code = await flow.code;
     if (connectFlows.get(provider) !== flow) return false;
-    if (!code) return false;
+    if (!code) {
+      return recoveryToken
+        ? {
+            recoveryToken,
+            error: "GitHub connection was cancelled. Please try again.",
+          }
+        : false;
+    }
 
     const exchange = await backendFetch(
       connectExchangeUrl(backendUrl, provider),
@@ -1624,10 +1146,55 @@ async function startConnectFlow(provider) {
       },
     );
     if (!exchange.ok) {
+      if (exchange.status === 409) {
+        const payload: unknown = await exchange.json();
+        const detail =
+          payload && typeof payload === "object" && "detail" in payload
+            ? payload.detail
+            : null;
+        if (detail && typeof detail === "object" && "code" in detail) {
+          if (
+            provider === "slack" &&
+            detail.code === "slack_account_conflict" &&
+            "recovery_token" in detail &&
+            typeof detail.recovery_token === "string" &&
+            detail.recovery_token &&
+            detail.recovery_token.length <= 16_384
+          ) {
+            return { recoveryToken: detail.recovery_token };
+          }
+          if (
+            recoveryToken &&
+            detail.code === "slack_recovery_failed" &&
+            "message" in detail &&
+            typeof detail.message === "string" &&
+            detail.message.length <= 2_048
+          ) {
+            return { recoveryToken, error: detail.message };
+          }
+        }
+      }
+      if (recoveryToken && exchange.status === 400) {
+        return {
+          recoveryToken,
+          error:
+            "This recovery link has expired or is no longer valid. Cancel and connect Slack again to restart recovery.",
+        };
+      }
       throw new Error(`Backend rejected the connection (${exchange.status})`);
+    }
+    if (provider === "github") {
+      await completeExternalLogin(flow.verifier, code, exchange);
     }
     return true;
   } catch (error) {
+    if (recoveryToken) {
+      return {
+        recoveryToken,
+        error:
+          "Could not connect GitHub. Try again and choose the GitHub account you previously used with Robin.",
+      };
+    }
     dialog.showErrorBox(
       `${appRuntime.name} could not connect ${provider}`,
       error.message,
@@ -1655,12 +1222,14 @@ async function backendFetch(url, init: any = {}) {
   return fetch(url, { ...init, headers });
 }
 
-async function completeExternalLogin(verifier, code) {
-  const response = await fetch(desktopExchangeUrl(backendUrl), {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: APP_ORIGIN },
-    body: JSON.stringify({ code, verifier }),
-  });
+async function completeExternalLogin(verifier, code, exchanged?: Response) {
+  const response =
+    exchanged ??
+    (await fetch(desktopExchangeUrl(backendUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      body: JSON.stringify({ code, verifier }),
+    }));
   if (!response.ok) {
     throw new Error(`Backend rejected the sign-in (${response.status})`);
   }
@@ -1677,6 +1246,7 @@ async function completeExternalLogin(verifier, code) {
     secure: new URL(backendUrl).protocol === "https:",
     expirationDate: Date.now() / 1000 + Number(payload.expires_in),
   });
+  if (exchanged) return;
 
   const window =
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow();
@@ -1727,8 +1297,9 @@ async function handleNavigation(window, event, url) {
 function showEditContextMenu(window, params) {
   const { editFlags, isEditable, misspelledWord, dictionarySuggestions } =
     params;
+  const linkURL = params.linkURL;
   const hasSelection = params.selectionText.trim().length > 0;
-  if (!isEditable && !hasSelection) return;
+  if (!isEditable && !hasSelection && !linkURL) return;
   const template = [];
   if (isEditable && misspelledWord) {
     for (const suggestion of dictionarySuggestions)
@@ -1757,7 +1328,15 @@ function showEditContextMenu(window, params) {
       { type: "separator" },
       { role: "selectAll", enabled: editFlags.canSelectAll },
     );
-  else template.push({ role: "copy", enabled: editFlags.canCopy });
+  else if (hasSelection)
+    template.push({ role: "copy", enabled: editFlags.canCopy });
+  if (linkURL) {
+    if (template.length) template.push({ type: "separator" });
+    template.push({
+      label: "Copy Link Address",
+      click: () => clipboard.writeText(linkURL),
+    });
+  }
   Menu.buildFromTemplate(template).popup({ window });
 }
 
@@ -1788,8 +1367,21 @@ function createWindow(initialUrl = APP_URL) {
   });
 
   window.once("ready-to-show", () => window.show());
+  lifecycleLog.record("window-created", { id: window.id });
+  window.on("close", () =>
+    lifecycleLog.record("window-close", { id: window.id }),
+  );
+  window.webContents.on("render-process-gone", (_event, details) =>
+    lifecycleLog.record("render-process-gone", {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    }),
+  );
   window.on("closed", () => {
-    if (mainWindow === window) mainWindow = null;
+    lifecycleLog.record("window-closed");
+    if (mainWindow !== window) return;
+    mainWindow = null;
+    if (menuCommands.reset()) createMenu();
   });
   window.webContents.setWindowOpenHandler(({ url }) => {
     const target =
@@ -1802,12 +1394,36 @@ function createWindow(initialUrl = APP_URL) {
   window.webContents.on("will-navigate", (event, url) =>
     handleNavigation(window, event, url),
   );
+  window.webContents.on("will-frame-navigate", (event) => {
+    if (event.isMainFrame) return;
+    const initiatedByApp =
+      event.initiator?.frameTreeNodeId ===
+      window.webContents.mainFrame.frameTreeNodeId;
+    const frames: { url: string; origin: string }[] = [];
+    for (let frame = event.frame; frame; frame = frame.parent)
+      frames.push({ url: frame.url, origin: frame.origin });
+    if (FramePolicy.blocksNavigation(frames, event.url, initiatedByApp))
+      event.preventDefault();
+  });
   window.webContents.on("will-redirect", (event) => {
     if (event.isMainFrame) handleNavigation(window, event, event.url);
   });
   window.webContents.on("will-attach-webview", (event) =>
     event.preventDefault(),
   );
+  window.webContents.on("did-navigate", () => {
+    if (mainWindow === window) {
+      if (menuCommands.reset()) createMenu();
+      approvalPanel.reset();
+      approvalPanel.sync();
+    }
+  });
+  window.webContents.on("did-navigate-in-page", () => {
+    if (mainWindow === window) approvalPanel.sync();
+  });
+  window.on("resize", () => {
+    if (mainWindow === window) approvalPanel.sync();
+  });
   window.webContents.on("did-finish-load", () =>
     window.webContents.send("desktop:fullscreen-change", window.isFullScreen()),
   );
@@ -1859,6 +1475,7 @@ async function saveDiagnosticsReport() {
     backendHost: backendUrl ? new URL(backendUrl).host : null,
     renderer: rendererConsole.entries(),
     main: mainConsole.entries(),
+    lifecycle: lifecycleLog.read(),
     perf: await collectPerfSpans(window),
   });
   const options = {
@@ -2004,10 +1621,14 @@ app.on("continue-activity", (event, type, _userInfo, details) => {
 });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+lifecycleLog.record("single-instance-lock", {
+  acquired: hasSingleInstanceLock,
+});
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", (_event, commandLine) => {
+    lifecycleLog.record("second-instance");
     if (isDevelopment) {
       app.relaunch({ args: commandLine.slice(1) });
       app.quit();
@@ -2022,6 +1643,8 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     app.setName(appRuntime.name);
+    lifecycleLog.record("ready");
+    powerMonitor.on("shutdown", () => lifecycleLog.record("system-shutdown"));
     migrateStoredConfig();
     try {
       backendUrl = resolveBackendUrl({
@@ -2041,26 +1664,7 @@ if (!hasSingleInstanceLock) {
     primaryBackendUrl = backendUrl;
     void shareBackendSession();
 
-    localThreadStore = new LocalThreadStore(
-      path.join(app.getPath("userData"), "desktop-this-mac-threads.json"),
-    );
-    localBridges = new LocalBridges({
-      send: sendBridgeRequest,
-      rootFor: (threadId) => threadRoot(localThreadStore.get(threadId)),
-      bridgeIdFor: (threadId) =>
-        localThreadStore.get(threadId)?.bridgeId ?? null,
-      remember: (threadId, bridgeId) =>
-        localThreadStore.setBridge(threadId, bridgeId),
-      env: getUserShellEnv,
-      handlers: (threadId) => ({
-        worktree_handoff: (params) => handoffThreadToWorktree(threadId, params),
-      }),
-      log: (message, error) =>
-        error === undefined
-          ? console.warn(message)
-          : console.warn(message, error),
-    });
-    protocol.handle("open-swe", serveDesktopUi);
+    protocol.handle("robin", serveDesktopUi);
     configurePermissions();
     configureFraming();
     configureDesktopIpc();
@@ -2068,14 +1672,6 @@ if (!hasSingleInstanceLock) {
     void loadAlternativeEnvironments();
     if (!desktopLinks.ready()) createWindow();
     configureAutoUpdater();
-    configureTerminalIpc({
-      ipcMain,
-      requireTrusted: requireTrustedDesktopIpc,
-      getWindow: () => mainWindow,
-      getSessionRoot: (id) =>
-        threadRoot(localThreadStore.get(id)) ?? projectScopeSession(id)?.cwd,
-      userDataPath: app.getPath("userData"),
-    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -2090,10 +1686,9 @@ if (!hasSingleInstanceLock) {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
-    void Promise.all([closeAllTerminals(), localBridges?.closeAll()]).finally(
-      () => {
-        app.quit();
-      },
-    );
+    void (localAccessBridge?.close() ?? Promise.resolve()).finally(() => {
+      localAccessBridge = null;
+      app.quit();
+    });
   });
 }

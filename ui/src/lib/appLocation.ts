@@ -8,9 +8,8 @@ export const SECTION_ROOTS = [
   "/agents/chat",
   "/agents/skills",
   "/agents/automations",
-  "/agents/bots",
   "/agents/reviews",
-  "/incidents",
+  "/agents/connections",
 ] as const
 
 /** A built-in section, or one installed plugin's page. */
@@ -30,7 +29,7 @@ function pathnameOf(href: string): string | undefined {
 
 function isAppLocation(value: string): boolean {
   const pathname = pathnameOf(value)
-  return [FALLBACK_LOCATION, "/assistant", "/incidents"].some((root) =>
+  return [FALLBACK_LOCATION, "/assistant"].some((root) =>
     isUnder(root, pathname)
   )
 }
@@ -43,10 +42,14 @@ export function sectionOf(pathname: string): SectionRoot | undefined {
 
 export function rememberAppLocation(href: string): void {
   if (typeof window === "undefined" || !isAppLocation(href)) return
-  window.sessionStorage.setItem(STORAGE_KEY, href)
   const section = sectionOf(pathnameOf(href) ?? "")
+  const savedHref = section === "/agents/connections" ? section : href
+  window.sessionStorage.setItem(STORAGE_KEY, savedHref)
   if (section) {
-    window.sessionStorage.setItem(`${SECTION_STORAGE_PREFIX}${section}`, href)
+    window.sessionStorage.setItem(
+      `${SECTION_STORAGE_PREFIX}${section}`,
+      savedHref
+    )
   }
 }
 

@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import re
-from typing import Literal, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 from fastapi import HTTPException
 
+from openswe.audit_logs.tools import audit_tool
 from openswe.run_config import RunConfig
 from openswe.schedules.delivery import CreatorDelivery, DeliveryRefused
 from openswe.slack.availability import SlackUserInfo
@@ -15,22 +16,45 @@ from openswe.slack.client import (
     SLACK_USER_ID_RE,
     convert_mentions_to_slack_format,
     get_slack_user_info,
+    post_slack_thread_message_with_ts,
     post_slack_top_level_message_with_ts,
 )
-from openswe.slack.http import SLACK_REQUEST_ERRORS, SlackClient, SlackRequestError, slack_error
+from openswe.slack.http import (
+    SLACK_REQUEST_ERRORS,
+    SlackClient,
+    SlackConfigurationError,
+    SlackRequestError,
+    slack_error,
+)
 from openswe.slack.markdown import markdown_blocks, markdown_to_mrkdwn
 from openswe.slack.payloads import SlackChannelPayload
+from openswe.tools import access as tool_access
 from openswe.users import User
 
 logger = logging.getLogger(__name__)
 
 _CHANNEL_ID_RE = re.compile(r"^[CG][A-Z0-9]{1,99}$")
+_SLACK_TEXT_MAX_CHARS: Final = 40_000
+_AUTOMATION_HEADLINE_MAX_CHARS: Final = 400
 
 
 class SlackChannel(TypedDict):
     id: str
     name: str
     is_private: bool
+
+
+class SlackDirectoryChannel(TypedDict):
+    id: str
+    name: str
+    purpose: str
+    topic: str
+    num_members: int | None
+
+
+class SlackDirectoryResults(TypedDict):
+    success: Literal[True]
+    channels: list[SlackDirectoryChannel]
 
 
 class SlackChannelError(TypedDict):
@@ -64,6 +88,45 @@ class SlackMessageReceipt(TypedDict):
     success: Literal[True]
     channel_id: str
     message_ts: str
+    details_ts: NotRequired[str]
+    details_error: NotRequired[str]
+
+
+@tool_access.access(tool_access.Policy(trusted="anywhere"), per_call=lambda _: None)
+async def slack_search_channel_directory(
+    query: str, limit: int = 10
+) -> SlackDirectoryResults | SlackChannelError:
+    """Search the cached directory for public, internal Slack channels."""
+    cfg = RunConfig.from_runtime()
+    slack = cfg.slack_thread
+    if slack is not None and not slack.is_dm:
+        try:
+            destination = await ChannelDirectory.load(slack.channel_id)
+        except SlackConfigurationError:
+            logger.warning("Slack channel verification failed: bot token is unavailable")
+            destination = None
+        if destination is None or destination.id != slack.channel_id or not destination.public:
+            return {
+                "success": False,
+                "error": "The Slack thread's channel cannot be verified as public and internal.",
+            }
+    matches = await ChannelDirectory.search_directory(query, limit)
+    channels: list[SlackDirectoryChannel] = []
+    for channel in matches:
+        details = channel.details
+        members = channel.payload.get("num_members")
+        channels.append(
+            {
+                "id": channel.id,
+                "name": details.name or channel.name,
+                "purpose": details.purpose,
+                "topic": details.topic,
+                "num_members": members
+                if isinstance(members, int) and not isinstance(members, bool)
+                else None,
+            }
+        )
+    return {"success": True, "channels": channels}
 
 
 async def slack_list_channels(cursor: str | None = None) -> SlackChannelList | SlackChannelError:
@@ -211,19 +274,25 @@ async def _dm_automation_creator(
     return {"success": True, "channel_id": dm_channel_id, "message_ts": message_ts}
 
 
+@audit_tool()
 async def slack_post_message(
-    channel_id: str, message: str
+    channel_id: str, message: str, details: str | None = None
 ) -> SlackMessageReceipt | SlackChannelError:
-    """Post a standalone message to a channel the Robin bot belongs to."""
+    """Post a standalone message to a channel the bot belongs to, with any details in its thread."""
     channel_id = channel_id.strip()
     if SLACK_USER_ID_RE.fullmatch(channel_id):
-        return await _dm_automation_creator(channel_id, message)
+        full = f"{message.strip()}\n\n{details.strip()}" if details and details.strip() else message
+        return await _dm_automation_creator(channel_id, full)
     if not _CHANNEL_ID_RE.fullmatch(channel_id):
         return {"success": False, "error": "channel_id must be a Slack channel ID"}
     if not message.strip():
         return {"success": False, "error": "message is required"}
     message = convert_mentions_to_slack_format(message)
-    if len(message) > 40_000:
+    details = convert_mentions_to_slack_format(details.strip()) if details else ""
+    if len(message) > _SLACK_TEXT_MAX_CHARS or len(details) > _SLACK_TEXT_MAX_CHARS:
+        return {"success": False, "error": "msg_too_long"}
+    details_text = markdown_to_mrkdwn(details)
+    if len(details_text) > _SLACK_TEXT_MAX_CHARS:
         return {"success": False, "error": "msg_too_long"}
     # conversations.info does not guarantee an is_member field.
     cursor: str | None = None
@@ -244,6 +313,15 @@ async def slack_post_message(
     cfg = RunConfig.from_runtime()
     if not cfg.thread_id:
         return {"success": False, "error": "origin_thread_required"}
+    if cfg.schedule_id and len(message) > _AUTOMATION_HEADLINE_MAX_CHARS:
+        return {
+            "success": False,
+            "error": (
+                f"An automation's channel post must be a short headline of at most "
+                f"{_AUTOMATION_HEADLINE_MAX_CHARS} characters. Put the rest in `details`, "
+                "which is posted as a reply in the headline's thread."
+            ),
+        }
     location = await run_slack_location(cfg, cfg.thread_id)
     footer = await origin_footer(cfg.thread_id, location)
     if not footer:
@@ -256,7 +334,7 @@ async def slack_post_message(
     )
     blocks = [*(markdown_blocks(message) or []), *footer]
     fallback_text = f"{markdown_to_mrkdwn(message)}\n\n{footer_text}"
-    if len(fallback_text) > 40_000:
+    if len(fallback_text) > _SLACK_TEXT_MAX_CHARS:
         return {"success": False, "error": "msg_too_long"}
     try:
         message_ts = await post_slack_top_level_message_with_ts(
@@ -268,4 +346,22 @@ async def slack_post_message(
         )
     except SlackRequestError as exc:
         return {"success": False, "error": exc.code or "post_failed"}
-    return {"success": True, "channel_id": channel_id, "message_ts": message_ts}
+    receipt: SlackMessageReceipt = {
+        "success": True,
+        "channel_id": channel_id,
+        "message_ts": message_ts,
+    }
+    if not details:
+        return receipt
+    details_blocks = markdown_blocks(details)
+    try:
+        receipt["details_ts"] = await post_slack_thread_message_with_ts(
+            channel_id,
+            message_ts,
+            details_text,
+            blocks=block_payload(details_blocks) if details_blocks else None,
+            unfurl=False,
+        )
+    except SlackRequestError as exc:
+        receipt["details_error"] = exc.code or "post_failed"
+    return receipt

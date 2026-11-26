@@ -1,10 +1,18 @@
 import { Button } from "@langchain/macaw-components/Button"
 import { Card } from "@langchain/macaw-components/Card"
+import { Dialog, DialogContent } from "@langchain/macaw-components/Dialog"
+import { Text } from "@langchain/macaw-components/Text"
 import { GroupedTabs } from "@langchain/macaw-components/GroupedTabs"
 import { Slider } from "@langchain/macaw-components/Slider"
+import { cn } from "@langchain/macaw-components/utils/cn"
 import { useEffect, useRef, useState, type PointerEvent } from "react"
 
-import type { FrontendAnnotation, FrontendScenario } from "../lib/capture"
+import {
+  StoredCapture,
+  type FrontendAnnotation,
+  type FrontendScenario,
+  type ScenarioShots,
+} from "../lib/capture"
 import { useImage, useNearViewport, type LoadedImage } from "../lib/media"
 import {
   errorMessage,
@@ -14,6 +22,7 @@ import {
 } from "../lib/queries"
 import { ComparisonViewport } from "./ComparisonViewport"
 import { ShareAgainButton } from "./ShareRepositories"
+import { useUsage } from "../lib/usage"
 
 type ViewMode = "split" | "swipe" | "onion"
 
@@ -23,25 +32,42 @@ const MAX_PIXELS = 16_000_000
 function Screenshot({
   image,
   label,
-  annotation,
+  annotations = [],
 }: {
   image: LoadedImage
   label: string
-  annotation?: FrontendAnnotation
+  annotations?: FrontendAnnotation[]
 }) {
+  const [original, setOriginal] = useState(false)
+  const opener = useRef<HTMLButtonElement>(null)
   return (
     <div className="relative">
-      <img
-        src={image.url}
-        alt={label}
-        draggable={false}
-        className="block h-auto w-full"
-      />
-      {annotation && (
+      <Button
+        ref={opener}
+        data-screenshot
+        size="sm"
+        color="secondary"
+        variant="plain"
+        aria-label={`Open ${label.toLowerCase()} at natural size`}
+        className="block h-auto w-full cursor-zoom-in rounded-none border-0 p-0"
+        onClick={() => setOriginal(true)}
+      >
+        <img
+          src={image.url}
+          alt={label}
+          draggable={false}
+          className="block h-auto w-full"
+        />
+      </Button>
+      {annotations.map((annotation, index) => (
         <div
+          key={index}
           role="img"
           aria-label={`${label}: ${annotation.title}`}
-          className="pointer-events-none absolute border-2 border-focus"
+          className={cn(
+            "pointer-events-none absolute border-2",
+            annotation.severity === "error" ? "border-error" : "border-warning"
+          )}
           style={{
             left: `${(annotation.x / image.width) * 100}%`,
             top: `${(annotation.y / image.height) * 100}%`,
@@ -49,7 +75,27 @@ function Screenshot({
             height: `${(annotation.height / image.height) * 100}%`,
           }}
         />
-      )}
+      ))}
+      <Dialog open={original} onOpenChange={setOriginal}>
+        <DialogContent
+          title={`${label} · ${image.width} × ${image.height}`}
+          description="Natural size, without annotations. Scroll to inspect the full image."
+          className="max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)]"
+          childrenClassName="min-h-0 overflow-auto p-space-3"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            opener.current?.focus({ preventScroll: true })
+          }}
+        >
+          <img
+            src={image.url}
+            alt={`${label} at natural size`}
+            width={image.width}
+            height={image.height}
+            className="block max-w-none"
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -57,6 +103,8 @@ function Screenshot({
 interface EvidenceViewerProps {
   media: RunMedia
   scenario: FrontendScenario
+  /** The pair to compare: the scenario's light or dark screenshots. */
+  shots: ScenarioShots
   annotation?: FrontendAnnotation
   onClearAnnotation?: () => void
 }
@@ -95,17 +143,40 @@ function pairError(before: LoadedImage, after: LoadedImage): string | null {
 function LoadedEvidence({
   media,
   scenario,
+  shots,
   annotation,
   onClearAnnotation,
 }: EvidenceViewerProps) {
   const [mode, setMode] = useState<ViewMode>("split")
+  const [showHints, setShowHints] = useState(true)
+  const [hintSelection, setHintSelection] = useState({
+    annotation,
+    hidden: false,
+  })
+  if (hintSelection.annotation !== annotation)
+    setHintSelection({ annotation, hidden: false })
+  const selectedAnnotation = hintSelection.hidden ? undefined : annotation
+  const hintsVisible = showHints || Boolean(selectedAnnotation)
+  const annotations = selectedAnnotation
+    ? [selectedAnnotation]
+    : showHints
+      ? scenario.annotations
+      : []
+  const record = useUsage()
   const [swipe, setSwipe] = useState(50)
   const [opacity, setOpacity] = useState(50)
-  const beforeFile = useMedia(media, scenario.before_url)
-  const afterFile = useMedia(media, scenario.after_url)
+  const beforeFile = useMedia(media, shots.before)
+  const afterFile = useMedia(media, shots.after)
   const before = useImage(beforeFile.data)
   const after = useImage(afterFile.data)
   const failed = beforeFile.error ?? afterFile.error
+  const other = StoredCapture.shots(
+    scenario,
+    shots.theme === "dark" ? "light" : "dark"
+  )
+  const shown = Boolean(before.image && after.image)
+  useMedia(media, other.before, shown)
+  useMedia(media, other.after, shown)
 
   function moveDivider(event: PointerEvent<HTMLDivElement>) {
     const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
@@ -131,29 +202,28 @@ function LoadedEvidence({
         )}
       </div>
     )
-  if (!scenario.before_url || !scenario.after_url) {
-    const single = scenario.after_url ? after : before
+  if (!shots.before || !shots.after) {
+    const single = shots.after ? after : before
     return (
       <div className="flex flex-col gap-space-3 p-space-4 text-sm text-secondary">
         <p>
           {scenario.error ??
             "No paired screenshots. This state has not been visually compared."}
         </p>
-        {(scenario.before_url || scenario.after_url) && (
+        {(shots.before || shots.after) && (
           <figure>
             <figcaption className="mb-space-2 text-xs">
-              {scenario.after_url ? "PR state only" : "Base state only"} · No
-              pixel comparison available
+              {shots.after ? "PR state only" : "Base state only"}. No pixel
+              comparison available.
             </figcaption>
             {single.image ? (
-              <img
-                src={single.image.url}
-                alt={
-                  scenario.after_url
+              <Screenshot
+                image={single.image}
+                label={
+                  shots.after
                     ? "PR interaction state"
                     : "Base interaction state"
                 }
-                className="h-auto max-w-full rounded-md border border-default"
               />
             ) : (
               <p role="status" className="text-xs">
@@ -186,9 +256,10 @@ function LoadedEvidence({
       <Screenshot
         image={after.image}
         label="After screenshot"
-        annotation={annotation}
+        annotations={annotations}
       />
       <div
+        inert
         className="pointer-events-none absolute inset-0"
         style={
           mode === "swipe"
@@ -199,7 +270,7 @@ function LoadedEvidence({
         <Screenshot
           image={before.image}
           label="Before screenshot"
-          annotation={annotation}
+          annotations={annotations}
         />
       </div>
       {mode === "swipe" && (
@@ -212,7 +283,8 @@ function LoadedEvidence({
           aria-valuenow={swipe}
           aria-valuetext={`${swipe}% before, ${100 - swipe}% after`}
           tabIndex={0}
-          className="absolute inset-y-0 w-6 -translate-x-1/2 cursor-col-resize touch-none outline-offset-2 before:absolute before:inset-y-0 before:left-1/2 before:-translate-x-1/2 before:border-l-2 before:border-focus hover:before:border-l-4 focus-visible:outline-2 focus-visible:outline-[var(--border-focus)]"
+          aria-description="Use arrow keys to move the divider, Shift for larger steps, and Home or End to reveal one screenshot."
+          className="group absolute inset-y-0 w-6 -translate-x-1/2 cursor-col-resize touch-none outline-none before:absolute before:inset-y-0 before:left-1/2 before:-translate-x-1/2 before:border-l-2 before:border-brand hover:before:border-l-4"
           style={{ left: `${swipe}%` }}
           onPointerDown={(event) => {
             if (event.button !== 0) return
@@ -251,33 +323,54 @@ function LoadedEvidence({
             event.stopPropagation()
             setSwipe(Math.max(0, Math.min(100, next)))
           }}
-        />
+        >
+          <span
+            aria-hidden="true"
+            className="absolute top-1/2 left-1/2 flex h-8 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm border border-brand bg-surface-level-2 text-primary group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-focus)]"
+          >
+            ↔
+          </span>
+        </div>
       )}
     </div>
   )
 
   return (
     <div role="region" aria-label="Visual comparison" className="min-w-0">
-      {annotation && (
-        <div className="flex flex-col gap-space-2 border-y border-default bg-surface-level-3 px-space-4 py-space-2 sm:flex-row sm:items-start sm:justify-between">
-          <p role="status" className="text-xs text-secondary">
-            <span className="font-medium text-primary">{annotation.title}</span>
-            {" · "}
-            {annotation.body}
-          </p>
+      {(scenario.annotations.length > 0 || annotation) && (
+        <div className="flex flex-wrap items-start justify-between gap-space-2 border-t border-default bg-surface-level-3 px-space-3 py-space-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-space-1">
+            <Text variant="xs" className="text-secondary" role="status">
+              {hintsVisible
+                ? `${annotations.length} highlighted ${annotations.length === 1 ? "area" : "areas"} · review hints`
+                : "Hints hidden · original appearance"}
+            </Text>
+            {hintsVisible &&
+              annotations.map((note, index) => (
+                <Text key={index} variant="xs" className="text-secondary">
+                  <span className="font-medium text-primary">
+                    {note.title}:
+                  </span>{" "}
+                  {note.body}
+                </Text>
+              ))}
+          </div>
           <Button
             size="sm"
             color="secondary"
-            variant="plain"
-            className="self-start"
-            onClick={onClearAnnotation}
+            variant="outlined"
+            aria-pressed={hintsVisible}
+            onClick={() => {
+              setShowHints(!hintsVisible)
+              setHintSelection({ annotation, hidden: hintsVisible })
+              if (hintsVisible) onClearAnnotation?.()
+            }}
           >
-            Clear highlight
+            {hintsVisible ? "Hide hints" : "Show hints"}
           </Button>
         </div>
       )}
       <ComparisonViewport
-        key={JSON.stringify(annotation)}
         width={before.image.width}
         height={before.image.height}
         panes={
@@ -290,7 +383,7 @@ function LoadedEvidence({
                     <Screenshot
                       image={before.image}
                       label="Before screenshot"
-                      annotation={annotation}
+                      annotations={annotations}
                     />
                   ),
                 },
@@ -301,7 +394,7 @@ function LoadedEvidence({
                     <Screenshot
                       image={after.image}
                       label="After screenshot"
-                      annotation={annotation}
+                      annotations={annotations}
                     />
                   ),
                 },
@@ -319,13 +412,21 @@ function LoadedEvidence({
         <GroupedTabs
           size="sm"
           value={mode}
-          onChange={setMode}
+          onChange={(next) => {
+            record(`compare_${next}`)
+            setMode(next)
+          }}
           options={[
             { value: "split", display: "2-up" },
             { value: "swipe", display: "Swipe" },
             { value: "onion", display: "Onion Skin" },
           ]}
         />
+        {mode === "swipe" && (
+          <Text variant="xs" className="text-secondary">
+            Before ← divider → After · Drag or focus the grip and use arrow keys
+          </Text>
+        )}
         {mode === "onion" && (
           <div className="flex w-64 max-w-full items-center gap-space-3 text-xs text-secondary">
             <span className="shrink-0">After opacity</span>

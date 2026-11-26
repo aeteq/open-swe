@@ -1,4 +1,4 @@
-"""Shared builders for dashboard ("Open in Web") URLs."""
+"""Shared builders for dashboard ("Open in Robin") URLs."""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -41,7 +41,20 @@ def public_dashboard_api_base_url() -> str | None:
 
     None in local development, where nothing outside this machine can reach it.
     """
-    base = dashboard_api_base_url()
+    return _public_https(dashboard_api_base_url())
+
+
+def sandbox_api_base_url() -> str | None:
+    """The public HTTPS origin a sandbox reaches the backend's ``/dashboard/api/*`` through:
+    ``SANDBOX_PUBLIC_BASE_URL``, a tunnel's in local development, or else the dashboard's
+    own; None where there is none."""
+    explicit = ENV.SANDBOX_PUBLIC_BASE_URL.optional()
+    if explicit:
+        return _public_https(explicit.rstrip("/"))
+    return public_dashboard_api_base_url()
+
+
+def _public_https(base: str) -> str | None:
     parsed = urlsplit(base)
     if (
         parsed.scheme != "https"
@@ -244,11 +257,3 @@ def dashboard_review_pr_url(locator: str) -> str | None:
     if not owner or not repo or not number.isascii() or not number.isdecimal() or int(number) < 1:
         return None
     return f"https://github.com/{owner}/{repo}/pull/{int(number)}"
-
-
-def dashboard_incident_url(incident_id: str) -> str | None:
-    """Build the dashboard Incidents detail URL for an incident id."""
-    base_url = dashboard_base_url()
-    if not base_url or not incident_id:
-        return None
-    return f"{base_url}/incidents/{quote(incident_id, safe='')}"

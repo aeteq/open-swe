@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import type { TerminalTarget } from "@/features/agents/lib/terminalSession"
 import { agentsApi } from "@/features/agents/lib/api"
+import { dashboardApiUrl } from "@/lib/dashboard-fetch"
 
 export interface WorkspaceEntry {
   path: string
@@ -24,36 +25,43 @@ export type WorkspacePath =
       size: number
     }
 
-export function workspaceTargetKey(target: TerminalTarget): string {
-  return target.kind === "local"
-    ? `local:${target.sessionId}`
-    : `cloud:${target.threadId}`
+/** A short-lived URL serving one file's bytes, or an HTML or Markdown file's folder. */
+export interface WorkspacePreviewLink {
+  url: string
 }
 
-/** Lists a directory or reads a file from the local session or cloud sandbox. */
+export function workspaceTargetKey(target: TerminalTarget): string {
+  return target.threadId
+}
+
+/** Lists a directory or reads a file from the thread's sandbox. */
 export function readWorkspacePath(
   target: TerminalTarget,
   relativePath: string
 ): Promise<WorkspacePath> {
-  if (target.kind === "cloud")
-    return agentsApi.getThreadPath(target.threadId, relativePath)
-  const desktop = window.openSweDesktop
-  if (!desktop) return Promise.reject(new Error("Desktop app required"))
-  return desktop.readWorkspacePath({
-    localSessionId: target.sessionId,
-    relativePath,
-  })
+  return agentsApi.getThreadPath(target.threadId, relativePath)
 }
 
-/** Every non-ignored file in the local session or cloud sandbox. */
+/** Mints a preview URL for a file in the thread's sandbox. */
+export async function previewWorkspaceFile(
+  target: TerminalTarget,
+  relativePath: string
+): Promise<WorkspacePreviewLink> {
+  const link = await agentsApi.createThreadFilePreview(
+    target.threadId,
+    relativePath
+  )
+  return {
+    // Absolute, so relative links inside the previewed file resolve against it.
+    url: new URL(dashboardApiUrl(link.path), window.location.href).href,
+  }
+}
+
+/** Every non-ignored file in the thread's sandbox. */
 export function listWorkspaceFiles(
   target: TerminalTarget
 ): Promise<WorkspaceFileIndex> {
-  if (target.kind === "cloud")
-    return agentsApi.getThreadFileIndex(target.threadId)
-  const desktop = window.openSweDesktop
-  if (!desktop) return Promise.reject(new Error("Desktop app required"))
-  return desktop.listWorkspaceFiles(target.sessionId)
+  return agentsApi.getThreadFileIndex(target.threadId)
 }
 
 function errorText(cause: unknown): string {
@@ -69,6 +77,67 @@ export function useWorkspaceFile(
     queryFn: () => readWorkspacePath(target, relativePath ?? ""),
     enabled: relativePath !== null,
     retry: false,
+  })
+}
+
+/** A preview link for the open file; refetching mints a new one, which reloads the preview. */
+export function useWorkspacePreview(
+  target: TerminalTarget,
+  relativePath: string | null,
+  enabled: boolean
+) {
+  return useQuery({
+    queryKey: ["workspace-preview", workspaceTargetKey(target), relativePath],
+    queryFn: () => previewWorkspaceFile(target, relativePath ?? ""),
+    enabled: enabled && relativePath !== null,
+    // Opening or returning to a file shows it afresh, through a new link. A
+    // focus change must not, since a new link reloads the preview.
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  })
+}
+
+/**
+ * Saves a workspace file through a blob URL, which downloads the same way on the
+ * web and in the desktop app.
+ */
+export async function downloadWorkspaceFile(
+  target: TerminalTarget,
+  relativePath: string
+): Promise<void> {
+  const link = await previewWorkspaceFile(target, relativePath)
+  const url = URL.createObjectURL(new Blob([await fetchPreviewBytes(link.url)]))
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = relativePath.split("/").pop() ?? "download"
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/** The bytes behind a preview link, for viewers that parse the file themselves. */
+export async function fetchPreviewBytes(url: string): Promise<ArrayBuffer> {
+  // The link's token is the credential; the session cookie is not needed.
+  const response = await fetch(url, { credentials: "omit" })
+  if (!response.ok)
+    throw new Error((await response.text()) || response.statusText)
+  return response.arrayBuffer()
+}
+
+/** A preview's bytes, parsed once per link by `parse`. */
+export function usePreviewData<T>(
+  url: string,
+  parse: (bytes: ArrayBuffer) => T | Promise<T>
+) {
+  return useQuery({
+    // oxlint-disable-next-line query/exhaustive-deps -- A link names one file, so one parser.
+    queryKey: ["workspace-preview-data", url],
+    queryFn: async () => parse(await fetchPreviewBytes(url)),
+    staleTime: Infinity,
+    retry: false,
+    // To the viewer's boundary, which offers the file as a download instead.
+    throwOnError: true,
   })
 }
 

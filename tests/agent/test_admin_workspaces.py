@@ -1,24 +1,25 @@
-from contextlib import ExitStack
-from datetime import UTC, datetime
-from types import SimpleNamespace
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from langgraph.graph.state import RunnableConfig
 
 from openswe import server
-from openswe.sandboxes import lifecycle
+from openswe.execution_images import EXECUTION_IMAGES
+from openswe.routing import tools as routing_tools
+from openswe.routing.store import INTEGRATIONS
 from openswe.slack.channels import SlackChannel
-from openswe.tools import workspaces as env_tools
+from openswe.tools.snapshotctl import (
+    publish_execution_image,
+    read_execution_image,
+    rebuild_execution_image,
+    snapshotctl,
+)
 from openswe.users import User
 from openswe.utils.authorship import CollaboratorIdentity
-from openswe.workspaces.store import WORKSPACES, Workspace, WorkspaceCreate, WorkspaceUpdate
+from tests.conftest import serve_threads_from
 
 pytestmark = pytest.mark.usefixtures("registry_db")
-
-
-_READY = Workspace(slug="base", name="Base", snapshot_status="ready", snapshot_id="env-snap")
 
 
 def _config(**configurable: object) -> RunnableConfig:
@@ -27,40 +28,12 @@ def _config(**configurable: object) -> RunnableConfig:
 
 @pytest.fixture(autouse=True)
 def private_thread_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = SimpleNamespace(
-        threads=SimpleNamespace(
-            get=AsyncMock(
-                return_value={"metadata": {"visibility": "private", "owner_type": "user"}}
-            )
-        )
+    serve_threads_from(
+        monkeypatch,
+        AsyncMock(return_value={"metadata": {"visibility": "private", "owner_type": "user"}}),
     )
-    monkeypatch.setattr("openswe.utils.thread_reads.langgraph_sdk.get_client", lambda: client)
 
 
-# --- snapshot precedence ---
-
-
-@pytest.mark.asyncio
-async def test_workspace_without_a_captured_snapshot_falls_back_to_the_provider_base() -> None:
-    never_captured = _READY.model_copy(update={"snapshot_status": "failed", "snapshot_id": None})
-    with patch.object(
-        lifecycle, "load_workspace", new_callable=AsyncMock, return_value=never_captured
-    ):
-        assert (await lifecycle.SandboxCreateConfig.resolve()).snapshot_id is None
-
-
-@pytest.mark.asyncio
-async def test_a_nightly_capture_does_not_send_runs_to_the_base_image() -> None:
-    """The new id lands only on success, so a refresh in flight changes nothing."""
-    capturing = _READY.model_copy(update={"snapshot_status": "capturing"})
-    with patch.object(lifecycle, "load_workspace", new_callable=AsyncMock, return_value=capturing):
-        assert (await lifecycle.SandboxCreateConfig.resolve()).snapshot_id == "env-snap"
-
-
-# --- admin thread gate ---
-
-
-@pytest.mark.asyncio
 async def test_admin_thread_accepts_configured_admin_slack_dm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -79,260 +52,53 @@ async def test_admin_thread_accepts_configured_admin_slack_dm(
     assert await server._admin_thread(config, None) is True
 
 
-# --- tool gate ---
-
-
-@pytest.mark.asyncio
 async def test_tools_refuse_non_admins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
     config = _config(admin_thread=True, github_login="someone-else")
     with patch("openswe.run_config.get_config", return_value=config):
-        assert (await env_tools.list_workspaces())["ok"] is False
-        result = await env_tools.publish_workspace("base", "prompt")
-        assert result["ok"] is False
-        assert (await env_tools.snapshotctl("rebuild", "base"))["ok"] is False
-        assert (
-            await env_tools.configure_workspace(
-                "base", WorkspaceUpdate(kitchen_channel_ids=["C0NEW"])
-            )
-        )["ok"] is False
+        assert (await routing_tools.list_integration_bindings())["ok"] is False
+        assert (await routing_tools.bind_repository("acme/app"))["ok"] is False
+        assert (await routing_tools.unbind_repository("acme/app"))["ok"] is False
+        assert (await routing_tools.bind_slack_channel("C0NEW", "Investigate database reports"))[
+            "ok"
+        ] is False
+        assert (await routing_tools.unbind_slack_channel("C0NEW"))["ok"] is False
+        assert (await snapshotctl("stop"))["ok"] is False
+        assert (await read_execution_image())["ok"] is False
+        assert (await rebuild_execution_image())["ok"] is False
+        assert (await publish_execution_image())["ok"] is False
 
 
-# --- publish: capture this sandbox, then record ---
-
-
-class _Publish:
-    """Every seam `publish_workspace` crosses, patched, with the calls it made."""
-
-    def __init__(self, existing: Workspace | None, saved: Workspace) -> None:
-        self.existing = existing
-        self.saved = saved
-        self.calls: list[str] = []
-        self.validate = AsyncMock()
-        self.capture = AsyncMock(side_effect=self._capture)
-        self.publish = AsyncMock(side_effect=self._publish)
-        self.discard = AsyncMock()
-        self.retire = AsyncMock()
-        self.ensure_cron = AsyncMock(return_value="cron-1")
-        self._stack = ExitStack()
-
-    async def _capture(self, *_: object, **__: object) -> str:
-        self.calls.append("capture")
-        return "snap-new"
-
-    async def _publish(self, *_: object, **__: object) -> Workspace:
-        self.calls.append("write")
-        return self.saved
-
-    @property
-    def definition(self) -> Any:
-        assert self.publish.await_args is not None
-        return self.publish.await_args.args[1]
-
-    def __enter__(self) -> _Publish:
-        backend = MagicMock()
-        backend.id = "sb-thread"
-        for target in (
-            patch(
-                "openswe.run_config.get_config",
-                return_value=_config(admin_thread=True, github_login="ramonn", thread_id="t-1"),
-            ),
-            patch.object(
-                env_tools.store.WORKSPACES,
-                "get",
-                new_callable=AsyncMock,
-                return_value=self.existing,
-            ),
-            patch(
-                "openswe.sandboxes.state.get_sandbox_backend",
-                new_callable=AsyncMock,
-                return_value=backend,
-            ),
-            patch("openswe.sandboxes.state.unwrap_sandbox_backend", side_effect=lambda b: b),
-            patch.object(env_tools.store.WORKSPACES, "assert_publishable", self.validate),
-            patch.object(env_tools.store, "capture_sandbox_snapshot", self.capture),
-            patch.object(env_tools.store.WORKSPACES, "publish", self.publish),
-            patch.object(env_tools.store, "discard_unreferenced_snapshot", self.discard),
-            patch.object(env_tools.store, "retire_superseded_snapshot", self.retire),
-            patch.object(env_tools.refresh, "ensure_refresh_cron", self.ensure_cron),
-        ):
-            self._stack.enter_context(target)
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self._stack.close()
-
-
-def _saved(**fields: Any) -> Workspace:
-    return Workspace(
-        slug="base", name="base", snapshot_status="ready", snapshot_id="snap-new", **fields
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_failed_capture_writes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    with _Publish(existing=None, saved=_saved()) as seams:
-        seams.capture.side_effect = RuntimeError("snapshot service unavailable")
-        result = await env_tools.publish_workspace("base", "prompt")
-
-    assert result["ok"] is False
-    assert "snapshot service unavailable" in result["error"]
-    seams.publish.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_a_failed_record_write_discards_the_orphaned_image(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The capture succeeded, the write did not: nothing is left half-written,
-    and the image nothing points at is not left behind either."""
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    with _Publish(existing=None, saved=_saved()) as seams:
-        seams.publish.side_effect = RuntimeError("store unavailable")
-        result = await env_tools.publish_workspace("base", "prompt")
-
-    assert result["ok"] is False
-    assert "store unavailable" in result["error"]
-    seams.discard.assert_awaited_once_with("base", "snap-new")
-    seams.retire.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_a_repository_another_workspace_owns_is_refused_before_the_capture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Ownership and the min-one-repo rule are store rules, so they gate the capture too."""
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    with _Publish(existing=None, saved=_saved()) as seams:
-        seams.validate.side_effect = ValueError(
-            "repository acme/api already belongs to workspace core"
-        )
-        result = await env_tools.publish_workspace("oss", "prompt", repos=["acme/api"])
-
-    assert result == {"ok": False, "error": "repository acme/api already belongs to workspace core"}
-    seams.capture.assert_not_awaited()
-    seams.publish.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_publishing_over_an_existing_workspace_retires_its_old_image(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    existing = Workspace(slug="base", name="base", snapshot_id="snap-old", snapshot_status="ready")
-    with _Publish(existing=existing, saved=_saved()) as seams:
-        result = await env_tools.publish_workspace("base", "prompt")
-
-    assert seams.calls == ["capture", "write"]
-    assert isinstance(seams.definition, WorkspaceUpdate)
-    # The old image goes only after the record points at the new one.
-    seams.retire.assert_awaited_once_with("base", "snap-old", "snap-new")
-    assert result["created"] is False
-
-
-@pytest.mark.asyncio
-async def test_publish_can_clear_sandbox_sizing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    with _Publish(existing=Workspace(slug="base"), saved=_saved(prompt="prompt")) as seams:
-        result = await env_tools.publish_workspace(
-            "base", "prompt", clear_sizing=True, clear_create_params=True
-        )
-
-    definition = seams.definition
-    assert {"mem_bytes", "vcpus", "fs_capacity_bytes"} <= definition.model_fields_set
-    assert definition.mem_bytes is None
-    assert definition.vcpus is None
-    assert definition.fs_capacity_bytes is None
-    assert definition.create_params == {}
-    assert "create_params" in definition.model_fields_set
-    assert result["ok"] is True
-
-
-@pytest.mark.asyncio
-async def test_rebuild_refuses_while_one_is_running(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    running = Workspace(
-        slug="base",
-        setup_script="make setup",
-        refresh_status="refreshing",
-        refresh_started_at=datetime.now(UTC).isoformat(),
-        refresh_run_id="run-1",
-    )
-    start = AsyncMock()
-    with (
-        patch(
-            "openswe.run_config.get_config",
-            return_value=_config(admin_thread=True, github_login="ramonn"),
-        ),
-        patch.object(
-            env_tools.store.WORKSPACES, "get", new_callable=AsyncMock, return_value=running
-        ),
-        patch.object(env_tools.refresh, "start_refresh_run", start),
-    ):
-        result = await env_tools.snapshotctl("rebuild", "base")
-
-    assert result["ok"] is False
-    assert result["task_id"] == "ws-run-1"
-    start.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_snapshot_reads_need_a_private_admin_surface(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Logs and audit history stay out of shared threads; writes still reach the store."""
     monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    shared = {"metadata": {"visibility": "public", "owner_type": "user", "admin_thread": True}}
-    client = SimpleNamespace(threads=SimpleNamespace(get=AsyncMock(return_value=shared)))
-    monkeypatch.setattr("openswe.utils.thread_reads.langgraph_sdk.get_client", lambda: client)
-    get = AsyncMock(return_value=_READY)
+    serve_threads_from(
+        monkeypatch,
+        AsyncMock(
+            return_value={
+                "metadata": {"visibility": "public", "owner_type": "user", "admin_thread": True}
+            }
+        ),
+    )
+    status = AsyncMock(return_value={"status": "idle"})
     with (
         patch(
             "openswe.run_config.get_config",
             return_value=_config(admin_thread=True, github_login="ramonn"),
         ),
-        patch.object(env_tools.store.WORKSPACES, "get", get),
+        patch.object(EXECUTION_IMAGES, "status", status),
     ):
-        assert (await env_tools.snapshotctl("status", "base"))["ok"] is False
-        assert (await env_tools.snapshotctl("history", "base"))["ok"] is False
-        get.assert_not_awaited()
-        refused = await env_tools.snapshotctl("rebuild", "base")
+        assert (await snapshotctl("status"))["ok"] is False
+        assert (await snapshotctl("history"))["ok"] is False
+        assert (await read_execution_image())["ok"] is False
+        status.assert_not_awaited()
+        refused = await snapshotctl("stop")
 
-    get.assert_awaited_once_with("base")
-    assert "no setup script" in str(refused["error"])
-
-
-async def test_snapshot_edit_clears_create_params_and_returns_them_for_undo(
-    monkeypatch: pytest.MonkeyPatch, registry_db: None
-) -> None:
-    """``{}`` clears the params, unlike an omitted field, and the old ones come back."""
-    monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    rules = {"proxy_config": {"rules": [{"name": "gcp"}]}}
-    await WORKSPACES.create(
-        WorkspaceCreate(name="Core", repos=["acme/api"], create_params=rules), "admin"
-    )
-    with patch(
-        "openswe.run_config.get_config",
-        return_value=_config(admin_thread=True, github_login="ramonn"),
-    ):
-        edited = await env_tools.snapshotctl("edit", "core", create_params={})
-
-    assert edited["previous"] == {"create_params": rules}
-    stored = await WORKSPACES.get("core")
-    assert stored is not None
-    assert stored.create_params == {}
-
-
-# --- prompt wiring ---
+    assert "no global execution image build" in str(refused["error"])
 
 
 async def test_roster_admin_flag_is_the_participants_own(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An admin requester must not make everyone else in the roster look like one."""
-    from openswe import server
-
     monkeypatch.setenv("CONFIGURED_ADMINS", "admin@example.com")
     monkeypatch.setattr(server, "_participant_user", AsyncMock(return_value=None))
     monkeypatch.setattr(server, "load_profile", AsyncMock(return_value=None))
@@ -351,14 +117,11 @@ async def test_roster_admin_flag_is_the_participants_own(monkeypatch: pytest.Mon
 
 
 @pytest.mark.parametrize("eligible", [True, False])
-async def test_configure_workspace_preserves_definition_and_checks_kitchen(
-    monkeypatch: pytest.MonkeyPatch, registry_db: None, eligible: bool
+async def test_channel_binding_checks_listening_eligibility(
+    monkeypatch: pytest.MonkeyPatch, eligible: bool
 ) -> None:
     monkeypatch.setenv("CONFIGURED_ADMINS", "ramonn")
-    await WORKSPACES.create(
-        WorkspaceCreate(name="Core", prompt="keep me", slack_channel_ids=["C0OLD", "C0NEW"]),
-        "ramonn",
-    )
+    await SlackChannel.save_all({"id": "C0NEW", "name": "new"})
     channel = SlackChannel(
         id="C0NEW",
         payload={"is_member": eligible, "is_ext_shared": False, "is_pending_ext_shared": False},
@@ -368,12 +131,12 @@ async def test_configure_workspace_preserves_definition_and_checks_kitchen(
         patch("openswe.run_config.get_config", return_value=config),
         patch.object(SlackChannel, "load", AsyncMock(return_value=channel)),
     ):
-        result = await env_tools.configure_workspace(
-            "core", WorkspaceUpdate(kitchen_channel_ids=["C0NEW"])
-        )
-    assert result["ok"] is eligible
-    stored = await WORKSPACES.get("core")
-    assert stored is not None
-    assert stored.prompt == "keep me"
-    assert stored.slack_channel_ids == ["C0NEW", "C0OLD"]
-    assert stored.kitchen_channel_ids == (["C0NEW"] if eligible else [])
+        if eligible:
+            result = await routing_tools.bind_slack_channel("C0NEW", "Investigate database reports")
+            assert result["ok"] is True
+        else:
+            with pytest.raises(ValueError, match="internal channel"):
+                await routing_tools.bind_slack_channel("C0NEW", "Investigate database reports")
+    assert await INTEGRATIONS.channel_prompt("C0NEW") == (
+        "Investigate database reports" if eligible else None
+    )

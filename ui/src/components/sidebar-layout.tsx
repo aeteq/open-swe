@@ -8,10 +8,10 @@ import {
   useSyncExternalStore,
 } from "react"
 import { createPortal } from "react-dom"
-import { IconButton } from "@langchain/macaw-components/IconButton"
 import { Kbd } from "@langchain/macaw-components/Kbd"
 import { ArrowLeftIcon } from "@phosphor-icons/react/dist/ssr/ArrowLeft"
 import { ArrowRightIcon } from "@phosphor-icons/react/dist/ssr/ArrowRight"
+import { IconButton } from "@langchain/macaw-components/IconButton"
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/ssr/SidebarSimple"
 
 import { shortcutPlatform, useShortcutLabel } from "@/lib/hotkeys"
@@ -23,6 +23,7 @@ const STORAGE_COLLAPSED = "open-swe.sidebar.collapsed"
 export const SIDEBAR_DEFAULT_WIDTH = 260
 export const SIDEBAR_MIN_WIDTH = 200
 export const SIDEBAR_MAX_WIDTH = 420
+const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1050
 
 function readStoredWidth(): number {
   if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH
@@ -34,17 +35,36 @@ function readStoredWidth(): number {
 
 function readStoredCollapsed(): boolean {
   if (typeof window === "undefined") return false
-  // On mobile the sidebar is a full-screen overlay, so start collapsed to keep
-  // the chat visible regardless of the stored desktop preference.
-  if (window.matchMedia("(max-width: 767px)").matches) return true
   return window.localStorage.getItem(STORAGE_COLLAPSED) === "1"
 }
 
 export function useSidebarLayout() {
   const [width, setWidthState] = useState<number>(() => readStoredWidth())
-  const [collapsed, setCollapsedState] = useState<boolean>(() =>
+  const [desktopCollapsed, setDesktopCollapsed] = useState<boolean>(() =>
     readStoredCollapsed()
   )
+  const [viewport, setViewport] = useState(() => ({
+    narrow:
+      typeof window !== "undefined" &&
+      window.innerWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH,
+    collapsed: true,
+  }))
+  const collapsed = viewport.narrow ? viewport.collapsed : desktopCollapsed
+
+  useEffect(() => {
+    const abort = new AbortController()
+    window.addEventListener(
+      "resize",
+      () => {
+        const narrow = window.innerWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH
+        setViewport((current) =>
+          current.narrow === narrow ? current : { narrow, collapsed: true }
+        )
+      },
+      { signal: abort.signal }
+    )
+    return () => abort.abort()
+  }, [])
 
   const setWidth = useCallback((next: number) => {
     const clamped = Math.min(
@@ -55,10 +75,26 @@ export function useSidebarLayout() {
     window.localStorage.setItem(STORAGE_WIDTH, String(clamped))
   }, [])
 
-  const setCollapsed = useCallback((next: boolean) => {
-    setCollapsedState(next)
-    window.localStorage.setItem(STORAGE_COLLAPSED, next ? "1" : "0")
-  }, [])
+  const setCollapsedForPage = useCallback(
+    (next: boolean) => {
+      if (viewport.narrow) {
+        setViewport((current) => ({ ...current, collapsed: next }))
+      } else {
+        setDesktopCollapsed(next)
+      }
+    },
+    [viewport.narrow]
+  )
+
+  const setCollapsed = useCallback(
+    (next: boolean) => {
+      setCollapsedForPage(next)
+      if (!viewport.narrow) {
+        window.localStorage.setItem(STORAGE_COLLAPSED, next ? "1" : "0")
+      }
+    },
+    [setCollapsedForPage, viewport.narrow]
+  )
 
   const toggle = useCallback(
     () => setCollapsed(!collapsed),
@@ -68,7 +104,9 @@ export function useSidebarLayout() {
   const closeOnMobile = useCallback(() => {
     if (typeof window === "undefined") return
     // State-only: don't persist, so the desktop collapsed preference is preserved.
-    if (window.matchMedia("(max-width: 767px)").matches) setCollapsedState(true)
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      setViewport((current) => ({ ...current, collapsed: true }))
+    }
   }, [])
 
   return {
@@ -77,7 +115,7 @@ export function useSidebarLayout() {
     setWidth,
     setCollapsed,
     /** For a page that wants the room while it is open; the stored preference is untouched. */
-    setCollapsedForPage: setCollapsedState,
+    setCollapsedForPage,
     toggle,
     closeOnMobile,
   }
@@ -119,6 +157,8 @@ interface SidebarFrameProps {
   collapsed: boolean
   toggle: () => void
   className?: string
+  historyControls?: boolean
+  hidden?: boolean
   children: React.ReactNode
 }
 
@@ -128,6 +168,8 @@ export function SidebarFrame({
   collapsed,
   toggle,
   className,
+  historyControls = true,
+  hidden = false,
   children,
 }: SidebarFrameProps) {
   const isDesktop =
@@ -142,9 +184,15 @@ export function SidebarFrame({
   const windowControls =
     controlsHost &&
     createPortal(
-      <WindowControls collapsed={collapsed} toggle={toggle} />,
+      <WindowControls
+        collapsed={collapsed}
+        toggle={hidden ? undefined : toggle}
+        historyControls={historyControls}
+      />,
       controlsHost
     )
+
+  if (hidden) return windowControls
 
   if (collapsed) {
     if (isDesktop) return windowControls
@@ -187,19 +235,15 @@ type KeyboardWithLayout = {
   getLayoutMap: () => Promise<ReadonlyMap<string, string>>
 }
 
-/**
- * The desktop title bar's buttons beside the traffic lights: the sidebar
- * toggle, then back and forward, which the app needs without browser chrome.
- * One no-drag cluster in the root layout's controls host, so no draggable
- * header can come after it and swallow its clicks. ⌘[ and ⌘] stay the
- * browser's on the web.
- */
+/** The desktop sidebar toggle and optional history controls. */
 function WindowControls({
   collapsed,
   toggle,
+  historyControls,
 }: {
   collapsed: boolean
-  toggle: () => void
+  toggle?: () => void
+  historyControls: boolean
 }) {
   const subscribe = (onChange: () => void) => {
     window.navigation?.addEventListener("currententrychange", onChange)
@@ -247,54 +291,62 @@ function WindowControls({
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
+  if (!toggle && !historyControls) return null
+
   return (
     <div
       data-no-drag=""
-      className="fixed top-2 left-[90px] z-sidebar flex items-center gap-0.5 [.desktop-fullscreen_&]:left-[12px]"
+      className="fixed top-2 left-[90px] z-sidebar flex items-center gap-0.5 [.desktop-fullscreen_&]:left-[12px] [.version-mismatch_&]:left-[12px]"
     >
-      <IconButton
-        icon={SidebarSimpleIcon}
-        label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        color="secondary"
-        variant="plain"
-        size="sm"
-        onClick={toggle}
-        className="size-7"
-      />
-      <IconButton
-        icon={ArrowLeftIcon}
-        label="Back"
-        tooltipProps={{
-          title: (
-            <span className="flex items-center gap-space-2">
-              Back <Kbd>{backShortcut}</Kbd>
-            </span>
-          ),
-        }}
-        color="secondary"
-        variant="plain"
-        size="sm"
-        disabled={!canGoBack}
-        onClick={() => window.history.back()}
-        className="size-7 disabled:bg-transparent"
-      />
-      <IconButton
-        icon={ArrowRightIcon}
-        label="Forward"
-        tooltipProps={{
-          title: (
-            <span className="flex items-center gap-space-2">
-              Forward <Kbd>{forwardShortcut}</Kbd>
-            </span>
-          ),
-        }}
-        color="secondary"
-        variant="plain"
-        size="sm"
-        disabled={!canGoForward}
-        onClick={() => window.history.forward()}
-        className="size-7 disabled:bg-transparent"
-      />
+      {toggle && (
+        <IconButton
+          icon={SidebarSimpleIcon}
+          label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          color="secondary"
+          variant="plain"
+          size="sm"
+          onClick={toggle}
+          className="size-7"
+        />
+      )}
+      {historyControls && (
+        <>
+          <IconButton
+            icon={ArrowLeftIcon}
+            label="Back"
+            tooltipProps={{
+              title: (
+                <span className="flex items-center gap-space-2">
+                  Back <Kbd>{backShortcut}</Kbd>
+                </span>
+              ),
+            }}
+            color="secondary"
+            variant="plain"
+            size="sm"
+            disabled={!canGoBack}
+            onClick={() => window.history.back()}
+            className="size-7 disabled:bg-transparent"
+          />
+          <IconButton
+            icon={ArrowRightIcon}
+            label="Forward"
+            tooltipProps={{
+              title: (
+                <span className="flex items-center gap-space-2">
+                  Forward <Kbd>{forwardShortcut}</Kbd>
+                </span>
+              ),
+            }}
+            color="secondary"
+            variant="plain"
+            size="sm"
+            disabled={!canGoForward}
+            onClick={() => window.history.forward()}
+            className="size-7 disabled:bg-transparent"
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -347,13 +399,16 @@ function ResizeHandle({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      className={cn(
-        "absolute top-0 right-0 z-resize-handle h-full w-1 cursor-col-resize touch-none select-none",
-        "after:absolute after:inset-y-0 after:right-0 after:border-r after:border-transparent after:transition-colors",
-        "hover:after:border-default",
-        dragging && "after:border-default"
-      )}
-    />
+      className="group absolute top-0 -right-1.5 z-resize-handle h-full w-3 cursor-col-resize touch-none select-none"
+    >
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-y-0 right-1/2 border-r border-transparent transition-colors",
+          "group-hover:border-default",
+          dragging && "border-default"
+        )}
+      />
+    </div>
   )
 }
 

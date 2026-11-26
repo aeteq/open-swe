@@ -1,10 +1,11 @@
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, type MutationKey } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import type {
   MergeMethod,
   OpenPullRequest,
   PullRequestActionName,
+  PullRequestActionResult,
 } from "@/lib/api"
 import { type GithubActionInput, githubActions } from "./githubActions"
 import { pullRequestKey } from "./status"
@@ -19,23 +20,27 @@ export function usePullRequestAction({
   apply,
   onDone,
   method,
+  mutationKey,
 }: {
   pr: OpenPullRequest
   action: PullRequestActionName
   apply?: () => () => void
-  onDone?: () => void
+  onDone?: (result: PullRequestActionResult) => void
   method?: MergeMethod
+  mutationKey?: MutationKey
 }) {
   const { run, succeeded, failed } = githubActions[action]
   return useMutation({
+    mutationKey,
     mutationFn: (input: Omit<GithubActionInput, "method"> | void) =>
       run(pr, { ...input, method }),
     meta: { errorTitle: failed(pullRequestKey(pr)) },
     onMutate: () => ({ undo: apply?.() }),
     onError: (_error, _input, context) => context?.undo?.(),
-    onSuccess: () => {
-      toast.success(succeeded(pullRequestKey(pr), pr))
-      onDone?.()
+    onSuccess: (result, _input, context) => {
+      if (result.auto_merge || result.in_merge_queue) context?.undo?.()
+      toast.success(succeeded(pullRequestKey(pr), result))
+      onDone?.(result)
     },
     retry: false,
   })

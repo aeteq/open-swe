@@ -25,8 +25,6 @@ from openswe.middleware.dynamic_tools import DynamicToolMiddleware
 from openswe.sandboxes.tool_models import ToolDescription
 
 _json = TypeAdapter(JsonValue)
-# Every surface lists the integration tools themselves, so none offers their loader.
-EXCLUDED_TOOLS = frozenset({"load_integration_tools"})
 
 
 def _parameters(tool: BaseTool) -> dict[str, JsonValue]:
@@ -57,20 +55,6 @@ def tool_parameters(tool: BaseTool) -> dict[str, JsonValue]:
     return parameters
 
 
-def describe_tool(name: str, tool: BaseTool) -> ToolDescription:
-    provenance = (tool.metadata or {}).get("mcp_provenance")
-    if not isinstance(provenance, MCPToolProvenance):
-        return ToolDescription(
-            name=name, description=tool.description, parameters=tool_parameters(tool)
-        )
-    return ToolDescription(
-        name=name,
-        description=f"{tool.description}\n\n{provenance.note()}",
-        parameters=tool_parameters(tool),
-        mcp_provenance=provenance,
-    )
-
-
 # The file and shell tools deepagents' FilesystemMiddleware gives every deep agent.
 FILESYSTEM_TOOL_NAMES: tuple[str, ...] = (
     "ls",
@@ -95,7 +79,7 @@ class SurfaceModels:
 
     main: ModelChoice
     subagent: ModelChoice
-    use_gateway: bool
+
     # Model routes the agent's model selection picks between, by route name.
     routes: Mapping[str, ModelChoice] = field(default_factory=dict)
     fallback: ModelChoice | None = None
@@ -130,13 +114,9 @@ class ToolSurface:
     browser: BrowserSpec | None = None
     models: SurfaceModels | None = None
     subagents: Sequence[SurfaceSubagent] = ()
-    # Paths in the thread's files this deployment serves rather than the sandbox.
-    backend_paths: tuple[str, ...] = ()
     # Where the run's skills are in the thread's files, a later source's skill taking the
     # place of an earlier one's of the same name.
     skill_sources: tuple[str, ...] = ()
-    # Where large tool results and binary reads are offloaded.
-    artifacts_root: str = "/"
     # The checks on what the run's ``read_file`` calls return.
     file_checks: tuple[FileCheck, ...] = ()
     # Whether the graph's core tools it seldom needs belong in a runtime's code mode.
@@ -160,7 +140,28 @@ class ToolSurface:
     def catalog(self) -> list[ToolDescription]:
         """Every tool the run offers, the disabled ones too, by name."""
         offered = {**{name: self.always_offered[name] for name in self.disabled()}, **self.tools}
-        return [describe_tool(name, tool) for name, tool in sorted(offered.items())]
+        notes: dict[str, str] = {}
+        catalog: list[ToolDescription] = []
+        for name, tool in sorted(offered.items()):
+            provenance = (tool.metadata or {}).get("mcp_provenance")
+            description = tool.description
+            if isinstance(provenance, MCPToolProvenance):
+                key = provenance.model_dump_json()
+                note = notes.get(key)
+                if note is None:
+                    note = notes[key] = provenance.note()
+                description = f"{description}\n\n{note}"
+            else:
+                provenance = None
+            catalog.append(
+                ToolDescription(
+                    name=name,
+                    description=description,
+                    parameters=tool_parameters(tool),
+                    mcp_provenance=provenance,
+                )
+            )
+        return catalog
 
     async def prepare(self) -> None:
         tools = {
@@ -175,8 +176,7 @@ class ToolSurface:
             integrations = await self.dynamic.catalog_tools()
             self.integration_names = [tool.name for tool in integrations]
             tools.update({tool.name: tool for tool in integrations})
-        excluded = self.excluded | EXCLUDED_TOOLS
-        self.tools = {name: tool for name, tool in tools.items() if name not in excluded}
+        self.tools = {name: tool for name, tool in tools.items() if name not in self.excluded}
 
 
 @dataclass(frozen=True)

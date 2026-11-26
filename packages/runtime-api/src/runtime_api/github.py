@@ -6,18 +6,18 @@ only what starts an agent run, and asks the backend for what needs its data, its
 GitHub App or its signing key:
 
 - ``github_delivery_facts``: for a delivery that may start an agent run, whether
-  a workspace owns its repository, whether the allowlist takes it, whether the
+  the repository is routable, whether the allowlist takes it, whether the
   public-repo gate turned the sender away, and the handles that mention Open SWE.
   The backend gets every delivery itself, forwarded as GitHub sent it
   (``forward_to``, served at ``/mda/github/deliveries``), and logs it and runs its
-  own work there; ``record_github_delivery`` does the same for a channel deployed
-  before it forwarded, and answers the facts too.
+  own work there.
 - ``github_automation_rules``: the automations with a GitHub trigger on the
-  delivery's repository, and whether the issue's or pull request's author is an
-  Open SWE user; the channel matches them and writes each match's prompt.
+  delivery's repository that takes a pull request's branches, and whether the
+  issue's or pull request's author is an Open SWE user; the channel matches them
+  and writes each match's prompt.
 - ``github_issue_facts``: for an ``@openswe`` mention on an issue, which of the
   people its prompt quotes are Open SWE users, whether the sender's email is known,
-  whether a run already took the issue in, and the thread's workspace; the channel
+  and whether a run already took the issue in; the channel
   writes the run's input.
 - ``act_on_github_delivery``: claims and signs the runs of the automations the
   channel matched, each on a thread of its own;
@@ -31,6 +31,7 @@ and a call or three more when it mentions Open SWE or fires automations.
 """
 
 import json
+from collections.abc import Mapping
 from typing import Annotated, Final, Literal, Self
 from uuid import UUID
 
@@ -70,7 +71,7 @@ class GitHubDelivery(BaseModel):
 class GitHubDeliveryFacts(BaseModel):
     """What Open SWE knows about a delivery's repository, for the channel to route it."""
 
-    # A workspace owns the repository, or the delivery names none.
+    # Whether this delivery may start agent work.
     routable: bool
     # The repository allowlist takes it; a delivery it doesn't take starts nothing.
     allowed: bool
@@ -95,12 +96,14 @@ type GitHubWorkName = Literal[
     # The agent thread that opened a pull request learns its state, and its usage.
     "track_pull_request_state",
     "track_pull_request_usage",
-    # A push to a pull request's branch: superseded approvals withdrawn, its guides
-    # paused, and a fork's head reviewed again.
+    # A push to a pull request's branch: superseded approvals withdrawn and a fork reviewed again.
     "withdraw_superseded_approvals",
-    "notify_pr_updated",
     "review_fork_push",
     "settle_review_on_close",
+    # A pull request merged: the Notion tasks it links or names move to done.
+    "record_merge_on_notion_tasks",
+    # A pull request closed: its apps-only runs for a deployed preview stop (``PreviewReady``).
+    "stop_preview_runs_on_close",
     # A pull request closed: what reviews saved to apps for it is deleted.
     "delete_app_documents_on_close",
     "settle_human_reviews",
@@ -113,7 +116,12 @@ type GitHubWorkName = Literal[
     "review_pull_request",
     "review_push",
     "ci_event",
+    # A check finished: when it's one that means a pull request's preview is deployed,
+    # reviews that work for apps do that work on the preview.
+    "review_apps_on_preview",
     "record_completed_review",
+    # The ``Robin Approves`` check is posted again on a pull request's head.
+    "evaluate_approval_policy",
 ]
 
 
@@ -125,12 +133,32 @@ GitHubTriggerEvent = Literal[
 type _Login = Annotated[str, Field(pattern=LOGIN_PATTERN)]
 
 
+class PullRequestBranches(BaseModel):
+    """A pull request's head and base branches, which a GitHub trigger can filter on."""
+
+    head: str
+    base: str
+
+    @classmethod
+    def of(cls, pull_request: object) -> Self:
+        """The branches a delivery's ``pull_request`` names; ``""`` for one it doesn't."""
+        return cls(head=cls._ref(pull_request, "head"), base=cls._ref(pull_request, "base"))
+
+    @staticmethod
+    def _ref(pull_request: object, side: str) -> str:
+        branch = pull_request.get(side) if isinstance(pull_request, Mapping) else None
+        ref = branch.get("ref") if isinstance(branch, Mapping) else None
+        return ref if isinstance(ref, str) else ""
+
+
 class GitHubAutomationRulesRequest(BaseModel):
     """The automations an issue or pull request event on ``repository`` may fire."""
 
     repository: str = Field(pattern=REPOSITORY_PATTERN)
     # Who opened the issue or pull request, whose words the prompt quotes.
     author: str = Field(default="", max_length=64)
+    # A pull request's branches: the backend leaves out automations whose triggers skip them.
+    branches: PullRequestBranches | None = None
 
 
 class GitHubAutomation(BaseModel):
@@ -179,8 +207,6 @@ class GitHubIssueFacts(BaseModel):
     # Those of ``logins`` who are Open SWE users, lowercased: anyone else's words are
     # fenced as untrusted.
     trusted: list[str]
-    # The workspace the thread started in, which a follow-up stays in.
-    thread_workspace: str | None = None
 
 
 class GitHubIssueRunRequest(BaseModel):
@@ -192,8 +218,6 @@ class GitHubIssueRunRequest(BaseModel):
     waiting: bool = False
     # The run's input, which the channel wrote; none while the thread waits.
     input: dict[str, JsonValue] | None = None
-    # The workspace the run works in; ``None`` for the one that owns the repository.
-    workspace: str | None = None
 
     @model_validator(mode="after")
     def _written(self) -> Self:
@@ -267,15 +291,6 @@ class GitHubDeliveryActed(BaseModel):
     comment_run: GitHubThreadRun | None = None
 
 
-RECORD_GITHUB_DELIVERY: Final = Endpoint(
-    "record_github_delivery",
-    GitHubDelivery,
-    GitHubDeliveryFacts,
-    seconds=60.0,
-    # Recorded once per delivery ID, so a repeat logs nothing again.
-    delivery="idempotent",
-    prefix=CHANNEL_API_PREFIX,
-)
 GITHUB_DELIVERY_FACTS: Final = Endpoint(
     "github_delivery_facts",
     GitHubDelivery,

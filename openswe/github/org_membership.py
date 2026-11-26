@@ -9,13 +9,13 @@ from typing import ClassVar
 import httpx2
 
 from openswe.config import ENV
-from openswe.github.http import GitHubAppUnavailable, GitHubClient
+from openswe.github.http import GitHubAppUnavailable, GitHubClient, GitHubError
 
 logger = logging.getLogger(__name__)
 
 # The GitHub Apps Open SWE acts as; events they send are Open SWE's own.
 OPEN_SWE_GITHUB_LOGINS: frozenset[str] = frozenset(
-    {"open-swe[bot]", "open-swe-preview[bot]", "openswe-dev[bot]"}
+    {"open-swe[bot]", "open-swe-preview[bot]", "openswe-dev[bot]", "robin-agent[bot]"}
     | {
         login.strip().lower()
         for login in ENV.OPEN_SWE_GITHUB_LOGINS.get().split(",")
@@ -34,6 +34,15 @@ INTERNAL_BOT_LOGINS: frozenset[str] = frozenset(
         if login.strip()
     }
 )
+
+
+class MembershipVerificationError(Exception):
+    """GitHub could not verify a membership."""
+
+    def __init__(self, *, rate_limited: bool = False, status_codes: tuple[int, ...] = ()) -> None:
+        super().__init__("GitHub organization membership could not be verified")
+        self.rate_limited = rate_limited
+        self.status_codes = status_codes
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +64,13 @@ class Org:
 
     async def has_active_member(self, username: str) -> bool:
         """Whether ``username`` is an *active* member; any failure answers ``False``."""
+        try:
+            return await self.verify_active_member(username)
+        except MembershipVerificationError:
+            return False
+
+    async def verify_active_member(self, username: str) -> bool:
+        """Check membership, raising when GitHub cannot verify it."""
         if not username or not self.name:
             return False
         extra = {"github_org": self.name, "github_login": username}
@@ -66,12 +82,17 @@ class Org:
                 ) as github,
             ):
                 state = await github.org_membership_state(self.name, username)
-        except GitHubAppUnavailable:
+        except GitHubError as exc:
+            logger.warning("Could not verify org membership", extra=extra, exc_info=True)
+            raise MembershipVerificationError(
+                rate_limited=exc.rate_limited, status_codes=(exc.response.status_code,)
+            ) from exc
+        except GitHubAppUnavailable as exc:
             logger.warning("No GitHub App token to verify org membership", extra=extra)
-            return False
-        except Exception:
+            raise MembershipVerificationError() from exc
+        except Exception as exc:
             logger.exception("Could not verify org membership", extra=extra)
-            return False
+            raise MembershipVerificationError() from exc
         return state == "active"
 
     async def team_members(self, team_slug: str) -> list[str] | None:

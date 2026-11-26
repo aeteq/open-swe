@@ -18,11 +18,11 @@ from openswe.analytics.usage import record_agent_pr_usage
 from openswe.audit_logs.tools import audit_tool
 from openswe.credential_scope import (
     GitHubCredentialScope,
-    PrAuthorNotAParticipant,
     pr_author_login,
     private_credential_login,
 )
 from openswe.github.app import get_github_app_installation_token
+from openswe.github.approval_policy import PullRequestApproval
 from openswe.github.comments import derive_pr_state
 from openswe.github.http import GitHubClient
 from openswe.github.pull_requests import AGENT_OPENED_LINK_SOURCE, PullRequest, ThreadLink
@@ -33,13 +33,6 @@ from openswe.slack.client import (
     get_active_slack_thread,
     get_slack_permalink,
     parse_github_pr_url,
-)
-from openswe.slack.code_channels import (
-    is_code_channel_session,
-    repo_context_bar_items,
-    set_agent_resource,
-    set_context_bar,
-    set_view,
 )
 from openswe.slack.dm import is_concierge_thread
 from openswe.threads.plan_store import get_plan_content
@@ -72,13 +65,13 @@ _REPORTED_RESPONSE_HEADERS = (
 )
 
 
-async def _resolve_pr_author_token(author: str | None = None) -> tuple[str | None, str]:
-    """Use the requested or requesting person's OAuth, and the bot for system threads.
+async def _resolve_pr_author_token() -> tuple[str | None, str]:
+    """Use the thread owner's OAuth, and the bot for system threads.
 
     The requester's own GitHub grant, which an MDA run reads from the deployment's
     connection, comes before their dashboard sign-in.
     """
-    login = await pr_author_login(author)
+    login = await pr_author_login()
     if login is None:
         return await get_github_app_installation_token(), "bot"
     if granted := await _requester_grant(login):
@@ -121,7 +114,7 @@ async def _requester_grant(login: str) -> str | None:
     return token
 
 
-async def _workspace_has_repository(client: httpx2.AsyncClient, owner: str, repo: str) -> bool:
+async def _installation_has_repository(client: httpx2.AsyncClient, owner: str, repo: str) -> bool:
     token = await get_github_app_installation_token()
     if not token:
         return False
@@ -384,12 +377,12 @@ def _branch_failure_payload(
 
 
 async def _revoked_token_payload(
-    *, author: str | None, token: str, owner: str, repo: str, head: str, base: str
+    *, token: str, owner: str, repo: str, head: str, base: str
 ) -> dict[str, Any]:
     from openswe.dashboard.oauth import build_settings_url
     from openswe.dashboard.profiles import mark_access_token_revoked
 
-    if login := await pr_author_login(author):
+    if login := await pr_author_login():
         await mark_access_token_revoked(login, token)
     settings_url = build_settings_url()
     return _failure_payload(
@@ -419,7 +412,6 @@ async def _preflight_pr_access(
     client: httpx2.AsyncClient,
     token: str,
     token_kind: str,
-    author: str | None,
     owner: str,
     repo: str,
     head: str,
@@ -428,7 +420,7 @@ async def _preflight_pr_access(
     repo_resp = await _github_get(client, token, f"/repos/{owner}/{repo}")
     if repo_resp.status_code == 401 and token_kind == "user":
         return await _revoked_token_payload(
-            author=author, token=token, owner=owner, repo=repo, head=head, base=base
+            token=token, owner=owner, repo=repo, head=head, base=base
         )
     if repo_resp.status_code in {403, 404}:
         return _access_failure_payload(
@@ -684,7 +676,6 @@ async def _record_pr_telemetry(
     head: str,
     base: str,
     pr: dict[str, Any],
-    resolves_thread: bool = False,
     retitle_thread: bool = True,
     record_opening: bool = True,
     creation_response: dict[str, Any] | None = None,
@@ -824,7 +815,6 @@ async def _record_pr_telemetry(
                     else ""
                 ),
                 "diff_stats": diff_stats,
-                "resolves_thread": resolves_thread,
             }
             run_id = config.get("run_id") or cfg.run_id
             pull_requests = upsert_pull_request_record(
@@ -888,7 +878,6 @@ async def _record_pr_telemetry(
                     ),
                     author=author if isinstance(author, str) else "",
                     author_github_id=author_id if isinstance(author_id, int) else None,
-                    resolves_thread=resolves_thread,
                     additions=additions,
                     deletions=deletions,
                     changed_files=changed_files,
@@ -908,47 +897,7 @@ async def _record_pr_telemetry(
                     extra={"pr_repo_full_name": f"{owner}/{repo}", "pr_number": pr_number},
                     exc_info=True,
                 )
-            active = await get_active_slack_thread(
-                thread_id,
-                cfg.slack_thread.dump() if cfg.slack_thread else None,
-            )
-            if active and is_code_channel_session(str(active.get("thread_ts") or "")):
-                channel_id = str(active.get("channel_id") or "")
-                await set_context_bar(
-                    channel_id,
-                    repo_context_bar_items(
-                        {"owner": owner, "name": repo},
-                        branch=head,
-                        pr_url=pr_url if isinstance(pr_url, str) else "",
-                        dashboard_url=dashboard_thread_url(thread_id) or "",
-                    ),
-                )
-                if isinstance(pr_url, str):
-                    await set_agent_resource(
-                        channel_id,
-                        {
-                            "url": pr_url,
-                            "resource_type": "pull_request",
-                            "title": (
-                                pr_title[:255]
-                                if isinstance(pr_title, str) and pr_title
-                                else "Pull request"
-                            ),
-                            "provider": "GitHub",
-                        },
-                    )
-                response = await client.get(
-                    f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_number}",
-                    headers={**_auth_headers(token), "Accept": "application/vnd.github.v3.diff"},
-                )
-                if response.status_code == 200 and response.text.strip():
-                    await set_view(
-                        channel_id,
-                        "diff",
-                        content=response.text,
-                        base_branch=base,
-                        head_branch=head,
-                    )
+
     except Exception:
         logger.debug(
             "Failed to record PR usage for %s/%s#%s", owner, repo, pr_number, exc_info=True
@@ -1105,30 +1054,11 @@ async def _open_pull_request(
     title: str,
     body: str,
     draft: bool,
-    resolves_thread: bool = False,
     retitle_thread: bool = True,
-    author: str | None = None,
     state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    ask_channel = await GitHubCredentialScope.is_public_ask()
-    if ask_channel and not RunConfig.from_runtime().background_task_completion:
-        author = None
-    try:
-        token, kind = await _resolve_pr_author_token(author)
-    except PrAuthorNotAParticipant as exc:
-        return _failure_payload(
-            code="pr_author_not_a_participant",
-            owner=owner,
-            repo=repo,
-            head=head,
-            base=base,
-            token_kind="user",
-            http_status=None,
-            reason=str(exc),
-            likely_cause="the requested author has not posted in this thread",
-            branch_pushed=None,
-            failed_step="resolve_pr_author_token",
-        )
+    ask_channel = await GitHubCredentialScope.is_public_listening_channel()
+    token, kind = await _resolve_pr_author_token()
     if ask_channel and kind != "user":
         raise GitHubUserAuthRequired(RunConfig.from_runtime().source or "slack", None)
     if not token:
@@ -1153,7 +1083,7 @@ async def _open_pull_request(
         if (
             kind == "user"
             and await private_credential_login() is None
-            and not await _workspace_has_repository(client, owner, repo)
+            and not await _installation_has_repository(client, owner, repo)
         ):
             return _access_failure_payload(
                 owner=owner,
@@ -1162,15 +1092,14 @@ async def _open_pull_request(
                 base=base,
                 token_kind=kind,
                 http_status=None,
-                reason="Could not verify the target repository belongs to the workspace GitHub App installation",
+                reason="Could not verify the target repository belongs to the deployment's GitHub App installation",
                 branch_pushed=None,
-                failed_step="workspace_repo",
+                failed_step="installation_repository",
             )
         preflight_failure = await _preflight_pr_access(
             client=client,
             token=token,
             token_kind=kind,
-            author=author,
             owner=owner,
             repo=repo,
             head=head,
@@ -1178,42 +1107,14 @@ async def _open_pull_request(
         )
         if preflight_failure is not None:
             return preflight_failure
+        requesters: set[str] = set()
         if kind == "user" and ask_channel:
-            requester = await pr_author_login(author)
-            token = await get_github_app_installation_token()
-            kind = "bot"
-            if not token:
-                return _failure_payload(
-                    code="no_github_token",
-                    owner=owner,
-                    repo=repo,
-                    head=head,
-                    base=base,
-                    token_kind=kind,
-                    http_status=None,
-                    reason="No GitHub App token was available for the Ask-channel PR",
-                    likely_cause="the GitHub App is not configured",
-                    branch_pushed=True,
-                    failed_step="resolve_pr_author_token",
-                )
-            preflight_failure = await _preflight_pr_access(
-                client=client,
-                token=token,
-                token_kind=kind,
-                author=None,
-                owner=owner,
-                repo=repo,
-                head=head,
-                base=base,
-            )
-            if preflight_failure is not None:
-                return preflight_failure
-            body += (
-                f"\n\nRequested by @{requester} via an Ask channel. "
-                "A human other than the requester must validate and approve this change. "
-                "Bot authorship does not enforce that separation in GitHub; "
-                "repository branch protection and review policy must enforce it."
-            )
+            requester = await pr_author_login()
+            requesters = {
+                login
+                for login in (requester, RunConfig.from_runtime().github_login)
+                if isinstance(login, str) and login
+            }
         body = await _stamp_attribution_footer(
             await _maybe_append_references(client, token, owner, repo, body),
             state,
@@ -1226,15 +1127,12 @@ async def _open_pull_request(
             "body": body,
             "draft": draft,
         }
-        from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
+        from openswe.dashboard.settings_cache import cached_settings
 
         cfg = _configurable()
         if (
             cfg.thread_id
-            and (await cached_workspace_settings(cfg.workspace_slug)).get(
-                "implementation_walkthrough_enabled"
-            )
-            is True
+            and (await cached_settings()).get("implementation_walkthrough_enabled") is True
         ):
             await THREADS.update(
                 cfg.thread_id,
@@ -1256,11 +1154,43 @@ async def _open_pull_request(
                     head=head,
                     base=base,
                     pr=pr,
-                    resolves_thread=resolves_thread,
                     retitle_thread=retitle_thread,
                     creation_response=pr,
                     run_state=state,
                 )
+                number = pr.get("number")
+                if (
+                    requesters
+                    and isinstance(number, int)
+                    and not await PullRequestApproval.record_requesters(
+                        owner, repo, number, requesters
+                    )
+                ):
+                    # Unrecorded requesters could approve their own change, so it can't stay open.
+                    closed = await client.patch(
+                        f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{number}",
+                        headers=_auth_headers(token),
+                        json={"state": "closed"},
+                    )
+                    reason = (
+                        "Robin could not record who requested the pull request, so it closed it"
+                        if closed.status_code == 200  # noqa: PLR2004
+                        else f"Robin could not record who requested #{number} and could not "
+                        "close it; close it by hand, since its requester could approve it"
+                    )
+                    return _failure_payload(
+                        code="requester_unrecorded",
+                        owner=owner,
+                        repo=repo,
+                        head=head,
+                        base=base,
+                        token_kind=kind,
+                        http_status=None,
+                        reason=reason,
+                        likely_cause="the database write failed; try again",
+                        branch_pushed=True,
+                        failed_step="record_requesters",
+                    )
             return {
                 "success": True,
                 "created": True,
@@ -1283,11 +1213,31 @@ async def _open_pull_request(
                     head=head,
                     base=base,
                     pr=existing,
-                    resolves_thread=resolves_thread,
                     retitle_thread=retitle_thread,
                     record_opening=False,
                     run_state=state,
                 )
+                number = existing.get("number")
+                if (
+                    requesters
+                    and isinstance(number, int)
+                    and not await PullRequestApproval.record_requesters(
+                        owner, repo, number, requesters
+                    )
+                ):
+                    return _failure_payload(
+                        code="requester_unrecorded",
+                        owner=owner,
+                        repo=repo,
+                        head=head,
+                        base=base,
+                        token_kind=kind,
+                        http_status=None,
+                        reason="Robin could not record who requested the pull request",
+                        likely_cause="the database write failed; try again",
+                        branch_pushed=True,
+                        failed_step="record_requesters",
+                    )
                 return {
                     "success": True,
                     "created": False,
@@ -1336,9 +1286,7 @@ async def open_pull_request(
     title: str,
     body: str,
     draft: bool = True,
-    resolves_thread: bool = False,
     retitle_thread: bool = True,
-    author: str = "",
     state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> dict[str, Any]:
     """Implement the `open_pull_request` tool."""
@@ -1350,9 +1298,7 @@ async def open_pull_request(
         title=title,
         body=body,
         draft=draft,
-        resolves_thread=resolves_thread,
         retitle_thread=retitle_thread,
-        author=author or None,
         state=state,
     )
     await _record_on_notion_task(result, opened=result.get("created") is True)
@@ -1378,9 +1324,7 @@ def _ref_name(pr: dict[str, Any], side: str) -> str:
 
 
 @audit_tool()
-async def link_pull_request(
-    pr_url: str, resolves_thread: bool = False, author: str | None = None
-) -> dict[str, Any]:
+async def link_pull_request(pr_url: str) -> dict[str, Any]:
     """Implement the `link_pull_request` tool."""
     cfg = RunConfig.from_runtime()
     if cfg.slack_thread and is_concierge_thread(
@@ -1393,19 +1337,19 @@ async def link_pull_request(
     ref = parse_github_pr_url(pr_url)
     if ref is None:
         return {"success": False, "error": f"Not a GitHub pull request URL: {pr_url}"}
-    try:
-        token, kind = await _resolve_pr_author_token(author)
-    except PrAuthorNotAParticipant as exc:
-        return {"success": False, "error": str(exc)}
+    token, kind = await _resolve_pr_author_token()
     if not token:
         return {"success": False, "error": "No GitHub token was available to read the PR"}
     async with httpx2.AsyncClient(transport=pooled_transport(), timeout=30.0) as client:
         if (
             kind == "user"
             and await private_credential_login() is None
-            and not await _workspace_has_repository(client, ref.owner, ref.repo)
+            and not await _installation_has_repository(client, ref.owner, ref.repo)
         ):
-            return {"success": False, "error": f"{ref.owner}/{ref.repo} is not in this workspace"}
+            return {
+                "success": False,
+                "error": f"{ref.owner}/{ref.repo} is not accessible to the deployment's GitHub App installation",
+            }
         pr = await _fetch_pr_details(client, token, ref.owner, ref.repo, ref.number)
         if not pr:
             return {"success": False, "error": f"Could not read {pr_url}"}
@@ -1417,7 +1361,6 @@ async def link_pull_request(
             head=_ref_name(pr, "head"),
             base=_ref_name(pr, "base"),
             pr=pr,
-            resolves_thread=resolves_thread,
             record_opening=False,
         )
     return {"success": True, "url": pr.get("html_url"), "number": ref.number}

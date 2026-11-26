@@ -1,8 +1,9 @@
 """Accept a deployment event after an environment has finished syncing.
 
-The route trusts a GitHub Actions OIDC token instead of a shared secret. A
-verified deploy is written to the event log so a thread that was asked for
-a rollout check can wake through ``listen_events`` after its pull request merges.
+The route trusts Robin's bot: a LangSmith service key from Robin's workspace
+with ``workspaces:manage``. A verified deploy is written to the event log so a
+thread that was asked for a rollout check can wake through ``listen_events``
+after its pull request merges.
 """
 
 import hashlib
@@ -11,23 +12,21 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Literal, TypedDict
-from uuid import UUID
 
 import httpx2
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, JsonValue
 
+from openswe.dashboard.langsmith_api_keys import LANGSMITH_API_KEYS
 from openswe.dispatch import dispatch_agent_run
-from openswe.federation.github_oidc import GitHubActionsClaims, InvalidFederatedToken
-from openswe.federation.github_oidc import verify as verify_github_oidc
 from openswe.github.http import GitHubAppUnavailable, GitHubClient
 from openswe.github.repositories import Repository
+from openswe.input_messages import InputMessageContext, SystemIdentity
 from openswe.prompts import prompt
 from openswe.source_context import SlackThreadRef, SourceContext
+from openswe.threads.principals import Principal
 from openswe.webhooks.event_log import EventLog, EventRefs
 from openswe.webhooks.event_subscriptions import EventSubscription
-from openswe.workspaces.routing import workspace_for_repo
-from openswe.workspaces.store import WORKSPACES
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,6 @@ class RolloutAccepted(TypedDict):
     commits: int
 
 
-_AUDIENCE = "openswe-rollout"
 ROLLOUT_CHECK_REQUESTED = "rollout_check"
 MERGE_COMMIT_SHA = "merge_commit_sha"
 MERGE_COMMIT_PR_URL = "merge_commit_pr_url"
@@ -52,10 +50,19 @@ _LISTEN_DAYS = 7
 _ROLLOUT_SKILL = ".agents/skills/rollout-check/SKILL.md"
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _TARGET_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
+_ROLLOUT_ASK: SystemIdentity = {
+    "id": "system:rollout-check",
+    "display_name": "Rollout check",
+    "platform": "open-swe",
+}
+_ROLLOUT_ASK_CONTEXT: InputMessageContext = {
+    "sender_id": _ROLLOUT_ASK["id"],
+    "surface": "automation",
+    "kind": "system",
+}
 _CONFIG_KEYS = (
     "source",
-    "workspace",
-    "environment",
     "github_login",
     "github_user_id",
     "user_email",
@@ -71,8 +78,9 @@ _CONFIG_KEYS = (
 
 
 class RolloutEvent(BaseModel):
-    """A deploy notice reduced to the target and the commits subscriptions match."""
+    """A deploy notice reduced to the repository, target and the commits subscriptions match."""
 
+    repository: str
     target: str
     commits: list[str]
 
@@ -80,6 +88,9 @@ class RolloutEvent(BaseModel):
     def parse(cls, payload: object) -> RolloutEvent | None:
         """Return the event, or None when the body is not a rollout event."""
         if not isinstance(payload, dict):
+            return None
+        repository = payload.get("repository")
+        if not isinstance(repository, str) or not _REPOSITORY_RE.fullmatch(repository.strip()):
             return None
         target = payload.get("target")
         commits = payload.get("commits")
@@ -97,7 +108,18 @@ class RolloutEvent(BaseModel):
                     kept.append(sha)
         if not kept:
             return None
-        return cls(target=target.strip().lower(), commits=kept)
+        return cls(repository=repository.strip(), target=target.strip().lower(), commits=kept)
+
+    async def delivery_id(self) -> str:
+        canonical = json.dumps(
+            {
+                "repository": self.repository.lower(),
+                "target": self.target,
+                "commits": sorted(self.commits),
+            },
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _bearer(header: str) -> str:
@@ -113,11 +135,6 @@ def _stored_body(target: str, commits: list[str]) -> bytes:
         {"target": target, "commits": commits},
         separators=(",", ":"),
     ).encode()
-
-
-def _delivery_id(target: str, commits: list[str]) -> str:
-    canonical = json.dumps({"commits": commits, "target": target}, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _ask_to_monitor(sha: str) -> str:
@@ -181,27 +198,31 @@ def _copy_config(config: dict[str, JsonValue], values: dict[str, object]) -> Non
             config[key] = value
 
 
-def _run_config(
+async def _run_config(
     thread_id: str,
     owner: str,
     repo: str,
     number: int,
-    workspace: str,
     metadata: dict[str, object],
 ) -> dict[str, JsonValue]:
-    config: dict[str, JsonValue] = {}
-    _copy_config(config, {key: metadata.get(key) for key in _CONFIG_KEYS})
-    _copy_config(config, SourceContext.from_metadata(metadata).dump())
-    email = metadata.get("triggering_user_email")
-    if not isinstance(config.get("user_email"), str) and isinstance(email, str) and email:
-        config["user_email"] = email
+    config: dict[str, JsonValue]
+    if metadata.get("visibility") == "private":
+        from openswe.tasks.service import recipient_config
+
+        config = await recipient_config(thread_id)
+    else:
+        config = {}
+        _copy_config(config, {key: metadata.get(key) for key in _CONFIG_KEYS})
+        _copy_config(config, SourceContext.from_metadata(metadata).dump())
+        email = metadata.get("triggering_user_email")
+        if not isinstance(config.get("user_email"), str) and isinstance(email, str) and email:
+            config["user_email"] = email
     if slack_thread := _requested_slack_thread(metadata):
         config["slack_thread"] = slack_thread.dump()
     config["thread_id"] = thread_id
     config["source"] = config.get("source") if isinstance(config.get("source"), str) else "github"
     config["repo"] = {"owner": owner, "name": repo}
     config["pr_number"] = number
-    config["workspace"] = workspace
     return config
 
 
@@ -219,26 +240,14 @@ def _already_listening(subscriptions: list[EventSubscription], sha: str) -> bool
     return False
 
 
-async def _authorize(header: str) -> GitHubActionsClaims:
-    """A verified workflow whose repository may already start threads."""
-    token = _bearer(header)
-    if not token:
+async def _authorize(request: Request) -> None:
+    """Refuse anything but Robin's bot, which may already start threads in any repository."""
+    token = _bearer(request.headers.get("Authorization", ""))
+    key = await LANGSMITH_API_KEYS.verify(token) if token else None
+    if key is None or key.kind != "service":
+        logger.warning("Rejected a rollout event without Robin's bot key")
         raise HTTPException(status_code=401, detail="Invalid token")
-    try:
-        claims = await verify_github_oidc(token, _AUDIENCE)
-    except InvalidFederatedToken as exc:
-        logger.warning("Rejected rollout OIDC token", extra={"rollout_error": str(exc)})
-        raise HTTPException(status_code=401, detail="Invalid token") from None
-    if await WORKSPACES.thread_starter_of_repo(claims.repository) is None:
-        logger.warning(
-            "Rejected rollout event from a repository that may not start threads",
-            extra={
-                "rollout_repository": claims.repository,
-                "rollout_workflow": claims.workflow_ref,
-            },
-        )
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return claims
+    await Principal.of_langsmith_key(request, key)
 
 
 async def accept_rollout_deploy(target: str, commits: list[str]) -> RolloutAccepted:
@@ -248,26 +257,6 @@ async def accept_rollout_deploy(target: str, commits: list[str]) -> RolloutAccep
         extra={"rollout_target": target, "rollout_commits": len(commits)},
     )
     return {"status": "accepted", "target": target, "commits": len(commits)}
-
-
-async def _deployment_workspace(owner: str, repo: str) -> tuple[Repository, str, UUID] | None:
-    """The repository and workspace that can keep a deployment subscription, if any."""
-    repository = await Repository.get(f"{owner}/{repo}")
-    workspace = await workspace_for_repo(owner, repo)
-    if repository is None or not workspace:
-        logger.info(
-            "Skipping rollout monitoring; repository is not in a workspace",
-            extra={"repository": f"{owner}/{repo}"},
-        )
-        return None
-    workspace_id = await WORKSPACES.id_for_slug(workspace)
-    if workspace_id is None:
-        logger.info(
-            "Skipping rollout monitoring; workspace has no id",
-            extra={"workspace": workspace},
-        )
-        return None
-    return repository, workspace, workspace_id
 
 
 async def subscribe_merged_thread(
@@ -289,10 +278,9 @@ async def subscribe_merged_thread(
     if not _SHA_RE.fullmatch(merge_sha):
         return
     try:
-        listener = await _deployment_workspace(owner, repo)
-        if listener is None:
+        repository = await Repository.get(f"{owner}/{repo}")
+        if repository is None:
             return
-        repository, workspace, workspace_id = listener
         existing = await EventSubscription.for_thread(thread_id)
         if _already_listening(existing, merge_sha):
             return
@@ -304,7 +292,6 @@ async def subscribe_merged_thread(
             return
         await EventSubscription(
             thread_id=thread_id,
-            workspace_id=workspace_id,
             sources=["deployment"],
             repository_id=repository.id,
             pull_request_id=None,
@@ -313,7 +300,7 @@ async def subscribe_merged_thread(
             multitask_strategy="enqueue",
             one_shot=False,
             instructions=_instructions(merge_sha, metadata),
-            run_config=_run_config(thread_id, owner, repo, number, workspace, metadata),
+            run_config=await _run_config(thread_id, owner, repo, number, metadata),
             expires_at=datetime.now(UTC) + timedelta(days=_LISTEN_DAYS),
         ).create()
     except Exception:  # noqa: BLE001
@@ -363,17 +350,15 @@ async def ask_to_monitor_rollout(
 ) -> None:
     """Start a run that asks only when the repository rollout skill says to."""
     try:
-        if await _deployment_workspace(owner, repo) is None:
+        if await Repository.get(f"{owner}/{repo}") is None:
             return
         if not await _rollout_skill_at_merge(owner, repo, sha):
             return
-        workspace = metadata.get("workspace")
-        config = _run_config(
+        config = await _run_config(
             thread_id,
             owner,
             repo,
             number,
-            workspace if isinstance(workspace, str) else "",
             metadata,
         )
         source = config.get("source")
@@ -382,7 +367,10 @@ async def ask_to_monitor_rollout(
             _ask_to_monitor(sha),
             config,
             source=source if isinstance(source, str) else "github",
+            origin="github",
             thread_title=None,
+            context=_ROLLOUT_ASK_CONTEXT,
+            systems=[_ROLLOUT_ASK],
             multitask_strategy="enqueue",
         )
     except Exception:  # noqa: BLE001
@@ -396,7 +384,7 @@ async def ask_to_monitor_rollout(
 @router.post("/webhooks/rollout")
 async def rollout_webhook(request: Request) -> RolloutAccepted:
     """Verify a deployment event, record it, and acknowledge it."""
-    claims = await _authorize(request.headers.get("Authorization", ""))
+    await _authorize(request)
     body = await request.body()
     try:
         payload = json.loads(body)
@@ -405,13 +393,13 @@ async def rollout_webhook(request: Request) -> RolloutAccepted:
     event = RolloutEvent.parse(payload)
     if event is None:
         raise HTTPException(status_code=400, detail="Invalid rollout event")
-    stored = await EventLog.record(
+    stored = await EventLog.record_once(
         request,
         _stored_body(event.target, event.commits),
         "deployment",
         event_type=_DEPLOYED,
-        delivery_id=_delivery_id(event.target, event.commits),
-        refs=EventRefs(github_repository=claims.repository),
+        delivery_id=await event.delivery_id(),
+        refs=EventRefs(github_repository=event.repository),
     )
     if not stored:
         raise HTTPException(status_code=503, detail="Deployment event was not recorded")

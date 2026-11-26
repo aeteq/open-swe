@@ -43,9 +43,9 @@ def _moved(
     )
 
 
-async def _workspace(pr_url: str | None = None) -> PlanWorkspace:
+async def _workspace(pr_url: str | None = None, *, scout: bool | None = None) -> PlanWorkspace:
     cfg = RunConfig.from_runtime()
-    if pr_url is not None:
+    if pr_url is not None and scout is None:
         return await PlanWorkspace.for_implementation(cfg, pr_url)
     if not cfg.thread_id or cfg.repo is None or cfg.pr_number is None:
         raise PlannerUnavailableError("this run is not planning a pull request")
@@ -69,6 +69,22 @@ async def _planned(workspace: PlanWorkspace, **result: object) -> dict[str, obje
     }
 
 
+async def walkthrough_read(
+    scout: ScoutPlanning,
+    tool_call_id: CallId,
+    paths: list[str] | None = None,
+    start: str | None = None,
+) -> str | dict[str, object] | Command:
+    """Implement the `walkthrough_read` tool."""
+    try:
+        workspace = await _workspace(scout=scout)
+        return await workspace.read(paths or (), start)
+    except PlanMovedError as exc:
+        return _moved(exc, scout, tool_call_id)
+    except PLANNING_ERRORS as exc:
+        return {"success": False, "error": str(exc)}
+
+
 async def walkthrough_plan_chunk(
     scout: ScoutPlanning,
     tool_call_id: CallId,
@@ -82,9 +98,15 @@ async def walkthrough_plan_chunk(
 ) -> dict[str, object] | Command:
     """Implement the `walkthrough_plan_chunk` tool."""
     try:
-        workspace = await _workspace(pr_url) if pr_url is not None else await _workspace()
+        workspace = await _workspace(pr_url, scout=scout)
         if show is None:
-            return await _planned(workspace, guidance=prompt("walkthrough/planning"))
+            return await _planned(
+                workspace,
+                guidance=prompt(
+                    "walkthrough/planning",
+                    concise_walkthrough=await workspace.pull_request.concise_walkthrough(),
+                ),
+            )
         number = await workspace.plan_chunk(
             title=title,
             show=show,
@@ -105,7 +127,7 @@ async def walkthrough_split_hunks(
 ) -> dict[str, object] | Command:
     """Implement the `walkthrough_split_hunks` tool."""
     try:
-        workspace = await _workspace(pr_url) if pr_url is not None else await _workspace()
+        workspace = await _workspace(pr_url, scout=scout)
         await workspace.split(files)
     except PlanMovedError as exc:
         return _moved(exc, scout, tool_call_id)
@@ -123,7 +145,7 @@ async def walkthrough_move_to_other(
 ) -> dict[str, object] | Command:
     """Implement the `walkthrough_move_to_other` tool."""
     try:
-        workspace = await _workspace(pr_url) if pr_url is not None else await _workspace()
+        workspace = await _workspace(pr_url, scout=scout)
         await workspace.move_to_other(files, restore=restore)
     except PlanMovedError as exc:
         return _moved(exc, scout, tool_call_id)

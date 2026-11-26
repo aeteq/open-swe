@@ -22,11 +22,13 @@ from langchain_core.messages import BaseMessage, ToolMessage, messages_to_dict
 from langchain_core.tools import StructuredTool
 from langchain_quickjs import UnresolvedToolError
 from langgraph.config import get_config
+from langgraph.errors import GraphBubbleUp
 from langgraph.types import Command
 from managed_deepagents import (
     ConnectionNotFoundError,
     CredentialAuthorizationRequiredError,
     CredentialStoreError,
+    RunEndingError,
     connections,
 )
 from pydantic import JsonValue, TypeAdapter
@@ -35,15 +37,15 @@ from runtime_api.endpoint import LONG_CALL_SECONDS, call
 from runtime_api.loop import ToolCallReport
 from runtime_api.operations import (
     OPERATION,
-    RECORD_EVIDENCE,
+    LocalReview,
     OperationResult,
     RunOperation,
-    ToolEvidence,
 )
 
+from rt.auto_review import LOCAL_TOOLS, AutoReview
 from rt.backend import (
+    STATE_KEY,
     TOOL_CALL_SLACK_SECONDS,
-    BackendCallError,
     BackendTimeoutError,
     BackendUnavailableError,
     OpenSweBackend,
@@ -58,7 +60,6 @@ from rt.session_handoff import HeldSessions
 
 logger = logging.getLogger(__name__)
 
-STATE_KEY: Final = "open_swe_state"
 _TIMED_OUT: Final = (
     "Error: Robin did not answer this tool call in time. Whatever it started may "
     "still be running in the sandbox; check before running it again."
@@ -81,7 +82,7 @@ _json_object = TypeAdapter(dict[str, JsonValue])
 _json_content = TypeAdapter(str | list[JsonValue])
 
 
-class SandboxGoneError(RuntimeError):
+class SandboxGoneError(RunEndingError):
     """The thread's sandbox did not answer an operation; the person has been told, and the run ends."""
 
 
@@ -166,26 +167,6 @@ def _result(answer: OperationResult, tool_call_id: str, name: str) -> ToolMessag
     return Command(update={"messages": [message], STATE_KEY: answer.state})
 
 
-async def cited(
-    backend: OpenSweBackend, name: str, arguments: Mapping[str, object], result: ToolMessage
-) -> ToolMessage:
-    """``result``, recorded as incident evidence, citing the id it was recorded under."""
-    evidence = ToolEvidence(
-        run_id=run_id(),
-        tool=name,
-        arguments=_json_object.validate_python(arguments),
-        content=_json_content.validate_python(result.content),
-        status=result.status,
-        artifact=_json.validate_python(result.artifact) if result.artifact is not None else None,
-    )
-    try:
-        reply = await call(backend, RECORD_EVIDENCE, evidence)
-    except BackendCallError:
-        logger.warning("Could not record a tool result as incident evidence", exc_info=True)
-        return result
-    return result.model_copy(update={"content": _content(reply.content)})
-
-
 async def _credentials(spec: ToolSpec) -> dict[str, str]:
     """What the run reads of each connection ``spec`` names, by slug.
 
@@ -237,6 +218,7 @@ async def _operate(
     runtime: ToolRuntime,
     tool_call_id: str,
     credentials: dict[str, str],
+    local_review: LocalReview | None = None,
 ) -> ToolMessage | Command:
     request = _reading(spec, runtime.state).model_copy(
         update={
@@ -245,6 +227,7 @@ async def _operate(
             "request_id": tool_call_id,
             "grant": backend.grant(spec),
             "credentials": credentials,
+            "local_review": local_review,
         }
     )
     started = time.time_ns()
@@ -284,14 +267,11 @@ async def called(
     arguments: Mapping[str, JsonValue],
     runtime: ToolRuntime,
     make: Callable[[str], Awaitable[ToolMessage | Command]],
-    *,
-    cites_evidence: bool = False,
 ) -> ToolMessage | Command:
     """Make one call of tool ``name`` with ``arguments``: ``make``, given the call's id.
 
     Code mode calls tools directly, past the agent's tool-call chain that reports each
-    call and cites it as incident evidence, so a call it makes does both itself, under
-    the code mode call that ran it.
+    call, so a call it makes reports itself, under the code mode call that ran it.
     """
     outer = reported_call()
     if outer is None or outer == runtime.tool_call_id:
@@ -305,12 +285,15 @@ async def called(
         failure = ToolMessage(
             content=f"{type(exc).__name__}: {exc}", tool_call_id=tool_call_id, status="error"
         )
-        backend.outbox.finished(report, failure)
+        if isinstance(exc, GraphBubbleUp):
+            # A pause is not a failure, so the trace does not count it; the report closes all
+            # the same, as the code runs again once the person answers and reports under a new id.
+            backend.outbox.finished(report, failure)
+        else:
+            backend.run.tool_finished(report, failure)
         raise
     message = result if isinstance(result, ToolMessage) else _answer(result, tool_call_id)
-    if cites_evidence:
-        message = await cited(backend, name, arguments, message)
-    backend.outbox.finished(report, message)
+    backend.run.tool_finished(report, message)
     if isinstance(result, ToolMessage):
         return message
     return Command(update={**_update(result), "messages": [message]})
@@ -337,11 +320,21 @@ async def run_operation(
     spec: ToolSpec,
     arguments: Mapping[str, JsonValue],
     runtime: ToolRuntime,
-    *,
-    cites_evidence: bool = False,
 ) -> ToolMessage | Command:
     """Call ``spec``'s operation with ``arguments``, for one tool call, with what the run
     reads of the connections it names."""
+    local_review: LocalReview | None = None
+    if spec.name in LOCAL_TOOLS:
+        review = await AutoReview.local(spec.name, arguments, runtime.state)
+        if isinstance(review, str):
+
+            async def refused(tool_call_id: str) -> ToolMessage:
+                return ToolMessage(
+                    content=review, tool_call_id=tool_call_id, name=spec.name, status="error"
+                )
+
+            return await called(backend, spec.name, arguments, runtime, refused)
+        local_review = review
     # Read before code mode reports the call: a pause for a grant runs the code again,
     # which reports the call under a new id, so a report made first would never finish.
     try:
@@ -349,16 +342,14 @@ async def run_operation(
     except UnreadConnectionError as exc:
         make = exc.result
     else:
-        run = _run_locally if runs_locally(spec, backend.run, runtime) else _operate
+        run = _run_locally if runs_locally(spec) else partial(_operate, local_review=local_review)
         make = partial(run, backend, spec, arguments, runtime, credentials=credentials)
-    return await called(backend, spec.name, arguments, runtime, make, cites_evidence=cites_evidence)
+    return await called(backend, spec.name, arguments, runtime, make)
 
 
-def operation_tool(
-    spec: ToolSpec, backend: OpenSweBackend, *, cites_evidence: bool = False
-) -> StructuredTool:
+def operation_tool(spec: ToolSpec, backend: OpenSweBackend) -> StructuredTool:
     async def operate(runtime: ToolRuntime, **arguments: JsonValue) -> ToolMessage | Command:
-        return await run_operation(backend, spec, arguments, runtime, cites_evidence=cites_evidence)
+        return await run_operation(backend, spec, arguments, runtime)
 
     return StructuredTool.from_function(
         coroutine=operate,
@@ -391,8 +382,7 @@ def backend_tool(
             raise UnresolvedToolError(
                 f"{name} is not one of this run's tools; find the tool you want with search_tools"
             )
-        cites_evidence = backend.run.catalog.incident_evidence
-        return await run_operation(backend, spec, arguments, runtime, cites_evidence=cites_evidence)
+        return await run_operation(backend, spec, arguments, runtime)
 
     return StructuredTool.from_function(
         coroutine=operate,

@@ -94,9 +94,6 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Harness:
     async def none(*args: object, **kwargs: object) -> None:
         return None
 
-    async def workspace(repo: object) -> str:
-        return "default"
-
     async def exists(thread_id: str) -> bool:
         return thread_id in h.existing_threads
 
@@ -118,11 +115,9 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Harness:
 
     monkeypatch.setattr(service.common, "dispatch_agent_run", dispatch)
     monkeypatch.setattr(service.common, "upsert_agent_thread_metadata", upsert)
-    monkeypatch.setattr(service.common, "get_thread_workspace", none)
-    monkeypatch.setattr(service.common, "workspace_for_repo_config", workspace)
     monkeypatch.setattr(service.common, "thread_exists", exists)
     monkeypatch.setattr(service.common, "get_thread_metadata_safe", metadata)
-    monkeypatch.setattr(service.common, "get_workspace_settings", settings)
+    monkeypatch.setattr(service.common, "get_settings", settings)
     monkeypatch.setattr(service.common, "get_profile_default_repo", none)
     monkeypatch.setattr(service.common, "is_repo_allowed", lambda repo: h.allowed)
     monkeypatch.setattr(service.User, "login_for_email", login)

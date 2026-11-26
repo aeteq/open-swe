@@ -8,6 +8,7 @@ import pytest
 from openswe.github import webhook as github_webhooks
 from openswe.review.approvals import ApprovalPolicy
 from openswe.review.assessment_feedback import PublishedAssessment
+from openswe.review.publish import ReviewCheckResult, settle_review_check_run
 
 pytestmark = pytest.mark.usefixtures("no_local_threads", "registry_db")
 
@@ -92,20 +93,22 @@ async def test_push_event_skips_when_thread_not_watching() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "approval_mode,policy,storage_fails",
+    "approval_mode,policy,storage_fails,check_fails",
     [
-        ("off", None, False),
-        ("off", None, True),
-        ("dry_run", None, False),
-        ("dry_run", "Policy", False),
-        ("approve", None, False),
-        ("approve", "Policy", False),
+        ("off", None, False, False),
+        ("off", None, False, True),
+        ("off", None, True, False),
+        ("dry_run", None, False, False),
+        ("dry_run", "Policy", False, False),
+        ("approve", None, False, False),
+        ("approve", "Policy", False, False),
     ],
 )
 async def test_push_event_skips_when_pr_diff_unchanged_since_last_review(
     approval_mode: str,
     policy: str | None,
     storage_fails: bool,
+    check_fails: bool,
 ) -> None:
     payload = _push_payload(ref="refs/heads/feat-x", after="b" * 40)
     pr = {
@@ -117,7 +120,17 @@ async def test_push_event_skips_when_pr_diff_unchanged_since_last_review(
     }
     fake_client = MagicMock()
     fake_client.runs.create = AsyncMock()
-    set_metadata = AsyncMock()
+    metadata: dict[str, object] = {
+        "kind": "reviewer",
+        "watch": True,
+        "last_reviewed_sha": "a" * 40,
+        "last_reviewed_base_sha": "previous-parent",
+    }
+    set_metadata = AsyncMock(
+        side_effect=lambda thread_id, **kwargs: metadata.update(
+            {**kwargs, **kwargs.get("extra", {})}
+        )
+    )
     assessment = PublishedAssessment(
         review_id=19,
         owner="lc",
@@ -163,12 +176,7 @@ async def test_push_event_skips_when_pr_diff_unchanged_since_last_review(
         patch(
             "openswe.webhooks.common.get_thread_metadata_safe",
             new_callable=AsyncMock,
-            return_value={
-                "kind": "reviewer",
-                "watch": True,
-                "last_reviewed_sha": "a" * 40,
-                "last_reviewed_base_sha": "previous-parent",
-            },
+            return_value=metadata,
         ),
         patch(
             "openswe.webhooks.common._fetch_compare_diff",
@@ -179,15 +187,18 @@ async def test_push_event_skips_when_pr_diff_unchanged_since_last_review(
             ],
         ),
         patch("openswe.webhooks.common.set_reviewer_thread_metadata", new=set_metadata),
+        patch("openswe.webhooks.common.queue.schedule", new_callable=AsyncMock) as schedule,
+        patch("openswe.review.publish.get_thread_metadata", AsyncMock(return_value=metadata)),
+        patch("openswe.review.publish.set_reviewer_thread_metadata", new=set_metadata),
         patch(
             "openswe.webhooks.common.create_review_check_run",
             new_callable=AsyncMock,
             return_value=42,
         ) as create_check,
         patch(
-            "openswe.webhooks.common.complete_review_check_run",
+            "openswe.review.publish.complete_review_check_run",
             new_callable=AsyncMock,
-            return_value=True,
+            return_value=not check_fails,
         ) as complete_check,
         patch("openswe.webhooks.common.get_client", return_value=fake_client),
     ):
@@ -199,16 +210,32 @@ async def test_push_event_skips_when_pr_diff_unchanged_since_last_review(
             complete_check.assert_not_awaited()
             return
         await github_webhooks.process_github_push_event(payload)
+        schedule.assert_awaited_once()
+        assert schedule.await_args is not None
+        assert schedule.await_args.args[1]["check_run_id"] == 42
+        if check_fails:
+            assert metadata["review_check_run_id"] == 42
+            pending = ReviewCheckResult.model_validate(metadata["review_check_pending_result"])
+            assert pending.conclusion == "success"
+            assert pending.title == "No new changes to review"
+            complete_check.return_value = True
+            await settle_review_check_run(
+                thread_id=github_webhooks.reviewer_thread_id("lc", "repo", 7),
+                owner="lc",
+                repo="repo",
+                token="t",
+                **pending.model_dump(),
+            )
+        assert metadata["review_check_run_id"] is None
+        assert metadata["review_check_pending_result"] is None
 
     completion.assert_awaited_once_with(
         reviewer_thread_id=github_webhooks.reviewer_thread_id("lc", "repo", 7),
         head_sha="b" * 40,
     )
     fake_client.runs.create.assert_not_called()
-    set_metadata.assert_awaited_once()
-    assert set_metadata.await_args is not None
-    assert set_metadata.await_args.kwargs["last_reviewed_sha"] == "b" * 40
-    assert set_metadata.await_args.kwargs["last_reviewed_base_sha"] == "basesha"
+    assert metadata["last_reviewed_sha"] == "b" * 40
+    assert metadata["last_reviewed_base_sha"] == "basesha"
     assert saved_assessments[0].head_sha == "b" * 40
     assert saved_assessments[0].decision == "needs_human_review"
     assert saved_assessments[0].approved is False
@@ -217,7 +244,7 @@ async def test_push_event_skips_when_pr_diff_unchanged_since_last_review(
     create_check.assert_awaited_once()
     assert create_check.await_args is not None
     assert create_check.await_args.kwargs["head_sha"] == "b" * 40
-    complete_check.assert_awaited_once()
+    assert complete_check.await_count == (2 if check_fails else 1)
     assert complete_check.await_args is not None
     assert complete_check.await_args.kwargs["check_run_id"] == 42
     assert complete_check.await_args.kwargs["conclusion"] == "success"
@@ -633,27 +660,92 @@ async def test_pr_reopened_re_enables_watch() -> None:
     assert captured and captured[0][1]["watch"] is True
 
 
+_PATCH_HEADER = (
+    "diff --git a/jobs.py b/jobs.py\nindex {index} 100644\n--- a/jobs.py\n+++ b/jobs.py\n"
+)
+_REVIEWED_HUNK = (
+    "@@ -10,8 +10,8 @@ class Jobs:\n"
+    "     def can_retry(self):\n"
+    "         if self.attempts > 3:\n"
+    "-            return False\n"
+    "+            return True\n"
+    "         log(self)\n"
+    "         if self.locked:\n"
+    "-            return None\n"
+    "+            return False\n"
+)
+_REPATCHED = _PATCH_HEADER.format(index="3333333..4444444")
+
+
 @pytest.mark.parametrize(
-    "base_ref,previous_base,new_line,unchanged",
+    "base_ref,previous_base,new_diff,unchanged",
     [
-        ("parent", "parent-before-force-push", "+child change", True),
-        ("main", "main-before-rebase", "+child change", True),
-        ("parent", "parent-before-force-push", "+different change", False),
-        ("main", "", "+child change", True),
+        pytest.param(
+            "main",
+            "main-before-rebase",
+            _REPATCHED + _REVIEWED_HUNK.replace("-10,8 +10,8", "-40,8 +40,8"),
+            True,
+            id="lines-shifted",
+        ),
+        pytest.param(
+            "parent",
+            "parent-before-force-push",
+            _REPATCHED
+            + _REVIEWED_HUNK.replace("-10,8 +10,8", "-40,8 +40,8").replace(
+                "can_retry(self):", "can_retry(self) -> bool:"
+            ),
+            True,
+            id="base-changed-non-adjacent-context",
+        ),
+        pytest.param(
+            "main",
+            "",
+            _REPATCHED + "@@ -40,6 +40,6 @@ class Jobs:\n"
+            "     def can_retry(self):\n"
+            "         if self.attempts > 3:\n"
+            "-            return False\n"
+            "+            return True\n"
+            "         log(self)\n"
+            "         audit(self)\n"
+            "@@ -53,4 +53,4 @@ class Jobs:\n"
+            "         audit(self)\n"
+            "         if self.locked:\n"
+            "-            return None\n"
+            "+            return False\n",
+            True,
+            id="base-split-the-hunk",
+        ),
+        pytest.param(
+            "main",
+            "main-before-rebase",
+            _REPATCHED
+            + _REVIEWED_HUNK.replace("can_retry", "can_delete").replace(
+                "self.attempts > 3", "self.owner"
+            ),
+            False,
+            id="same-edit-moved-to-another-method",
+        ),
+        pytest.param(
+            "main",
+            "main-before-rebase",
+            _REPATCHED + _REVIEWED_HUNK.replace("class Jobs:", "class Admin:"),
+            False,
+            id="same-edit-moved-to-another-class",
+        ),
+        pytest.param(
+            "parent",
+            "parent-before-force-push",
+            _REPATCHED + _REVIEWED_HUNK.replace("return True", "return self.ok"),
+            False,
+            id="different-edit",
+        ),
     ],
 )
 async def test_rebased_patch_comparison(
-    base_ref: str, previous_base: str, new_line: str, unchanged: bool
+    base_ref: str, previous_base: str, new_diff: str, unchanged: bool
 ) -> None:
     common = github_webhooks.common
-    old_diff = (
-        "diff --git a/file.py b/file.py\nindex 1111111..2222222 100644\n"
-        "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@ def child():\n-old\n+child change\n"
-    )
-    new_diff = (
-        "diff --git a/file.py b/file.py\nindex 3333333..4444444 100644\n"
-        f"--- a/file.py\n+++ b/file.py\n@@ -21 +21 @@ def child():\n-old\n{new_line}\n"
-    )
+    old_diff = _PATCH_HEADER.format(index="1111111..2222222") + _REVIEWED_HUNK
     with patch.object(
         common, "_fetch_compare_diff", AsyncMock(side_effect=[old_diff, new_diff])
     ) as fetch:

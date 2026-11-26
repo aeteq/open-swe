@@ -20,9 +20,9 @@ the GraphQL ``resolveReviewThread`` mutation (REST doesn't expose this).
 import json
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from html import escape
-from typing import Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 import httpx2
 from pydantic import BaseModel, Field, model_validator
@@ -49,6 +49,9 @@ from openswe.review.findings import (
 )
 from openswe.run_config import ReviewDestination
 from openswe.utils.dashboard_links import dashboard_thread_url
+
+if TYPE_CHECKING:
+    from openswe.review_apps.apps import ReviewAppResult
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +119,6 @@ def render_inline_comment_body(finding: Finding) -> str:
 
         *(Refers to lines X-Y)*
 
-        ---
-        *Your feedback helps Open SWE learn. React with 👍 or 👎 to tell us if this review comment was useful.*
-
         ```suggestion
         <replacement>
         ```
@@ -145,13 +145,6 @@ def render_inline_comment_body(finding: Finding) -> str:
         body_parts.extend(["", detail])
     if line_ref:
         body_parts.extend(["", line_ref])
-    body_parts.extend(
-        [
-            "",
-            "---",
-            "*Your feedback helps Robin learn. React with 👍 or 👎 to tell us if this review comment was useful.*",
-        ]
-    )
     body = "\n".join(body_parts)
 
     suggestion = finding.get("suggestion")
@@ -349,12 +342,16 @@ class PublishSelection:
         re_review: bool,
         head_sha: str,
         severity_threshold: Severity = "medium",
+        earlier: Collection[str] = (),
     ) -> None:
+        """``earlier`` names findings this publish leaves alone, such as the code review's
+        when a run for a deployed preview publishes only what its apps' work turned up."""
         self.unpublished = [
             finding
             for finding in findings
             if not self._published(finding, destination)
             and (not re_review or finding.get("first_seen_sha") == head_sha)
+            and finding.get("id") not in earlier
         ]
         self.severity_threshold: Severity = severity_threshold
 
@@ -412,6 +409,8 @@ def render_review_body(
     dry_run: bool = False,
     approval_errors: Sequence[str] = (),
     config_errors: Sequence[str] = (),
+    app_results: Sequence[ReviewAppResult] = (),
+    apps_only: bool = False,
 ) -> str:
     """Compose the top-level review body.
 
@@ -432,6 +431,8 @@ def render_review_body(
         issue_word = "issue" if surfaced_count == 1 else "issues"
         headline = f"**Robin Review** found {surfaced_count} potential {issue_word}."
 
+    if apps_only and surfaced_count == 0 and not out_of_diff_findings:
+        headline = "**Robin app review completed.**"
     parts = [headline]
     if config_errors:
         parts.append(
@@ -473,15 +474,14 @@ def render_review_body(
             )
             + "\n\n</details>"
         )
-        feedback_link = (
-            f", or [rate the latest assessment in Robin]({ui_url}#assessment-feedback)"
-            if ui_url
-            else ""
+    if app_results:
+        parts.append(
+            "App review results (repository access required):\n\n"
+            + "\n\n".join(result.render() for result in app_results)
         )
-        parts.append(f"React 👍 or 👎{feedback_link}.")
     links = []
     if ui_url:
-        links.append(f"[Open in Web]({ui_url})")
+        links.append(f"[Open in Robin]({ui_url})")
     if trace_url:
         links.append(f"[View Robin trace]({trace_url})")
     if links:
@@ -504,14 +504,14 @@ def render_status_comment(
     """Compose the transient "review in progress" comment.
 
     Posted when a review starts so the PR shows activity and a clickable
-    "Open in Web" link while the run is live; deleted once ``publish_review``
+    "Open in Robin" link while the run is live; deleted once ``publish_review``
     posts the review (which carries the same link).
     """
     parts = ["## 🔍 Robin Review: in progress\n\nRobin is reviewing this PR…"]
     links = []
     ui_url = dashboard_thread_url(thread_id) if thread_id else None
     if ui_url:
-        links.append(f"[Open in Web]({ui_url})")
+        links.append(f"[Open in Robin]({ui_url})")
     if trace_url:
         links.append(f"[View Robin trace]({trace_url})")
     if links:
@@ -532,7 +532,7 @@ def render_failed_status_comment(*, pr_number: int, thread_id: str, reason: str)
         "Push a commit or re-request a review from Robin to run it again."
     ]
     if ui_url := dashboard_thread_url(thread_id):
-        parts.append(f"[Open in Web]({ui_url})")
+        parts.append(f"[Open in Robin]({ui_url})")
     parts.append(status_comment_marker(pr_number))
     return "\n\n".join(parts)
 

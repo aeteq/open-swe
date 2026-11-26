@@ -63,8 +63,18 @@ export type PluginPermission =
   | "github:write"
   | "agent"
   | "realtime"
+  | "threads:read"
 
 export type Theme = "light" | "dark"
+
+/** The app's newest release, when it's newer than the one running. */
+export interface AppRelease {
+  number: number
+  /** Its manifest's `version`. */
+  version: string
+  /** What it asks for that the running release doesn't, which the person approves when updating. */
+  newPermissions: PluginPermission[]
+}
 
 export interface HostContext {
   protocol: number
@@ -73,6 +83,8 @@ export interface HostContext {
     name: string
     displayName: string
     version: string
+    /** The number of the release running, which a newer one has a higher number than. */
+    release: number
     permissions: PluginPermission[]
   }
   /** The person using the plugin. */
@@ -151,6 +163,7 @@ export interface Commit {
 export interface PullRequest {
   number: number
   title: string
+  body?: string | null
   url: string
   state: string
   merged: boolean
@@ -167,6 +180,32 @@ export interface PullRequest {
   requestedReviewers: string[]
   /** `org/slug` of the teams GitHub still asks to review. */
   requestedTeams: string[]
+}
+
+/** One file a pull request changes. */
+export interface PullRequestFile {
+  path: string
+  /** The path before a rename or copy. */
+  previousPath: string | null
+  status:
+    | "added"
+    | "removed"
+    | "modified"
+    | "renamed"
+    | "copied"
+    | "changed"
+    | "unchanged"
+  additions: number
+  deletions: number
+  /** The file's unified-diff hunks; `null` for binary files and diffs too large for GitHub to show. */
+  patch: string | null
+}
+
+/** The files a pull request changes, as GitHub has them now. */
+export interface PullRequestFiles {
+  files: PullRequestFile[]
+  /** Whether it changes more files than GitHub lists, at most 3000. */
+  truncated: boolean
 }
 
 /** The person's part in the pull requests a search finds; `review-requested` includes their teams'. */
@@ -187,8 +226,112 @@ export interface PullRequestSummary {
 
 export interface PullRequestSearch {
   pulls: PullRequestSummary[]
-  /** Whether GitHub left some out: past its first page of results, or a search that timed out. */
+  /** Whether some are missing because GitHub's search timed out or a later page failed; it lists at most 1000. */
   incomplete: boolean
+  /**
+   * The page to search next, when one `page` was asked for and GitHub has
+   * more; `null` (or absent, from an older web UI) when this is the last.
+   */
+  nextPage?: number | null
+}
+
+/**
+ * Where agent threads come from. `incidents_agent` holds the investigations
+ * Robin starts in new incident channels, which the dashboard's own lists leave
+ * out; `slack` is the threads people start by mentioning Robin there.
+ */
+export type ThreadSource =
+  | "dashboard"
+  | "web"
+  | "github"
+  | "slack"
+  | "linear"
+  | "schedule"
+  | "api"
+  | "claude_code"
+  | "incidents_agent"
+
+export interface ThreadListOptions {
+  source: ThreadSource
+  /**
+   * Only threads one allowlisted Slack bot started, by its `key` from
+   * `threads.bots()`, or any bot's with `"*"`. Bots post as `slack`.
+   */
+  bot?: string
+  /** 1 to 50; 25 by default. */
+  limit?: number
+  /** Where to start: `0`, or a page's `nextOffset`. */
+  offset?: number
+}
+
+/** A Slack bot an instance admin allowed to start threads by mentioning Robin. */
+export interface SlackBot {
+  /** `<team_id>:<bot_id>`. */
+  key: string
+  /** `null` once it is no longer on the allowlist. */
+  name: string | null
+}
+
+/** The Slack thread an agent thread answers in. */
+export interface SlackThread {
+  channelId: string
+  threadTs: string
+  /** The channel's name when the thread began, when Robin knows it. */
+  channelName: string | null
+  permalink: string | null
+}
+
+/** An agent thread the person may read; open it with `nav.openThread`. */
+export interface ThreadSummary {
+  threadId: string
+  title: string | null
+  source: string
+  /** `running`, `idle`, `error`, `interrupted` and the like, as the dashboard shows it. */
+  status: string
+  visibility: "public" | "private"
+  createdAt: string
+  updatedAt: string
+  /** The thread in the dashboard; `null` for one it won't open, such as an incident thread. */
+  url: string | null
+  slack: SlackThread | null
+  /** Whether it published an artifact, which `threads.artifact` reads. */
+  hasArtifact: boolean
+  /** The allowlisted Slack bot that started it, if one did. */
+  bot: SlackBot | null
+}
+
+export interface ThreadPage {
+  /** Fewer than asked for when some on the page are ones the person can't read. */
+  threads: ThreadSummary[]
+  /** The next page's `offset`; `null` at the end. */
+  nextOffset: number | null
+}
+
+/** Something a person or the agent wrote in a thread; tool calls and subagents are left out. */
+export interface ThreadMessage {
+  id: string
+  role: "user" | "assistant"
+  /** At most 20,000 characters. */
+  text: string
+  truncated: boolean
+  /** Who sent a `user` message: a GitHub login, `slack:…`, `system:…` and the like. */
+  senderId: string | null
+  senderName: string | null
+  timestamp: string
+}
+
+export interface ThreadMessages {
+  /** The newest messages, oldest first. */
+  messages: ThreadMessage[]
+  /** How many earlier ones were left out. */
+  omitted: number
+}
+
+/** The HTML or Markdown a thread published for review. */
+export interface ThreadArtifact {
+  status: string | null
+  format: "html" | "markdown"
+  content: string
 }
 
 export interface RoomScope extends DocumentScope {
@@ -398,11 +541,35 @@ export interface HostApi extends RpcTarget {
   openThread(threadId: string): Promise<void>
   /** Opens a web link in a new tab; outside github.com, only once the person agrees. */
   openExternal(url: string): Promise<void>
+  /**
+   * Opens Robin's review page of pull request `number` in `repository`, one the
+   * person shared: in a new tab, or in the desktop app's window.
+   */
+  openReview(repository: string, number: number): Promise<void>
   toast(toast: Toast): Promise<void>
+  /**
+   * Counts that the person did `action` in the plugin, in Robin's product
+   * analytics beside the plugin's name: lowercase letters, digits and `_`, at
+   * most 40. Nothing else about it is sent.
+   */
+  track(action: string): Promise<void>
   /** Shows `title` beside the plugin's name above its frame and names the browser tab "<title> · Open SWE"; `null` clears it. */
   setTitle(title: string | null): Promise<void>
+  /** The app's newest release when the person runs an older one; `null` when they're up to date. */
+  newerRelease(): Promise<AppRelease | null>
+  /**
+   * Asks the person, in a dialog the web UI draws, to update to the newest
+   * release, approving any new permissions; resolves whether they did. An
+   * update reloads the frame on the new release.
+   */
+  updateApp(): Promise<boolean>
   /** Profiles for GitHub logins, in the order asked; at most 100 per call. */
   people(logins: string[]): Promise<Person[]>
+  /**
+   * People Robin knows with a GitHub login whose name or login matches
+   * `query`, closest first; an empty `query` lists them by name. At most 50.
+   */
+  searchPeople(query: string, limit?: number): Promise<Person[]>
   /**
    * The GitHub repositories the person shared with the plugin. It reaches no
    * other: a call naming one fails with status 403.
@@ -419,9 +586,35 @@ export interface HostApi extends RpcTarget {
   github(repository: string): Promise<GitHubRepositoryApi>
   /**
    * Open pull requests in every repository the person shared and can still
-   * read, by the person's part in them, newest activity first.
+   * read, by the person's part in them, newest activity first: every page of
+   * GitHub's search, or only `page` (1 to 10) of it. With `author`, `role`
+   * must be `author`: that GitHub login's pull requests instead.
    */
-  searchPulls(role: PullRequestRole): Promise<PullRequestSearch>
+  searchPulls(
+    role: PullRequestRole,
+    page?: number,
+    author?: string
+  ): Promise<PullRequestSearch>
+  /**
+   * Agent threads from `options.source` the person may read, most recently
+   * updated first. These and the other thread calls need `threads:read`.
+   */
+  listThreads(options: ThreadListOptions): Promise<ThreadPage>
+  /** The allowlisted Slack bots, whose threads `listThreads` filters by with `bot`. */
+  slackBots(): Promise<SlackBot[]>
+  /** One thread the person may read; `null` when there is none they can. */
+  thread(threadId: string): Promise<ThreadSummary | null>
+  /**
+   * The thread's newest messages, at most `limit` (1 to 200; 100 by default);
+   * `null` when the person can't read the thread, or when it predates the
+   * transcript log and its messages aren't readable here.
+   */
+  threadMessages(
+    threadId: string,
+    limit?: number
+  ): Promise<ThreadMessages | null>
+  /** The artifact the thread published; `null` when it published none. */
+  threadArtifact(threadId: string): Promise<ThreadArtifact | null>
   /**
    * Offers the agent in the dock tools, as JSON text of
    * `{ tools: [{ name, description, parameters }], instructions }`, in place
@@ -484,7 +677,18 @@ export interface CollectionApi extends RpcTarget {
   watch(onChange: () => void): Promise<Subscription>
 }
 
+/** A durable outcome of an approved app's work on one pull-request commit. */
+export interface ReviewOutcome {
+  id: string
+  head_sha: string
+  status: "queued" | "complete" | "blocked" | "failed" | "skipped"
+  reason: string
+  created_at: string
+}
+
 export interface GitHubRepositoryApi extends RpcTarget {
+  /** Request this app's review work; requires agent and GitHub access and global instance-admin approval. */
+  requestReview(number: number): Promise<ReviewOutcome>
   info(): Promise<RepositoryInfo>
   /** The commit a branch, tag or SHA names; `null` when there is none. */
   ref(name: string): Promise<string | null>
@@ -500,6 +704,8 @@ export interface GitHubRepositoryApi extends RpcTarget {
   commit(request: CommitWire): Promise<string>
   /** The pull request numbered `number` as GitHub has it now; `null` when there is none. */
   pull(number: number): Promise<PullRequest | null>
+  /** The files pull request `number` changes, with their diffs. */
+  pullFiles(number: number): Promise<PullRequestFiles>
   findPull(head: string): Promise<PullRequest | null>
   openPull(draft: PullRequestDraft): Promise<PullRequest>
 }

@@ -13,18 +13,14 @@ from openswe.tasks import service as task_service
 from openswe.tasks.store import Task, TaskContext, TaskMembership
 from openswe.users import User
 from openswe.users.models import UserIdentity
-from openswe.workspaces.rows import WorkspaceRow
 
 
 @pytest.fixture
 def shared_sandbox(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, object]]:
-    workspace = WorkspaceRow(slug="default", name="Default")
     task = Task(
         coordinator_thread_id="coordinator",
         title="Fix login",
-        workspace_id=workspace.id,
     )
-    task.workspace = workspace
     owner = User(identities=[UserIdentity(provider="github", external_id="1", login="owner")])
     monkeypatch.setattr(User, "for_login", AsyncMock(return_value=owner))
     monkeypatch.setattr(User, "for_identity", AsyncMock(return_value=owner))
@@ -33,7 +29,6 @@ def shared_sandbox(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, objec
         "coordinator": {
             "owner_type": "user",
             "owner_login": "owner",
-            "workspace": "default",
             "sandbox_id": "sb-old",
             "github_token_repositories": ["langchain-ai/open-swe"],
         }
@@ -77,8 +72,17 @@ def shared_sandbox(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, objec
 async def test_worker_attaches_to_replaced_host_without_guest_proxy_identity(
     shared_sandbox: dict[str, dict[str, object]],
     monkeypatch: pytest.MonkeyPatch,
+    registry_db,
     owner_type: str,
 ) -> None:
+    from openswe.execution import SANDBOX_EXECUTION, ExecutionProfile
+    from openswe.sandboxes.managed import ManagedSandbox
+    from openswe.sandboxes.providers.langsmith import (
+        AdoptedSandbox,
+        LangSmithCreateOptions,
+        LiveSandboxProxy,
+    )
+
     if owner_type == "system":
         for metadata in shared_sandbox.values():
             metadata["owner_type"] = "system"
@@ -87,19 +91,41 @@ async def test_worker_attaches_to_replaced_host_without_guest_proxy_identity(
             monkeypatch.setattr(User, method, AsyncMock(side_effect=AssertionError("User lookup")))
     host_sandbox_id = "sb-replacement"
     shared_sandbox["coordinator"]["sandbox_id"] = host_sandbox_id
+    proxy_config = {"rules": [{"name": "retained-egress", "match_hosts": ["retained.invalid"]}]}
+    profile = ExecutionProfile(
+        uses_defaults=True,
+        create=LangSmithCreateOptions.resolve(
+            snapshot_id=None, create_params={"proxy_config": proxy_config}
+        ),
+    )
+    monkeypatch.setattr("openswe.threads.store.THREADS.update", AsyncMock())
+    await SANDBOX_EXECUTION.bind("coordinator", host_sandbox_id, profile, {})
     backend = MagicMock(id=host_sandbox_id)
     connect = AsyncMock(return_value=backend)
-    refresh = AsyncMock()
     monkeypatch.setattr(lifecycle, "connect_existing_sandbox", connect)
-    monkeypatch.setattr(lifecycle, "_refresh_github_proxy", refresh)
 
-    attached = await lifecycle.ensure_sandbox_for_thread("worker", workspace_slug="default")
+    attached = await lifecycle.ensure_sandbox_for_thread("worker")
 
     assert attached.id == host_sandbox_id
     assert SANDBOX_BACKENDS["coordinator"].id == SANDBOX_BACKENDS["worker"].id
     assert shared_sandbox["worker"]["sandbox_id"] == host_sandbox_id
     connect.assert_awaited_once_with(host_sandbox_id)
-    assert refresh.await_args.kwargs["thread_id"] == "coordinator"
+    shared_sandbox["worker"]["sandbox_base_proxy_config"] = {"rules": ["injected"]}
+    shared_sandbox["coordinator"]["sandbox_owner"] = "mda"
+    monkeypatch.setattr(
+        "openswe.sandboxes.managed.get_sandbox_metadata", lifecycle.get_sandbox_metadata
+    )
+    monkeypatch.setattr(
+        LiveSandboxProxy, "adopt", AsyncMock(return_value=AdoptedSandbox(rules=[], env_vars={}))
+    )
+    managed = await ManagedSandbox.for_thread("worker")
+    assert managed.thread_id == "coordinator"
+    assert managed.sandbox_id == host_sandbox_id
+    assert managed.proxy_config is not None
+    assert managed.proxy_config["rules"] == proxy_config["rules"]
+    shared_sandbox["worker"]["sandbox_host_thread_id"] = "another-coordinator"
+    with pytest.raises(PermissionError, match="does not match"):
+        await ManagedSandbox.for_thread("worker")
     if owner_type == "system":
         assert all("owner_user_id" not in metadata for metadata in shared_sandbox.values())
     else:
@@ -117,7 +143,6 @@ async def test_worker_refreshes_binding_during_concurrent_host_reconnect(
         "connect_existing_sandbox",
         AsyncMock(side_effect=lambda sandbox_id: MagicMock(id=sandbox_id)),
     )
-    monkeypatch.setattr(lifecycle, "_refresh_github_proxy", AsyncMock())
     await lifecycle.ensure_sandbox_for_thread("worker")
 
     shared_sandbox["coordinator"]["sandbox_id"] = "sb-replacement"
@@ -158,11 +183,14 @@ async def test_worker_reattach_recovers_a_missed_background_completion(
     backend.aexecute = AsyncMock(return_value=ExecuteResponse(output="", exit_code=0))
     dispatch = AsyncMock()
     monkeypatch.setattr(lifecycle, "connect_existing_sandbox", AsyncMock(return_value=backend))
-    monkeypatch.setattr(lifecycle, "_refresh_github_proxy", AsyncMock())
     monkeypatch.setattr(background_tasks, "_client", lambda: client)
     monkeypatch.setattr(background_tasks, "connect_sandbox", AsyncMock(return_value=backend))
     monkeypatch.setattr(background_tasks, "_list_tasks", AsyncMock(return_value=[task]))
     monkeypatch.setattr(background_tasks, "dispatch_agent_run", dispatch)
+    # A live worker: a cancelled one's completions are dropped instead.
+    monkeypatch.setattr(
+        background_tasks.TaskDelegation, "get", AsyncMock(return_value=MagicMock(cancelled=False))
+    )
     monkeypatch.setattr(
         task_service,
         "recipient_config",
@@ -198,7 +226,6 @@ async def test_worker_does_not_hand_over_a_deleted_host_sandbox(
     [
         "membership",
         "repository_scope",
-        "workspace",
         "owner",
         "owner_type",
         "admin",
@@ -230,8 +257,6 @@ async def test_worker_cannot_attach_to_a_host_outside_its_permissions(
         shared_sandbox["worker"]["visibility"] = "private"
     elif invalid_binding == "membership":
         shared_sandbox["worker"]["sandbox_host_thread_id"] = "another-coordinator"
-    elif invalid_binding == "workspace":
-        shared_sandbox["worker"]["workspace"] = "another-workspace"
     elif invalid_binding == "owner":
         if owner_type == "system":
             for metadata in shared_sandbox.values():

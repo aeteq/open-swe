@@ -120,7 +120,6 @@ async def test_command_thread_stays_private_and_can_reply_after_task_wakeup(
 
     assert RunConfig.parse(resumed).slack_context
     monkeypatch.setattr(slack_reply, "get_config", lambda: {"configurable": resumed})
-    monkeypatch.setattr(slack_reply, "get_langgraph_client", lambda: client)
     monkeypatch.setattr(slack_reply.event_claims, "claim", AsyncMock(return_value=True))
     monkeypatch.setattr(slack_reply, "claim_slack_event", AsyncMock(return_value=True))
     monkeypatch.setattr(slack_reply, "settle_slack_thread_status", AsyncMock())
@@ -531,18 +530,13 @@ async def test_a_slack_mention_without_github_prepares_a_canonical_chat_run(
     captured: dict[str, object] = {}
     _setup_slack_mention_fakes(monkeypatch, captured)
     monkeypatch.setattr(slack_service, "persist_display_name", AsyncMock())
-    monkeypatch.setattr(
-        slack_service.THREADS, "state", AsyncMock(return_value={"values": {"messages": []}})
-    )
+    state_mock = AsyncMock(return_value={"values": {"messages": []}})
+    monkeypatch.setattr(slack_service.THREADS, "state", state_mock)
     monkeypatch.setattr(
         slack_ask.common, "account_link_reason", AsyncMock(return_value=github_reason)
     )
     upsert = AsyncMock(return_value=True)
     monkeypatch.setattr(slack_ask.common, "upsert_agent_thread_metadata", upsert)
-    default_repo = AsyncMock(
-        side_effect=AssertionError("A GitHub-free run must not default a repository")
-    )
-    monkeypatch.setattr(slack_service, "workspace_scoped_default_repo", default_repo)
 
     prepared, _ = await slack_service.prepare_slack_channel_run(
         SlackRequest(
@@ -558,18 +552,23 @@ async def test_a_slack_mention_without_github_prepares_a_canonical_chat_run(
     )
 
     assert isinstance(prepared, slack_service.SlackChannelRun)
+    state_mock.assert_awaited_once_with(
+        "t-1",
+        select=["values.messages", "values._summarization_event", "values.visible_from"],
+    )
     config = prepared.configurable
     assert config["github_linked"] is False
     assert config["repo"] is None
     assert config["repo_explicitly_none"] is True
     assert "github_login" not in config
     assert upsert.await_args.kwargs["owner_login"] == "mason-gh"
-    default_repo.assert_not_awaited()
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cached_context", [False, True])
 async def test_slack_repository_defaults_use_only_the_explicit_account_link(
     monkeypatch: pytest.MonkeyPatch,
+    cached_context: bool,
 ) -> None:
     client = SimpleNamespace(threads=SimpleNamespace(get=AsyncMock(return_value={"metadata": {}})))
     monkeypatch.setattr(slack_ask.common, "get_client", lambda **_kwargs: client)
@@ -580,16 +579,27 @@ async def test_slack_repository_defaults_use_only_the_explicit_account_link(
     profile_repo = AsyncMock(return_value={"owner": "acme", "name": "billing"})
     monkeypatch.setattr(slack_ask.common, "get_profile_default_repo", profile_repo)
 
+    context = SlackChannelContext(
+        name="eng",
+        topic="repo:acme/old-topic",
+        purpose="repo:acme/old-purpose",
+        description="repo:acme/old-description",
+    )
+    monkeypatch.setattr(
+        slack_ask.common.SlackChannel, "context_for", AsyncMock(return_value=context)
+    )
+
     result = await slack_ask.common.get_slack_repo_config(
         "C1",
         "1.0",
         slack_user_id="U1",
-        channel_context=SlackChannelContext(name="eng"),
+        channel_context=context if cached_context else None,
         thread_id="t-1",
     )
 
     assert result.repo is not None
     assert result.repo.full_name == "acme/billing"
+    assert result.explicit is False
     linked_login.assert_awaited_once_with("U1")
     profile_repo.assert_awaited_once_with("explicit-user")
     email_login.assert_not_awaited()

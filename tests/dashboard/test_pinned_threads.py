@@ -8,6 +8,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from langgraph_sdk.client import LangGraphClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from openswe.dashboard.oauth import require_session
 from openswe.projects.store import PROJECTS
@@ -27,7 +28,6 @@ class ThreadAPI:
         self.requests: list[httpx.Request] = []
         self.active_runs = 0
         self.peak_runs = 0
-        self.fail_search = False
         self.memberships: dict[str, SidebarTaskMembership] = {}
 
     def add(self, thread_id: str, **metadata: object) -> None:
@@ -45,35 +45,22 @@ class ThreadAPI:
             "values": {"messages": ["large conversation" * 1000]},
         }
 
+    async def seed_index(self) -> None:
+        for record in self.threads.values():
+            thread = thread_index.IndexedThread.from_agent_server(record)
+            assert thread is not None
+            await thread_index.create(
+                thread.thread_id,
+                runtime=thread.runtime,
+                metadata=thread.metadata,
+                status=thread.status,
+                created_at=thread.created_at,
+                updated_at=thread.updated_at,
+            )
+
     async def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        if request.url.path == "/threads/search":
-            if self.fail_search:
-                return httpx.Response(503, json={"detail": "unavailable"})
-            body = cast(dict[str, object], json.loads(request.content))
-            select = cast(list[str], body["select"])
-            assert "values" not in select
-            if "metadata" in body:
-                matches = await self.indexed_search(thread_index.ThreadSearch.model_validate(body))
-                return httpx.Response(
-                    200,
-                    json=[
-                        {
-                            key: value
-                            for key, value in thread.as_langgraph().items()
-                            if key in select
-                        }
-                        for thread in matches
-                    ],
-                )
-            ids = cast(list[str], body["ids"])
-            assert set(body) == {"ids", "select", "limit", "offset"}
-            # Deliberately use a different order, as the real search API does.
-            records = [self.threads[key] for key in reversed(ids) if key in self.threads]
-            limit = cast(int, body["limit"])
-            return httpx.Response(
-                200, json=[{key: record[key] for key in select} for record in records[:limit]]
-            )
+        assert request.url.path != "/threads/search", "Pinned reads must use the thread index"
         _, _, thread_id, *tail = request.url.path.split("/")
         if tail == ["runs"]:
             assert request.url.params["limit"] == "1"
@@ -122,7 +109,7 @@ class ThreadAPI:
         return True
 
     async def sidebar_memberships(
-        self, ids: list[str], *, workers_of: bool = False
+        self, ids: list[str], *, workers_of: bool = False, session: AsyncSession | None = None
     ) -> dict[str, SidebarTaskMembership]:
         return {
             thread_id: membership
@@ -162,7 +149,7 @@ async def people(registry_db: None, monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_deleted_unreadable_and_private_pins_are_checked_for_each_viewer_and_refresh(
     thread_api: ThreadAPI, people: None
 ) -> None:
-    thread_api.add("shared", source="slack", github_login="someone-else")
+    thread_api.add("shared", source="slack", github_login="someone-else", resolved=True)
     thread_api.add("private", visibility="private", owner_login="alice")
     thread_api.add("internal", source="reviewer")
     thread_api.add(
@@ -172,6 +159,7 @@ async def test_deleted_unreadable_and_private_pins_are_checked_for_each_viewer_a
         owner_login="alice",
         source_context={"slack_thread": {"thread_ts": "0", "channel_context": {"is_im": True}}},
     )
+    await thread_api.seed_index()
     for login in ("alice", "bob", "admin"):
         for thread_id in ("shared", "private", "internal", "deleted", "concierge"):
             await pins.pin_thread(login, thread_id)
@@ -183,8 +171,8 @@ async def test_deleted_unreadable_and_private_pins_are_checked_for_each_viewer_a
     ):
         result = await listing.list_dashboard_pinned_threads(login, email=email)
         assert [item["id"] for item in result] == expected
-    thread_api.add("shared", visibility="private", owner_login="someone-else")
-    del thread_api.threads["private"]
+    await thread_index.update("shared", {"visibility": "private", "owner_login": "someone-else"})
+    await thread_index.delete("private")
     assert await listing.list_dashboard_pinned_threads("alice") == []
     assert await pins.list_thread_pin_ids("alice") == [
         "private",
@@ -196,11 +184,13 @@ async def test_deleted_unreadable_and_private_pins_are_checked_for_each_viewer_a
 
 
 async def test_search_failure_propagates_instead_of_returning_an_empty_pin_list(
-    thread_api: ThreadAPI, people: None
+    people: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await pins.pin_thread("alice", "pin")
-    thread_api.fail_search = True
-    with pytest.raises(httpx.HTTPStatusError):
+    monkeypatch.setattr(
+        listing.THREADS, "search", AsyncMock(side_effect=RuntimeError("unavailable"))
+    )
+    with pytest.raises(RuntimeError, match="unavailable"):
         await listing.list_dashboard_pinned_threads("alice")
     assert await pins.list_thread_pin_ids("alice") == ["pin"]
 
@@ -212,9 +202,10 @@ async def test_latest_run_requests_are_bounded_and_legacy_idle_status_is_refresh
         thread_id = str(index)
         thread_api.add(thread_id, latest_run_status=None)
         await pins.pin_thread("alice", thread_id)
+    await thread_api.seed_index()
     result = await listing.list_dashboard_pinned_threads("alice")
+    assert len(result) == 20
     assert all(item["status"] == "running" for item in result)
-    assert thread_api.count("POST", "/search") == 1
     assert thread_api.count("GET", "/runs") == 20
     assert 1 < thread_api.peak_runs <= 8
 
@@ -226,6 +217,7 @@ async def test_pins_keep_readability(
     thread_api.add("public")
     thread_api.add("mine", visibility="private", owner_login="alice")
     thread_api.add("hidden", visibility="private", owner_login="bob")
+    await thread_api.seed_index()
     monkeypatch.setattr(
         listing,
         "list_thread_pin_ids",

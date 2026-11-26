@@ -67,7 +67,9 @@ test.describe("thread pull requests", () => {
 
     await companionLink.click();
     await expect(page).toHaveURL(
-      /\/agents\/reviews\/anotherorg\/companion\/2$/,
+      (url) =>
+        url.pathname === "/agents/reviews" &&
+        url.searchParams.get("pr") === "anotherorg/companion#2",
     );
     await expect(
       page.getByRole("heading", { name: /Add companion integration/ }),
@@ -114,6 +116,22 @@ test.describe("thread pull requests", () => {
       "href",
       /\/fakeorg\/demo\/pull\/1$/,
     );
+    const threadUrl = page.url();
+    for (const link of [
+      chip.getByRole("link", { name: "the greet() PR" }),
+      card.getByRole("link", {
+        name: "Review fakeorg/demo pull request #1 in Robin",
+      }),
+    ]) {
+      const newTab = page.context().waitForEvent("page");
+      await link.click({ modifiers: ["ControlOrMeta"] });
+      const reviewPage = await newTab;
+      await expect(reviewPage).toHaveURL(
+        /\/agents\/reviews\?pr=fakeorg%2Fdemo%231(&|$)/,
+      );
+      await expect(page).toHaveURL(threadUrl);
+      await reviewPage.close();
+    }
     await page.emulateMedia({ colorScheme: "dark" });
     await card.scrollIntoViewIfNeeded();
     await page.screenshot({ path: test.info().outputPath("pr-link-card.png") });
@@ -123,7 +141,11 @@ test.describe("thread pull requests", () => {
         name: "Review fakeorg/demo pull request #1 in Robin",
       })
       .click();
-    await expect(page).toHaveURL(/\/agents\/reviews\/fakeorg\/demo\/1$/);
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/agents/reviews" &&
+        url.searchParams.get("pr") === "fakeorg/demo#1",
+    );
   });
 
   test("shows live pull request health and submits actionable fixes", async ({
@@ -133,6 +155,10 @@ test.describe("thread pull requests", () => {
     await openThreadViaSlackLink(page);
     const threadId = threadIdFromUrl(page);
     await expectTranscriptVisible(page);
+    await openThreadActionsMenu(page);
+    await expect(page.getByText("Open in Slack")).toBeVisible();
+    await expect.poll(() => latestPrBody(page)).toContain("Slack thread");
+    await page.keyboard.press("Escape");
 
     const summary = page.getByTestId("pr-summary-fakeorg/demo-1");
     const fixButton = page.getByRole("button", { name: "Fix PR #1" });
@@ -310,19 +336,6 @@ test.describe("thread pull requests", () => {
       "Handle the null response before reading the payload.",
     );
     await expect(page.getByText(new RegExp(fixPrompt)).first()).toBeVisible();
-  });
-
-  // Public and private need separate runs: the PR body is written at
-  // open_pull_request time, so the repo's visibility has to be set before it.
-  test("includes the originating Slack thread in public PR bodies", async ({
-    page,
-  }) => {
-    await loginAs(page, SAME_USER);
-    await openThreadViaSlackLink(page);
-
-    await openThreadActionsMenu(page);
-    await expect(page.getByText("Open in Slack")).toBeVisible();
-    await expect.poll(() => latestPrBody(page)).toContain("Slack thread");
   });
 
   test("exposes the originating Slack thread for private repos", async ({

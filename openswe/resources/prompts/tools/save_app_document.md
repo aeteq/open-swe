@@ -10,6 +10,8 @@ Args:
 - key: Where the document goes, starting `pulls/<number>/`.
 - document: The JSON object the app's instructions describe, at most 256 kB.
 - files: Optional attachments, as `{name: path}`: each name of letters, digits, `.`, `_` and `-`, and each path an absolute path under `/workspace/` of a PNG, JPEG, WebP or GIF image, or a WebM or MP4 video, at most 8 MiB.
-  At most 40.
+  At most 72.
 
-Returns: `{success: True, key}`, or `{success: False, error}`.
+Returns: `{success: True, key, url?}`, or `{success: False, error}`.
+When the approved app declares `review.path`, `url` is its authenticated dashboard result page, not an attachment download.
+Keep this returned URL for a genuine saved result; after recording `complete`, `publish_review` can include it without exposing private attachments.

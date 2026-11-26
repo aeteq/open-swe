@@ -1,9 +1,9 @@
-"""One-off questions: the `/oswe` slash command and `@Open SWE /btw`.
+"""One-off questions: the "Explain This" message shortcut and `@Robin /btw`.
 
 Each invocation gets an agent thread of its own, private to the asker and stamped
-``unlisted`` so one-off questions never fill anyone's thread list. `/oswe` answers
-ephemerally with the usual `Open in Web` link, and continuing it on the web clears
-that stamp. `/btw` answers in the Slack thread for everyone, without a link, and
+``unlisted`` so one-off questions never fill anyone's thread list. "Explain This"
+answers ephemerally with the usual `Open in Robin` link, and continuing it on the web
+clears that stamp. `/btw` answers in the Slack thread for everyone, without a link, and
 never touches the agent thread that Slack thread already maps to.
 """
 
@@ -36,10 +36,9 @@ from openswe.slack.parsed_message import SlackAction
 from openswe.slack.payloads import SlackChannelContext, SlackMessage
 from openswe.slack.request import SlackRequest
 from openswe.slack.thinking import settle_slack_thread_status
-from openswe.slack.webhook import SlackAuthorization, workspace_scoped_default_repo
+from openswe.slack.webhook import SlackAuthorization
 from openswe.source_context import SlackThreadRef, SourceContext
 from openswe.webhooks import common
-from openswe.workspaces.routing import resolve_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +250,6 @@ async def _process_slack_ask(
             request.user_id,
             user_email or None,
             reason=needed.reason,
-            ephemeral=True,
             langsmith=True,
         )
         if request.response_url:
@@ -261,8 +259,6 @@ async def _process_slack_ask(
     login = authorization.github_login
 
     thread_id = request.thread_id
-    # A repository the channel names owns the routing decision, so it has to be
-    # resolved before the workspace is.
     resolution = (
         common.SlackRepoResolution()
         if not login
@@ -274,16 +270,7 @@ async def _process_slack_ask(
             thread_id=thread_id,
         )
     )
-    workspace = (
-        await resolve_workspace(
-            repo=resolution.routing_repo,
-            slack_channel_id=request.channel_id,
-            login=login,
-        )
-    ).slug
     resolved_repo = resolution.repo
-    if login and not resolution.explicit:
-        resolved_repo = await workspace_scoped_default_repo(resolved_repo, workspace, login)
     repo = resolved_repo.model_dump() if resolved_repo else None
     slack_thread = SlackThreadRef(
         channel_id=request.channel_id,
@@ -311,7 +298,6 @@ async def _process_slack_ask(
         user_email=user_email,
         title=request.question,
         source_context=source_context,
-        workspace=workspace,
         visibility="private",
         owner_login=identity.subject if identity else "",
         identity=identity,
@@ -326,8 +312,6 @@ async def _process_slack_ask(
         "repo": repo,
         "source": "slack",
         "user_email": user_email,
-        "workspace": workspace,
-        "environment": workspace,
     }
     authorization.configure(configurable)
     run_prompt = prompt(

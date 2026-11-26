@@ -1,8 +1,8 @@
 """What MDA's GitHub channel calls on the backend (``runtime_api.github``).
 
 Open SWE's GitHub App delivers its webhooks to the MDA deployment's GitHub
-channel, which verifies each delivery and hands every one to the backend
-(``record_github_delivery``). The backend logs it, runs its own work for it
+channel, which verifies each delivery and forwards every one to the backend
+(``/mda/github/deliveries``). The backend logs it, runs its own work for it
 (reviews, walkthroughs, human review, the merge queue, CI and the pull request
 state the dashboard shows, ``openswe.github.work``), and answers what Open SWE
 knows about its repository. The channel decides only what starts an agent run,
@@ -50,6 +50,7 @@ from openswe import event_claims
 from openswe.dispatch import CHANNEL_METADATA_KEY, COMPLETION_WEBHOOK_URL, prepare_durable_run
 from openswe.github import webhook as service
 from openswe.github.app import INSTALLATIONS
+from openswe.github.approval_policy import PullRequestApproval
 from openswe.github.comments import OPEN_SWE_TAGS
 from openswe.github.repo_cache import forget_cached_repos
 from openswe.github.work import delivery_work
@@ -57,7 +58,6 @@ from openswe.human_review.completed_reviews import CompletedReview
 from openswe.mda_channels.api import ChannelCall
 from openswe.merge_queue.controller import wake_native_queue
 from openswe.review_apps.cleanup import ReviewAppData
-from openswe.review_guide.launch import notify_pr_updated
 from openswe.schedules import store as schedules
 from openswe.threads.router import (
     adopt_channel_run,
@@ -69,7 +69,6 @@ from openswe.ui_invalidations import Topic
 from openswe.users import User
 from openswe.webhooks import common
 from openswe.webhooks.event_log import EventLog, EventRefs
-from openswe.workspaces.routing import repo_is_routable
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +102,11 @@ _OUTSIDE_THE_ALLOWLIST: Final = GitHubDeliveryFacts(
 
 def _allowed(delivery: GitHubDelivery, refs: EventRefs) -> bool:
     """Whether the repository allowlist takes the delivery, with a log line when not."""
+    action = delivery.payload.get("action")
+    if EventLog.dropped(
+        "github", delivery.event, delivery.delivery_id, action if isinstance(action, str) else ""
+    ):
+        return False
     # The owner alone, as installation events name it, passes when any of its repositories do.
     named_repo = {"owner": refs.github_owner, "name": refs.github_repository.partition("/")[2]}
     if refs.github_owner and not common.is_repo_allowed(named_repo):
@@ -124,7 +128,7 @@ async def _repository_facts(delivery: GitHubDelivery) -> GitHubDeliveryFacts:
         delivery.event == "pull_request" and payload.get("action") in _GATED_PULL_REQUEST_ACTIONS
     )
     return GitHubDeliveryFacts(
-        routable=not named or await repo_is_routable(repo["owner"], repo["name"]),
+        routable=True,
         allowed=True,
         gated=gates and not await _gated(payload, "pull_request"),
         auto_review=reviews and await common.is_repo_auto_review_enabled(repo),
@@ -142,40 +146,6 @@ async def github_delivery_facts(
     """
     refs = EventRefs.github(json.dumps(delivery.payload).encode())
     return await _repository_facts(delivery) if _allowed(delivery, refs) else _OUTSIDE_THE_ALLOWLIST
-
-
-async def record_github_delivery(
-    call: ChannelCall, delivery: GitHubDelivery
-) -> GitHubDeliveryFacts:
-    """Log the delivery once, run the backend's own work for it after answering, and
-    say what Open SWE knows about its repository, for the channel's agent runs.
-
-    Every delivery the channel forwards (``/mda/github/deliveries``) comes here; a
-    channel deployed before it forwarded calls it too. A delivery is logged and its
-    work run once, however many times it arrives.
-
-    A repository outside the allowlist is neither logged nor looked up: its delivery
-    starts nothing. A workspace lookup that fails raises, so the delivery fails rather
-    than drop work a workspace may own.
-    """
-    body = json.dumps(delivery.payload).encode()
-    refs = EventRefs.github(body)
-    if not _allowed(delivery, refs):
-        return _OUTSIDE_THE_ALLOWLIST
-    await EventLog.record_once(
-        call.request,
-        body,
-        "github",
-        event_type=delivery.event,
-        delivery_id=delivery.delivery_id,
-        refs=refs,
-    )
-    if refs.pull_request is not None:
-        await Topic.for_pull_request_event(delivery.event).invalidate(key=refs.pull_request)
-    facts = await _repository_facts(delivery)
-    if work := delivery_work(delivery.event, delivery.payload, facts):
-        await _accept_work(call, delivery, work)
-    return facts
 
 
 async def _gated(payload: _Payload, event: str) -> bool:
@@ -266,11 +236,12 @@ def _tasks(
             payload, delivery_id=delivery_id
         ),
         "withdraw_superseded_approvals": lambda: service.withdraw_superseded_approvals(payload),
-        "notify_pr_updated": lambda: notify_pr_updated(payload),
         "review_fork_push": lambda: service.process_github_pr_synchronize(payload),
         "settle_review_on_close": lambda: service.settle_human_review_on_close(payload),
+        "record_merge_on_notion_tasks": lambda: service.record_merge_on_notion_tasks(payload),
         # Reviews can save documents and files to apps for a pull request, such as Design QA's
         # screenshots; they're kept only while it's open.
+        "stop_preview_runs_on_close": lambda: service.PreviewReady.stop_on_close(payload),
         "delete_app_documents_on_close": lambda: ReviewAppData.delete_on_close(payload),
         "settle_human_reviews": lambda: service.settle_human_reviews(payload),
         "update_reviewer_watch": lambda: service.process_github_pr_close(payload),
@@ -280,7 +251,9 @@ def _tasks(
         "sync_review_thread": lambda: service.process_github_review_thread(payload),
         "review_push": lambda: service.process_github_push_event(payload),
         "ci_event": lambda: service.process_github_ci_event(payload, event, delivery_id),
+        "review_apps_on_preview": lambda: service.PreviewReady.run(payload),
         "record_completed_review": lambda: CompletedReview.record(payload),
+        "evaluate_approval_policy": lambda: PullRequestApproval.evaluate_payload(payload),
     }
 
 
@@ -313,6 +286,11 @@ async def take_forwarded_delivery(call: ChannelCall, delivery: GitHubDelivery) -
     body = json.dumps(delivery.payload).encode()
     refs = EventRefs.github(body)
     if not _allowed(delivery, refs):
+        if delivery.event == "check_run":
+            # A dropped CI delivery can still say a preview is deployed (``PreviewReady``).
+            call.background.add_task(
+                _run, "review_apps_on_preview", _tasks(delivery)["review_apps_on_preview"], delivery
+            )
         return
     await EventLog.record_once(
         call.request,
@@ -327,7 +305,7 @@ async def take_forwarded_delivery(call: ChannelCall, delivery: GitHubDelivery) -
 
 async def _work_after_answer(delivery: GitHubDelivery, pull_request: Any) -> None:
     """Pick the backend's work for a forwarded delivery and run it, in order, once per
-    delivery.
+    delivery; preview work, whose jobs are keyed, runs each time, so a redelivery retries it.
 
     A lookup that fails runs nothing and leaves the work unclaimed, with a log line, so
     the delivery redelivered from the App's settings runs it; GitHub doesn't send a
@@ -336,7 +314,9 @@ async def _work_after_answer(delivery: GitHubDelivery, pull_request: Any) -> Non
     fields = {"github_event": delivery.event, "github_delivery": delivery.delivery_id}
     if pull_request is not None:
         try:
-            await Topic.for_pull_request_event(delivery.event).invalidate(key=pull_request)
+            await Topic.invalidate_pull_request(
+                pull_request, *Topic.for_pull_request_event(delivery.event)
+            )
         except Exception:
             logger.warning(
                 "Refreshing a pull request's dashboard state failed", extra=fields, exc_info=True
@@ -344,6 +324,11 @@ async def _work_after_answer(delivery: GitHubDelivery, pull_request: Any) -> Non
     try:
         facts = await _repository_facts(delivery)
         work = delivery_work(delivery.event, delivery.payload, facts)
+        if "review_apps_on_preview" in work:
+            await _run(
+                "review_apps_on_preview", _tasks(delivery)["review_apps_on_preview"], delivery
+            )
+            work = tuple(name for name in work if name != "review_apps_on_preview")
         if not work or (
             not await event_claims.claim(_WORK_CLAIMS, delivery.delivery_id, ttl=_WORK_CLAIM_TTL)
         ):
@@ -384,7 +369,6 @@ async def _prepare_run(
     configurable = await service.prepare_github_issue_run(
         cast(_Payload, plan.payload),
         thread_id,
-        workspace=request.workspace,
         adopt=lambda thread: adopt_channel_run(thread, CHANNEL),
     )
     if configurable is None:
@@ -421,7 +405,7 @@ async def _signed(
     await channel_run_starting(thread_id)
     return {
         "context": cast(dict[str, JsonValue], rewritten["context"]),
-        "metadata": channel_run_metadata(run_config["metadata"]),
+        "metadata": channel_run_metadata(cast(dict[str, JsonValue], rewritten["metadata"])),
         "webhook": COMPLETION_WEBHOOK_URL or None,
     }
 
@@ -464,28 +448,25 @@ async def github_issue_facts(
         conversation_started=started,
         sender_email_known=bool(await User.email_for_login(request.sender)),
         trusted=sorted(await User.known_logins(request.logins)),
-        thread_workspace=await common.get_thread_workspace(thread_id) if started else None,
     )
 
 
 async def github_automation_rules(
     _call: ChannelCall, request: GitHubAutomationRulesRequest
 ) -> GitHubAutomationRules:
-    """The repository's enabled GitHub automations, for the channel to match a delivery to."""
+    """The repository's enabled GitHub automations that take the pull request's branches,
+    for the channel to match a delivery to."""
     repository = request.repository.lower()
-    records = await schedules.github_automation_rules(repository)
-    if not records:
+    automations = [
+        GitHubAutomation(id=str(record["id"]), prompt=str(record["prompt"]), events=events)
+        for record in await schedules.github_automation_rules(repository)
+        if (events := schedules.github_trigger_events(record, repository, request.branches))
+    ]
+    if not automations:
         return GitHubAutomationRules(automations=[])
     return GitHubAutomationRules(
         author_registered=bool(request.author and await User.known_logins([request.author])),
-        automations=[
-            GitHubAutomation(
-                id=str(record["id"]),
-                prompt=str(record["prompt"]),
-                events=schedules.github_trigger_events(record, repository),
-            )
-            for record in records
-        ],
+        automations=automations,
     )
 
 

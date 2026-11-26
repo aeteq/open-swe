@@ -1,9 +1,11 @@
 """MDA's Slack channel decides what each message starts and builds the turn's prompt."""
 
 import asyncio
+import logging
 import uuid
 from collections.abc import Mapping
-from typing import Any, cast
+from dataclasses import replace
+from typing import Any, Literal, cast
 
 import pytest
 import rt.slack as slack
@@ -19,6 +21,7 @@ from managed_deepagents._channels.http.types import ChannelName
 from managed_deepagents._channels.run_input import RunChannel, normalize_run_inputs
 from pydantic import BaseModel
 from runtime_api.endpoint import Endpoint
+from runtime_api.provenance import PROVENANCE_KEY
 from runtime_api.slack import (
     ACT_ON_SLACK_MESSAGE,
     SLACK_MESSAGE_FACTS,
@@ -27,6 +30,7 @@ from runtime_api.slack import (
     SlackMessageActed,
     SlackMessageFacts,
     SlackMessageFactsRequest,
+    SlackMessageOrigin,
     SlackNotice,
     SlackTurnDeclined,
     SlackTurnPrompt,
@@ -95,6 +99,7 @@ class _Backend:
         self.asked_facts: list[SlackMessageFactsRequest] = []
         self.turns: list[StartSlackTurn] = []
         self.handed_back: list[ActOnSlackMessage] = []
+        self.automation_error: Exception | None = None
 
     async def __call__(
         self, endpoint: Endpoint[BaseModel, BaseModel], request: BaseModel, *, msg_id: str
@@ -104,8 +109,14 @@ class _Backend:
             self.asked_facts.append(cast(SlackMessageFactsRequest, request))
             return self.facts
         if endpoint is ACT_ON_SLACK_MESSAGE:
-            assert msg_id == "msg_delivery-1"
+            assert msg_id == (
+                "automation_delivery-1"
+                if cast(ActOnSlackMessage, request).automation_only
+                else "msg_delivery-1"
+            )
             self.handed_back.append(cast(ActOnSlackMessage, request))
+            if cast(ActOnSlackMessage, request).automation_only and self.automation_error:
+                raise self.automation_error
             return SlackMessageActed()
         assert endpoint is START_SLACK_TURN
         assert msg_id == "msg_delivery-1"
@@ -158,31 +169,87 @@ def _texts(run_input: Mapping[str, Any]) -> str:
     return "\n".join(str(message["content"]) for message in run_input["messages"])
 
 
-@pytest.mark.parametrize("ask", [True, False])
+def _bot_event(text: str, attachment: Mapping[str, object]) -> SlackMessageEvent:
+    """A new post by bot ``B9``, which Slack keys a plain message: ``text`` doesn't mention us."""
+    payload = {"type": "message", "bot_id": "B9", "app_id": "A9", "text": text}
+    return _event(
+        text,
+        key="message",
+        user_id=None,
+        message_ts="171.3",
+        payload={**payload, "attachments": [attachment]},
+    )
+
+
+@pytest.mark.parametrize("text", ["", "Monitor triggered"])
+@pytest.mark.usefixtures("slack_reads")
+def test_an_allowed_bot_can_mention_the_agent_in_its_own_attachment(
+    monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    """Datadog's Slack app posts a monitor's message as an attachment."""
+    backend = _backend(
+        monkeypatch,
+        SlackTurnStarted(run=_RUN, prompt=_PROMPT),
+        SlackMessageFacts(allowed_bot=True, bot_name="Datadog", conversation="mda"),
+    )
+    alert = {"title": "CPU is high", "text": "<@UBOT> investigate this alert"}
+
+    [run] = cast(
+        list[ChannelRun], asyncio.run(slack.start_turn(_bot_event(text, alert), _thread()))
+    )
+
+    [turn] = backend.turns
+    assert turn.explicit_mention
+    assert turn.clean_text == "\n".join(
+        part for part in (text, "CPU is high", "@openswe investigate this alert") if part
+    )
+    prompt = _texts(cast(Mapping[str, Any], run["input"]))
+    assert "@openswe investigate this alert" in prompt
+    assert "(no text in mention)" not in prompt
+
+
+@pytest.mark.parametrize("grant_path", ["event", "assistant_thread", "absent", "invalid"])
+@pytest.mark.parametrize("channel_prompt", ["Handle database alerts; DRI is Alex.", None])
 @pytest.mark.parametrize(("interrupts", "strategy"), [(True, "interrupt"), (False, "enqueue")])
 @pytest.mark.usefixtures("slack_reads")
 def test_a_turn_redirects_the_work_in_progress_or_waits_as_the_backend_says(
-    monkeypatch: pytest.MonkeyPatch, interrupts: bool, strategy: str, ask: bool
+    monkeypatch: pytest.MonkeyPatch,
+    interrupts: bool,
+    strategy: str,
+    channel_prompt: str | None,
+    grant_path: str,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    contexts: list[bool] = []
-
-    def context(**modes: bool) -> str:
-        contexts.append(modes["ask"])
-        return "channel guidance"
-
-    monkeypatch.setattr(slack.slack_prompt, "thread_constant_context", context)
     backend = _backend(
         monkeypatch,
         SlackTurnStarted(
             run=_RUN,
             interrupts=interrupts,
-            prompt=_PROMPT.model_copy(update={"ask_channel": ask}),
+            prompt=_PROMPT.model_copy(update={"channel_prompt": channel_prompt}),
         ),
     )
 
-    result = asyncio.run(slack.start_turn(_event(), _thread()))
+    event = _event()
+    secret = "secret-search-action-token"
+    if grant_path == "event":
+        event.payload["action_token"] = secret
+    elif grant_path == "assistant_thread":
+        event.payload["assistant_thread"] = {"action_token": secret}
+    elif grant_path == "invalid":
+        event.payload["action_token"] = {"unrecognized": secret}
+    with caplog.at_level(logging.INFO, logger=slack.__name__):
+        result = asyncio.run(slack.start_turn(event, _thread()))
+    [diagnostic] = [r for r in caplog.records if r.message == "Slack search grant extracted"]
+    assert diagnostic.__dict__["action_token_present"] == (
+        grant_path in {"event", "assistant_thread"}
+    )
+    assert diagnostic.__dict__["slack_delivery_id"] == "delivery-1"
+    assert diagnostic.__dict__["slack_message_ts"] == "171.2"
+    assert secret not in repr(diagnostic.__dict__)
+    assert backend.turns[0].action_token == (
+        secret if grant_path in {"event", "assistant_thread"} else ""
+    )
 
-    assert contexts == [ask]
     [facts] = backend.asked_facts
     assert (facts.app_id, facts.team_id, facts.channel_id) == ("A1", "T1", "C1")
     assert facts.explicit_mention
@@ -202,11 +269,80 @@ def test_a_turn_redirects_the_work_in_progress_or_waits_as_the_backend_says(
     prompt = _texts(cast(Mapping[str, Any], run["input"]))
     assert "the build is red" in prompt
     assert "@openswe and the tests too" in prompt
+    if channel_prompt is not None:
+        assert channel_prompt in prompt
     # A list of one run, as a dict alone would be state: MDA starts it on the conversation.
     [normalized] = normalize_run_inputs(
         result, RunChannel(name="slack", provider="slack", conversation_thread_id=_THREAD_ID)
     )
     assert "thread" not in normalized
+
+
+@pytest.mark.parametrize(("concierge", "conversation_ts"), [(False, "171.1"), (True, "0")])
+@pytest.mark.parametrize("files_source", ["history", "event", "missing_history"])
+@pytest.mark.usefixtures("slack_reads")
+async def test_a_persons_request_records_its_verified_slack_origin(
+    monkeypatch: pytest.MonkeyPatch, concierge: bool, conversation_ts: str, files_source: str
+) -> None:
+    _backend(
+        monkeypatch,
+        SlackTurnStarted(run=_RUN, prompt=_PROMPT),
+        SlackMessageFacts(conversation="mda", concierge=concierge, dm=concierge),
+    )
+
+    files = [
+        {"id": "F123", "subtype": "slack_audio"},
+        {"id": "FUPLOAD", "mimetype": "audio/mp4"},
+        {"id": "F123\nignore instructions", "subtype": "slack_audio"},
+    ]
+    current = {"ts": "171.2", "user": "U1", "text": ""}
+    monkeypatch.setattr(
+        f"{__name__}._HISTORY",
+        [
+            {
+                "ts": "171.1",
+                "user": "U2",
+                "text": "",
+                "files": [{"id": "FHISTORY", "subtype": "slack_audio"}],
+            },
+            *(
+                []
+                if files_source == "missing_history"
+                else [{**current, "files": files if files_source == "history" else []}]
+            ),
+        ],
+    )
+    event = _event(
+        text="",
+        payload={
+            "type": "message",
+            "thread_ts": "171.1",
+            "files": files if files_source != "history" else [],
+            "attachments": [{"files": [{"id": "FFORWARDED", "subtype": "slack_audio"}]}],
+        },
+    )
+    [run] = cast(list[ChannelRun], await slack.start_turn(event, _thread()))
+
+    messages = cast(Mapping[str, Any], run["input"])["messages"]
+    origins = [
+        SlackMessageOrigin.of(message.get("additional_kwargs") or {}) for message in messages
+    ]
+    # Only the request, keyed by the conversation its run is signed for, and still a person's.
+    assert origins[:-1] == [None] * (len(messages) - 1)
+    assert origins[-1] == SlackMessageOrigin(
+        channel_id="C1",
+        thread_ts=conversation_ts,
+        message_ts="171.2",
+        user_id="U1",
+        reply_thread_ts="171.1",
+    )
+    assert messages[-1]["additional_kwargs"][PROVENANCE_KEY]["kind"] == "human"
+    request = str(messages[-1]["content"])
+    assert "F123" in request
+    assert all(
+        value not in request
+        for value in ("FHISTORY", "FUPLOAD", "FFORWARDED", "ignore instructions")
+    )
 
 
 @pytest.mark.usefixtures("slack_reads")
@@ -286,7 +422,7 @@ def test_a_message_the_backend_starts_nothing_for_starts_nothing(
             SlackTurnDeclined(reason="sign_in_again", settings_url="https://openswe.test/settings"),
             "🔐 Your LangSmith sign-in needs to be renewed. "
             "<https://openswe.test/settings|Sign in with LangSmith> and follow the prompts to link Slack, "
-            "then tag me again. GitHub is optional and only needed for coding features.",
+            "then tag me again.",
         ),
         (
             SlackTurnDeclined(reason="sign_in"),
@@ -471,10 +607,20 @@ def test_a_branch_whose_conversation_cant_be_read_is_still_answered(
     [
         # Addressed to another person.
         (_event("<@U9> can you look?", key="message"), SlackMessageFacts(conversation="mda")),
+        (
+            _event(
+                "<@U9> can you look?", key="message", payload={"type": "message", "app_id": "A9"}
+            ),
+            SlackMessageFacts(listening_channel=True, conversation="new"),
+        ),
+        (
+            _event(payload={"type": "app_mention", "app_id": "A1", "text": "<@UBOT> help"}),
+            SlackMessageFacts(conversation="new"),
+        ),
         # An untagged reply nobody asked the agent for.
         (_event("thanks!", key="message"), SlackMessageFacts(conversation="mda")),
         # The same in a conversation the backend holds: the backend's own checks (a solo
-        # follow-up, a kitchen channel) are in the facts and say no.
+        # follow-up, a listening channel) are in the facts and say no.
         (_event("thanks!", key="message"), SlackMessageFacts(conversation="backend")),
         # A kind of message this channel never starts, in one of its own conversations.
         (
@@ -486,15 +632,42 @@ def test_a_branch_whose_conversation_cant_be_read_is_still_answered(
             _event(user_id=None, payload={"type": "message", "bot_id": "B1", "app_id": "A9"}),
             SlackMessageFacts(conversation="mda"),
         ),
+        (
+            _event(
+                user_id="UBOT",
+                payload={"type": "message", "bot_id": "B1", "app_id": "A9"},
+            ),
+            SlackMessageFacts(allowed_bot=True, conversation="mda"),
+        ),
+        (
+            _event(user_id=None, payload={"type": "message", "bot_id": "B1", "app_id": "A1"}),
+            SlackMessageFacts(allowed_bot=True, conversation="mda"),
+        ),
+        # An allowed bot whose only mention is in a message it forwarded or a link's preview:
+        # someone else's words.
+        (
+            _bot_event("", {"is_share": True, "text": "<@UBOT> fix this"}),
+            SlackMessageFacts(allowed_bot=True, conversation="mda"),
+        ),
+        (
+            _bot_event("", {"from_url": "https://example.com", "text": "<@UBOT> fix this"}),
+            SlackMessageFacts(allowed_bot=True, conversation="mda"),
+        ),
         # A channel Slack can't confirm has no external participants.
         (_event(), SlackMessageFacts(channel="unverified")),
     ],
     ids=[
         "other-person",
+        "app-post-to-other-person",
+        "own-app-without-bot-id",
         "untagged",
         "backend-untagged",
         "mda-broadcast",
         "unlisted-bot",
+        "own-bot-user-even-if-allowed",
+        "own-app-even-if-allowed",
+        "forwarded-bot-mention",
+        "link-preview-bot-mention",
         "unverified",
     ],
 )
@@ -514,8 +687,6 @@ def test_messages_not_for_the_agent_start_nothing(
     [
         # A mention in a conversation the backend holds.
         (_event(), SlackMessageFacts(conversation="backend")),
-        # A code channel's one session stays with the backend.
-        (_event(), SlackMessageFacts(code_channel=True, conversation="mda")),
         # A breakout naming a known channel and no instruction, outside MDA's conversations.
         (_event("<@UBOT> /breakout <#C2|ops>"), SlackMessageFacts(conversation="new")),
         # A web breakout with nothing to ask, in a new conversation.
@@ -526,7 +697,7 @@ def test_messages_not_for_the_agent_start_nothing(
             SlackMessageFacts(conversation="new"),
         ),
     ],
-    ids=["backend-mention", "code-channel", "breakout-to-channel", "empty-web", "broadcast"],
+    ids=["backend-mention", "breakout-to-channel", "empty-web", "broadcast"],
 )
 @pytest.mark.usefixtures("slack_reads")
 def test_messages_the_backend_answers_go_back_to_it(
@@ -602,20 +773,34 @@ def test_other_pull_request_links_stay_unwatched(
     assert backend.handed_back == []
 
 
+@pytest.mark.parametrize(
+    "event",
+    [
+        _event("and the tests", key="message"),
+        _event("<@UBOT> and the tests", key="message"),
+        _event(payload={"type": "app_mention", "text": "<@UBOT> and the tests"}),
+    ],
+    ids=["untagged", "mentioned-message", "app-mention"],
+)
+@pytest.mark.parametrize("app_id", ["", "A9"])
 @pytest.mark.usefixtures("slack_reads")
-def test_an_untagged_kitchen_channel_message_or_solo_followup_is_a_turn(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_listening_channel_message_or_solo_followup_is_a_turn(
+    monkeypatch: pytest.MonkeyPatch, event: SlackMessageEvent, app_id: str
 ) -> None:
+    event = replace(event, payload={**event.payload, "app_id": app_id})
     for facts in (
-        SlackMessageFacts(kitchen_channel=True, conversation="new"),
+        SlackMessageFacts(listening_channel=True, conversation="new"),
         SlackMessageFacts(solo_followup=True, conversation="mda"),
     ):
         backend = _backend(monkeypatch, SlackTurnStarted(run=_RUN, prompt=_PROMPT), facts)
 
-        assert asyncio.run(slack.start_turn(_event("and the tests", key="message"), _thread()))
+        assert asyncio.run(slack.start_turn(event, _thread()))
         [turn] = backend.turns
-        assert turn.treat_all_messages_as_mentions
-        assert turn.kitchen_channel is facts.kitchen_channel
+        assert turn.treat_all_messages_as_mentions is (
+            facts.solo_followup or not turn.explicit_mention
+        )
+        assert turn.listening_channel is facts.listening_channel
+        assert (turn.user_id, turn.bot_id) == ("U1", "")
 
 
 def test_the_channel_asks_its_handlers_for_every_message_and_click() -> None:
@@ -719,3 +904,258 @@ def test_an_edit_of_a_message_the_agent_never_got_starts_nothing(
     assert asyncio.run(slack.start_edit(_edit(), _thread())) is None
     assert asyncio.run(slack.start_edit(_edit(), _thread({"messages": []}))) is None
     assert backend.turns == []
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "unmentioned",
+        "bot",
+        "mention",
+        "listening",
+        "mention-failed",
+        "listening-failed",
+        "backend",
+        "reply",
+        "own-user",
+        "own-app",
+        "app-mention",
+    ],
+)
+@pytest.mark.usefixtures("slack_reads")
+def test_watched_posts_reach_automations_without_taking_the_normal_turn(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    payload = {"type": "message", "channel": "C1", "ts": "171.2", "text": "where should I ask?"}
+    user = "U1"
+    if mode == "bot":
+        payload.update({"bot_id": "B9", "app_id": "A9", "subtype": "bot_message"})
+        user = ""
+    elif mode == "own-user":
+        user = "UBOT"
+    elif mode == "own-app":
+        payload.update({"bot_id": "B1", "app_id": "A1", "subtype": "bot_message"})
+        user = ""
+    elif mode == "reply":
+        payload["thread_ts"] = "171.1"
+    elif mode == "app-mention":
+        payload["type"] = "app_mention"
+    facts = SlackMessageFacts(
+        automation_channel=True,
+        listening_channel=mode.startswith("listening"),
+        conversation="backend" if mode == "backend" else "mda",
+    )
+    backend = _backend(monkeypatch, SlackTurnStarted(run=_RUN, prompt=_PROMPT), facts)
+    if mode.endswith("-failed"):
+        backend.automation_error = RuntimeError("Automation delivery unavailable")
+    event = _event(
+        payload["text"],
+        key="mention"
+        if mode in {"mention", "mention-failed", "backend", "app-mention"}
+        else "message",
+        payload=payload,
+        user_id=user,
+        thread_ts="171.2",
+    )
+
+    result = asyncio.run(slack.start_turn(event, _thread()))
+
+    continues = mode in {
+        "mention",
+        "listening",
+        "mention-failed",
+        "listening-failed",
+        "app-mention",
+    }
+    assert bool(result) is continues
+    assert len(backend.turns) == int(continues)
+    assert len(backend.handed_back) == int(
+        mode
+        in {
+            "unmentioned",
+            "bot",
+            "mention",
+            "listening",
+            "mention-failed",
+            "listening-failed",
+            "backend",
+        }
+    )
+    if backend.handed_back:
+        [handed] = backend.handed_back
+        assert handed.event == payload
+        assert handed.automation_only is (mode != "backend")
+
+
+@pytest.mark.parametrize("mode", ["mentions", "true", "false"])
+@pytest.mark.parametrize("listening", [False, True])
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("subtype", ["", "bot_message", "message_changed", "channel_join"])
+@pytest.mark.parametrize("reply", [False, True])
+def test_bot_trigger_modes(
+    mode: str, listening: bool, explicit: bool, subtype: str, reply: bool
+) -> None:
+    message = SlackMessageFactsRequest(
+        thread_id=_THREAD_ID,
+        app_id="A1",
+        team_id="T1",
+        channel_id="C1",
+        message_ts="171.1",
+        thread_ts="171.0" if reply else "171.1",
+        reply_thread_ts="171.0" if reply else "",
+        bot_id="B9",
+        bot_app_id="A9",
+        text="monitor triggered",
+        explicit_mention=explicit,
+        subtype=subtype,
+    )
+    facts = SlackMessageFacts.model_validate(
+        {"bot_trigger_mode": mode, "listening_channel": listening, "allowed_bot": True}
+    )
+    decision = slack._decide(
+        message,
+        facts,
+        slack.ParsedSlackMessage.parse(message.text, "UBOT", "robin"),
+        "UBOT",
+        is_message=True,
+    )
+    expected = subtype in {"", "bot_message"} and (
+        (mode == "mentions" and explicit)
+        or (mode == "true" and (explicit or (listening and not reply)))
+    )
+    assert isinstance(decision, tuple) is expected
+    if isinstance(decision, tuple):
+        _, turn = decision
+        assert turn.listening_channel is listening
+        assert turn.treat_all_messages_as_mentions is (listening and not explicit)
+
+
+@pytest.mark.parametrize(
+    "guard", ["unlisted", "own_app", "own_user", "reply", "external", "app_only", "subtype_only"]
+)
+def test_true_mode_bot_guards(guard: str) -> None:
+    message = SlackMessageFactsRequest(
+        thread_id=_THREAD_ID,
+        app_id="A1",
+        team_id="T1",
+        channel_id="C1",
+        message_ts="171.2",
+        thread_ts="171.2",
+        bot_id="B9",
+        bot_app_id="A9",
+        text="<@UBOT> monitor triggered",
+        explicit_mention=True,
+    )
+    facts = SlackMessageFacts(bot_trigger_mode="true", allowed_bot=True, listening_channel=True)
+    if guard == "unlisted":
+        facts.allowed_bot = False
+    elif guard == "own_app":
+        message.bot_app_id = "A1"
+    elif guard == "own_user":
+        message.user_id = "UBOT"
+    elif guard == "reply":
+        message.reply_thread_ts = "171.1"
+        message.explicit_mention = False
+        message.text = "monitor triggered"
+    elif guard == "external":
+        facts.channel = "external"
+    elif guard == "app_only":
+        message.bot_id = ""
+    elif guard == "subtype_only":
+        message.bot_id = ""
+        message.bot_app_id = ""
+        message.subtype = "bot_message"
+    assert (
+        slack._decide(
+            message,
+            facts,
+            slack.ParsedSlackMessage.parse(message.text, "UBOT", "robin"),
+            "UBOT",
+            is_message=True,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("channel_mode", ["kitchen", "ask"])
+@pytest.mark.usefixtures("slack_reads")
+def test_listened_bot_post_starts_with_channel_prompt(
+    monkeypatch: pytest.MonkeyPatch, channel_mode: str
+) -> None:
+    instructions = f"Investigate {channel_mode} alerts and notify the DRI."
+    backend = _backend(
+        monkeypatch,
+        SlackTurnStarted(
+            run=_RUN, prompt=_PROMPT.model_copy(update={"channel_prompt": instructions})
+        ),
+        SlackMessageFacts(
+            bot_trigger_mode="true",
+            listening_channel=True,
+            allowed_bot=True,
+            bot_name="Monitor",
+            conversation="new",
+        ),
+    )
+    event = _event(
+        "monitor triggered",
+        key="message",
+        user_id=None,
+        message_ts="171.1",
+        thread_ts="171.1",
+        payload={
+            "type": "message",
+            "subtype": "bot_message",
+            "bot_id": "B9",
+            "app_id": "A9",
+            "text": "monitor triggered",
+        },
+    )
+    [run] = cast(list[ChannelRun], asyncio.run(slack.start_turn(event, _thread())))
+    [turn] = backend.turns
+    assert turn.thread_ts == turn.message_ts == "171.1"
+    assert turn.listening_channel and turn.treat_all_messages_as_mentions
+    assert not turn.explicit_mention
+    assert instructions in _texts(cast(Mapping[str, Any], run["input"]))
+
+
+@pytest.mark.parametrize("summary", ["", "Monitor triggered"])
+@pytest.mark.parametrize("mode", ["true", "mentions"])
+@pytest.mark.usefixtures("slack_reads")
+def test_unmentioned_bot_card_reaches_the_admitted_turn(
+    monkeypatch: pytest.MonkeyPatch, summary: str, mode: Literal["true", "mentions"]
+) -> None:
+    backend = _backend(
+        monkeypatch,
+        SlackTurnStarted(run=_RUN, prompt=_PROMPT),
+        SlackMessageFacts(
+            allowed_bot=True,
+            bot_name="Datadog",
+            conversation="mda",
+            listening_channel=True,
+            bot_trigger_mode=mode,
+        ),
+    )
+    alert = {
+        "title": "CPU is high",
+        "text": "Investigate service latency",
+        "fields": [{"title": "Host", "value": "worker-1"}],
+    }
+    result = asyncio.run(slack.start_turn(_bot_event(summary, alert), _thread()))
+
+    if mode == "mentions":
+        assert result is None
+        assert not backend.turns
+        return
+    [turn] = backend.turns
+    assert not turn.explicit_mention
+    assert turn.clean_text == "\n".join(
+        part
+        for part in (summary, "CPU is high", "Investigate service latency", "Host", "worker-1")
+        if part
+    )
+    [run] = cast(list[ChannelRun], result)
+    prompt = _texts(cast(Mapping[str, object], run["input"]))
+    assert "CPU is high" in prompt
+    assert "Investigate service latency" in prompt
+    assert "worker-1" in prompt
+    assert "(no text in mention)" not in prompt

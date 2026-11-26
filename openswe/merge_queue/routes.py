@@ -4,14 +4,14 @@ import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from openswe.audit_logs.middleware import audit_endpoint
-from openswe.dashboard.deps import SESSION_DEP
+from openswe.dashboard.deps import DashboardReadDep
 from openswe.dashboard.oauth import session_user_id
 from openswe.dashboard.repo_access import require_repo_access_for_user
 from openswe.github.http import GitHubClient, RepoClient
@@ -25,7 +25,7 @@ from openswe.users.models import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/merge-queue/{workspace_id}", tags=["merge-queue"])
+router = APIRouter(prefix="/merge-queue/{routing_id}", tags=["merge-queue"])
 
 
 class RequestBody(BaseModel):
@@ -47,6 +47,13 @@ class PriorityChange(RequestBody):
 
 class PauseChange(RequestBody):
     paused: bool = Field(strict=True)
+    manual_hold: bool = Field(default=False, strict=True)
+
+    @model_validator(mode="after")
+    def hold_requires_pause(self) -> Self:
+        if self.manual_hold and not self.paused:
+            raise ValueError("Manual hold requires paused=true")
+        return self
 
 
 class RequestView(BaseModel):
@@ -112,31 +119,30 @@ class QueueAccess:
             raise HTTPException(403, "Repository write access required")
 
 
-async def queue_access(
-    workspace_id: UUID, session: dict[str, str] = SESSION_DEP
-) -> AsyncIterator[QueueAccess]:
+async def queue_access(routing_id: UUID, reader: DashboardReadDep) -> AsyncIterator[QueueAccess]:
     running = controller.CONTROLLER
-    if running is None or running.config.workspace_id != workspace_id:
-        raise HTTPException(404, "Queue is not enabled for this workspace")
+    if running is None or running.config.routing_id != routing_id:
+        raise HTTPException(404, "Queue is not enabled for this repository binding")
     # A stable user ID must survive login renames; never use an API-key actor here.
-    user_id = session_user_id(session)
-    user = await User.for_session(user_id, session["sub"])
+    user_id = session_user_id(reader.claims)
+    user = reader.user
     if user is None or user.id != user_id or not user.github_login:
         raise HTTPException(401, "Sign in again to use the queue")
     try:
-        config = await QueueConfiguration.load(workspace_id)
+        config = await QueueConfiguration.load(routing_id, session=reader.session)
     except ValueError as exc:
         raise HTTPException(409, "Queue configuration is invalid") from exc
     if config is None:
-        raise HTTPException(404, "Queue is not enabled for this workspace")
+        raise HTTPException(404, "Queue is not enabled for this repository binding")
     if (
         config.repository.lower() != running.config.repository.lower()
         or config.repository_id != running.config.repository_id
     ):
         raise HTTPException(409, "Queue identity changed; explicit handoff required")
-    queue = await MergeQueue.load(running.queue.id, workspace_id)
+    queue = await MergeQueue.load(running.queue.id, routing_id, session=reader.session)
     if queue is None:
         raise HTTPException(404, "Queue not found")
+    await reader.close()
     await require_repo_access_for_user(user.github_login, config.repository)
     if queue.mode != config.mode:
         raise HTTPException(409, "Queue mode changed; explicit handoff required")
@@ -156,7 +162,7 @@ async def queue_access(
             raise HTTPException(409, str(exc)) from exc
 
 
-ACCESS = Depends(queue_access)
+ACCESS = Depends(queue_access, scope="function")
 
 
 @router.get("")
@@ -257,4 +263,4 @@ async def set_priority(
 async def set_paused(body: PauseChange, access: QueueAccess = ACCESS) -> None:
     access.require_operator()
     await access.require_writer()
-    await access.queue.set_paused(body.paused, actor=access.user.id)
+    await access.queue.set_paused(body.paused, actor=access.user.id, manual_hold=body.manual_hold)

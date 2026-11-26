@@ -6,6 +6,7 @@ and no tool-call middleware: the tool call around it, with its result message,
 errors, transcript and checks, is the MDA run's.
 """
 
+import weakref
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Annotated, cast, get_args, get_origin, get_type_hints
@@ -29,6 +30,7 @@ from openswe.agent_api.git_metadata import collect_pr_targets
 from openswe.agent_api.run_state import json_state, jsonable
 from openswe.agent_api.runs import in_graph_context
 from openswe.agent_api.shell_guards import ShellGuards
+from openswe.bridge.local_access_policy import LocalReviews
 from openswe.middleware.client_tools import ClientToolsMiddleware
 from openswe.sandboxes.tool_runtime import tool_parameters
 
@@ -63,7 +65,23 @@ class Injections:
     @classmethod
     def of(cls, tool: BaseTool) -> Injections:
         function = getattr(tool, "coroutine", None) or getattr(tool, "func", None)
-        hints = get_type_hints(function, include_extras=True) if function is not None else {}
+        if function is None:
+            return cls({})
+        # Every run's start reads every tool's, and resolving type hints is slow enough
+        # that hundreds of tools held the event loop for seconds; a signature never changes.
+        try:
+            return _INJECTIONS[function]
+        except KeyError:
+            pass
+        except TypeError:
+            # Not weakly referenceable: worked out on every call.
+            return cls._of(function)
+        injections = _INJECTIONS[function] = cls._of(function)
+        return injections
+
+    @classmethod
+    def _of(cls, function: Callable[..., object]) -> Injections:
+        hints = get_type_hints(function, include_extras=True)
         state: dict[str, str | None] = {}
         runtime: str | None = None
         for name, hint in hints.items():
@@ -80,6 +98,13 @@ class Injections:
     @property
     def reads(self) -> list[str]:
         return sorted({key for key in self.state.values() if key is not None})
+
+
+# Each function's injections, dropped with the function: an integration's tools are
+# built per run.
+_INJECTIONS: weakref.WeakKeyDictionary[Callable[..., object], Injections] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 async def invoke(
@@ -199,7 +224,11 @@ class Operation:
             decision = await guards.decide(request.name, request.arguments)
             if decision.arguments is None:
                 return OperationResult(content=decision.refusal or "", status="error")
-            with collect_pr_targets() as pull_requests, carrying(request.credentials):
+            with (
+                collect_pr_targets() as pull_requests,
+                carrying(request.credentials),
+                LocalReviews.carrying(request.local_review),
+            ):
                 try:
                     outcome = await invoke(tool, decision.arguments, state, request.request_id)
                 except NodeCancelledError:

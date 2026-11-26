@@ -7,8 +7,7 @@ from langchain_core.tools import InjectedToolCallId
 from langgraph.config import get_config
 from langgraph.types import Command
 
-from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
-from openswe.model_routing import RoutingArm
+from openswe.dashboard.settings_cache import cached_settings
 from openswe.run_config import RunConfig
 from openswe.slack.client import post_slack_ephemeral_message
 from openswe.slack.dm import is_concierge_thread
@@ -30,15 +29,13 @@ async def switch_to_performance_model(
         raise ValueError(
             "Performance switching is unavailable in concierge DMs; use a separate task thread instead"
         )
-    if await RoutingArm.routes(cfg.thread_id, cfg.workspace or cfg.environment):
-        raise ValueError("This thread's model is chosen by model routing, so it cannot be switched")
     client = langgraph_client()
     settings = (await load_thread_settings(client, cfg.thread_id)).copy()
     performance = settings.get("routing_models", {}).get("performance")
     if performance:
         model_id, effort = performance["model_id"], performance["effort"]
     else:
-        defaults = await cached_workspace_settings(cfg.workspace or cfg.environment)
+        defaults = await cached_settings()
         model_id, effort = defaults.agent_routing_models["performance"]
     settings.update(
         model_id=model_id,

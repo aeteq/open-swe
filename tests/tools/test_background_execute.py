@@ -27,7 +27,7 @@ from openswe.tasks import service as task_service
 from openswe.tools import threads
 from openswe.tools.background_execute import TASK_ROOT, background_execute, current_backend
 from openswe.utils.background_task_state import update_background_task_state
-from tests.conftest import serve_runs_from
+from tests.conftest import serve_runs_from, serve_threads_from
 
 TOOLS_URL = "https://agent.example.test/dashboard/api/sandbox-tools"
 FAKE_CURL = """#!/usr/bin/env python3
@@ -83,6 +83,7 @@ def _launch(script: Path, task_id: str, command: str, timeout: int, *, callback:
         timeout=timeout,
         callback=callback,
         owner_thread_id="thread-a",
+        origin="github",
         tools_url_env=tool_access.TOOLS_URL_ENV,
         tools_url_file=tool_access.TOOLS_URL_FILE,
     )
@@ -112,6 +113,7 @@ def test_runner_calls_back_on_completion_until_accepted(
 
         assert state["status"] == "completed"
         assert state["owner_thread_id"] == "thread-a"
+        assert state["origin"] == "github"
         url = f"{TOOLS_URL}/background-tasks/{task_id}/complete"
         calls_file = fake_curl / "calls"
         deadline = time.monotonic() + 5
@@ -189,7 +191,9 @@ async def _callback_client(monkeypatch: pytest.MonkeyPatch) -> tuple[httpx.Async
     client = MagicMock()
     client.threads.get = AsyncMock(return_value={"metadata": {"sandbox_id": "sandbox-a"}})
     monkeypatch.setattr(tool_access, "get_client", lambda: client)
-    issued = await tool_access.issue_tool_access("thread-a", "sandbox-a")
+    with monkeypatch.context() as issuing:
+        serve_threads_from(issuing, client.threads.get)
+        issued = await tool_access.issue_tool_access("thread-a", "sandbox-a")
     assert issued is not None
     app = FastAPI()
     app.include_router(tool_routes.router)
@@ -214,6 +218,7 @@ async def test_completion_callback_asks_runner_to_retry_until_delivered(
         "owner_thread_id": "thread-b",
         "status": "completed",
         "notification": "pending",
+        "origin": "github",
     }
     backend = AsyncMock()
     backend.aexecute.return_value = SimpleNamespace(exit_code=0)
@@ -425,6 +430,10 @@ async def test_background_execute_schedules_a_cron_only_without_callbacks(callba
     launches = [{"task_id": "cmd-1", "status": "running"}]
     with (
         patch(
+            "openswe.tools.background_execute.RunConfig.from_runtime",
+            return_value=SimpleNamespace(origin="github"),
+        ),
+        patch(
             "openswe.tools.background_execute.uses_completion_callback",
             AsyncMock(return_value=callback),
         ),
@@ -451,6 +460,10 @@ async def test_background_execute_reports_monitor_scheduling_failure() -> None:
     backend.aexecute.return_value = SimpleNamespace(exit_code=0)
 
     with (
+        patch(
+            "openswe.tools.background_execute.RunConfig.from_runtime",
+            return_value=SimpleNamespace(origin="github"),
+        ),
         patch(
             "openswe.tools.background_execute.uses_completion_callback",
             AsyncMock(return_value=False),
@@ -493,6 +506,7 @@ async def test_reconcile_enqueues_one_claimed_completion(
         "duration_seconds": 1,
         "output_path": "/tmp/output.log",
         "notification": "pending",
+        "origin": "github",
     }
     backend = AsyncMock()
     backend.aexecute.return_value = SimpleNamespace(exit_code=0)
@@ -552,6 +566,7 @@ async def test_reconcile_enqueues_one_claimed_completion(
     assert configurable["source"] == source
     assert configurable["background_task_completion"] is True
     assert dispatch.await_args.kwargs["source"] == source
+    assert dispatch.await_args.kwargs["origin"] == "github"
     if private:
         from openswe.credential_scope import private_owner_login
         from openswe.run_config import RunConfig
@@ -680,6 +695,8 @@ async def test_reconcile_refreshes_task_state_after_completion_dispatch(
         stored.update(metadata)
 
     async def create(*args: object, **kwargs: object) -> dict[str, str]:
+        # Tracked until its completion run exists, so the thread never looks settled between.
+        assert stored["running_background_tasks"] == ["cmd-old"]
         stored["running_background_tasks"] = ["cmd-followup"]
         return {"run_id": "run-followup"}
 
@@ -711,9 +728,8 @@ async def test_reconcile_refreshes_task_state_after_completion_dispatch(
     assert stored["running_background_tasks"] == ["cmd-followup"]
     # Only an idle Slack settlement needs another snapshot after the run was created.
     assert client.threads.get.await_count == (4 if slack and not run_active else 2)
-    client.threads.update.assert_awaited_once_with(
-        "thread-1", metadata={"running_background_tasks": []}
-    )
+    # Untracking the delivered command leaves the follow-up's own command tracked.
+    client.threads.update.assert_not_awaited()
     if slack:
         assert set_status.await_args is not None
         assert set_status.await_args.args == (
@@ -739,6 +755,27 @@ async def test_monitor_deletes_crons_for_missing_thread(monkeypatch: pytest.Monk
     monkeypatch.setattr(background_tasks, "_stop_polling", delete_crons)
 
     assert await monitor_background_tasks("thread-1") == {"status": "missing_thread"}
+    delete_crons.assert_awaited_once_with("thread-1")
+
+
+async def test_monitor_stops_polling_a_this_mac_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    metadata = {"sandbox_id": "bridge:abc", "running_background_tasks": ["cmd-1"]}
+    client = AsyncMock()
+    client.threads.get.return_value = {"metadata": metadata}
+    reset = AsyncMock(return_value={})
+    connect = AsyncMock()
+    delete_crons = AsyncMock()
+    monkeypatch.setattr(background_tasks, "_client", lambda: client)
+    serve_runs_from(monkeypatch, client)
+    monkeypatch.setattr(background_tasks, "update_background_task_state", reset)
+    monkeypatch.setattr(background_tasks, "refresh_slack_background_status", AsyncMock())
+    monkeypatch.setattr(background_tasks, "connect_sandbox", connect)
+    monkeypatch.setattr(background_tasks, "_stop_polling", delete_crons)
+
+    assert await monitor_background_tasks("thread-1") == {"status": "missing_sandbox"}
+
+    connect.assert_not_awaited()
+    reset.assert_awaited_once_with(client, "thread-1", reset=True)
     delete_crons.assert_awaited_once_with("thread-1")
 
 
@@ -772,6 +809,10 @@ async def test_a_callback_launch_is_tracked_exactly_while_it_runs(
         return {"task_id": fields["task_id"], "status": "running"}
 
     with (
+        patch(
+            "openswe.tools.background_execute.RunConfig.from_runtime",
+            return_value=SimpleNamespace(origin="github"),
+        ),
         patch(
             "openswe.tools.background_execute.uses_completion_callback",
             AsyncMock(return_value=True),
@@ -837,8 +878,8 @@ async def test_background_tools_reconnect_on_a_replica_without_a_binding(
         AsyncMock(return_value={"sandbox_id": "mda-sandbox", "sandbox_owner": "mda"}),
     )
 
-    async def connect(sandbox_id: str, *, thread_id: str | None = None) -> LocalShellBackend:
-        assert (sandbox_id, thread_id) == ("mda-sandbox", "thread-mda")
+    async def connect(sandbox_id: str) -> LocalShellBackend:
+        assert sandbox_id == "mda-sandbox"
         return backend
 
     monkeypatch.setattr("openswe.sandboxes.connect.connect_sandbox", connect)
@@ -870,3 +911,56 @@ async def test_background_execute_rejects_a_thread_without_sandbox_metadata(
     assert result["success"] is False
     assert "Missing sandbox_id in thread metadata for unprepared" in result["error"]
     connect.assert_not_awaited()
+
+
+@pytest.mark.parametrize("cancelled", [True, False])
+async def test_a_cancelled_workers_completions_are_dropped_not_run(
+    monkeypatch: pytest.MonkeyPatch, cancelled: bool
+) -> None:
+    """A cancelled worker refuses runs: delivering would fail every poll, for good."""
+    task = {"task_id": "task-1", "status": "completed", "notification": "pending"}
+    client = AsyncMock()
+    client.threads.get.return_value = {
+        "metadata": {"sandbox_id": "sandbox-1", "running_background_tasks": ["task-1"]}
+    }
+    delegation = SimpleNamespace(cancelled=cancelled)
+    monkeypatch.setattr(background_tasks.TaskDelegation, "get", AsyncMock(return_value=delegation))
+
+    with (
+        patch("openswe.background_tasks._client", return_value=client),
+        patch("openswe.background_tasks.connect_sandbox", AsyncMock(return_value=AsyncMock())),
+        patch("openswe.background_tasks._list_tasks", AsyncMock(return_value=[task])),
+        patch("openswe.background_tasks._claim", AsyncMock(return_value=True)),
+        patch("openswe.background_tasks._mark_delivered", AsyncMock()) as mark_delivered,
+        patch("openswe.background_tasks.completion_configurable", AsyncMock(return_value={})),
+        patch("openswe.background_tasks.dispatch_agent_run", AsyncMock()) as dispatch,
+        patch("openswe.background_tasks.update_background_task_state", AsyncMock()) as track,
+        patch("openswe.background_tasks.refresh_slack_background_status", AsyncMock()),
+    ):
+        result = await reconcile_background_tasks("worker-1")
+
+    # Settled either way, so the polling cron deletes itself on its next tick.
+    assert result == {"status": "idle", "delivered": 0 if cancelled else 1, "pending": 0}
+    assert dispatch.await_count == (0 if cancelled else 1)
+    mark_delivered.assert_awaited_once()
+    track.assert_awaited_with(client, "worker-1", finished=["task-1"])
+
+
+async def test_no_worker_lookup_while_nothing_is_owed(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = AsyncMock()
+    client.threads.get.return_value = {
+        "metadata": {"sandbox_id": "sandbox-1", "running_background_tasks": ["task-1"]}
+    }
+    lookup = AsyncMock()
+    monkeypatch.setattr(background_tasks.TaskDelegation, "get", lookup)
+    running = {"task_id": "task-1", "status": "running"}
+
+    with (
+        patch("openswe.background_tasks._client", return_value=client),
+        patch("openswe.background_tasks.connect_sandbox", AsyncMock(return_value=AsyncMock())),
+        patch("openswe.background_tasks._list_tasks", AsyncMock(return_value=[running])),
+        patch("openswe.background_tasks.refresh_slack_background_status", AsyncMock()),
+    ):
+        await reconcile_background_tasks("worker-1")
+
+    lookup.assert_not_awaited()

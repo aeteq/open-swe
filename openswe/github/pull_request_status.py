@@ -7,22 +7,48 @@ from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Self
+from functools import partial
+from typing import Any, ClassVar, Literal, Self
 from urllib.parse import quote
 
 import httpx2
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import (
+    AliasPath,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from openswe.github.branch_config import BranchConfig
+from openswe.github.changed_files import CHANGED_FILES, FileList, PullRequestTips
+from openswe.github.checks import APPROVAL_CHECK_RUN_NAME
 from openswe.github.ci import unreported_required_checks
-from openswe.github.http import GITHUB_API_BASE, GitHubClient, GraphQLError, RepoClient, or_none
-from openswe.github.org_membership import OPEN_SWE_GITHUB_LOGINS
+from openswe.github.http import (
+    COMMIT_CI_FRAGMENT,
+    GITHUB_API_BASE,
+    GITHUB_GRAPHQL,
+    CommitCI,
+    GitHubClient,
+    GitHubError,
+    GraphqlCheckApp,
+    GraphQLError,
+    GraphqlNode,
+    GraphqlPageInfo,
+    RepoClient,
+    or_none,
+)
+from openswe.github.metering import MeteredTransport
+from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS, OPEN_SWE_GITHUB_LOGINS
 from openswe.github.queue import QueuePull, Review, ReviewPage
 
 logger = logging.getLogger(__name__)
 
+_FILE_LIST = TypeAdapter(FileList)
 _OWNER_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
 _REPO_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,100}")
 _SEARCH_PAGE_SIZE = 100
@@ -42,6 +68,37 @@ query PullRequestMergeability($owner: String!, $repo: String!, $number: Int!) {
       mergeable
       mergeStateStatus
     }
+  }
+}
+"""
+# ``commits(last: 1)`` is the head unless the pull holds more commits than GitHub lists.
+_PULL_CI_QUERY = (
+    """
+query PullRequestCI($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      state
+      headRefOid
+      headRefName
+      baseRefName
+      commits(last: 1) { nodes { commit { ...CommitCI } } }
+    }
+  }
+}
+"""
+    + COMMIT_CI_FRAGMENT
+)
+_TIPS_QUERY = """
+query PullRequestTips($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) { baseRefOid headRefOid }
+  }
+}
+"""
+_TITLE_AND_BODY_QUERY = """
+query PullRequestTitleAndBody($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) { title body }
   }
 }
 """
@@ -130,14 +187,107 @@ mutation($input: UpdatePullRequestReviewCommentInput!) {
   updatePullRequestReviewComment(input: $input) { pullRequestReviewComment { id } }
 }
 """
-_THREAD_COUNT_QUERY = """
-query PullRequestThreadCount($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+# Each suite's runs come in one page: a suite with more falls back to REST
+# (``HeadChecks.runs``), since dropping a run could hide a failed redeploy.
+_HEAD_CHECKS_QUERY = """
+query PullRequestHeadChecks($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      reviewDecision
-      reviewThreads(first: 100, after: $cursor) {
+      state
+      headRefOid
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            checkSuites(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                databaseId
+                app { databaseId slug }
+                workflowRun { workflow { databaseId } }
+                checkRuns(first: 100, filterBy: { checkType: ALL }) {
+                  pageInfo { hasNextPage }
+                  nodes { databaseId name conclusion }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+_STATUS_REVIEW_FRAGMENT = """
+fragment StatusReview on PullRequestReview {
+  fullDatabaseId state
+  author {
+    __typename login avatarUrl
+    ... on User { databaseId }
+    ... on Bot { databaseId }
+  }
+}
+"""
+# Everything the dashboard shows about a pull request, in one read. The head commit's
+# check runs and statuses, reviews and review threads are first pages; ``_StatusRead``
+# says when one ran over, and the caller reads the rest on its own.
+_STATUS_QUERY = (
+    """
+query PullRequestStatus(
+  $owner: String!, $repo: String!, $number: Int!, $threadComments: Boolean!
+) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      title state isDraft createdAt updatedAt additions deletions
+      author { __typename login }
+      mergeable mergeStateStatus
+      autoMergeRequest { enabledAt }
+      isMergeQueueEnabled isInMergeQueue
+      headRefName headRefOid baseRefName reviewDecision
+      reviews(first: 100) {
         pageInfo { hasNextPage endCursor }
-        nodes { isResolved }
+        nodes { ...StatusReview }
+      }
+      reviewThreads(first: 100) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id isResolved path line originalLine
+          comments(first: 50) @include(if: $threadComments) {
+            nodes { author { login } body: bodyText url }
+          }
+        }
+      }
+      commits(last: 1) { nodes { commit { ...CommitCI } } }
+    }
+  }
+}
+"""
+    + _STATUS_REVIEW_FRAGMENT
+    + COMMIT_CI_FRAGMENT
+)
+_REVIEWS_QUERY = (
+    """
+query PullRequestReviews($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviews(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { ...StatusReview }
+      }
+    }
+  }
+}
+"""
+    + _STATUS_REVIEW_FRAGMENT
+)
+_STANDING_APPROVALS_QUERY = """
+query PullRequestStandingApprovals($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      headRefOid
+      reviews(states: APPROVED, first: 100) {
+        pageInfo { hasNextPage }
+        nodes { author { login } commit { oid } }
       }
     }
   }
@@ -149,6 +299,7 @@ CheckState = Literal["passing", "failing", "pending", "unknown", "none"]
 ReviewDecision = Literal["approved", "changes_requested", "none"]
 ReviewerState = Literal["approved", "changes_requested", "dismissed", "commented"]
 PullRequestState = Literal["open", "closed", "merged"]
+MergeOutcome = Literal["merged", "auto_merge", "queued"]
 
 _ANY_STATE: frozenset[PullRequestState] = frozenset({"open", "closed", "merged"})
 
@@ -234,6 +385,8 @@ class OpenPullRequest(BaseModel):
     mergeable: bool | None = None
     merge_state: str = "unknown"
     auto_merge: bool = False
+    merge_queue_enabled: bool = False
+    in_merge_queue: bool = False
     head_sha: str | None = None
     head_ref: str | None = None
     status_available: bool = False
@@ -250,6 +403,28 @@ class OpenPullRequest(BaseModel):
     # Why it is on the To Review list; ``None`` on every other list.
     assignment: ReviewAssignment | None = None
 
+    @classmethod
+    def listed(
+        cls, repo: str, number: int, item: Mapping[str, object], *, details_loading: bool
+    ) -> Self:
+        """The open pull request as a search hit describes it, without a live read."""
+        user = item.get("user")
+        return cls(
+            repo=repo,
+            number=number,
+            title=_as_str(item.get("title"), ""),
+            created_at=_as_optional_str(item.get("created_at")),
+            updated_at=_as_optional_str(item.get("updated_at")),
+            draft=_as_optional_bool(item.get("draft")),
+            author=_as_optional_str(user.get("login")) if isinstance(user, Mapping) else None,
+            details_loading=details_loading,
+            additions=_as_optional_int(item.get("additions")),
+            deletions=_as_optional_int(item.get("deletions")),
+            mergeable=_as_optional_bool(item.get("mergeable")),
+            merge_state=_as_str(item.get("mergeable_state"), "unknown"),
+            auto_merge=bool(item.get("auto_merge")),
+        )
+
 
 class OpenPullRequests(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -258,6 +433,89 @@ class OpenPullRequests(BaseModel):
     next_page: int | None
     incomplete: bool
     updated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class QueuedPullRequestRead:
+    """What a To Review list needs of a pull request, with its reviewer's standing review.
+
+    ``standing_review`` is the reviewer's latest ``APPROVED``, ``CHANGES_REQUESTED`` or
+    ``DISMISSED`` review, ``None`` when they left none.
+    """
+
+    open: bool
+    draft: bool | None
+    title: str
+    created_at: str | None
+    updated_at: str | None
+    author: str | None
+    standing_review: str | None
+
+    BATCH: ClassVar[int] = 50
+    _FIELDS: ClassVar[str] = (
+        "state isDraft title createdAt updatedAt author { login } "
+        "reviews(author: $reviewer, states: [APPROVED, CHANGES_REQUESTED, DISMISSED], last: 1)"
+        " { nodes { state } }"
+    )
+
+    @classmethod
+    async def read(
+        cls, github: GitHubClient, refs: Sequence[tuple[str, str, int]], reviewer: str
+    ) -> list[Self | None]:
+        """Each ``(owner, repo, number)`` in order, ``None`` where GitHub could not read it.
+
+        One GraphQL query per ``BATCH`` pull requests, instead of a REST read of each.
+        """
+        batches = [refs[start : start + cls.BATCH] for start in range(0, len(refs), cls.BATCH)]
+        with MeteredTransport.attributed():
+            read = await asyncio.gather(*(cls._batch(github, batch, reviewer) for batch in batches))
+        return [found for batch in read for found in batch]
+
+    @classmethod
+    async def _batch(
+        cls, github: GitHubClient, refs: Sequence[tuple[str, str, int]], reviewer: str
+    ) -> list[Self | None]:
+        variables: dict[str, object] = {"reviewer": reviewer}
+        params = ["$reviewer: String!"]
+        fields: list[str] = []
+        for i, (owner, repo, number) in enumerate(refs):
+            variables |= {f"owner{i}": owner, f"repo{i}": repo, f"number{i}": number}
+            params.append(f"$owner{i}: String!, $repo{i}: String!, $number{i}: Int!")
+            fields.append(
+                f"pull{i}: repository(owner: $owner{i}, name: $repo{i})"
+                f" {{ pullRequest(number: $number{i}) {{ {cls._FIELDS} }} }}"
+            )
+        query = f"query QueuedPullRequests({', '.join(params)}) {{ {' '.join(fields)} }}"
+        try:
+            # Partial, so a deleted or hidden pull request comes back null beside the others.
+            data = await github.graphql(query, variables, partial=True)
+        except httpx2.HTTPError, ValueError:
+            logger.warning(
+                "Could not read queued pull requests", extra={"count": len(refs)}, exc_info=True
+            )
+            return [None] * len(refs)
+        return [cls._of(data.get(f"pull{i}")) for i in range(len(refs))]
+
+    @classmethod
+    def _of(cls, repository: object) -> Self | None:
+        pull = _graphql_pull({"repository": repository})
+        reviews = pull.get("reviews") if pull is not None else None
+        nodes = reviews.get("nodes") if isinstance(reviews, Mapping) else None
+        if pull is None or not isinstance(nodes, list):
+            return None
+        author = pull.get("author")
+        latest = nodes[-1] if nodes else None
+        return cls(
+            open=pull.get("state") == "OPEN",
+            draft=_as_optional_bool(pull.get("isDraft")),
+            title=_as_str(pull.get("title"), ""),
+            created_at=_as_optional_str(pull.get("createdAt")),
+            updated_at=_as_optional_str(pull.get("updatedAt")),
+            author=_as_optional_str(author.get("login")) if isinstance(author, Mapping) else None,
+            standing_review=(
+                _as_optional_str(latest.get("state")) if isinstance(latest, Mapping) else None
+            ),
+        )
 
 
 def _as_str(value: object, default: str) -> str:
@@ -316,28 +574,6 @@ def _unavailable_pull_request(record: object) -> dict[str, Any]:
     }
 
 
-def _merge_conflict_state(pull: Mapping[str, Any]) -> str:
-    mergeable = pull.get("mergeable")
-    mergeable_state = pull.get("mergeable_state")
-    if mergeable is False or mergeable_state == "dirty":
-        return "conflicting"
-    if mergeable is True and mergeable_state == "clean":
-        return "mergeable"
-    return "unknown"
-
-
-def _live_state(pull: Mapping[str, Any]) -> PullRequestState | None:
-    if pull.get("merged") is True or isinstance(pull.get("merged_at"), str):
-        return "merged"
-    match pull.get("state"):
-        case "open":
-            return "open"
-        case "closed":
-            return "closed"
-        case _:
-            return None
-
-
 def _normalize_checks(
     runs: list[dict[str, Any]], statuses: list[dict[str, Any]]
 ) -> tuple[list[dict[str, str | None]], int, int]:
@@ -345,6 +581,8 @@ def _normalize_checks(
     pending = 0
     inconclusive = 0
     for run in runs:
+        if run.get("name") == APPROVAL_CHECK_RUN_NAME:
+            continue
         status = run.get("status")
         conclusion = run.get("conclusion")
         if status != "completed":
@@ -402,32 +640,181 @@ class Mergeability:
     mergeable: bool | None
     merge_state: str
 
+    @classmethod
+    def of(cls, pull: Mapping[str, object]) -> Self:
+        """From a GraphQL pull request's ``mergeable`` and ``mergeStateStatus``."""
+        mergeable = pull.get("mergeable")
+        merge_state = pull.get("mergeStateStatus")
+        return cls(
+            mergeable={"MERGEABLE": True, "CONFLICTING": False}.get(
+                mergeable if isinstance(mergeable, str) else ""
+            ),
+            merge_state=merge_state.lower() if isinstance(merge_state, str) else "",
+        )
+
+    @property
+    def conflict_state(self) -> Literal["conflicting", "mergeable", "unknown"]:
+        """Only a confirmed clean merge counts as mergeable."""
+        if self.mergeable is False or self.merge_state == "dirty":
+            return "conflicting"
+        if self.mergeable is True and self.merge_state == "clean":
+            return "mergeable"
+        return "unknown"
+
+
+_GraphqlPullState = Literal["OPEN", "CLOSED", "MERGED"]
+_PULL_REQUEST_STATES: Mapping[_GraphqlPullState, PullRequestState] = {
+    "OPEN": "open",
+    "CLOSED": "closed",
+    "MERGED": "merged",
+}
+
+
+class _CIPullCommit(GraphqlNode):
+    commit: dict[str, object]
+
+
+class _CIPullCommits(GraphqlNode):
+    nodes: list[_CIPullCommit]
+
+
+class _CIPull(GraphqlNode):
+    state: _GraphqlPullState
+    head_ref_oid: str
+    head_ref_name: str
+    base_ref_name: str
+    commits: _CIPullCommits
+
+
+class _RestPullCI(BaseModel):
+    """The fields of a REST pull request that ``PullRequestCI`` holds."""
+
+    state: str
+    merged: bool = False
+    head_sha: str = Field(validation_alias=AliasPath("head", "sha"))
+    head_ref: str = Field("", validation_alias=AliasPath("head", "ref"))
+    base_ref: str = Field("", validation_alias=AliasPath("base", "ref"))
+
 
 @dataclass(frozen=True, slots=True)
-class ReviewState:
-    """A pull request's outstanding review work.
+class PullRequestCI:
+    """A pull request's state and branches, and the CI on its head commit."""
 
-    ``unresolved_threads`` is ``None`` when the threads could not be read, which
-    is not the same answer as none being unresolved. ``review_required`` says
-    branch protection still wants an approval that the PR does not have; an
-    unreadable answer leaves it false so the merge stays on offer.
+    state: Literal["open", "closed"]
+    merged: bool
+    head_sha: str
+    head_ref: str
+    base_ref: str
+    checks: CommitCI
+
+
+@dataclass(frozen=True, slots=True)
+class StandingApprovals:
+    """A pull request's head and the commits Robin's standing approvals of it are of.
+
+    A ``None`` commit is one GitHub no longer names, or the unread rest past the first page.
     """
 
-    unresolved_threads: int | None
-    review_required: bool = False
+    head: str
+    open_swe_commits: tuple[str | None, ...]
+
+    def any_besides(self, commit: str | None) -> bool:
+        """Whether Robin approves anything but ``commit``; ``None`` spares nothing."""
+        return any(approved is None or approved != commit for approved in self.open_swe_commits)
+
+
+class _HeadCheckRun(GraphqlNode):
+    database_id: int
+    name: str
+    conclusion: str | None
+
+
+class _HeadCheckRuns(GraphqlNode):
+    page_info: GraphqlPageInfo
+    nodes: list[_HeadCheckRun]
+
+
+class _HeadWorkflow(GraphqlNode):
+    database_id: int | None
+
+
+class _HeadWorkflowRun(GraphqlNode):
+    workflow: _HeadWorkflow
+
+
+class _HeadCheckSuite(GraphqlNode):
+    database_id: int
+    app: GraphqlCheckApp | None
+    workflow_run: _HeadWorkflowRun | None
+    check_runs: _HeadCheckRuns
+
+    def runs(self) -> list[dict[str, object]]:
+        """The suite's runs as REST lists a commit's check runs, in the fields read here."""
+        app = self.app.rest() if self.app else None
+        return [
+            {
+                "id": run.database_id,
+                "name": run.name,
+                "conclusion": run.conclusion.lower() if run.conclusion else None,
+                "app": app,
+                "check_suite": {"id": self.database_id},
+            }
+            for run in self.check_runs.nodes
+        ]
+
+
+class _HeadCheckSuites(GraphqlNode):
+    page_info: GraphqlPageInfo
+    nodes: list[_HeadCheckSuite]
+
+
+class _HeadCommit(GraphqlNode):
+    oid: str
+    check_suites: _HeadCheckSuites
+
+
+class _HeadCommitNode(GraphqlNode):
+    commit: _HeadCommit
+
+
+class _HeadCommits(GraphqlNode):
+    nodes: list[_HeadCommitNode]
+
+
+class _HeadPull(GraphqlNode):
+    state: _GraphqlPullState
+    head_ref_oid: str
+    commits: _HeadCommits
+
+
+@dataclass(frozen=True, slots=True)
+class HeadChecks:
+    """A pull request's state and head commit, with every check run on that commit,
+    superseded attempts included.
+
+    ``runs`` take REST's shape (``id``, ``name``, lower-case ``conclusion``, ``app``,
+    ``check_suite``); ``workflows`` names the Actions workflow behind each check suite, by
+    suite id. ``runs`` is ``None`` when a suite holds more runs than one read returns, or
+    GitHub withheld a suite's workflow.
+    """
+
+    state: PullRequestState
+    sha: str
+    runs: list[dict[str, object]] | None
+    workflows: dict[int, int]
 
 
 class _CursorLoop(ValueError):
     """GitHub handed back a page cursor it had already given."""
 
 
-def _graphql_pull(data: Mapping[str, Any]) -> Mapping[str, Any] | None:
+def _graphql_pull(data: Mapping[str, object]) -> Mapping[str, object] | None:
     repository = data.get("repository")
     pull = repository.get("pullRequest") if isinstance(repository, Mapping) else None
     return pull if isinstance(pull, Mapping) else None
 
 
-def _next_cursor(connection: Mapping[str, Any], seen: set[str]) -> str | None:
+def _next_cursor(connection: Mapping[str, object], seen: set[str]) -> str | None:
     """The cursor of the next page, ``None`` on the last page."""
     page_info = connection.get("pageInfo")
     if not isinstance(page_info, Mapping) or page_info.get("hasNextPage") is not True:
@@ -440,13 +827,138 @@ def _next_cursor(connection: Mapping[str, Any], seen: set[str]) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
+class _StatusRead:
+    """One answer to ``_STATUS_QUERY``, in the shapes the REST reads it replaces gave.
+
+    ``unreadable`` names the pull request's fields GitHub answered with an error;
+    those come back null beside the fields it could read.
+    """
+
+    pull: Mapping[str, object]
+    unreadable: frozenset[str]
+
+    @classmethod
+    def parse(cls, payload: object) -> Self:
+        if not isinstance(payload, Mapping):
+            raise ValueError("GitHub answered GraphQL without an object")
+        errors = payload.get("errors") or []
+        unreadable: set[str] = set()
+        for error in errors if isinstance(errors, list) else [errors]:
+            # A suite whose workflow GitHub withheld keeps its runs, as of an unknown
+            # workflow, as when REST could not list Actions runs.
+            if GraphQLError.at_workflow_run(error):
+                continue
+            path = error.get("path") if isinstance(error, Mapping) else None
+            if not isinstance(path, list) or len(path) < 3:
+                raise GraphQLError(errors)
+            unreadable.add(str(path[2]))
+        data = payload.get("data")
+        pull = _graphql_pull(data) if isinstance(data, Mapping) else None
+        if pull is None:
+            raise GraphQLError(errors) if errors else ValueError("GitHub answered no pull request")
+        return cls(pull, frozenset(unreadable))
+
+    @staticmethod
+    def login(actor: object) -> str | None:
+        """An actor's login as REST spells it, where an app's bot ends in ``[bot]``."""
+        if not isinstance(actor, Mapping) or not isinstance(login := actor.get("login"), str):
+            return None
+        return f"{login}[bot]" if actor.get("__typename") == "Bot" else login
+
+    def readable(self, field: str) -> bool:
+        return field not in self.unreadable
+
+    def _connection(self, field: str) -> Mapping[str, object] | None:
+        connection = self.pull.get(field) if self.readable(field) else None
+        return connection if isinstance(connection, Mapping) else None
+
+    @property
+    def state(self) -> PullRequestState | None:
+        state = self.pull.get("state")
+        return _PULL_REQUEST_STATES.get(state) if isinstance(state, str) else None
+
+    @property
+    def head_sha(self) -> str | None:
+        sha = self.pull.get("headRefOid")
+        return sha if isinstance(sha, str) and _SHA_PATTERN.fullmatch(sha) else None
+
+    @property
+    def reviews(self) -> tuple[list[object], str | None] | None:
+        """The first page of review nodes and the cursor after it, if any."""
+        reviews = self._connection("reviews")
+        if reviews is None or not isinstance(nodes := reviews.get("nodes"), list):
+            return None
+        try:
+            cursor = _next_cursor(reviews, set())
+        except _CursorLoop:
+            return None
+        return list(nodes), cursor
+
+    @classmethod
+    def reviewers_of(cls, reviews: Sequence[object]) -> list[PullRequestReviewer]:
+        """Each reviewer's standing review among GraphQL ``reviews`` nodes."""
+        parsed: list[_GithubReview] = []
+        for node in reviews:
+            if not isinstance(node, Mapping):
+                continue
+            author = node.get("author")
+            login = cls.login(author)
+            user_id = author.get("databaseId") if isinstance(author, Mapping) else None
+            parsed.append(
+                _GithubReview.model_validate(
+                    {
+                        "id": node.get("fullDatabaseId"),
+                        "state": node.get("state"),
+                        "user": {
+                            "id": user_id,
+                            "login": login,
+                            "avatar_url": author.get("avatarUrl"),
+                        }
+                        if isinstance(author, Mapping) and login and isinstance(user_id, int)
+                        else None,
+                    }
+                )
+            )
+        return PullRequestReviewer.latest(parsed)
+
+    @property
+    def review_threads(self) -> tuple[list[dict[str, object]], str | None] | None:
+        """The first page of unresolved review threads and the cursor after it, if any."""
+        threads = self._connection("reviewThreads")
+        if threads is None or not isinstance(nodes := threads.get("nodes"), list):
+            return None
+        try:
+            cursor = _next_cursor(threads, set())
+        except _CursorLoop:
+            return None
+        return PullRequestClient.unresolved_in(nodes), cursor
+
+    def checks(self, sha: str) -> CommitCI | None:
+        """The latest check runs and statuses on ``sha``.
+
+        ``None`` when they were unreadable, not ``sha``'s, or ran past one page.
+        """
+        commits = self._connection("commits")
+        nodes = commits.get("nodes") if commits is not None else None
+        if not isinstance(nodes, list):
+            return None
+        commit = nodes[-1].get("commit") if nodes and isinstance(nodes[-1], Mapping) else None
+        if not isinstance(commit, Mapping) or commit.get("oid") != sha:
+            return None
+        try:
+            return CommitCI.from_graphql(commit)
+        except ValidationError:
+            logger.warning("Unreadable head commit checks", extra={"sha": sha}, exc_info=True)
+            return None
+
+
+@dataclass(frozen=True, slots=True)
 class PullRequestClient:
     """One pull request's calls on GitHub; plain reads and writes raise like ``RepoClient``.
 
-    The status reads (``mergeability``, ``unresolved_threads``, ``review_state``,
-    ``review_decision``) and the statuses built from them answer ``None`` or an
-    unknown instead, so one failed read degrades its part of a status rather than
-    the whole of it.
+    The status reads (``mergeability``, ``unresolved_threads``, ``tips``) and the statuses
+    built from them answer ``None`` or an unknown instead, so one failed read degrades its
+    part of a status rather than the whole of it.
     """
 
     repo: RepoClient
@@ -504,6 +1016,46 @@ class PullRequestClient:
             raise ValueError("GitHub answered the pull request without an object")
         return payload
 
+    async def head_checks(self) -> HeadChecks:
+        """The pull request's state and the check runs on its head, read over GraphQL so
+        they spend none of the REST quota. A suite's app GitHub withholds, as for another
+        organization behind an IP allow list, reads as unknown; a withheld workflow gives
+        no runs, since a failed redeploy can't be told from the success before it without
+        one. Raises like ``RepoClient``; ``ValueError`` when the head moves between pages."""
+        runs: list[dict[str, object]] = []
+        workflows: dict[int, int] = {}
+        cursor: str | None = None
+        seen: set[str] = set()
+        sha: str | None = None
+        while True:
+            data, workflows_withheld = await self.repo.ci_graphql(
+                _HEAD_CHECKS_QUERY, {"number": self.number, "cursor": cursor}
+            )
+            pull = _HeadPull.model_validate(_graphql_pull(data))
+            commit = pull.commits.nodes[-1].commit if pull.commits.nodes else None
+            if commit is None or commit.oid != pull.head_ref_oid or sha not in {None, commit.oid}:
+                raise ValueError("The pull request's head moved while its checks were read")
+            sha = commit.oid
+            if workflows_withheld:
+                return HeadChecks(_PULL_REQUEST_STATES[pull.state], sha, None, {})
+            suites = commit.check_suites
+            for suite in suites.nodes:
+                if suite.check_runs.page_info.has_next_page:
+                    return HeadChecks(_PULL_REQUEST_STATES[pull.state], sha, None, {})
+                runs += suite.runs()
+                workflow = suite.workflow_run.workflow.database_id if suite.workflow_run else None
+                if workflow is not None:
+                    workflows[suite.database_id] = workflow
+            if not suites.page_info.has_next_page:
+                return HeadChecks(_PULL_REQUEST_STATES[pull.state], sha, runs, workflows)
+            cursor = suites.page_info.end_cursor
+            if not cursor or cursor in seen:
+                raise _CursorLoop
+            seen.add(cursor)
+
+    async def update_title(self, title: str) -> None:
+        await self.repo.patch(f"pulls/{self.number}", {"title": title})
+
     async def update_description(self, body: str) -> None:
         await self.repo.patch(f"pulls/{self.number}", {"body": body})
 
@@ -513,6 +1065,63 @@ class PullRequestClient:
         if not isinstance(sha, str) or not sha:
             raise ValueError("GitHub answered the pull request without a head commit")
         return sha
+
+    async def ci(self) -> PullRequestCI:
+        """The pull's state, branches and head commit CI, in one GraphQL query when they fit.
+
+        GraphQL can deny a token what REST grants it, so a denied read is retried over REST.
+        """
+        try:
+            return await self._ci_over_graphql()
+        except (GraphQLError, httpx2.HTTPStatusError) as exc:
+            if not self._denied(exc):
+                raise
+            logger.warning(
+                "GitHub denied the pull request's CI over GraphQL; reading it over REST",
+                extra={
+                    **self._log_extra,
+                    "graphql_error_paths": exc.paths if isinstance(exc, GraphQLError) else None,
+                },
+            )
+        pull = _RestPullCI.model_validate(await self.pull())
+        return PullRequestCI(
+            state="open" if pull.state == "open" else "closed",
+            merged=pull.merged,
+            head_sha=pull.head_sha,
+            head_ref=pull.head_ref,
+            base_ref=pull.base_ref,
+            checks=await self.repo.commit_ci_over_rest(pull.head_sha),
+        )
+
+    @staticmethod
+    def _denied(exc: GraphQLError | httpx2.HTTPStatusError) -> bool:
+        """Whether GitHub refused ``exc``'s read for access, not for its rate limit."""
+        if isinstance(exc, GraphQLError):
+            return "FORBIDDEN" in exc.types
+        response = exc.response
+        return response.status_code in {401, 403} and not GitHubError(response).rate_limited
+
+    async def _ci_over_graphql(self) -> PullRequestCI:
+        data, _ = await self.repo.ci_graphql(_PULL_CI_QUERY, {"number": self.number})
+        pull = _graphql_pull(data)
+        if pull is None:
+            raise ValueError("GitHub answered without the pull request")
+        parsed = _CIPull.model_validate(pull)
+        head = parsed.commits.nodes[-1].commit if parsed.commits.nodes else None
+        if head is not None and head.get("oid") == parsed.head_ref_oid:
+            checks = CommitCI.from_graphql(head) or await self.repo.commit_ci_over_rest(
+                parsed.head_ref_oid
+            )
+        else:
+            checks = await self.repo.commit_ci(parsed.head_ref_oid)
+        return PullRequestCI(
+            state="open" if parsed.state == "OPEN" else "closed",
+            merged=parsed.state == "MERGED",
+            head_sha=parsed.head_ref_oid,
+            head_ref=parsed.head_ref_name,
+            base_ref=parsed.base_ref_name,
+            checks=checks,
+        )
 
     async def merge_base(self, head_sha: str) -> str:
         """Where ``head_sha`` meets the base branch: as it is now while the pull is open.
@@ -529,12 +1138,50 @@ class PullRequestClient:
             raise ValueError("GitHub answered the pull request without its base")
         return await self.repo.merge_base(against, head_sha)
 
-    async def files(self, *, max_pages: int = 1, count: int | None = None) -> list[dict[str, Any]]:
+    async def tips(self) -> PullRequestTips | None:
+        """The base and head commits as GitHub has them now, or ``None`` when unreadable.
+
+        Read over GraphQL, whose quota is separate from the REST one the file list spends.
+        """
+        try:
+            pull = _graphql_pull(await self.repo.graphql(_TIPS_QUERY, {"number": self.number}))
+        except httpx2.HTTPError, ValueError, GraphQLError:
+            logger.warning(
+                "Could not read the pull request's tips", extra=self._log_extra, exc_info=True
+            )
+            return None
+        base_sha = pull.get("baseRefOid") if pull is not None else None
+        head_sha = pull.get("headRefOid") if pull is not None else None
+        if not isinstance(base_sha, str) or not base_sha:
+            return None
+        if not isinstance(head_sha, str) or not head_sha:
+            return None
+        return PullRequestTips(base_sha, head_sha)
+
+    async def files(self, *, max_pages: int = 1, count: int | None = None) -> FileList:
         """Changed files, up to ``max_pages`` pages of 100.
 
         ``count``, the pull's ``changed_files``, lets those pages load at once.
+        A list already read at the same base and head commits is served without
+        asking GitHub; a retarget or a push changes them, so the list is read again.
         """
-        return await self.repo.pages(f"pulls/{self.number}/files", max_pages=max_pages, total=count)
+        tips = await self.tips()
+        if tips is None:
+            return await self._listed_files(max_pages=max_pages, count=count)
+        return await CHANGED_FILES.read(
+            self.repo.full_name,
+            self.number,
+            tips,
+            max_pages,
+            partial(self._listed_files, max_pages=max_pages, count=count),
+            self.tips,
+        )
+
+    async def _listed_files(self, *, max_pages: int, count: int | None) -> FileList:
+        """Validate the GitHub file payload without dropping fields."""
+        return _FILE_LIST.validate_python(
+            await self.repo.pages(f"pulls/{self.number}/files", max_pages=max_pages, total=count)
+        )
 
     async def issue_comments(self) -> list[dict[str, Any]]:
         """Top-level conversation comments."""
@@ -574,6 +1221,28 @@ class PullRequestClient:
 
     async def commits(self) -> list[dict[str, Any]]:
         return await self.repo.pages(f"pulls/{self.number}/commits")
+
+    async def contribution_commits(self, base_sha: str) -> list[dict[str, object]]:
+        """PR commits excluding merges whose incoming parents are already on the base."""
+        if not base_sha:
+            raise ValueError("Missing base SHA for contributor evaluation")
+        contributions: list[dict[str, object]] = []
+        for commit in await self.commits():
+            parents = commit.get("parents")
+            if isinstance(parents, list) and len(parents) > 1:
+                incoming: list[str] = []
+                for parent in parents[1:]:
+                    sha = parent.get("sha") if isinstance(parent, dict) else None
+                    if not isinstance(sha, str) or not sha:
+                        raise ValueError("Missing merge parent SHA for contributor evaluation")
+                    incoming.append(sha)
+                for sha in incoming:
+                    if await self.repo.merge_base(sha, base_sha) != sha:
+                        break
+                else:
+                    continue
+            contributions.append(commit)
+        return contributions
 
     async def add_review_comment(self, comment: Mapping[str, object]) -> object:
         """Post one inline comment now, outside any review."""
@@ -667,18 +1336,45 @@ class PullRequestClient:
             json={"message": message, "event": "DISMISS"},
         )
 
+    async def standing_approvals(self) -> StandingApprovals:
+        """The head and Robin's standing approvals, in one GraphQL read."""
+        pull = _graphql_pull(
+            await self.repo.graphql(_STANDING_APPROVALS_QUERY, {"number": self.number})
+        )
+        head = pull.get("headRefOid") if pull is not None else None
+        reviews = pull.get("reviews") if pull is not None else None
+        if (
+            not isinstance(head, str)
+            or not isinstance(reviews, Mapping)
+            or not isinstance(nodes := reviews.get("nodes"), list)
+        ):
+            raise ValueError("GitHub answered the pull request without its head or approvals")
+        commits: list[str | None] = []
+        for node in nodes:
+            author = node.get("author") if isinstance(node, Mapping) else None
+            login = author.get("login") if isinstance(author, Mapping) else None
+            if not isinstance(login, str) or login.lower() not in OPEN_SWE_AUTHOR_LOGINS:
+                continue
+            commit = node.get("commit")
+            oid = commit.get("oid") if isinstance(commit, Mapping) else None
+            commits.append(oid if isinstance(oid, str) else None)
+        page_info = reviews.get("pageInfo")
+        if not isinstance(page_info, Mapping) or page_info.get("hasNextPage") is not False:
+            commits.append(None)
+        return StandingApprovals(head=head, open_swe_commits=tuple(commits))
+
     async def withdraw_open_swe_approvals(
         self,
         *,
         reason: str,
-        keep_review_id: int | None = None,
         keep_commit: str | None = None,
         scope_to_review_id: int | None = None,
         state: Literal["approved", "changes_requested"] = "approved",
     ) -> list[int]:
-        """Dismiss Open SWE's standing reviews in ``state`` other than the kept ones; the ids GitHub refused.
+        """Dismiss Robin's standing reviews in ``state`` except those of ``keep_commit``; the ids GitHub refused.
 
-        ``scope_to_review_id`` limits this to that review's login. An unknown review dismisses nothing.
+        ``scope_to_review_id`` limits this to that review's login and the reviews up to it.
+        An unknown review dismisses nothing.
         """
         reviews = _GITHUB_REVIEWS.validate_python(await self.reviews())
         only_login: str | None = None
@@ -694,15 +1390,14 @@ class PullRequestClient:
                 or review.user is None
                 or review.user.login.lower() not in OPEN_SWE_GITHUB_LOGINS
                 or (only_login is not None and review.user.login.lower() != only_login)
-                or review.id == keep_review_id
+                or (scope_to_review_id is not None and review.id > scope_to_review_id)
                 or (keep_commit is not None and review.commit_id == keep_commit)
             ):
                 continue
             try:
                 await self.dismiss_review(review.id, reason)
             except httpx2.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    continue
+                # A submitted review cannot be deleted, so a 404 hides one that still stands.
                 logger.warning(
                     "GitHub refused to dismiss a stale Open SWE approval",
                     extra={
@@ -738,9 +1433,17 @@ class PullRequestClient:
         )
 
     async def enable_auto_merge(
-        self, *, sha: str, method: str, commit_message: str | None = None
-    ) -> None:
-        """Enable GitHub's auto-merge for the head the person inspected."""
+        self,
+        *,
+        sha: str,
+        method: str,
+        commit_message: str | None = None,
+        queue_only: bool = False,
+    ) -> Literal["auto_merge", "queued"]:
+        """Enable auto-merge or enter the queue for the head the person inspected.
+
+        This mutation requires repository auto-merge, including for queue entry.
+        """
         pull = await self.pull()
         head = pull.get("head")
         if not isinstance(head, Mapping) or head.get("sha") != sha:
@@ -748,18 +1451,36 @@ class PullRequestClient:
         node_id = pull.get("node_id")
         if not isinstance(node_id, str) or not node_id:
             raise ValueError("GitHub did not return the pull request ID.")
+        if queue_only:
+            data = await self.repo.github.graphql(
+                """
+                query MergeQueueRequirement($id: ID!) {
+                  node(id: $id) { ... on PullRequest { isMergeQueueEnabled } }
+                }
+                """,
+                {"id": node_id},
+            )
+            node = data.get("node")
+            enabled = node.get("isMergeQueueEnabled") if isinstance(node, Mapping) else None
+            if enabled is False:
+                raise HTTPException(
+                    409, "The merge queue requirement changed. Refresh before merging."
+                )
+            if enabled is not True:
+                raise ValueError("GitHub did not confirm the merge queue requirement.")
         mutation_input: dict[str, object] = {
             "pullRequestId": node_id,
-            "mergeMethod": method.upper(),
             "expectedHeadOid": sha,
         }
-        if commit_message is not None:
-            mutation_input["commitBody"] = commit_message
+        if not queue_only:
+            mutation_input["mergeMethod"] = method.upper()
+            if commit_message is not None:
+                mutation_input["commitBody"] = commit_message
         data = await self.repo.github.graphql(
             """
             mutation EnableAutoMerge($input: EnablePullRequestAutoMergeInput!) {
               enablePullRequestAutoMerge(input: $input) {
-                pullRequest { autoMergeRequest { enabledAt } }
+                pullRequest { autoMergeRequest { enabledAt } isInMergeQueue }
               }
             }
             """,
@@ -767,23 +1488,37 @@ class PullRequestClient:
         )
         enabled = data.get("enablePullRequestAutoMerge")
         updated = enabled.get("pullRequest") if isinstance(enabled, Mapping) else None
-        if not isinstance(updated, Mapping) or not updated.get("autoMergeRequest"):
-            raise ValueError("GitHub did not confirm auto-merge was enabled.")
+        if isinstance(updated, Mapping):
+            if updated.get("isInMergeQueue") is True:
+                return "queued"
+            if updated.get("autoMergeRequest"):
+                return "auto_merge"
+        raise ValueError("GitHub did not confirm auto-merge or queue entry.")
 
-    async def mergeable_pull(self) -> dict[str, Any] | None:
-        """Read the pull request, waiting for GitHub to decide whether it merges.
-
-        GitHub computes mergeability in the background and answers `null` until it
-        finishes; the first read only asks it to start.
-        """
-        for attempt in range(_MERGEABILITY_ATTEMPTS):
-            pull = await or_none(self.pull())
-            if pull is None or pull.get("mergeable") is not None:
-                return pull
-            if _live_state(pull) != "open" or attempt + 1 == _MERGEABILITY_ATTEMPTS:
-                return pull
-            await asyncio.sleep(_MERGEABILITY_DELAY_SECONDS * (attempt + 1))
-        return None
+    async def disable_auto_merge(self) -> None:
+        """Disable GitHub's auto-merge for this pull request."""
+        pull = await self.pull()
+        node_id = pull.get("node_id")
+        if not isinstance(node_id, str) or not node_id:
+            raise ValueError("GitHub did not return the pull request ID.")
+        data = await self.repo.github.graphql(
+            """
+            mutation DisableAutoMerge($input: DisablePullRequestAutoMergeInput!) {
+              disablePullRequestAutoMerge(input: $input) {
+                pullRequest { autoMergeRequest { enabledAt } }
+              }
+            }
+            """,
+            {"input": {"pullRequestId": node_id}},
+        )
+        disabled = data.get("disablePullRequestAutoMerge")
+        updated = disabled.get("pullRequest") if isinstance(disabled, Mapping) else None
+        if (
+            not isinstance(updated, Mapping)
+            or "autoMergeRequest" not in updated
+            or updated["autoMergeRequest"] is not None
+        ):
+            raise ValueError("GitHub did not confirm auto-merge was disabled.")
 
     async def queue_state(self) -> QueuePull:
         """Fail closed on unreadable or changing PR/review snapshots."""
@@ -825,19 +1560,42 @@ class PullRequestClient:
             cursor = page.cursor
         raise ValueError("PR reviews exceed admission pagination limit")
 
+    async def published_app_results(self, head_sha: str, markers: set[str]) -> frozenset[str]:
+        pull = await self.pull()
+        head = pull.get("head")
+        if pull.get("state") != "open" or not isinstance(head, dict) or head.get("sha") != head_sha:
+            raise ValueError("App results no longer match an open pull request's head")
+        bodies: list[str] = []
+        for page in range(1, 3):
+            reviews = await self.repo.get(
+                f"pulls/{self.number}/reviews", params={"per_page": "100", "page": str(page)}
+            )
+            if not isinstance(reviews, list) or len(reviews) > 100:
+                raise ValueError("GitHub answered without a page of reviews")
+            for review in reviews:
+                if not isinstance(review, dict) or not isinstance(review.get("body"), str):
+                    raise ValueError("GitHub answered without a review body")
+                bodies.append(review["body"])
+            if len(reviews) < 100:
+                return frozenset(
+                    marker for marker in markers if any(marker in body for body in bodies)
+                )
+        raise ValueError("Cannot verify app publication within the PR review pagination budget")
+
     async def reviews(self) -> list[dict[str, Any]]:
         return await self.repo.pages(f"pulls/{self.number}/reviews")
 
-    async def reviewers(self) -> list[PullRequestReviewer] | None:
-        """Each reviewer's standing review."""
-        reviews = await or_none(self.reviews())
-        if reviews is None:
-            return None
-        try:
-            return PullRequestReviewer.latest(_GITHUB_REVIEWS.validate_python(reviews))
-        except ValueError:
-            logger.warning("Unreadable pull request reviews", extra=self._log_extra, exc_info=True)
-            return None
+    async def title_and_body(self) -> tuple[str, str]:
+        """The title and description as written, read over GraphQL to spare the REST quota.
+
+        ``body`` is ``""`` when the pull request has no description.
+        """
+        pull = _graphql_pull(
+            await self.repo.graphql(_TITLE_AND_BODY_QUERY, {"number": self.number})
+        )
+        if pull is None:
+            raise ValueError("GitHub answered without the pull request")
+        return _as_str(pull.get("title"), ""), _as_str(pull.get("body"), "")
 
     async def mergeability(self) -> Mergeability | None:
         """Mergeability over GraphQL.
@@ -867,19 +1625,50 @@ class PullRequestClient:
                 "Mergeability query answered without a pull request", extra=self._log_extra
             )
             return None
-        mergeable = pull.get("mergeable")
-        merge_state = pull.get("mergeStateStatus")
-        return Mergeability(
-            mergeable={"MERGEABLE": True, "CONFLICTING": False}.get(
-                mergeable if isinstance(mergeable, str) else ""
-            ),
-            merge_state=merge_state.lower() if isinstance(merge_state, str) else "",
-        )
+        return Mergeability.of(pull)
 
-    async def unresolved_threads(self) -> list[dict[str, Any]] | None:
-        unresolved: list[dict[str, Any]] = []
-        cursor: str | None = None
-        seen_cursors: set[str] = set()
+    @staticmethod
+    def unresolved_in(threads: Sequence[object]) -> list[dict[str, object]]:
+        """The unresolved threads among GraphQL ``reviewThreads`` nodes, root comment first."""
+        unresolved: list[dict[str, object]] = []
+        for thread in threads:
+            if not isinstance(thread, dict) or thread.get("isResolved") is True:
+                continue
+            comments = thread.get("comments")
+            nodes = comments.get("nodes") if isinstance(comments, dict) else None
+            comment = (
+                nodes[0] if isinstance(nodes, list) and nodes and isinstance(nodes[0], dict) else {}
+            )
+            author = comment.get("author")
+            line = thread.get("line")
+            if not isinstance(line, int) or isinstance(line, bool):
+                line = thread.get("originalLine")
+            unresolved.append(
+                {
+                    "thread_id": thread.get("id") if isinstance(thread.get("id"), str) else None,
+                    "author": author.get("login")
+                    if isinstance(author, dict) and isinstance(author.get("login"), str)
+                    else None,
+                    "body": comment.get("body") if isinstance(comment.get("body"), str) else "",
+                    "path": thread.get("path") if isinstance(thread.get("path"), str) else "",
+                    "line": line if isinstance(line, int) and not isinstance(line, bool) else None,
+                    "url": comment.get("url") if isinstance(comment.get("url"), str) else None,
+                    "replies": [
+                        _thread_reply(reply)
+                        for reply in (nodes[1:] if isinstance(nodes, list) else [])
+                        if isinstance(reply, dict)
+                    ],
+                }
+            )
+        return unresolved
+
+    async def unresolved_threads(
+        self, *, after: str | None = None
+    ) -> list[dict[str, object]] | None:
+        """Unresolved review threads, from the page after the cursor ``after`` when given."""
+        unresolved: list[dict[str, object]] = []
+        cursor = after
+        seen_cursors: set[str] = {after} if after else set()
         try:
             while True:
                 data = await self.repo.graphql(
@@ -889,80 +1678,81 @@ class PullRequestClient:
                 threads = pull.get("reviewThreads") if pull is not None else None
                 if not isinstance(threads, dict) or not isinstance(threads.get("nodes"), list):
                     return None
-                for thread in threads["nodes"]:
-                    if not isinstance(thread, dict) or thread.get("isResolved") is True:
-                        continue
-                    comments = thread.get("comments")
-                    nodes = comments.get("nodes") if isinstance(comments, dict) else None
-                    comment = (
-                        nodes[0]
-                        if isinstance(nodes, list) and nodes and isinstance(nodes[0], dict)
-                        else {}
-                    )
-                    author = comment.get("author")
-                    line = thread.get("line")
-                    if not isinstance(line, int) or isinstance(line, bool):
-                        line = thread.get("originalLine")
-                    unresolved.append(
-                        {
-                            "thread_id": thread.get("id")
-                            if isinstance(thread.get("id"), str)
-                            else None,
-                            "author": author.get("login")
-                            if isinstance(author, dict) and isinstance(author.get("login"), str)
-                            else None,
-                            "body": comment.get("body")
-                            if isinstance(comment.get("body"), str)
-                            else "",
-                            "path": thread.get("path")
-                            if isinstance(thread.get("path"), str)
-                            else "",
-                            "line": line
-                            if isinstance(line, int) and not isinstance(line, bool)
-                            else None,
-                            "url": comment.get("url")
-                            if isinstance(comment.get("url"), str)
-                            else None,
-                            "replies": [
-                                _thread_reply(reply)
-                                for reply in (nodes[1:] if isinstance(nodes, list) else [])
-                                if isinstance(reply, dict)
-                            ],
-                        }
-                    )
+                unresolved.extend(self.unresolved_in(threads["nodes"]))
                 cursor = _next_cursor(threads, seen_cursors)
                 if cursor is None:
                     return unresolved
         except _CursorLoop, httpx2.HTTPError, ValueError:
             return None
 
-    async def review_state(self) -> ReviewState:
-        """The review requirement and the number of unresolved review threads."""
-        unresolved = 0
-        review_required = False
-        cursor: str | None = None
-        seen_cursors: set[str] = set()
+    async def _read_status(self, *, thread_comments: bool = False) -> _StatusRead:
+        response = await self.repo.github.request(
+            "POST",
+            GITHUB_GRAPHQL,
+            json={
+                "query": _STATUS_QUERY,
+                "variables": {
+                    "owner": self.repo.owner,
+                    "repo": self.repo.name,
+                    "number": self.number,
+                    "threadComments": thread_comments,
+                },
+            },
+        )
+        return _StatusRead.parse(response.json())
+
+    async def _settled_mergeability(self, read: _StatusRead) -> Mergeability:
+        """Wait a little for GitHub to decide whether an open pull request merges.
+
+        GitHub computes mergeability in the background and answers ``UNKNOWN`` until
+        it finishes.
+        """
+        mergeability = Mergeability.of(read.pull)
+        for attempt in range(1, _MERGEABILITY_ATTEMPTS):
+            if mergeability.mergeable is not None or read.state != "open":
+                break
+            await asyncio.sleep(_MERGEABILITY_DELAY_SECONDS * attempt)
+            mergeability = await self.mergeability() or mergeability
+        return mergeability
+
+    async def _head_checks(self, read: _StatusRead, sha: str | None) -> CommitCI | None:
+        """``sha``'s check runs and statuses, falling back to REST for incomplete GraphQL reads."""
+        if sha is None:
+            return None
+        return read.checks(sha) or await or_none(self.repo.commit_ci_over_rest(sha))
+
+    async def _reviewers(self, read: _StatusRead) -> list[PullRequestReviewer] | None:
+        """``read``'s reviewers, counting the reviews on the pages after it."""
+        if (first := read.reviews) is None:
+            return None
+        reviews, cursor = first
+        seen = {cursor} if cursor else set()
         try:
-            while True:
-                data = await self.repo.graphql(
-                    _THREAD_COUNT_QUERY, {"number": self.number, "cursor": cursor}
+            while cursor is not None:
+                pull = _graphql_pull(
+                    await self.repo.graphql(
+                        _REVIEWS_QUERY, {"number": self.number, "cursor": cursor}
+                    )
                 )
-                pull = _graphql_pull(data)
-                if pull is not None:
-                    review_required = pull.get("reviewDecision") == "REVIEW_REQUIRED"
-                threads = pull.get("reviewThreads") if pull is not None else None
-                if not isinstance(threads, Mapping) or not isinstance(threads.get("nodes"), list):
-                    return ReviewState(None, review_required)
-                unresolved += sum(
-                    1
-                    for thread in threads["nodes"]
-                    if isinstance(thread, Mapping) and thread.get("isResolved") is False
-                )
-                cursor = _next_cursor(threads, seen_cursors)
-                if cursor is None:
-                    return ReviewState(unresolved, review_required)
+                page = pull.get("reviews") if pull is not None else None
+                if not isinstance(page, Mapping) or not isinstance(page.get("nodes"), list):
+                    raise ValueError("GitHub answered reviews without a list")
+                reviews.extend(page["nodes"])
+                cursor = _next_cursor(page, seen)
+            return _StatusRead.reviewers_of(reviews)
         except _CursorLoop, httpx2.HTTPError, ValueError:
-            return ReviewState(None, review_required)
+            logger.warning("Unreadable pull request reviews", extra=self._log_extra, exc_info=True)
+            return None
+
+    async def _unresolved_threads(self, read: _StatusRead) -> list[dict[str, object]] | None:
+        """``read``'s unresolved review threads and those on the pages after it."""
+        if (first := read.review_threads) is None:
+            return None
+        threads, cursor = first
+        if cursor is None:
+            return threads
+        rest = await self.unresolved_threads(after=cursor)
+        return None if rest is None else threads + rest
 
     async def thread_status(self) -> dict[str, Any]:
         """The PR health a dashboard thread shows: state, checks and unresolved threads."""
@@ -970,7 +1760,25 @@ class PullRequestClient:
             {"repo_full_name": self.repo.full_name, "number": self.number}
         )
         result["url"] = f"https://github.com/{self.repo.full_name}/pull/{self.number}"
-        pull, review_threads = await asyncio.gather(or_none(self.pull()), self.unresolved_threads())
+        with MeteredTransport.attributed():
+            read = await or_none(self._read_status(thread_comments=True))
+        if read is None:
+            return result
+        state = read.state
+        draft = read.pull.get("isDraft")
+        result.update(
+            {
+                "statusAvailable": state is not None and isinstance(draft, bool),
+                "state": state,
+                "isDraft": draft if isinstance(draft, bool) else None,
+                "mergeConflictState": Mergeability.of(read.pull).conflict_state,
+            }
+        )
+        with MeteredTransport.attributed():
+            review_threads, checks = await asyncio.gather(
+                self._unresolved_threads(read),
+                self._head_checks(read, read.head_sha),
+            )
         if review_threads is not None:
             result.update(
                 {
@@ -979,27 +1787,8 @@ class PullRequestClient:
                     "unresolvedReviewThreads": review_threads,
                 }
             )
-        if pull is None:
-            return result
-        state = _live_state(pull)
-        draft = pull.get("draft")
-        head = pull.get("head")
-        sha = head.get("sha") if isinstance(head, dict) else None
-        result.update(
-            {
-                "statusAvailable": state is not None and isinstance(draft, bool),
-                "state": state,
-                "isDraft": draft if isinstance(draft, bool) else None,
-                "mergeConflictState": _merge_conflict_state(pull),
-            }
-        )
-        if not isinstance(sha, str) or not _SHA_PATTERN.fullmatch(sha):
-            return result
-        runs, statuses = await asyncio.gather(
-            or_none(self.repo.check_runs(sha)), or_none(self.repo.commit_statuses(sha))
-        )
-        if runs is not None and statuses is not None:
-            failing, pending, inconclusive = _normalize_checks(runs, statuses)
+        if checks is not None:
+            failing, pending, inconclusive = _normalize_checks(checks.runs, checks.statuses)
             result.update(
                 {
                     "checksAvailable": True,
@@ -1014,81 +1803,113 @@ class PullRequestClient:
         self,
         *,
         details: bool = True,
-        listed: Mapping[str, Any] | None = None,
+        listed: Mapping[str, object] | None = None,
         wanted: Collection[PullRequestState] = _ANY_STATE,
     ) -> OpenPullRequest | None:
         """The PR's live status, or ``None`` when its state is not ``wanted``.
 
-        Without ``details`` only ``listed`` (a search hit) is used, and nothing is read.
+        Without ``details`` only ``listed`` (a search hit) is used, and nothing is read;
+        a live read that fails falls back to it too.
         """
-        pull = await self.mergeable_pull() if details else None
-        state = _live_state(pull) if pull is not None else "open"
+        status, _ = await self.load_with_ci(details=details, listed=listed, wanted=wanted)
+        return status
+
+    async def load_with_ci(
+        self,
+        *,
+        details: bool = True,
+        listed: Mapping[str, object] | None = None,
+        wanted: Collection[PullRequestState] = _ANY_STATE,
+    ) -> tuple[OpenPullRequest | None, CommitCI | None]:
+        """``load``'s status, with the head commit's CI it was read from, if any."""
+        with MeteredTransport.attributed():
+            read = await or_none(self._read_status()) if details else None
+        if read is None:
+            if "open" not in wanted:
+                return None, None
+            return (
+                OpenPullRequest.listed(
+                    self.repo.full_name, self.number, listed or {}, details_loading=not details
+                ),
+                None,
+            )
+        state = read.state
         if state is None or state not in wanted:
-            return None
-        source: Mapping[str, Any] = pull if pull is not None else listed or {}
+            return None, None
+        pull = read.pull
+        mergeability = await self._settled_mergeability(read)
         result = OpenPullRequest(
             repo=self.repo.full_name,
             number=self.number,
-            title=_as_str(source.get("title"), ""),
+            title=_as_str(pull.get("title"), ""),
             state=state,
-            created_at=_as_optional_str(source.get("created_at")),
-            updated_at=_as_optional_str(source.get("updated_at")),
-            draft=_as_optional_bool(source.get("draft")),
-            author=_as_optional_str(source["user"].get("login"))
-            if isinstance(source.get("user"), Mapping)
-            else None,
-            details_loading=not details,
-            additions=_as_optional_int(source.get("additions")),
-            deletions=_as_optional_int(source.get("deletions")),
-            mergeable=_as_optional_bool(source.get("mergeable")),
-            merge_state=_as_str(source.get("mergeable_state"), "unknown"),
-            auto_merge=bool(source.get("auto_merge")),
-            status_available=pull is not None,
+            created_at=_as_optional_str(pull.get("createdAt")),
+            updated_at=_as_optional_str(pull.get("updatedAt")),
+            draft=_as_optional_bool(pull.get("isDraft")),
+            author=_StatusRead.login(pull.get("author")),
+            additions=_as_optional_int(pull.get("additions")),
+            deletions=_as_optional_int(pull.get("deletions")),
+            mergeable=mergeability.mergeable,
+            merge_state=mergeability.merge_state or "unknown",
+            auto_merge=bool(pull.get("autoMergeRequest")),
+            merge_queue_enabled=pull.get("isMergeQueueEnabled") is True,
+            in_merge_queue=pull.get("isInMergeQueue") is True,
+            head_ref=_as_optional_str(pull.get("headRefName")),
+            status_available=True,
         )
-        if pull is None:
-            return result
         if result.merge_state == "clean":
             result.required_checks_passing = True
-        head = pull.get("head")
-        if not isinstance(head, Mapping):
-            return result
-        result.head_ref = _as_optional_str(head.get("ref"))
-        sha = _as_optional_str(head.get("sha"))
-        if sha is None or not _SHA_PATTERN.fullmatch(sha):
-            return result
+        sha = read.head_sha
+        if sha is None:
+            return result, None
         result.head_sha = sha
-        runs, statuses, reviewers, review_state = await asyncio.gather(
-            or_none(self.repo.check_runs(sha)),
-            or_none(self.repo.commit_statuses(sha)),
-            self.reviewers(),
-            self.review_state(),
-        )
+        with MeteredTransport.attributed():
+            checks, reviewers, review_threads = await asyncio.gather(
+                self._head_checks(read, sha), self._reviewers(read), self._unresolved_threads(read)
+            )
+        runs, statuses = (checks.runs, checks.statuses) if checks is not None else (None, None)
         result.reviewers = reviewers
         result.review_decision = (
             None if reviewers is None else PullRequestReviewer.decision(reviewers)
         )
-        result.review_required = review_state.review_required
-        result.unresolved_threads = review_state.unresolved_threads
-        base = pull.get("base")
-        base_ref = _as_optional_str(base.get("ref")) if isinstance(base, Mapping) else None
+        result.review_required = pull.get("reviewDecision") == "REVIEW_REQUIRED"
+        result.unresolved_threads = None if review_threads is None else len(review_threads)
+        base_ref = _as_optional_str(pull.get("baseRefName"))
         config = None
-        if base_ref is not None and (
-            review_state.unresolved_threads or result.merge_state != "clean"
-        ):
+        if base_ref is not None and (result.unresolved_threads or result.merge_state != "clean"):
             config = await BranchConfig(self.repo.full_name, base_ref).read(self.repo.github.login)
             if config is not None:
                 result.conversation_resolution_required = config.requires_conversation_resolution
+                # GitHub's reviewDecision is often null under rulesets, so count approvals too.
+                if reviewers is not None and config.required_approving_reviews:
+                    approvals = sum(reviewer.state == "approved" for reviewer in reviewers)
+                    result.review_required |= approvals < config.required_approving_reviews
+        if config is not None and runs is not None and result.merge_state != "clean":
+            approval_checks = {
+                check for check in config.checks if check.name == APPROVAL_CHECK_RUN_NAME
+            }
+            passing_approvals = [
+                run
+                for run in runs
+                if run.get("name") == APPROVAL_CHECK_RUN_NAME
+                and run.get("status") == "completed"
+                and run.get("conclusion") == "success"
+            ]
+            result.review_required |= any(
+                not check.reported_by(passing_approvals, []) for check in approval_checks
+            )
         if runs is None or statuses is None:
-            return result
-        failed, _, _ = _normalize_checks(runs, statuses)
+            return result, checks
+        ci_runs = [run for run in runs if run.get("name") != APPROVAL_CHECK_RUN_NAME]
+        failed, _, _ = _normalize_checks(ci_runs, statuses)
         failures = [_as_str(check["name"], "Unnamed check") for check in failed]
         inconclusive = any(
             run.get("status") == "completed" and run.get("conclusion") in {"cancelled", "stale"}
-            for run in runs
+            for run in ci_runs
         )
         pending = [
             _as_str(run.get("name"), "Unnamed check")
-            for run in runs
+            for run in ci_runs
             if run.get("status") != "completed"
         ] + [
             _as_str(status.get("context"), "Unnamed status")
@@ -1105,7 +1926,7 @@ class PullRequestClient:
             else "unknown"
             if inconclusive
             else "passing"
-            if runs or statuses
+            if ci_runs or statuses
             else "none"
         )
         if config is not None and result.merge_state != "clean":
@@ -1120,8 +1941,13 @@ class PullRequestClient:
             result.required_checks_passing = all(
                 check.reported_by(passing_runs, passing_statuses) for check in required
             )
-            result.missing_checks = unreported_required_checks(required, runs, statuses)
-        return result
+            if not pending:
+                result.missing_checks = unreported_required_checks(
+                    {check for check in required if check.name != APPROVAL_CHECK_RUN_NAME},
+                    runs,
+                    statuses,
+                )
+        return result, checks
 
 
 async def get_pull_request_statuses(
@@ -1202,7 +2028,8 @@ async def list_open_pull_requests(
         async with semaphore:
             return await client.load(details=not lightweight, listed=item, wanted={"open"})
 
-    items = await asyncio.gather(*(load(item) for item in payload["items"][:_SEARCH_PAGE_SIZE]))
+    with MeteredTransport.attributed():
+        items = await asyncio.gather(*(load(item) for item in payload["items"][:_SEARCH_PAGE_SIZE]))
     total = payload.get("total_count")
     has_more = (
         isinstance(total, int) and page * _SEARCH_PAGE_SIZE < total and page < _SEARCH_MAX_PAGES

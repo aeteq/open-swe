@@ -1,23 +1,21 @@
-"""Connect cards for a workspace's managed tools, and the follow-up run once they work.
+"""Connect cards for a person's managed tools, and the follow-up run once they work.
 
-The agent offers a card in a private thread for the services the owner asked to use
-and has not connected in the workspace's LMT gateway (every unconnected service, when
-the gateway offers no tools until all are connected). Each button opens Open SWE, which
-mints LMT's single-use consent link only for the card's owner, waits for that consent to
-finish, and queues one follow-up run once the card's services work. Waiting happens in
-the dashboard process that minted the link; if it restarts, the person says "continue".
+The agent offers a card in a private thread for the LMT services the owner asked to use
+and has not connected, or for a personal MCP server it proposes adding, which Robin
+registers only once the owner confirms it on the card. Each connect button opens Robin, which mints LMT's single-use consent
+link only for the card's owner, waits for that consent to finish, and queues one
+follow-up run once the card's services work. The job queue does the waiting, one long
+poll per job, so a restarted or replaced backend only delays the follow-up run.
 """
 
-import asyncio
 import logging
-from collections.abc import Coroutine
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlencode
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 from sqlalchemy import ForeignKey, Text, select
-from sqlalchemy.dialects.postgresql import ARRAY, insert
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, insert
 from sqlalchemy.orm import Mapped, mapped_column
 
 from openswe.database import postgres
@@ -25,20 +23,23 @@ from openswe.database.orm import NOW, Base
 from openswe.dispatch import dispatch_agent_run, follow_up_configurable
 from openswe.event_claims import claim, release
 from openswe.input_messages import InputMessageContext, SystemIdentity
+from openswe.jobs import queue
+from openswe.jobs.queue import Job
 from openswe.mcp.managed import (
     ConsentLink,
-    GatewayStatus,
+    ManagedServer,
     ManagedToolsError,
-    connect_link,
-    consent_outcome,
-    gateway_id,
-    gateway_status,
-    refresh_tools,
+    NewServer,
+    PersonalTools,
 )
 from openswe.prompts import prompt
+from openswe.slack.blocks import Block, actions, block_payload, button, context, section
+from openswe.slack.channels import SlackChannel
+from openswe.slack.client import format_slack_web_link_footer, update_slack_message
 from openswe.source_context import SourceContext
+from openswe.users.models import User
 from openswe.users.records import UnknownUser, user_id_for_login
-from openswe.utils.dashboard_links import dashboard_api_base_url
+from openswe.utils.dashboard_links import dashboard_api_base_url, dashboard_thread_url
 from openswe.utils.json_types import thread_metadata
 from openswe.utils.thread_ops import langgraph_client
 
@@ -55,46 +56,102 @@ _CONTEXT: InputMessageContext = {
     "surface": "automation",
     "kind": "system",
 }
-_waiters: set[asyncio.Task[None]] = set()
+CONSENT_JOB = "managed_tools_consent"
+RESUME_JOB = "managed_tools_card_resume"
+# Consent links expire after ten minutes; stop waiting shortly after.
+_CONSENT_DEADLINE = timedelta(minutes=11)
+# LangSmith's long poll sometimes returns early; never ask it again sooner than this.
+_CONSENT_POLL_FLOOR = timedelta(seconds=1)
+_REFRESH_RETRY = timedelta(seconds=5)
 
 
-def _wait_in_background(waiting: Coroutine[object, object, None]) -> None:
-    task = asyncio.create_task(waiting)
-    _waiters.add(task)
-    task.add_done_callback(_waiters.discard)
+class ConsentWait(BaseModel):
+    """One consent link a person was sent, waited on through the job queue: each job long
+    polls LangSmith once, then queues the next until the link is used or expires."""
 
+    login: str
+    """The person's ``user:<id>`` key, which outlives a GitHub login rename; a job
+    queued before keys were stored holds the login itself."""
+    auth_id: str
+    until: datetime
+    server_id: str | None = None
+    """The service the link connects, whose tools must list again before the thread
+    resumes; a job queued before this was stored holds none."""
+    thread_id: str | None = None
+    """The thread whose connect card sent the link, which resumes once the card's
+    services work."""
+    card_id: str | None = None
+    consented: bool = False
+    """LangSmith reported the consent completed, leaving only the re-list after it."""
 
-async def _consented(login: str, gateway: str, auth_id: str) -> bool:
-    """Wait out one consent link; once used, re-list the gateway so new tools load."""
-    outcome = await consent_outcome(login, auth_id)
-    if outcome != "completed":
-        logger.info("Managed tools consent not completed", extra={"outcome": outcome})
-        return False
-    try:
-        await refresh_tools(login, gateway)
-    except Exception:
-        # Best effort: a gateway still missing services refuses to list, and a stale
-        # list expires on its own; neither may stop the thread from resuming.
-        logger.warning("Managed tools refresh after consent failed", exc_info=True)
-    return True
-
-
-async def _refresh_after(login: str, gateway: str, auth_id: str) -> None:
-    try:
-        await _consented(login, gateway, auth_id)
-    except TimeoutError:
-        logger.info("Stopped waiting for managed tools consent", extra={"gateway": gateway})
-    except Exception:
-        logger.warning(
-            "Managed tools refresh after consent failed", extra={"gateway": gateway}, exc_info=True
+    @classmethod
+    async def start(
+        cls, login: str, auth_id: str, server_id: str, card: ConnectCard | None = None
+    ) -> None:
+        if not login.startswith("user:"):
+            user = await User.for_login("github", login)
+            if user is None:
+                raise UnknownUser(login)
+            login = f"user:{user.id}"
+        wait = cls(
+            login=login,
+            auth_id=auth_id,
+            until=datetime.now(UTC) + _CONSENT_DEADLINE,
+            server_id=server_id,
+            thread_id=card.thread_id if card else None,
+            card_id=card.card_id if card else None,
         )
+        await wait.schedule(datetime.now(UTC))
+
+    async def schedule(self, due_at: datetime) -> None:
+        await queue.schedule(CONSENT_JOB, self.model_dump(mode="json"), due_at=due_at)
+
+    @classmethod
+    async def run(cls, job: Job) -> None:
+        await cls.model_validate(job.payload).poll()
+
+    async def poll(self) -> None:
+        login = self.login
+        if login.startswith("user:"):
+            user = await User.for_login("github", login)
+            if user is None:
+                logger.info("Managed tools consent owner no longer exists")
+                return
+            # Runs name a GitHub-linked person by their current login.
+            login = user.github_login or login
+        tools = PersonalTools(login)
+        if not self.consented:
+            status = await tools.consent_status(self.auth_id)
+            if status == "pending":
+                if datetime.now(UTC) < self.until:
+                    await self.schedule(datetime.now(UTC) + _CONSENT_POLL_FLOOR)
+                else:
+                    logger.info("Stopped waiting for managed tools consent")
+                return
+            if status != "completed":
+                logger.info("Managed tools consent not completed", extra={"outcome": status})
+                return
+        try:
+            await tools.refresh(needed=[self.server_id] if self.server_id else [])
+        except Exception:
+            logger.warning("Managed tools refresh after consent failed", exc_info=True)
+            # The resumed run would start with the kit's tools from before the connection.
+            if datetime.now(UTC) < self.until:
+                retry = self.model_copy(update={"consented": True})
+                await retry.schedule(datetime.now(UTC) + _REFRESH_RETRY)
+                return
+        if self.thread_id is None or self.card_id is None:
+            return
+        card = await ConnectCard.load(self.thread_id, self.card_id, login)
+        if card is not None:
+            await card.resume_if_ready()
 
 
-async def connect_service(login: str, gateway: str, slug: str) -> ConsentLink | None:
-    """A consent link for one service outside any thread; its tools load once it is used."""
-    link = await connect_link(login, gateway, slug)
+async def connect_service(login: str, server_id: str) -> ConsentLink | None:
+    """A consent link for one of a person's services outside any thread."""
+    link = await PersonalTools(login).connect_link(server_id)
     if link is not None and link.auth_id:
-        _wait_in_background(_refresh_after(login, gateway, link.auth_id))
+        await ConsentWait.start(login, link.auth_id, server_id)
     return link
 
 
@@ -104,33 +161,39 @@ class ConnectCardRow(Base):
     thread_id: Mapped[str] = mapped_column(primary_key=True)
     card_id: Mapped[str] = mapped_column(primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    gateway: Mapped[str]
     services: Mapped[list[str]] = mapped_column(ARRAY(Text), default_factory=list)
+    proposed_server: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, default=None)
+    slack_channel_id: Mapped[str | None] = mapped_column(
+        ForeignKey("slack_channel.id", ondelete="SET NULL"), default=None
+    )
+    slack_message_ts: Mapped[str | None] = mapped_column(Text, default=None)
+    slack_footer: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime | None] = mapped_column(server_default=NOW, init=False)
 
 
 class ConnectCard(BaseModel):
-    """A card the agent offered one person in a thread, for one gateway."""
+    """A card the agent offered one person in a thread, for some of their LMT services."""
 
     thread_id: str
     card_id: str
     login: str
-    gateway: str
     services: list[str] = Field(default_factory=list)
-    """Slugs of the services the card offers; empty offers every unconnected one."""
+    """IDs of the LMT servers the card offers."""
+    slack_channel_id: str | None = None
+    slack_message_ts: str | None = None
+    slack_footer: str | None = None
+    proposed: NewServer | None = None
+    """A personal server the agent proposed, registered only when the owner confirms."""
 
     @classmethod
-    async def load(
-        cls, thread_id: str, card_id: str, login: str, gateway: str
-    ) -> ConnectCard | None:
-        """The card if the agent offered it to ``login`` for ``gateway``, else ``None``."""
+    async def load(cls, thread_id: str, card_id: str, login: str) -> ConnectCard | None:
+        """The card if the agent offered it to ``login``, else ``None``."""
         async with postgres.session() as session:
             row = await session.scalar(
                 select(ConnectCardRow).where(
                     ConnectCardRow.thread_id == thread_id,
                     ConnectCardRow.card_id == card_id,
                     ConnectCardRow.user_id == user_id_for_login(login),
-                    ConnectCardRow.gateway == gateway_id(gateway),
                 )
             )
         if row is None:
@@ -139,16 +202,68 @@ class ConnectCard(BaseModel):
             thread_id=row.thread_id,
             card_id=row.card_id,
             login=login.strip().lower(),
-            gateway=row.gateway,
             services=row.services,
+            slack_channel_id=row.slack_channel_id,
+            slack_message_ts=row.slack_message_ts,
+            slack_footer=row.slack_footer,
+            proposed=(
+                NewServer.model_validate(row.proposed_server) if row.proposed_server else None
+            ),
         )
+
+    def slack_blocks(self, offered: list[ManagedServer]) -> list[Block]:
+        connected = [server for server in offered if server.usable]
+        offered = [server for server in offered if not server.usable]
+        status: list[Block] = []
+        if connected:
+            status.append(section("Connected: " + ", ".join(server.name for server in connected)))
+        if not offered:
+            return status
+        oauth = [server for server in offered if server.kind == "oauth"]
+        secret = [server for server in offered if server.kind == "secret"]
+        then = (
+            "I'll continue here once they're connected."
+            if not secret
+            else "Once they're set up, ask me to continue."
+        )
+        return [
+            *status,
+            section(
+                "Connect these services to use them with your own accounts. Each button opens "
+                "the service's consent or API key page for your account only; sign in to Robin "
+                f"in your browser first. {then}"
+            ),
+            actions(
+                *(
+                    button(
+                        f"{'Connect' if server.kind == 'oauth' else 'Set up'} {server.name}",
+                        action_id=f"connect_managed_tool:{index}",
+                        url=self.button_url(server.id),
+                    )
+                    for index, server in enumerate([*oauth, *secret][:25])
+                )
+            ),
+        ]
+
+    @property
+    def tools(self) -> PersonalTools:
+        return PersonalTools(self.login)
 
     async def save(self) -> None:
         async with postgres.session() as session:
             user_id = await session.scalar(select(user_id_for_login(self.login)))
             if user_id is None:
                 raise UnknownUser(self.login)
-            values = {"user_id": user_id, "gateway": self.gateway, "services": self.services}
+            if self.slack_channel_id:
+                await SlackChannel.ensure(session, self.slack_channel_id)
+            values = {
+                "slack_channel_id": self.slack_channel_id,
+                "slack_message_ts": self.slack_message_ts,
+                "slack_footer": self.slack_footer,
+                "user_id": user_id,
+                "services": self.services,
+                "proposed_server": self.proposed.model_dump(mode="json") if self.proposed else None,
+            }
             await session.execute(
                 insert(ConnectCardRow)
                 .values(thread_id=self.thread_id, card_id=self.card_id, **values)
@@ -158,54 +273,121 @@ class ConnectCard(BaseModel):
                 )
             )
 
-    def button_url(self, slug: str) -> str:
+    def button_url(self, server_id: str) -> str:
         """Where a Slack button sends the person: Open SWE, never LMT's link itself."""
-        path = f"/dashboard/api/my-managed-tools/{self.gateway}/connect/{quote(slug, safe='')}"
+        path = f"/dashboard/api/my-managed-tools/connect/{quote(server_id, safe='')}"
         query = urlencode({"thread_id": self.thread_id, "card": self.card_id})
         return f"{dashboard_api_base_url()}{path}?{query}"
 
-    async def connect(self, slug: str) -> ConsentLink | None:
-        """Mint a consent link for ``slug`` and resume the thread once it is used."""
-        link = await connect_link(self.login, self.gateway, slug)
+    async def connect(self, server_id: str) -> ConsentLink | None:
+        """Mint a consent link for one of the card's services and resume the thread once
+        it is used."""
+        if server_id not in self.services:
+            raise ManagedToolsError("This card does not offer that service")
+        link = await self.tools.connect_link(server_id)
         if link is not None and link.auth_id:
-            _wait_in_background(self._resume_after(link.auth_id))
+            await ConsentWait.start(self.login, link.auth_id, server_id, self)
         return link
 
-    async def _resume_after(self, auth_id: str) -> None:
-        extra = {"agent_thread_id": self.thread_id, "card": self.card_id}
-        try:
-            if not await _consented(self.login, self.gateway, auth_id):
-                return
-            # Another of the card's services may still be missing; its consent resumes.
-            status = await gateway_status(self.login, self.gateway)
-            if status.missing_for(self.services):
-                return
-            key = f"{self.thread_id}:{self.card_id}"
-            if not await claim(_RESUME_SCOPE, key, ttl=timedelta(days=7)):
-                return
-            try:
-                await self._resume(status)
-            except BaseException:
-                await release(_RESUME_SCOPE, key)
-                raise
-        except TimeoutError:
-            logger.info("Stopped waiting for managed tools consent", extra=extra)
-        except ManagedToolsError:
-            logger.warning("Managed tools consent check failed", extra=extra, exc_info=True)
-        except Exception:
-            logger.exception("Could not resume thread after managed tools consent", extra=extra)
+    async def added(self) -> ManagedServer | None:
+        """The server the card's confirmed proposal registered, while it still exists."""
+        if self.proposed is not None or not self.services:
+            return None
+        return next(
+            (server for server in await self.tools.servers() if server.id in self.services),
+            None,
+        )
 
-    async def _resume(self, status: GatewayStatus) -> None:
+    async def add_proposed(self) -> ManagedServer:
+        """Register the server the card proposed, for its owner. The card then offers that
+        server, so a second confirmation finds it instead of registering another."""
+        if self.proposed is None:
+            if (added := await self.added()) is None:
+                raise ManagedToolsError("This card proposes no server")
+            return added
+        server = await self.tools.add_server(self.proposed)
+        self.services, self.proposed = [server.id], None
+        await self.save()
+        if not server.needs_connect:
+            # No consent will follow, so the queue owns continuing the thread and retries
+            # it when a run cannot start yet.
+            owner = await User.for_login("github", self.login)
+            if owner is None:
+                raise UnknownUser(self.login)
+            await queue.schedule(
+                RESUME_JOB,
+                {"thread_id": self.thread_id, "card_id": self.card_id, "user_id": str(owner.id)},
+                key=f"{self.thread_id}:{self.card_id}",
+            )
+        return server
+
+    @classmethod
+    async def resume_job(cls, job: Job) -> None:
+        """Continue a card's thread once its services work; raises to retry."""
+        payload = job.payload
+        thread_id, card_id, user_id = (payload.get(k) for k in ("thread_id", "card_id", "user_id"))
+        if not (
+            isinstance(thread_id, str) and isinstance(card_id, str) and isinstance(user_id, str)
+        ):
+            logger.warning(
+                "Managed tools card resume job has no card", extra={"job_id": str(job.id)}
+            )
+            return
+        owner = await User.get(UUID(user_id))
+        if owner is None:
+            logger.info("Managed tools card owner no longer exists")
+            return
+        # Runs name a GitHub-linked person by their current login, which may have changed.
+        card = await cls.load(thread_id, card_id, owner.session_login)
+        if card is not None:
+            await card.resume_if_ready()
+
+    async def resume_if_ready(self) -> None:
+        """Queue the thread's one follow-up run once every service the card offers works."""
+        # Another of the card's services may still be missing; its consent resumes. Asks
+        # LangSmith now, in case the refresh after consent failed.
+        servers = {server.id: server for server in await self.tools.servers(fresh=True)}
+        if self.slack_channel_id and self.slack_message_ts:
+            try:
+                offered = [servers[service] for service in self.services if service in servers]
+                footer = self.slack_footer or format_slack_web_link_footer(
+                    dashboard_thread_url(self.thread_id)
+                )
+                blocks = self.slack_blocks(offered)
+                if footer:
+                    blocks.append(context(footer))
+                await update_slack_message(
+                    self.slack_channel_id,
+                    self.slack_message_ts,
+                    f"Managed tools connection status {footer}".rstrip(),
+                    blocks=block_payload(blocks),
+                )
+            except Exception:
+                logger.warning("Could not update managed tools Slack card", exc_info=True)
+        if any(not servers[service].usable for service in self.services if service in servers):
+            return
+        names = [servers[service].name for service in self.services if service in servers]
+        key = f"{self.thread_id}:{self.card_id}"
+        if not await claim(_RESUME_SCOPE, key, ttl=timedelta(days=7)):
+            return
+        try:
+            await self._resume(names)
+        except BaseException:
+            await release(_RESUME_SCOPE, key)
+            raise
+
+    async def _resume(self, services: list[str]) -> None:
         thread = await langgraph_client().threads.get(self.thread_id)
         metadata = thread_metadata(thread)
         configurable = follow_up_configurable(metadata, self.thread_id)
-        # Only the card's owner can see the gateway's tools, so the run is theirs.
+        # Only the card's owner can use their own services, so the run is theirs.
         configurable["github_login"] = self.login
         await dispatch_agent_run(
             self.thread_id,
-            prompt("runs/managed-tools-connected", gateway=status.gateway.name),
+            prompt("runs/managed-tools-connected", services=", ".join(services)),
             configurable,
             source=str(configurable.get("source") or "dashboard"),
+            origin="dashboard",
             thread_title=None,
             context=_CONTEXT,
             systems=[_SENDER],

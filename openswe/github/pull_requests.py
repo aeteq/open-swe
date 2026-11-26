@@ -16,7 +16,7 @@ second primary impossible.
 
 Two kinds of write, by who knows what. ``save`` is for callers holding the PR
 as GitHub describes it (the opener, lifecycle webhooks): it writes the
-GitHub-owned columns and can set, never clear, ``resolves_thread``.
+GitHub-owned columns.
 ``link_thread`` and ``link_review`` are for callers that only know the PR's
 identity: they create the row if it is missing and touch no other column.
 
@@ -25,8 +25,10 @@ rows carry a synthetic UUIDv7 ``id``; ``(repository, number)`` stays the natural
 key callers address a PR by.
 """
 
+import asyncio
 import logging
-from collections.abc import Collection, Sequence
+from collections import Counter
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime
 from typing import Literal, Self, TypedDict
 from uuid import UUID, uuid7
@@ -42,12 +44,13 @@ from sqlalchemy import (
     desc,
     func,
     inspect,
-    or_,
     select,
+    text,
     tuple_,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, insert
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 
 from openswe.config import ENV
@@ -55,11 +58,15 @@ from openswe.database import postgres
 from openswe.database.orm import NOW, Base
 from openswe.dispatch import dispatch_agent_run
 from openswe.github.comments import PrState, derive_pr_state
-from openswe.github.pull_request_status import pull_request_identity
+from openswe.github.http import or_none
+from openswe.github.org_membership import INTERNAL_BOT_LOGINS, OPEN_SWE_GITHUB_LOGINS
+from openswe.github.pull_request_key import PullRequestKey
+from openswe.github.pull_request_status import PullRequestClient, pull_request_identity
 from openswe.github.repositories import Repository
 from openswe.review.findings import REVIEWER_THREAD_KIND
 from openswe.users.models import User, UserIdentity
 from openswe.utils.json_types import JsonObject, thread_metadata
+from openswe.utils.langsmith import create_langsmith_thread_feedback
 from openswe.utils.search import FuzzySearch
 from openswe.utils.thread_ops import langgraph_client
 
@@ -128,6 +135,29 @@ class ReviewLink(Base):
         )
 
 
+class Requester(Base):
+    """Someone who asked Robin for a pull request it authored as itself; never removed."""
+
+    __tablename__ = "pull_request_requester"
+    __table_args__ = (
+        Index("pull_request_requester_key", "pull_request_id", text("lower(login)"), unique=True),
+    )
+
+    pull_request_id: Mapped[UUID] = mapped_column(ForeignKey("pull_request.id", ondelete="CASCADE"))
+    # The GitHub login the review policy matches, kept even when no user resolves.
+    login: Mapped[str]
+    user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    id: Mapped[UUID] = mapped_column(primary_key=True, default_factory=uuid7)
+    created_at: Mapped[datetime | None] = mapped_column(server_default=NOW, init=False)
+    updated_at: Mapped[datetime | None] = mapped_column(server_default=NOW, init=False)
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+    updated_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
+
+
 class PullRequest(Base):
     __tablename__ = "pull_request"
     __table_args__ = (
@@ -166,10 +196,21 @@ class PullRequest(Base):
     slack_message_ts: Mapped[str] = mapped_column(server_default="", default="")
     author: Mapped[str] = mapped_column(server_default="", default="")
     author_github_id: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    # The person who asked for a pull request Open SWE authored as itself, in an Ask channel.
     author_user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
-    resolves_thread: Mapped[bool] = mapped_column(default=False)
+    # The head Robin's auto-approval last approved, which stands in for a second person.
+    auto_approved_head_sha: Mapped[str] = mapped_column(server_default="", default="", init=False)
+    # Opened by Robin as itself before requesters were kept, with no requester ever found.
+    requester_unknown: Mapped[bool] = mapped_column(
+        server_default="false", default=False, init=False
+    )
+    # The ``Robin Approves`` check Robin last published: the head it named, its verdict in
+    # the words of Robin's note, and the comment holding that note.
+    approval_check_head_sha: Mapped[str] = mapped_column(server_default="", default="", init=False)
+    approval_check_verdict: Mapped[str] = mapped_column(server_default="", default="", init=False)
+    approval_note_id: Mapped[int | None] = mapped_column(BigInteger, default=None, init=False)
     additions: Mapped[int | None] = mapped_column(default=None)
     deletions: Mapped[int | None] = mapped_column(default=None)
     changed_files: Mapped[int | None] = mapped_column(default=None)
@@ -216,15 +257,17 @@ class PullRequest(Base):
         return await cls.get(owner, repo, number) or cls(owner=owner, repo=repo, number=number)
 
     @classmethod
-    async def for_repository(cls, owner: str, repo: str) -> list[Self]:
+    async def preview_candidates(cls, after: UUID | None) -> list[Self]:
+        """A bounded recovery page of private, open PRs with a review thread."""
+        query = (
+            select(cls)
+            .join(cls.repository)
+            .where(Repository.private.is_(True), cls.state == "open", cls.reviews.any())
+        )
+        if after is not None:
+            query = query.where(cls.id > after)
         async with postgres.session() as session:
-            rows = await session.scalars(
-                cls._with_links(select(cls))
-                .join(cls.repository)
-                .where(Repository.key == f"{owner}/{repo}".lower())
-                .order_by(cls.number)
-            )
-            return list(rows)
+            return list(await session.scalars(query.order_by(cls.id).limit(50)))
 
     @classmethod
     async def review_candidates(
@@ -323,6 +366,18 @@ class PullRequest(Base):
         repository = self.repo if self.owner.lower() in orgs else self.repo_full_name
         return f"{repository}#{self.number}"
 
+    async def concise_walkthrough(self) -> bool:
+        """Whether the instance opted into terse walkthrough plans."""
+        return await self.concise_for_repo(self.owner, self.repo)
+
+    @staticmethod
+    async def concise_for_repo(owner: str, repo: str) -> bool:
+        """Whether the instance opted into terse walkthroughs and findings."""
+        from openswe.dashboard.settings_cache import cached_settings
+
+        settings = await cached_settings()
+        return settings.get("concise_walkthrough_enabled") is True
+
     @property
     def url(self) -> str:
         return f"https://github.com/{self.owner}/{self.repo}/pull/{self.number}"
@@ -398,16 +453,114 @@ class PullRequest(Base):
     async def save(self, *, repository_private: bool | None = None) -> Self:
         """Write the PR as GitHub describes it and register its repository.
 
-        Overwrites the GitHub-owned columns; ``resolves_thread`` can only be set,
-        never cleared. Queued ``threads``/``reviews`` are linked as well. The
-        author is linked to a registered user when one matches their GitHub id
-        or, failing that, their login; an unregistered author leaves it unset.
+        Overwrites the GitHub-owned columns. Queued ``threads``/``reviews`` are
+        linked as well. The author is linked to a registered user when one
+        matches their GitHub id or, failing that, their login; an unregistered
+        author leaves it unset.
         """
         return await self._write(overwrite=True, repository_private=repository_private)
 
     async def ensure(self) -> Self:
         """The stored row, created bare when missing, leaving GitHub-owned columns alone."""
         return await self._write(overwrite=False)
+
+    async def add_requesters(self, people: Mapping[str, UUID | None]) -> None:
+        """Add who asked for this pull request, all or none, creating its row when missing."""
+        if not people:
+            return
+        row = await self.ensure()
+        async with postgres.session() as session:
+            await session.execute(
+                insert(Requester)
+                .values(
+                    [
+                        {
+                            "id": uuid7(),
+                            "pull_request_id": row.id,
+                            "login": login,
+                            "user_id": user_id,
+                            "created_by": user_id,
+                            "updated_by": user_id,
+                        }
+                        for login, user_id in people.items()
+                    ]
+                )
+                .on_conflict_do_nothing()
+            )
+
+    @classmethod
+    async def requesters(cls, owner: str, repo: str, number: int) -> tuple[set[str], set[int]]:
+        """The GitHub logins, and the numeric ids where known, of everyone who asked."""
+        row = await cls.get(owner, repo, number)
+        if row is None:
+            return set(), set()
+        async with postgres.session() as session:
+            rows = (
+                await session.execute(
+                    select(Requester.login, Requester.user_id).where(
+                        Requester.pull_request_id == row.id
+                    )
+                )
+            ).all()
+        logins = {login.lower() for login, _ in rows}
+        ids: set[int] = set()
+        for _, user_id in rows:
+            # A renamed account is still the same person.
+            if user_id is not None and (user := await User.get(user_id)):
+                if user.github_login:
+                    logins.add(user.github_login.lower())
+                if user.github_id is not None:
+                    ids.add(user.github_id)
+        return logins, ids
+
+    @classmethod
+    async def record_auto_approval(cls, owner: str, repo: str, number: int, head_sha: str) -> None:
+        """Remember the head Robin's auto-approval approved; ``""`` when it no longer approves."""
+        row = await cls(owner=owner, repo=repo, number=number).ensure()
+        async with postgres.session() as session:
+            await session.execute(
+                update(cls).where(cls.id == row.id).values(auto_approved_head_sha=head_sha)
+            )
+
+    @classmethod
+    async def record_approval_check(
+        cls, owner: str, repo: str, number: int, *, head_sha: str, verdict: str, note_id: int | None
+    ) -> None:
+        """Remember the approval check Robin published, and the comment holding its note."""
+        row = await cls(owner=owner, repo=repo, number=number).ensure()
+        async with postgres.session() as session:
+            await session.execute(
+                update(cls)
+                .where(cls.id == row.id)
+                .values(
+                    approval_check_head_sha=head_sha,
+                    approval_check_verdict=verdict,
+                    approval_note_id=note_id,
+                )
+            )
+
+    @classmethod
+    async def open_for_thread(cls, thread_id: str) -> list[Self]:
+        """The open pull requests linked to ``thread_id``."""
+        async with postgres.session() as session:
+            rows = await session.scalars(
+                select(cls)
+                .join(ThreadLink)
+                .where(ThreadLink.thread_id == thread_id, cls.state.in_(("open", "draft")))
+            )
+            return list(rows.unique())
+
+    @classmethod
+    async def open_keys_for_thread(
+        cls, conn: AsyncConnection, thread_id: str
+    ) -> list[PullRequestKey]:
+        """The open pull requests linked to ``thread_id``, read in ``conn``'s transaction."""
+        rows = await conn.execute(
+            select(cls.owner, cls.repo, cls.number)
+            .join(ThreadLink)
+            .where(ThreadLink.thread_id == thread_id, cls.state.in_(("open", "draft")))
+        )
+        return [PullRequestKey.of(owner, repo, number) for owner, repo, number in rows]
 
     async def link_thread(self, thread_id: str, *, source: str = "") -> Self:
         """Associate a thread with this PR, as primary when it has none yet."""
@@ -604,7 +757,6 @@ class PullRequest(Base):
             **{column: getattr(self, column) for column in _WRITE_ONCE_COLUMNS},
             author_github_id=self.author_github_id,
             author_user_id=self.author_user_id,
-            resolves_thread=self.resolves_thread,
             **{column: getattr(self, column) for column in _DIFF_COLUMNS},
             legacy_threads_discovered_at=func.clock_timestamp() if legacy_discovered else None,
         )
@@ -624,7 +776,6 @@ class PullRequest(Base):
                     upsert.excluded.author_github_id, cls.author_github_id
                 ),
                 "author_user_id": func.coalesce(upsert.excluded.author_user_id, cls.author_user_id),
-                "resolves_thread": or_(cls.resolves_thread, upsert.excluded.resolves_thread),
                 **{
                     column: func.coalesce(getattr(upsert.excluded, column), getattr(cls, column))
                     for column in _DIFF_COLUMNS
@@ -660,6 +811,9 @@ class PullRequestPayload(BaseModel):
     additions: int | None = None
     deletions: int | None = None
     changed_files: int | None = None
+    commits: int | None = None
+    review_comments: int | None = None
+    comments: int | None = None
     author: str = Field("", validation_alias=AliasPath("user", "login"))
     author_id: int | None = Field(None, validation_alias=AliasPath("user", "id"))
     head_ref: str = Field("", validation_alias=AliasPath("head", "ref"))
@@ -668,11 +822,99 @@ class PullRequestPayload(BaseModel):
     base_sha: str = Field("", validation_alias=AliasPath("base", "sha"))
     merge_commit_sha: str | None = None
 
+    @classmethod
+    async def read(cls, pull: PullRequestClient) -> Self | None:
+        """The pull request as GitHub has it now, or ``None`` when GitHub could not answer."""
+        payload = await or_none(pull.pull())
+        return cls.model_validate(payload) if payload is not None else None
+
+    @property
+    def stats(self) -> dict[str, int]:
+        """The size and activity counts the payload carries, by GitHub field name."""
+        counts = {
+            "additions": self.additions,
+            "deletions": self.deletions,
+            "changed_files": self.changed_files,
+            "commits": self.commits,
+            "review_comments": self.review_comments,
+            "comments": self.comments,
+        }
+        return {name: count for name, count in counts.items() if count is not None}
+
+
+# ``author`` is whoever the pull request is for (``PullRequestEvent.opened_for``).
+ReviewAuthor = Literal["robin", "bot", "author", "reviewer"]
+
+
+class ReviewActivity(BaseModel):
+    """A pull request's comments by who wrote them, and its reviewers' verdicts.
+
+    Comments are inline review comments plus conversation comments. Reviews count only as
+    verdicts, one per review event rather than per person, since most review bodies just
+    wrap inline comments.
+    """
+
+    robin_comments: int = 0
+    bot_comments: int = 0
+    author_comments: int = 0
+    reviewer_comments: int = 0
+    reviewer_approvals: int = 0
+    reviewer_changes_requested: int = 0
+
+    @classmethod
+    async def read(cls, pull: PullRequestClient, opened_for: tuple[set[str], set[int]]) -> Self:
+        inline, conversation, reviews = await asyncio.gather(
+            pull.review_comments(), pull.issue_comments(), pull.reviews()
+        )
+        comments = Counter(
+            cls.author(item.get("user"), opened_for) for item in inline + conversation
+        )
+        verdicts = Counter(
+            review.get("state")
+            for review in reviews
+            if cls.author(review.get("user"), opened_for) == "reviewer"
+        )
+        return cls(
+            robin_comments=comments["robin"],
+            bot_comments=comments["bot"],
+            author_comments=comments["author"],
+            reviewer_comments=comments["reviewer"],
+            reviewer_approvals=verdicts["APPROVED"],
+            reviewer_changes_requested=verdicts["CHANGES_REQUESTED"],
+        )
+
+    @staticmethod
+    def author(user: object, opened_for: tuple[set[str], set[int]]) -> ReviewAuthor:
+        user = user if isinstance(user, Mapping) else {}
+        login = user.get("login")
+        login = login.lower() if isinstance(login, str) else ""
+        if login in INTERNAL_BOT_LOGINS:
+            return "robin"
+        if user.get("type") == "Bot" or login.endswith("[bot]"):
+            return "bot"
+        logins, ids = opened_for
+        if (login and login in logins) or user.get("id") in ids:
+            return "author"
+        return "reviewer"
+
+
+PR_CLOSED_FEEDBACK_KEY = "pr_closed"
+# Deliveries whose pull request counts are recorded as ``pr_<field>`` feedback.
+_PR_STATS_ACTIONS = frozenset(["opened", "closed"])
+
+# A pull request's ``pr_closed`` feedback value. A close without a merge names who closed it:
+# the person Robin opened it for, Robin itself, someone else, or ``unknown`` when that can't be
+# told. A later reopen or merge replaces it with ``reopened`` or ``merged``.
+PrClosure = Literal["requester", "robin", "other", "unknown", "reopened", "merged"]
+
 
 class PullRequestEvent(BaseModel):
     """The slice of a GitHub ``pull_request`` webhook a PR row is built from."""
 
     pull_request: PullRequestPayload
+    action: str = ""
+    sender_login: str = Field("", validation_alias=AliasPath("sender", "login"))
+    sender_id: int | None = Field(None, validation_alias=AliasPath("sender", "id"))
     repo_full_name: str = Field("", validation_alias=AliasPath("repository", "full_name"))
     repo_private: bool | None = Field(None, validation_alias=AliasPath("repository", "private"))
 
@@ -696,6 +938,111 @@ class PullRequestEvent(BaseModel):
             merged=self.pull_request.merged,
             draft=self.pull_request.draft,
         )
+
+    async def closure(self) -> PrClosure | None:
+        """The ``pr_closed`` value this delivery sets; ``None`` when it leaves it alone.
+
+        Robin is checked first, since a pull request Robin authored as itself has Robin as
+        its author. Otherwise the requester is the author, or, when Robin is the author,
+        anyone recorded as asking for it; with nobody recorded the closer is ``unknown``.
+        """
+        if self.action == "reopened":
+            return "reopened"
+        if self.action != "closed":
+            return None
+        if self.pull_request.merged:
+            return "merged"
+        sender = self.sender_login.lower()
+        if not sender:
+            return "unknown"
+        if sender in OPEN_SWE_GITHUB_LOGINS:
+            return "robin"
+        logins, ids = await self.opened_for()
+        if not logins and not ids:
+            return "unknown"
+        return "requester" if sender in logins or self.sender_id in ids else "other"
+
+    async def opened_for(self) -> tuple[set[str], set[int]]:
+        """The lowercased logins and ids of whom the pull request is for.
+
+        That is its author, or, when Robin authored it as itself, anyone recorded as asking
+        for it.
+        """
+        author = self.pull_request.author.lower()
+        if author and author not in OPEN_SWE_GITHUB_LOGINS:
+            author_id = self.pull_request.author_id
+            return {author}, set() if author_id is None else {author_id}
+        if self.identity is None:
+            return set(), set()
+        return await PullRequest.requesters(*self.identity)
+
+    async def record_feedback(self, thread_id: str) -> None:
+        """Record the pull request's counts and outcome as feedback on the thread that opened it.
+
+        An opened or closed delivery writes each count it carries as ``pr_<field>`` with the
+        count as the score. A closed delivery also writes each ``ReviewActivity`` count, which
+        it skips when GitHub can't list them. A closed or reopened delivery writes
+        ``pr_closed`` with its ``closure`` as the value and no score; dashboards count closes
+        without a merge as ``value in (requester, robin, other, unknown)``. Each key keeps one
+        row per pull request, keyed by its URL, so a later delivery replaces the earlier value.
+        A failure is logged, never raised.
+        """
+        pull_request = self.to_pull_request()
+        if pull_request is None:
+            return
+        pr_url = pull_request.url
+        try:
+            closure = await self.closure()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Could not tell who closed a pull request",
+                extra={"thread_id": thread_id, "pr_url": pr_url},
+                exc_info=True,
+            )
+            closure = "unknown"
+        source_info = {"source": "github_pull_request", "thread_id": thread_id, "pr_url": pr_url}
+        counts = self.pull_request.stats if self.action in _PR_STATS_ACTIONS else {}
+        if self.action == "closed":
+            try:
+                async with PullRequestClient.as_app(
+                    pull_request.owner, pull_request.repo, pull_request.number
+                ) as pull:
+                    activity = await ReviewActivity.read(pull, await self.opened_for())
+                counts = {**counts, **activity.model_dump()}
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "Could not read who commented on a pull request",
+                    extra={"thread_id": thread_id, "pr_url": pr_url},
+                    exc_info=True,
+                )
+        writes = [
+            create_langsmith_thread_feedback(
+                thread_id,
+                f"pr_{name}",
+                score=float(count),
+                event_id=pr_url,
+                source_info=source_info,
+            )
+            for name, count in counts.items()
+        ]
+        if closure is not None:
+            writes.append(
+                create_langsmith_thread_feedback(
+                    thread_id,
+                    PR_CLOSED_FEEDBACK_KEY,
+                    score=None,
+                    value=closure,
+                    event_id=pr_url,
+                    source_info=source_info,
+                )
+            )
+        for result in await asyncio.gather(*writes, return_exceptions=True):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "Failed to record pull request feedback",
+                    extra={"thread_id": thread_id, "pr_url": pr_url},
+                    exc_info=result,
+                )
 
     def to_pull_request(self) -> PullRequest | None:
         """An unsaved record carrying what this event says about the PR."""

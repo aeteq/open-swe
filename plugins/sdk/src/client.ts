@@ -35,6 +35,7 @@ import {
   type StoredAttachment,
   type StoredDocument,
   type StoredJson,
+  type ThreadListOptions,
   type Toast,
 } from "./protocol"
 
@@ -141,10 +142,16 @@ export class PluginHost {
   }
 
   readonly nav = {
-    setPath: (path: string, options: { replace?: boolean } = {}) =>
-      settle(this.api.setPath(path, options.replace === true)),
+    setPath: async (path: string, options: { replace?: boolean } = {}) => {
+      await settle(this.api.setPath(path, options.replace === true))
+      // The web UI doesn't echo back a path this frame set, so record it here.
+      this.receive({ type: "path", path })
+    },
     openThread: (threadId: string) => settle(this.api.openThread(threadId)),
     openExternal: (url: string) => settle(this.api.openExternal(url)),
+    /** Opens Robin's review page of a pull request in a repository the person shared. */
+    openReview: (repository: string, number: number) =>
+      settle(this.api.openReview(repository, number)),
   }
 
   /** The repositories the person shared with the plugin, the only ones it reaches. */
@@ -171,12 +178,32 @@ export class PluginHost {
         return person ? [person] : []
       })
     },
+    /** People Robin knows on GitHub whose name or login matches `query`, closest first. */
+    search: async (query: string, options: { limit?: number } = {}) => {
+      const found = await settle(this.api.searchPeople(query, options.limit))
+      for (const person of found)
+        this.profiles.set(person.login.toLowerCase(), person)
+      return found
+    },
   }
 
   readonly ui = {
     toast: (toast: Toast) => settle(this.api.toast(toast)),
     /** Shows `title` beside the plugin's name above its frame and names the browser tab "<title> · Open SWE"; `null` clears it. */
     setTitle: (title: string | null) => settle(this.api.setTitle(title)),
+  }
+
+  /** How people use the plugin, counted in Robin's product analytics. */
+  readonly analytics = {
+    /** Counts one `action` the person took, such as `pin`: lowercase letters, digits and `_`, at most 40. */
+    track: (action: string) => settle(this.api.track(action)),
+  }
+
+  /** The app itself: whether a newer release is out, and updating to it. */
+  readonly app = {
+    newerRelease: () => settle(this.api.newerRelease()),
+    /** Resolves whether the person updated; when they do, the frame reloads on the new release. */
+    update: () => settle(this.api.updateApp()),
   }
 
   readonly storage = {
@@ -219,9 +246,30 @@ export class PluginHost {
     /**
      * Open pull requests in every shared repository the person can still
      * read, by their part in them; `review-requested` includes their teams'.
+     * With `page`, only that page of GitHub's search, so the first can show
+     * before the rest load; follow `nextPage` for the others. With `author`
+     * (and `role: "author"`), that GitHub login's pull requests instead.
      */
-    search: (options: { role: PullRequestRole }) =>
-      settle(this.api.searchPulls(options.role)),
+    search: (options: {
+      role: PullRequestRole
+      page?: number
+      author?: string
+    }) =>
+      settle(this.api.searchPulls(options.role, options.page, options.author)),
+  }
+
+  /**
+   * Agent threads the person may read, read as them; needs `threads:read`.
+   * `get`, `messages` and `artifact` resolve to `null` for a thread they can't.
+   */
+  readonly threads = {
+    list: (options: ThreadListOptions) => settle(this.api.listThreads(options)),
+    /** The allowlisted Slack bots, to list each one's threads with `list({ source: "slack", bot })`. */
+    bots: () => settle(this.api.slackBots()),
+    get: (threadId: string) => settle(this.api.thread(threadId)),
+    messages: (threadId: string, options: { limit?: number } = {}) =>
+      settle(this.api.threadMessages(threadId, options.limit)),
+    artifact: (threadId: string) => settle(this.api.threadArtifact(threadId)),
   }
 
   /** The agent in the dock beside the plugin, which the person chats with. */
@@ -468,9 +516,16 @@ export class GitHubRepository {
       })
     )
   }
+  requestReview(number: number) {
+    return settle(this.stub.requestReview(number))
+  }
   /** The pull request numbered `number` as GitHub has it now; `null` when there is none. */
   pull(number: number) {
     return settle(this.stub.pull(number))
+  }
+  /** The files pull request `number` changes, with their diffs, as GitHub has them now. */
+  pullFiles(number: number) {
+    return settle(this.stub.pullFiles(number))
   }
   findPull(head: string) {
     return settle(this.stub.findPull(head))

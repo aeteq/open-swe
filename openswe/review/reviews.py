@@ -11,18 +11,23 @@ import ipaddress
 import logging
 import re
 import socket
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from html.parser import HTMLParser
 from typing import Any, Literal, Self
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
+import anyio
 import httpx2
-from fastapi import HTTPException, Response
+from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
 from langgraph_sdk.errors import NotFoundError
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from starlette.types import Receive, Scope, Send
 
 from openswe.github.app import get_github_app_installation_token
-from openswe.github.http import GitHubAppUnavailable, GitHubClient, or_none
+from openswe.github.checks import APPROVAL_CHECK_RUN_NAME
+from openswe.github.http import GitHubClient, or_none
+from openswe.github.metering import MeteredTransport
 from openswe.github.pull_request_diff import (
     fetch_file_versions,
     pull_request_patches,
@@ -52,7 +57,6 @@ from openswe.utils.json_types import ThreadLike, thread_metadata
 from openswe.utils.langsmith import get_langsmith_trace_url
 from openswe.utils.thread_ops import langgraph_client
 from openswe.walkthrough.record import WalkthroughView
-from openswe.workspaces.store import WORKSPACES
 
 logger = logging.getLogger(__name__)
 
@@ -402,7 +406,7 @@ class ReviewCheck(BaseModel):
         Read apart from the review page's detail: a busy branch's check runs take
         several slow pages, which held the whole page back.
         """
-        runs = await or_none(pull.repo.check_runs(await pull.head_sha()))
+        ci = await or_none(pull.ci())
         return [
             cls(
                 name=run.get("name") or "",
@@ -410,26 +414,9 @@ class ReviewCheck(BaseModel):
                 conclusion=run.get("conclusion"),
                 url=run.get("html_url"),
             )
-            for run in runs or []
+            for run in (ci.checks.runs if ci else [])
+            if run.get("name") != APPROVAL_CHECK_RUN_NAME
         ]
-
-
-async def get_pr_head_sha(owner: str, repo: str, pr_number: int) -> str:
-    """Return the PR's current head SHA from GitHub, or "" if unavailable.
-
-    A lightweight alternative to :func:`get_review` for callers that only need to
-    detect whether the PR head has moved (e.g. the chat staleness check).
-    """
-    try:
-        async with GitHubClient.as_app() as github:
-            pull = github.repo(owner, repo).pull_request(pr_number)
-            return await or_none(pull.head_sha()) or ""
-    except GitHubAppUnavailable:
-        logger.warning(
-            "No GitHub App token to read the PR head",
-            extra={"repo_full_name": f"{owner}/{repo}", "pr_number": pr_number},
-        )
-        return ""
 
 
 PullRequestReviewEvent = Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"]
@@ -756,6 +743,11 @@ async def get_review(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
     walkthrough_progress = (
         await _scout_progress(target) if walkthrough_running and target is not None else None
     )
+    walkthrough_delayed_until = (
+        await target.delayed_until()
+        if walkthrough is None and target is not None and not walkthrough_running
+        else None
+    )
     thread_id = thread.get("thread_id") if thread else None
     review_error = (
         await _reviewer_failure(thread_id)
@@ -777,6 +769,9 @@ async def get_review(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
         "walkthrough": walkthrough.model_dump(mode="json") if walkthrough else None,
         "walkthrough_running": walkthrough_running,
         "walkthrough_error": walkthrough_error,
+        "walkthrough_delayed_until": (
+            walkthrough_delayed_until.isoformat() if walkthrough_delayed_until else None
+        ),
         "walkthrough_progress": (
             walkthrough_progress.model_dump(mode="json") if walkthrough_progress else None
         ),
@@ -922,9 +917,10 @@ async def get_pull_request_preview(pull_request: PullRequestClient) -> PullReque
     """
     repository = pull_request.repo
     owner, repo, pr_number = repository.owner, repository.name, pull_request.number
-    pull_payload, raw_files, threads = await asyncio.gather(
-        pull_request.pull(), pull_request.files(), pull_request.unresolved_threads()
-    )
+    with MeteredTransport.attributed():
+        pull_payload, raw_files, threads = await asyncio.gather(
+            pull_request.pull(), pull_request.files(), pull_request.unresolved_threads()
+        )
     pull = _GithubPreviewPull.model_validate(pull_payload)
     files = [
         PreviewFile(
@@ -942,31 +938,17 @@ async def get_pull_request_preview(pull_request: PullRequestClient) -> PullReque
     walkthrough = await WalkthroughView.for_head(owner, repo, pr_number, head_sha)
     # CI reaches GitHub as check runs or as legacy commit statuses, and the PR
     # list counts both — a preview reading only one would contradict the rail.
-    raw_checks, raw_statuses = (
-        await asyncio.gather(
-            or_none(repository.check_runs(head_sha)), or_none(repository.commit_statuses(head_sha))
-        )
-        if head_sha
-        else (None, None)
-    )
+    ci = await or_none(repository.commit_ci(head_sha)) if head_sha else None
     checks = (
         None
-        if raw_checks is None and raw_statuses is None
+        if ci is None
         else [
             PreviewCheck(
                 name=run.name, status=run.status, conclusion=run.conclusion, url=run.html_url
             )
-            for run in (
-                _GithubCheckRun.model_validate(item)
-                for item in (raw_checks or [])
-                if isinstance(item, dict)
-            )
+            for run in map(_GithubCheckRun.model_validate, ci.runs)
         ]
-        + [
-            _GithubCommitStatus.model_validate(item).as_check()
-            for item in (raw_statuses or [])
-            if isinstance(item, dict)
-        ]
+        + [_GithubCommitStatus.model_validate(item).as_check() for item in ci.statuses]
     )
     return PullRequestPreview(
         title=pull.title,
@@ -1038,23 +1020,37 @@ async def get_review_file_contents(
         )
 
 
-# --- PR description image proxy ----------------------------------------------
-# PR bodies can embed images hosted on GitHub (user-attachment uploads,
+# --- PR description media proxy ----------------------------------------------
+# PR bodies can embed images and videos hosted on GitHub (user-attachment uploads,
 # *.githubusercontent.com). For private repos those URLs require GitHub auth the
 # browser doesn't have, so they render broken. We proxy them through the App
 # installation token. The host allowlist + per-redirect public-IP check guard
 # against SSRF (only GitHub-owned hosts are ever contacted).
 
 _ALLOWED_IMAGE_HOST_SUFFIXES = (".githubusercontent.com",)
-# github.com/user-attachments redirects anonymous requests to signed URLs here.
+# A public repo's github.com/user-attachments redirects anonymous requests to signed URLs here.
 _GITHUB_ASSET_HOSTS = frozenset({"github-production-user-asset-6210df.s3.amazonaws.com"})
+# A private repo's uploads load only from the signed URLs GitHub renders into a body's HTML.
+_SIGNED_IMAGE_HOST = "private-user-images.githubusercontent.com"
 _MAX_IMAGE_REDIRECTS = 5
-_MAX_IMAGE_BYTES = 25 * 1024 * 1024
-# Only safe raster formats — SVG (image/svg+xml) can execute script in our
+# GitHub's own limit on one upload.
+_MAX_MEDIA_BYTES = 100 * 1024 * 1024
+# Only raster images and video. SVG (image/svg+xml) can execute script in our
 # origin, so it is never served.
-_ALLOWED_IMAGE_CONTENT_TYPES = frozenset(
-    {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
+_ALLOWED_MEDIA_CONTENT_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+        "video/mp4",
+        "video/quicktime",
+        "video/webm",
+    }
 )
+# One byte range, as a video element asks for; anything else is not forwarded.
+_BYTE_RANGE = re.compile(r"bytes=\d*-\d*")
 
 
 def _is_allowed_image_url(url: str) -> bool:
@@ -1075,12 +1071,15 @@ def _is_allowed_image_url(url: str) -> bool:
 def _image_request_headers(url: str, token: str) -> dict[str, str]:
     """Send the token only where it authorizes content.
 
-    github.com answers a bearer token on user-attachments with an HTML page, and
-    the signed asset URL it redirects to rejects any second credential.
+    github.com answers a bearer token on user-attachments with an HTML page, the
+    signed asset URL it redirects to rejects any second credential, and a signed
+    private image URL carries its own.
     """
     host = (urlparse(url).hostname or "").lower()
-    headers = {"Accept": "image/*"}
-    if any(host.endswith(suffix) for suffix in _ALLOWED_IMAGE_HOST_SUFFIXES):
+    headers = {"Accept": "image/*, video/*", "Accept-Encoding": "identity"}
+    if host != _SIGNED_IMAGE_HOST and any(
+        host.endswith(suffix) for suffix in _ALLOWED_IMAGE_HOST_SUFFIXES
+    ):
         headers["Authorization"] = f"Bearer {token}"
     return headers
 
@@ -1110,77 +1109,201 @@ def _validate_image_url(url: str) -> None:
         raise HTTPException(400, "image host not allowed")
 
 
-async def _require_image_in_pr(owner: str, repo: str, pr_number: int, url: str) -> None:
-    """Bind the requested image to the authorized PR.
+class PullRequestMedia(HTMLParser):
+    """A PR body's media URLs, and the signed URLs GitHub rendered for its uploads."""
 
-    The proxy fetches with the App installation token, which can read every repo
-    the App is installed on. Without this check a caller authorized for one repo
-    could proxy an image URL from another private repo (IDOR). Only URLs that
-    actually appear in this PR's body are allowed.
-    """
-    async with GitHubClient.as_app() as github:
-        pr_payload = await github.repo(owner, repo).pull_request(pr_number).pull()
-    body = pr_payload.get("body")
-    if not isinstance(body, str) or url not in body:
-        raise HTTPException(403, "image not referenced by this PR")
+    _UPLOAD_PATH = re.compile(r"/user-attachments/assets/([0-9a-f-]+)", re.IGNORECASE)
+    _SIGNED_FILE_NAME = re.compile(r"\d+-([0-9a-f-]+)\.\w+", re.IGNORECASE)
+
+    def __init__(self, body: str, html: str) -> None:
+        super().__init__()
+        self.body = body
+        self.signed_uploads: dict[str, str] = {}
+        self.feed(html)
+
+    @classmethod
+    async def of(cls, owner: str, repo: str, pr_number: int) -> Self:
+        async with GitHubClient.as_app(owner, repo, timeout=_GITHUB_TIMEOUT) as github:
+            payload = (
+                await github.repo(owner, repo).pull_request(pr_number).pull(rendered_body=True)
+            )
+        body, html = payload.get("body"), payload.get("body_html")
+        return cls(body if isinstance(body, str) else "", html if isinstance(html, str) else "")
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in {"img", "video"}:
+            return
+        for name, value in attrs:
+            if name != "src" or not value:
+                continue
+            parsed = urlparse(value)
+            match = self._SIGNED_FILE_NAME.fullmatch(parsed.path.rsplit("/", 1)[-1])
+            if (
+                parsed.scheme == "https"
+                and parsed.netloc.lower() == _SIGNED_IMAGE_HOST
+                and "jwt" in parse_qs(parsed.query)
+                and match
+            ):
+                self.signed_uploads[match.group(1).lower()] = value
+
+    def source_for(self, url: str) -> str:
+        """The URL to fetch for ``url``, which must appear in this PR's body.
+
+        The App token reads every repo the App is installed on, so without that
+        check a caller authorized for one repo could proxy another private repo's
+        image (IDOR).
+        """
+        if url not in self.body:
+            raise HTTPException(403, "image not referenced by this PR")
+        parsed = urlparse(url)
+        upload = (
+            self._UPLOAD_PATH.fullmatch(parsed.path)
+            if parsed.netloc.lower() in {"github.com", "www.github.com"}
+            else None
+        )
+        return self.signed_uploads.get(upload.group(1).lower(), url) if upload else url
 
 
-async def proxy_pr_image(owner: str, repo: str, pr_number: int, url: str) -> Response:
-    """Stream a GitHub-hosted PR image through the App token.
+class MediaTooLargeError(Exception):
+    """An upstream body passed the size cap after its response had started."""
+
+    def __init__(self, bytes_sent: int) -> None:
+        super().__init__(f"media passed the {_MAX_MEDIA_BYTES}-byte cap after {bytes_sent} bytes")
+        self.bytes_sent = bytes_sent
+
+
+class MediaDownload:
+    """An upstream image or video response, held open while it streams to the browser."""
+
+    def __init__(self, client: httpx2.AsyncClient, response: httpx2.Response) -> None:
+        self.client = client
+        self.response = response
+
+    @classmethod
+    async def open(cls, url: str, token: str, byte_range: str | None) -> Self:
+        """Follow ``url``'s redirects, validating each hop, to media we may serve."""
+        client = httpx2.AsyncClient(
+            transport=pooled_transport(), timeout=_GITHUB_TIMEOUT, follow_redirects=False
+        )
+        response: httpx2.Response | None = None
+        try:
+            for _ in range(_MAX_IMAGE_REDIRECTS + 1):
+                headers = _image_request_headers(url, token)
+                if byte_range and _BYTE_RANGE.fullmatch(byte_range):
+                    headers["Range"] = byte_range
+                response = await client.send(
+                    client.build_request("GET", url, headers=headers), stream=True
+                )
+                if not response.is_redirect:
+                    download = cls(client, response)
+                    download.require_servable()
+                    return download
+                await response.aclose()
+                location = response.headers.get("Location")
+                if not location:
+                    raise HTTPException(502, "image fetch failed (redirect without target)")
+                url = urljoin(str(response.url), location)
+                _validate_image_url(url)
+            raise HTTPException(502, "too many redirects fetching image")
+        except BaseException:
+            if response is not None:
+                await response.aclose()
+            await client.aclose()
+            raise
+
+    @property
+    def content_type(self) -> str:
+        return self.response.headers.get("Content-Type", "").lower().split(";", 1)[0].strip()
+
+    @property
+    def total_bytes(self) -> int | None:
+        """The whole file's size, which a partial response states in its Content-Range."""
+        content_range = self.response.headers.get("Content-Range")
+        size = (
+            content_range.rpartition("/")[2]
+            if content_range
+            else self.response.headers.get("Content-Length", "")
+        )
+        return int(size) if size.isdigit() else None
+
+    def require_servable(self) -> None:
+        status = self.response.status_code
+        if status == 416:
+            raise HTTPException(416, "requested range not satisfiable")
+        if status >= 400:
+            raise HTTPException(502, f"image fetch failed ({status})")
+        if self.content_type not in _ALLOWED_MEDIA_CONTENT_TYPES:
+            raise HTTPException(415, "unsupported media type")
+        if (self.total_bytes or 0) > _MAX_MEDIA_BYTES:
+            raise HTTPException(413, "media too large")
+
+    async def chunks(self) -> AsyncIterator[bytes]:
+        """The body, aborted past the size cap when the upstream did not state its size."""
+        sent = 0
+        async for chunk in self.response.aiter_bytes():
+            sent += len(chunk)
+            if sent > _MAX_MEDIA_BYTES:
+                # The status is already sent; ending normally would hand the browser a truncated file.
+                raise MediaTooLargeError(sent)
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self.response.aclose()
+        await self.client.aclose()
+
+    def streaming_response(self) -> MediaResponse:
+        passed_on = ("Content-Range", "Accept-Ranges")
+        if "Content-Encoding" not in self.response.headers:
+            # chunks() decodes, so an encoded body's length is not what the browser receives.
+            passed_on += ("Content-Length",)
+        return MediaResponse(
+            self,
+            status_code=self.response.status_code,
+            media_type=self.content_type,
+            headers={
+                **{name: value for name in passed_on if (value := self.response.headers.get(name))},
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'; sandbox",
+            },
+        )
+
+
+class MediaResponse(StreamingResponse):
+    """Streams a ``MediaDownload`` and closes it however the response ends."""
+
+    def __init__(
+        self, download: MediaDownload, *, status_code: int, media_type: str, headers: dict[str, str]
+    ) -> None:
+        super().__init__(
+            download.chunks(), status_code=status_code, media_type=media_type, headers=headers
+        )
+        self.download = download
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # A browser that leaves before or while the body streams skips Starlette's background task.
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await self.download.aclose()
+
+
+async def proxy_pr_media(
+    owner: str, repo: str, pr_number: int, url: str, byte_range: str | None
+) -> MediaResponse:
+    """Stream a GitHub-hosted PR image or video through the App token.
 
     The URL must appear in the target PR's body (bound to the authorized
     resource), and every URL (including redirect targets) is validated against
     the GitHub host allowlist and a public-IP check before it is contacted.
     """
     _validate_image_url(url)
-    await _require_image_in_pr(owner, repo, pr_number, url)
+    source = (await PullRequestMedia.of(owner, repo, pr_number)).source_for(url)
+    _validate_image_url(source)
     # Some image hosts must not see the token, so it cannot ride in a GitHubClient.
     token = await _require_app_token()
-
-    current_url = url
-    async with httpx2.AsyncClient(
-        transport=pooled_transport(), timeout=_GITHUB_TIMEOUT, follow_redirects=False
-    ) as client:
-        for _ in range(_MAX_IMAGE_REDIRECTS + 1):
-            async with client.stream(
-                "GET", current_url, headers=_image_request_headers(current_url, token)
-            ) as response:
-                if response.is_redirect:
-                    location = response.headers.get("Location")
-                    if not location:
-                        raise HTTPException(502, "image fetch failed (redirect without target)")
-                    current_url = urljoin(str(response.url), location)
-                    _validate_image_url(current_url)
-                    continue
-
-                if response.status_code >= 400:
-                    raise HTTPException(502, f"image fetch failed ({response.status_code})")
-
-                content_type = (
-                    response.headers.get("Content-Type", "").lower().split(";", 1)[0].strip()
-                )
-                if content_type not in _ALLOWED_IMAGE_CONTENT_TYPES:
-                    raise HTTPException(415, "unsupported image type")
-
-                # Stream and abort once over the cap so a large (or lying) upstream
-                # can't make the worker buffer the whole file.
-                content = bytearray()
-                async for chunk in response.aiter_bytes():
-                    content.extend(chunk)
-                    if len(content) > _MAX_IMAGE_BYTES:
-                        raise HTTPException(413, "image too large")
-
-                return Response(
-                    content=bytes(content),
-                    media_type=content_type,
-                    headers={
-                        "Cache-Control": "private, max-age=300",
-                        "X-Content-Type-Options": "nosniff",
-                        "Content-Security-Policy": "default-src 'none'; sandbox",
-                    },
-                )
-
-    raise HTTPException(502, "too many redirects fetching image")
+    return (await MediaDownload.open(source, token, byte_range)).streaming_response()
 
 
 class _ScoutRef(BaseModel):
@@ -1219,7 +1342,6 @@ async def _scout_target(
         pr_title=pull.title,
         base_sha=pull.base.sha,
         head_sha=pull.head.sha,
-        workspace_slug=await WORKSPACES.owner_of_repo(f"{owner}/{repo}"),
     )
 
 
@@ -1283,14 +1405,13 @@ async def trigger_review_scout(
     if await target.walkthrough() is not None:
         trigger = ReviewScoutTrigger(started=False)
     else:
-        trigger = ReviewScoutTrigger(started=True, run_id=await target.start())
+        trigger = ReviewScoutTrigger(started=True, run_id=await target.start(origin="dashboard"))
     pull = _ScoutPull.model_validate(pr_payload if isinstance(pr_payload, dict) else {})
     try:
         await ReviewSession(owner=owner, repo=repo, pr_number=pr_number, login=login).open(
             title=pull.title,
             url=pull.html_url,
             state=pull.lifecycle,
-            workspace=target.workspace_slug,
             walkthrough_ready=not trigger.started,
             requested_at_ms=requested_at_ms,
         )

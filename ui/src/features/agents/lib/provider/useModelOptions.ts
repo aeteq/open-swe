@@ -9,8 +9,11 @@ export interface ModelSelection {
 
 export interface ModelOptionsResult {
   models: Array<ModelOption>
+  defaultRepo: string | null
   defaultSelection: ModelSelection | null
+  modelSelectionEnabled: boolean
   isLoading: boolean
+  isError: boolean
 }
 
 const STORAGE_KEY = "open-swe.agents.model-selection"
@@ -53,9 +56,8 @@ export function persistModelSelection(
   } catch {}
 }
 
-/** ``workspace`` is the workspace being composed in, whose defaults these are. */
-export function useModelOptions(workspace?: string | null): ModelOptionsResult {
-  const optionsQuery = useOptions(workspace)
+export function useModelOptions(): ModelOptionsResult {
+  const optionsQuery = useOptions()
   const session = useSession()
   const models = optionsQuery.data?.models ?? []
   const defaultSelection = optionsQuery.data
@@ -64,8 +66,11 @@ export function useModelOptions(workspace?: string | null): ModelOptionsResult {
 
   return {
     models,
+    defaultRepo: optionsQuery.data?.default_repo ?? null,
     defaultSelection,
+    modelSelectionEnabled: optionsQuery.data?.model_selection_enabled === true,
     isLoading: optionsQuery.isLoading || session.isLoading,
+    isError: optionsQuery.isError && !optionsQuery.data,
   }
 }
 
@@ -83,43 +88,12 @@ export function formatEffort(effort: string): string {
   return EFFORT_LABELS[effort] ?? effort
 }
 
-export function formatModelSelection(
-  models: Array<ModelOption>,
-  selection: ModelSelection | null,
-  /** Route/model the router picked for this run, shown for Auto. */
-  routed?: { route?: string; modelId?: string | null } | null
-): string {
-  if (!selection) {
-    const route = routed?.route
-    if (route === "fast" || route === "balanced" || route === "performance") {
-      return `Auto ${formatRoute(route)}`
-    }
-    return "Auto"
-  }
-  const model = models.find((m) => m.id === selection.modelId)
-  const modelLabel = model?.label ?? selection.modelId
-  return `${modelLabel} ${formatEffort(selection.effort)}`
-}
+const ROUTE_LABELS = new Map([
+  ["fast", "Auto Fast"],
+  ["balanced", "Auto Balanced"],
+  ["performance", "Auto Performance"],
+])
 
-const ROUTE_LABELS: Record<"fast" | "balanced" | "performance", string> = {
-  fast: "Fast",
-  balanced: "Balanced",
-  performance: "Performance",
-}
-
-export function formatRoute(
-  route: "fast" | "balanced" | "performance"
-): string {
-  return ROUTE_LABELS[route]
-}
-
-/** The model label behind the Auto router's latest pick, for hover display. */
-export function routedModelLabel(
-  models: Array<ModelOption>,
-  routed?: { modelId?: string | null } | null
-): string | null {
-  const model = routed?.modelId
-    ? models.find((m) => m.id === routed.modelId)
-    : undefined
-  return model?.label ?? null
+export function formatAutoModelSelection(route: string | undefined): string {
+  return (route && ROUTE_LABELS.get(route)) || "Auto"
 }

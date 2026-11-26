@@ -1,55 +1,59 @@
-"""Read the apps reviews do work for, or add and remove them through authorized admin writes."""
+"""Read the apps reviews do work for, add and remove them, or set the checks that mean a
+pull request's preview is deployed, through authorized admin writes."""
 
 from typing import Literal
 from uuid import UUID
 
 from openswe.audit_logs.tools import audit_tool
-from openswe.dashboard.workspace_settings import (
+from openswe.dashboard.settings import (
     AppRelease,
-    WorkspaceSettings,
-    WorkspaceSettingsUpdate,
+    SettingsUpdate,
     get_instance_settings,
     instance_record,
     upsert_instance_settings,
-    upsert_workspace_overrides,
-    workspace_record,
-    workspace_settings_view,
 )
 from openswe.plugins.records import PluginApps
 from openswe.review_apps.apps import ReviewApp
 from openswe.tools.access import Policy, access, ack
 from openswe.tools.mcp_exposure import expose_mcp
-from openswe.workspaces.store import WORKSPACES, slugify
 
 _READ = Policy(trusted="admin_surface", actor="admin")
-_WRITE = Policy(trusted="admin_surface", actor="admin", sole=ack("scope", "workspace", "apps"))
+_WRITE = Policy(
+    trusted="admin_surface",
+    actor="admin",
+    sole=ack("scope", "apps", "preview_checks"),
+)
 
 
-@audit_tool(reads={"read"}, target_workspace="workspace")
+@audit_tool(reads={"read"})
 @expose_mcp(access="admin")
 @access(_WRITE, per_call=lambda args: _READ if args.get("action") == "read" else _WRITE)
 async def manage_review_apps(
-    action: Literal["read", "add", "remove"],
+    action: Literal["read", "add", "remove", "set_preview_checks"],
     app: str | None = None,
-    workspace: str | None = None,
+    preview_checks: list[str] | None = None,
 ) -> dict[str, object]:
-    """Read, add or remove the apps whose review step reviews follow."""
-    if action == "read":
+    """Read, add or remove the apps whose review step reviews follow, or set the checks,
+    by name, whose success means a pull request's preview serves its head commit: when one
+    passes, reviews do their apps' work on that preview."""
+    if action == "set_preview_checks":
+        if app is not None or preview_checks is None:
+            raise ValueError("Provide preview_checks, and omit app, to set them")
+    elif preview_checks is not None:
+        raise ValueError("Pass preview_checks only to set_preview_checks")
+    elif action == "read":
         if app is not None:
             raise ValueError("Omit app when reading")
     elif action in ("add", "remove"):
         if not app:
             raise ValueError("Provide the app's id")
     else:
-        raise ValueError("Action must be read, add or remove")
-    slug = slugify(workspace) if workspace is not None else None
-    if slug is not None and await WORKSPACES.get(slug) is None:
-        raise ValueError("Workspace not found")
-    current = (
-        WorkspaceSettings((await workspace_settings_view(slug))["effective"])
-        if slug is not None
-        else await get_instance_settings()
-    ).review_app_releases
+        raise ValueError("Action must be read, add, remove or set_preview_checks")
+    settings = await get_instance_settings()
+    current = settings.review_app_releases
+    changes: dict[str, object] = {}
+    if preview_checks is not None:
+        changes["review_app_preview_checks"] = preview_checks
     if app:
         chosen = UUID(app.strip())
         if action == "add":
@@ -60,24 +64,17 @@ async def manage_review_apps(
             current = {**current, chosen: release.id}
         else:
             current = {found: pinned for found, pinned in current.items() if found != chosen}
-        apps = [
+        changes["review_apps"] = [
             AppRelease(app=str(found), release=str(pinned)) for found, pinned in current.items()
         ]
-        if slug is not None:
-            await upsert_workspace_overrides(
-                slug,
-                WorkspaceSettingsUpdate.model_validate(
-                    {**await workspace_record(slug), "review_apps": apps}
-                ),
-            )
-        else:
-            await upsert_instance_settings(
-                WorkspaceSettingsUpdate.model_validate(
-                    {**await instance_record(), "review_apps": apps}
-                )
-            )
+    checks = settings.review_app_preview_checks
+    if changes:
+        update = SettingsUpdate.model_validate({**await instance_record(), **changes})
+        await upsert_instance_settings(update)
+        if preview_checks is not None:
+            checks = frozenset(update.review_app_preview_checks or [])
     return {
-        "scope": "workspace" if slug is not None else "instance",
-        "workspace": slug,
+        "scope": "instance",
         "apps": await ReviewApp.describe(current),
+        "preview_checks": sorted(checks),
     }

@@ -1,25 +1,45 @@
-"""The model routing experiment's arms: which threads routing picks the model for."""
+"""The model experiment's arms: which tier a person's thread on Auto runs on."""
 
 import hashlib
-from typing import Final
+from typing import Final, Literal
 
-from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
+from openswe.run_config import RunConfig
+
+ModelTier = Literal["balanced", "performance"]
+# Adaptive's arms: the classifier picks the model, or Performance runs as its control.
+AdaptiveArm = Literal["router", "performance"]
 
 
 class RoutingArm:
-    """Which arm of the routing experiment a thread is in, by a stable hash of its id."""
+    """Which arm of the model experiment a thread runs on, by a stable hash of its id."""
 
-    # The share of threads the experiment routes; the rest run on the model their person picked.
-    ROUTED_SHARE: Final = 0.5
+    # The share of experiment threads that run on Performance; the rest run on Balanced,
+    # or with Adaptive routing on, through the classifier.
+    PERFORMANCE_SHARE: Final = 0.5
+    # Sources no person starts: automations and API runs.
+    AUTOMATED_SOURCES: Final = frozenset({"schedule", "api"})
 
     @classmethod
-    def hashes_routed(cls, thread_id: str) -> bool:
-        """Whether the thread hashes into the routed arm."""
+    def on_performance(cls, thread_id: str) -> bool:
+        """Whether the thread hashes into the Performance share."""
         digest = hashlib.sha256(thread_id.encode()).hexdigest()
-        return int(digest[:8], 16) / float(0xFFFF_FFFF) < cls.ROUTED_SHARE
+        return int(digest[:8], 16) / float(0xFFFF_FFFF) < cls.PERFORMANCE_SHARE
 
     @classmethod
-    async def routes(cls, thread_id: str, workspace: str | None) -> bool:
-        """Whether routing picks the thread's model, ignoring any model a person picked."""
-        settings = await cached_workspace_settings(workspace)
-        return settings.model_routing_enabled and cls.hashes_routed(thread_id)
+    def tier(cls, thread_id: str) -> ModelTier:
+        """The tier the thread hashes into."""
+        return "performance" if cls.on_performance(thread_id) else "balanced"
+
+    @classmethod
+    def adaptive(cls, thread_id: str) -> AdaptiveArm:
+        """The Adaptive arm the thread hashes into."""
+        return "performance" if cls.on_performance(thread_id) else "router"
+
+    @classmethod
+    def automated(cls, cfg: RunConfig) -> bool:
+        """Whether an automation, an API client or a Slack bot started the run."""
+        return (
+            cfg.source in cls.AUTOMATED_SOURCES
+            or cfg.schedule_id is not None
+            or bool(cfg.slack_thread and cfg.slack_thread.triggering_bot_id)
+        )

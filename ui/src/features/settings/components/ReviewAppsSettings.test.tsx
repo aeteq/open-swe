@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 
 import type { App } from "@/features/plugins/lib/api"
-import type { ScopedSettings } from "@/features/settings/lib/settingsScope"
+import type { InstanceSettings } from "@/features/settings/lib/settingsScope"
 import type { AppRelease } from "@/lib/api"
 import { ReviewAppsSettings, ReviewBrowserSettings } from "./ReviewAppsSettings"
 
@@ -49,14 +49,10 @@ const app = (
 const scoped = (
   reviewApps: Array<AppRelease>,
   save = vi.fn()
-): ScopedSettings => ({
-  scope: { kind: "instance" },
-  data: { review_apps: reviewApps } as ScopedSettings["data"],
+): InstanceSettings => ({
+  data: { review_apps: reviewApps } as InstanceSettings["data"],
   saved: undefined,
-  isPending: false,
-  inherits: () => false,
   save,
-  reset: vi.fn(),
 })
 
 it("offers only apps with a review step and saves the list reviews work for", () => {
@@ -115,6 +111,21 @@ it("lets an admin turn off an app they can no longer see", () => {
   expect(save).toHaveBeenCalledWith({ review_apps: [] })
 })
 
+it("saves the checks that mean a preview is deployed, one per line", () => {
+  apps.data = []
+  const save = vi.fn()
+  render(<ReviewAppsSettings settings={scoped([], save)} editable />)
+
+  fireEvent.change(screen.getByLabelText("Preview checks"), {
+    target: { value: " wait-for-dns \n\ndeploy (preview, us-east)\n" },
+  })
+  fireEvent.click(screen.getByRole("button", { name: "Save checks" }))
+
+  expect(save).toHaveBeenCalledWith({
+    review_app_preview_checks: ["wait-for-dns", "deploy (preview, us-east)"],
+  })
+})
+
 it("saves where the review browser signs in, and the tool that signs it in", () => {
   const save = vi.fn()
   render(<ReviewBrowserSettings settings={scoped([], save)} editable />)
@@ -123,12 +134,12 @@ it("saves where the review browser signs in, and the tool that signs it in", () 
     target: { value: "review.example.com, dev.example.com" },
   })
   fireEvent.change(screen.getByLabelText("Session tool"), {
-    target: { value: " homebase/sign_in " },
+    target: { value: " homebase_sign_in " },
   })
   fireEvent.click(screen.getByRole("button", { name: "Save" }))
 
   expect(save).toHaveBeenCalledWith({
     review_browser_domains: ["review.example.com", "dev.example.com"],
-    review_browser_session_tool: "homebase/sign_in",
+    review_browser_session_tool: "homebase_sign_in",
   })
 })

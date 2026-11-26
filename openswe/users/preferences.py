@@ -1,37 +1,8 @@
 """Per-person preferences stored on the ``users`` row."""
 
-import re
-from typing import TYPE_CHECKING
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-if TYPE_CHECKING:
-    from openswe.users.models import User
-
-
-class KitchenChannelPreference(BaseModel):
-    personal_kitchen_channel_id: str | None = None
-
-    @field_validator("personal_kitchen_channel_id")
-    @classmethod
-    def normalize_channel(cls, value: str | None) -> str | None:
-        if value is None or not value.strip():
-            return value.strip() if value is not None else None
-        channel_id = value.strip().upper()
-        if re.fullmatch(r"[CG][A-Z0-9]{8,}", channel_id) is None:
-            raise ValueError("Choose a Slack channel ID")
-        return channel_id
-
-    async def validate_channel(self, user: User) -> None:
-        from openswe.slack.channels import SlackChannel
-
-        if not self.personal_kitchen_channel_id:
-            return
-        if not user.slack_user_id:
-            raise ValueError("Link your Slack account before choosing a personal kitchen channel")
-        channel = await SlackChannel.load(self.personal_kitchen_channel_id, use_cache=False)
-        if channel is None or not channel.can_be_kitchen:
-            raise ValueError("Choose an internal Slack channel that Open SWE has joined")
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class UserPreferences(BaseModel):
@@ -39,17 +10,22 @@ class UserPreferences(BaseModel):
 
     # The person's Slack DM with the bot is one conversation instead of a thread per message.
     concierge_mode: bool = False
-    personal_kitchen_channel_id: str = ""
-    experimental_conditional_approval: bool = False
-    # Code mode can classify with TypeSafe's System One model (the ``classify`` tool).
-    experimental_classify: bool = False
+    thread_title_instructions: str = ""
+    experimental_proactivity: bool = False
+    # When Robin's heartbeat last offered each playbook, so a declined offer cools down.
+    proactive_offered_at: dict[str, str] = Field(default_factory=dict)
 
 
-class UserPreferencesPatch(KitchenChannelPreference):
+class ThreadTitlePreference(BaseModel):
+    # How Robin titles the threads this person starts; blank keeps Robin's own style.
+    thread_title_instructions: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=2_000)] | None
+    ) = None
+
+
+class UserPreferencesPatch(ThreadTitlePreference):
     concierge_mode: bool | None = None
-    experimental_conditional_approval: bool | None = Field(
+    experimental_proactivity: bool | None = Field(
         default=None, json_schema_extra={"agent_feature_flag": True}
     )
-    experimental_classify: bool | None = Field(
-        default=None, json_schema_extra={"agent_feature_flag": True}
-    )
+    proactive_offered_at: dict[str, str] | None = None

@@ -15,10 +15,12 @@ from typing import TYPE_CHECKING, Literal, Self
 from uuid import UUID, uuid7
 
 from sqlalchemy import (
+    ColumnElement,
     ForeignKey,
     Select,
     Text,
     bindparam,
+    case,
     delete,
     func,
     or_,
@@ -33,12 +35,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
 from openswe.database import postgres
 from openswe.database.orm import NOW, Base
 from openswe.input_messages import PersonIdentity, split_person_id
+from openswe.trace_metadata import ATTRIBUTION_FIELD
 from openswe.users.authorization import (
     AccountConflict,
     UnauthorizedUser,
     is_authorized_github_login,
 )
 from openswe.users.preferences import UserPreferences, UserPreferencesPatch
+from openswe.users.shared_reads import SharedUserReads
 from openswe.utils import ttl_cache
 from openswe.utils.json_types import JsonObject
 from openswe.utils.search import FuzzySearch
@@ -96,12 +100,20 @@ class User(Base):
         }
         if self.email:
             metadata["billed_user_email"] = self.email
+        if attribution := self.github_login:
+            metadata[ATTRIBUTION_FIELD] = attribution
         return metadata
 
     @property
     def github_login(self) -> str:
         """The GitHub handle, or ``""`` — unlike :meth:`login_for`, never a stand-in."""
         return self._identity_field("github", "login")
+
+    @property
+    def github_id(self) -> int | None:
+        """GitHub's numeric account id, which survives renames."""
+        external_id = self._identity_field("github", "external_id")
+        return int(external_id) if external_id.isdigit() else None
 
     @property
     def slack_user_id(self) -> str:
@@ -152,9 +164,10 @@ class User(Base):
             self.desktop_seen_at is not None and self.desktop_seen_at > datetime.now(UTC) - window
         )
 
-    async def note_desktop_use(self) -> None:
+    @SharedUserReads.forgets
+    async def note_desktop_use(self, *, session: AsyncSession | None = None) -> None:
         """Record that this person has the desktop app open, at most hourly."""
-        async with postgres.session() as session:
+        async with postgres.session(session) as session:
             await session.execute(
                 update(User)
                 .where(
@@ -168,23 +181,34 @@ class User(Base):
             )
 
     @classmethod
-    async def get(cls, user_id: UUID) -> Self | None:
-        async with postgres.session() as session:
+    async def get(cls, user_id: UUID, *, session: AsyncSession | None = None) -> Self | None:
+        if session is None:
+            # A caller's own transaction may hold writes the shared reads haven't seen.
+            return await SharedUserReads.read(("id", user_id), lambda: cls._get(user_id))
+        return await cls._get(user_id, session=session)
+
+    @classmethod
+    async def _get(cls, user_id: UUID, *, session: AsyncSession | None = None) -> Self | None:
+        async with postgres.session(session) as session:
             return await cls._load(session, user_id)
 
     @classmethod
-    async def for_ids(cls, user_ids: Collection[UUID]) -> dict[UUID, Self]:
+    async def for_ids(
+        cls, user_ids: Collection[UUID], *, session: AsyncSession | None = None
+    ) -> dict[UUID, Self]:
         """The people with these ids, identities loaded; ids with no row are left out."""
         if not user_ids:
             return {}
-        async with postgres.session() as session:
+        async with postgres.session(session) as session:
             users = await session.scalars(
                 cls._with_identities(select(cls)).where(cls.id.in_(user_ids))
             )
             return {user.id: user for user in users}
 
     @classmethod
-    async def for_session(cls, user_id: UUID | None, github_login: str) -> Self | None:
+    async def for_session(
+        cls, user_id: UUID | None, github_login: str, *, session: AsyncSession | None = None
+    ) -> Self | None:
         """The person a dashboard session belongs to.
 
         The session's ``user_id`` wins while that row still holds any GitHub
@@ -192,10 +216,10 @@ class User(Base):
         handle; only a row whose GitHub identity moved away falls back to the login.
         """
         if user_id is not None:
-            user = await cls.get(user_id)
+            user = await cls.get(user_id, session=session)
             if user is not None and any(i.provider == "github" for i in user.identities):
                 return user
-        return await cls.for_login("github", github_login)
+        return await cls.for_login("github", github_login, session=session)
 
     @classmethod
     async def for_email(cls, email: str) -> Self | None:
@@ -354,19 +378,15 @@ class User(Base):
             raise
         return True
 
-    async def default_repo(
-        self, workspace: str | None = None, *, fallback_global: bool = True
-    ) -> dict[str, str] | None:
-        """This person's repository default in the selected workspace."""
+    async def default_repo(self) -> dict[str, str] | None:
+        """This person's global repository default."""
         from openswe.users.records import UserRecords
         from openswe.users.repository_defaults import RepositoryDefaults
 
         if not self.github_login:
             return None
         profile = await UserRecords("profile").get(self.github_login) or {}
-        return RepositoryDefaults.model_validate(profile).repo_config(
-            workspace, fallback_global=fallback_global
-        )
+        return RepositoryDefaults.model_validate(profile).repo_config()
 
     @property
     def typed_preferences(self) -> UserPreferences:
@@ -393,13 +413,6 @@ class User(Base):
         return await cls._merge_preferences(login, patch, keep_existing=False)
 
     @classmethod
-    async def default_preferences(
-        cls, login: str, patch: UserPreferencesPatch
-    ) -> UserPreferences | None:
-        """Like :meth:`update_preferences`, but a value the person already chose wins."""
-        return await cls._merge_preferences(login, patch, keep_existing=True)
-
-    @classmethod
     async def _merge_preferences(
         cls, login: str, patch: UserPreferencesPatch, *, keep_existing: bool
     ) -> UserPreferences | None:
@@ -409,19 +422,32 @@ class User(Base):
         changes = patch.model_dump(exclude_none=True)
         if not changes:
             return user.typed_preferences
-        await patch.validate_channel(user)
+        return await user.merge_preferences(patch, keep_existing=keep_existing)
+
+    @SharedUserReads.forgets
+    async def merge_preferences(
+        self,
+        patch: UserPreferencesPatch,
+        *,
+        keep_existing: bool = False,
+        session: AsyncSession | None = None,
+    ) -> UserPreferences:
+        """Persist a typed patch without replacing unrelated saved preferences."""
+        changes = patch.model_dump(exclude_none=True)
+        if not changes:
+            return self.typed_preferences
         incoming = bindparam("preferences_patch", changes, type_=JSONB)
         merged = (
-            incoming.op("||")(cls.preferences)
+            incoming.op("||")(User.preferences)
             if keep_existing
-            else cls.preferences.op("||")(incoming)
+            else User.preferences.op("||")(incoming)
         )
-        async with postgres.session() as session:
+        async with postgres.session(session) as session:
             stored = await session.scalar(
-                update(cls)
-                .where(cls.id == user.id)
+                update(User)
+                .where(User.id == self.id)
                 .values(preferences=merged)
-                .returning(cls.preferences)
+                .returning(User.preferences)
             )
         return UserPreferences.model_validate(stored or {})
 
@@ -470,9 +496,57 @@ class User(Base):
             return list(rows.all()), total
 
     @classmethod
-    async def for_identity(cls, provider: Provider, external_id: str) -> Self | None:
-        """The person owning that provider account, or ``None``."""
+    async def on_github(cls, *, search: str = "", limit: int = 20) -> list[Self]:
+        """People with a GitHub login whose name or login matches ``search``, closest first."""
+        github = (UserIdentity.provider == "github") & (UserIdentity.login != "")
+        query = select(cls).where(cls.identities.any(github))
+        ranking: list[ColumnElement[int]] = []
+        if search := search.strip():
+            fuzzy = FuzzySearch(search)
+            query = query.where(
+                or_(
+                    fuzzy.condition(cls.display_name),
+                    cls.identities.any(github & fuzzy.condition(UserIdentity.login)),
+                )
+            )
+            starts = or_(
+                cls.display_name.istartswith(search, autoescape=True),
+                cls.display_name.icontains(f" {search}", autoescape=True),
+                cls.identities.any(
+                    github & UserIdentity.login.istartswith(search, autoescape=True)
+                ),
+            )
+            contains = or_(
+                cls.display_name.icontains(search, autoescape=True),
+                cls.identities.any(github & UserIdentity.login.icontains(search, autoescape=True)),
+            )
+            ranking.append(case((starts, 0), (contains, 1), else_=2))
+        named = func.lower(func.nullif(cls.display_name, ""))
         async with postgres.session() as session:
+            rows = await session.scalars(
+                cls._with_identities(query)
+                .order_by(*ranking, named.asc().nulls_last(), cls.id)
+                .limit(limit)
+            )
+            return list(rows.all())
+
+    @classmethod
+    async def for_identity(
+        cls, provider: Provider, external_id: str, *, session: AsyncSession | None = None
+    ) -> Self | None:
+        """The person owning that provider account, or ``None``."""
+        if session is None:
+            return await SharedUserReads.read(
+                ("identity", provider, external_id),
+                lambda: cls._for_identity(provider, external_id),
+            )
+        return await cls._for_identity(provider, external_id, session=session)
+
+    @classmethod
+    async def _for_identity(
+        cls, provider: Provider, external_id: str, *, session: AsyncSession | None = None
+    ) -> Self | None:
+        async with postgres.session(session) as session:
             return await session.scalar(
                 cls._with_identities(select(cls))
                 .join(cls.identities)
@@ -500,12 +574,14 @@ class User(Base):
             return {external_id: user for user, external_id in rows.tuples()}
 
     @classmethod
-    async def for_github_logins(cls, logins: Collection[str]) -> dict[str, Self]:
+    async def for_github_logins(
+        cls, logins: Collection[str], *, session: AsyncSession | None = None
+    ) -> dict[str, Self]:
         """The people behind GitHub ``logins``, keyed by the lowercased login asked for."""
         wanted = {login.lower() for login in logins}
         if not wanted:
             return {}
-        async with postgres.session() as session:
+        async with postgres.session(session) as session:
             rows = await session.execute(
                 select(cls, func.lower(UserIdentity.login))
                 .join(cls.identities)
@@ -541,12 +617,24 @@ class User(Base):
         return await cls.for_login("github", login.strip())
 
     @classmethod
-    async def for_login(cls, provider: Provider, login: str) -> Self | None:
+    async def for_login(
+        cls, provider: Provider, login: str, *, session: AsyncSession | None = None
+    ) -> Self | None:
         """The person behind a mutable handle; the most recently seen one wins."""
         if login.startswith("user:"):
             user_id = cls.key_id(login)
-            return await cls.get(user_id) if user_id is not None else None
-        async with postgres.session() as session:
+            return await cls.get(user_id, session=session) if user_id is not None else None
+        if session is None:
+            return await SharedUserReads.read(
+                ("login", provider, login.lower()), lambda: cls._for_login(provider, login)
+            )
+        return await cls._for_login(provider, login, session=session)
+
+    @classmethod
+    async def _for_login(
+        cls, provider: Provider, login: str, *, session: AsyncSession | None = None
+    ) -> Self | None:
+        async with postgres.session(session) as session:
             return await session.scalar(
                 cls._with_identities(select(cls))
                 .join(cls.identities)
@@ -559,6 +647,7 @@ class User(Base):
             )
 
     @classmethod
+    @SharedUserReads.forgets
     async def sign_in(
         cls,
         provider: Provider,
@@ -604,6 +693,7 @@ class User(Base):
             raise RuntimeError(f"user {user_id} vanished during sign in")
         return stored
 
+    @SharedUserReads.forgets
     async def link(
         self,
         provider: Provider,
@@ -649,7 +739,15 @@ class User(Base):
             raise RuntimeError(f"user {self.id} vanished during link")
         return stored
 
-    async def join_github(self, external_id: str, *, login: str, email: str) -> Self:
+    @SharedUserReads.forgets
+    async def join_github(
+        self,
+        external_id: str,
+        *,
+        login: str,
+        email: str,
+        recovery_slack_id: str | None = None,
+    ) -> Self:
         """Join this LangSmith person and a GitHub account they proved, returning who holds both.
 
         A GitHub account someone already used keeps its person, so their threads and
@@ -663,11 +761,37 @@ class User(Base):
         cls = type(self)
         async with postgres.session() as session:
             owner = await session.scalar(
-                select(UserIdentity.user_id).where(
-                    UserIdentity.provider == "github", UserIdentity.external_id == external_id
-                )
+                select(UserIdentity.user_id)
+                .where(UserIdentity.provider == "github", UserIdentity.external_id == external_id)
+                .with_for_update()
             )
             target = owner or self.id
+            await session.execute(
+                select(cls.id)
+                .where(cls.id.in_({self.id, target}))
+                .order_by(cls.id)
+                .with_for_update()
+            )
+            if not await session.scalar(
+                select(UserIdentity.user_id).where(
+                    UserIdentity.user_id == self.id, UserIdentity.provider == "langsmith"
+                )
+            ):
+                raise AccountConflict("Your account changed — sign in again before linking GitHub")
+            if recovery_slack_id is not None:
+                slack_owner = await session.scalar(
+                    select(UserIdentity.user_id)
+                    .where(
+                        UserIdentity.provider == "slack",
+                        UserIdentity.external_id == recovery_slack_id,
+                    )
+                    .with_for_update()
+                )
+                if owner is None or slack_owner != owner:
+                    raise AccountConflict(
+                        "This is not the GitHub account connected to your Slack. "
+                        "Try again with the GitHub account you previously used with Robin."
+                    )
             if target != self.id:
                 if await session.scalar(
                     select(UserIdentity.user_id).where(
@@ -675,7 +799,8 @@ class User(Base):
                     )
                 ):
                     raise AccountConflict(
-                        "This GitHub account is already linked to another LangSmith account"
+                        "This GitHub account is already linked to another LangSmith account. "
+                        "Sign in with that LangSmith account to keep using your existing Robin account."
                     )
                 await session.execute(
                     update(UserIdentity)
@@ -730,6 +855,7 @@ class User(Base):
         """The ``sub`` of this person's LangSmith session: their GitHub login once linked."""
         return self.github_login or f"user:{self.id}"
 
+    @SharedUserReads.forgets
     async def rename(self, display_name: str) -> None:
         """Replace a person's display name, for the one backfill that knows better."""
         cls = type(self)
@@ -764,6 +890,7 @@ class User(Base):
         return count
 
     @classmethod
+    @SharedUserReads.forgets
     async def _claim(
         cls,
         session: AsyncSession,

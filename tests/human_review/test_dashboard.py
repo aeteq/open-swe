@@ -1,28 +1,32 @@
 """Dashboard review selection without an agent run or pre-existing PR record."""
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
 
-from openswe.dashboard.workspace_settings import WorkspaceSettings
+from openswe.dashboard.settings import Settings
 from openswe.expedited_review.eligibility import ChangedFile, diff_fingerprint
-from openswe.expedited_review.nomination import ExpeditedReviewNomination
+from openswe.expedited_review.nomination import ExpeditedReviewNomination, PulledRequest
 from openswe.github.codeowners import CodeOwners
 from openswe.github.http import GitHubClient, RepoFileUnreadableError
 from openswe.github.pull_request_status import PullRequestClient
-from openswe.github.pull_requests import PullRequest
+from openswe.github.pull_requests import PullRequest, PullRequestPayload
 from openswe.github.repo_files import RepoSettings
 from openswe.human_review import routes
 from openswe.human_review.dashboard import DashboardReviewRequest
 from openswe.human_review.lifecycle import ReviewCard
 from openswe.human_review.requests import HumanReviewRequest
 from openswe.human_review.standard import Origin, RequestResult
+from openswe.review.assessment_feedback import PublishedAssessment
 from openswe.slack.channels import ChannelLookupUnavailable, SlackChannel
 from openswe.slack.client import GitHubPrRef
+from openswe.slack.diff_image import SlackDiffImage
 from openswe.slack.http import SlackRequestError
 from openswe.users import User
 from openswe.users.models import UserIdentity
+from openswe.utils.json_types import JsonObject
 
 
 @pytest.mark.parametrize("expedited", [True, False])
@@ -34,9 +38,11 @@ async def test_review_channel_lookup_failure_is_actionable(
     monkeypatch.setattr(routes, "require_repo_access_for_user", AsyncMock(return_value="token"))
     monkeypatch.setattr(HumanReviewRequest, "active_for", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        "openswe.human_review.dashboard.get_workspace_settings",
-        AsyncMock(return_value=WorkspaceSettings({"expedited_review_enabled": expedited})),
+        "openswe.human_review.dashboard.get_settings",
+        AsyncMock(return_value=Settings({"expedited_review_enabled": expedited})),
     )
+    monkeypatch.setattr(PullRequestPayload, "read", AsyncMock(return_value=PullRequestPayload()))
+    monkeypatch.setattr(PulledRequest, "read", AsyncMock(return_value=PulledRequest({}, [])))
     monkeypatch.setattr(
         "openswe.human_review.dashboard.review_blockers", AsyncMock(return_value=[])
     )
@@ -71,6 +77,7 @@ async def test_review_channel_lookup_failure_is_actionable(
     "case",
     [
         "eligible",
+        "record_failed",
         "custom_summary",
         "large",
         "unregistered",
@@ -84,8 +91,11 @@ async def test_review_channel_lookup_failure_is_actionable(
         "active_timestamp_failed",
         "active_cleanup_failed",
         "active_other_user",
+        "active_pending_other_user",
         "active_unposted",
         "reviews_unavailable",
+        "pull_unavailable",
+        "files_unavailable",
         "codeowners_unreadable",
         "already_reviewed",
     ],
@@ -93,9 +103,17 @@ async def test_review_channel_lookup_failure_is_actionable(
 async def test_dashboard_selects_review_workflow(
     case: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    uploads: list[asyncio.Future[str | None]] = []
+
+    def hosting(_: SlackDiffImage, tags: dict[str, object]) -> asyncio.Future[str | None]:
+        """A diff image upload that is still running."""
+        uploads.append(asyncio.get_running_loop().create_future())
+        return uploads[-1]
+
+    monkeypatch.setattr(SlackDiffImage, "upload", hosting)
     pr_ref = GitHubPrRef(owner="lc", repo="repo", number=7, url="https://github.com/lc/repo/pull/7")
     requester = User(identities=[UserIdentity(provider="slack", external_id="U1")])
-    pr = PullRequest(owner="lc", repo="repo", number=7)
+    pr = PullRequest(owner="lc", repo="repo", number=7, author_user_id=requester.id)
     approval = HumanReviewRequest(
         pull_request_id=pr.id,
         head_sha="abc",
@@ -103,13 +121,18 @@ async def test_dashboard_selects_review_workflow(
         slack_channel_id="C1",
         slack_message_ts="1.0",
     )
-    approval.requested_by_user_id = User().id if case == "active_other_user" else requester.id
+    if case == "active_pending_other_user":
+        pr.author_user_id = User().id
+    approval.requested_by_user_id = (
+        User().id if case in {"active_other_user", "active_pending_other_user"} else requester.id
+    )
     delete = AsyncMock(return_value=case != "active_cleanup_failed")
     monkeypatch.setattr("openswe.expedited_review.nomination.delete_slack_message", delete)
     discard = AsyncMock()
     reopen = AsyncMock()
     monkeypatch.setattr(ExpeditedReviewNomination, "discard", discard)
     monkeypatch.setattr(ReviewCard, "reopen", reopen)
+    monkeypatch.setattr(PublishedAssessment, "latest", AsyncMock(return_value=None))
     approval.pull_request = pr
     approval.diff_fingerprint = diff_fingerprint(
         [
@@ -129,21 +152,20 @@ async def test_dashboard_selects_review_workflow(
             )
         ]
     )
-    approval.awaiting_ready = case in {"active_ready", "active_unposted"}
-    if approval.awaiting_ready:
+    approval.awaiting_ready = case in {"active_ready", "active_pending_other_user"}
+    if approval.awaiting_ready or case == "active_unposted":
         approval.slack_message_ts = ""
+    if approval.awaiting_ready:
+        approval.slack_dm_channel_id = "D1"
+        approval.slack_dm_message_ts = "4.0"
     monkeypatch.setattr(ReviewCard, "refresh", AsyncMock())
     monkeypatch.setattr(ReviewCard, "retire", AsyncMock(return_value=approval))
-    ready_approval = HumanReviewRequest(
-        pull_request_id=pr.id,
-        head_sha="abc",
-        kind="expedited",
-        id=approval.id,
-        slack_channel_id="C1",
-        slack_message_ts="1.0" if case == "active_ready" else "",
+    monkeypatch.setattr(
+        "openswe.human_review.requests.get_slack_permalink",
+        AsyncMock(return_value="https://slack/dm"),
     )
-    monkeypatch.setattr(HumanReviewRequest, "transition", AsyncMock(return_value=ready_approval))
     monkeypatch.setattr(SlackChannel, "name_for", AsyncMock(return_value="reviews"))
+    monkeypatch.setattr(HumanReviewRequest, "log_event", AsyncMock())
 
     async def save_request(row: HumanReviewRequest) -> HumanReviewRequest:
         if case == "active_save_failed" or (
@@ -152,12 +174,36 @@ async def test_dashboard_selects_review_workflow(
             raise RuntimeError("save failed")
         return row
 
+    files_started = asyncio.Event()
+
+    async def read_pull() -> JsonObject | None:
+        if case in {"active_other_user", "active_pending_other_user"}:
+            raise AssertionError("Retrieval must not nominate or read GitHub")
+        if case == "eligible":
+            await asyncio.wait_for(files_started.wait(), timeout=1)
+        if case == "pull_unavailable":
+            return None
+        return {
+            "state": "open",
+            "head": {"sha": "abc"},
+            "base": {"ref": "main"},
+            "user": {"login": "alice"},
+            "title": "Manual PR",
+            "body": "<!-- hidden -->\nThe PR description.\nWith more context.",
+        }
+
+    async def read_files(pull: PullRequestClient, *, max_pages: int) -> list[ChangedFile] | None:
+        files_started.set()
+        if case == "files_unavailable":
+            return None
+        return [ChangedFile(filename="app.py", additions=30 if case == "large" else 1, patch="+x")]
+
     target = SlackChannel(id="C1", name="reviews")
-    github = GitHubClient.connect(token="token")
-    app_github = GitHubClient.connect(token="token")
+    client = GitHubClient.connect
     for method in ("broadcast_configured", "remove_superseded"):
         monkeypatch.setattr(ReviewCard, method, AsyncMock())
     monkeypatch.setattr(ReviewCard, "prompt_author_ready", AsyncMock(return_value=""))
+    monkeypatch.setattr(PullRequestPayload, "read", AsyncMock(return_value=PullRequestPayload()))
     monkeypatch.setattr(
         CodeOwners,
         "fetch",
@@ -167,18 +213,18 @@ async def test_dashboard_selects_review_workflow(
     )
     with (
         patch(
-            "openswe.human_review.dashboard.get_workspace_settings",
-            AsyncMock(
-                return_value=WorkspaceSettings({"expedited_review_enabled": case != "disabled"})
-            ),
+            "openswe.human_review.dashboard.get_settings",
+            AsyncMock(return_value=Settings({"expedited_review_enabled": case != "disabled"})),
         ),
         patch.object(
             HumanReviewRequest,
             "active_for",
             AsyncMock(return_value=approval if case.startswith("active") else None),
         ),
-        patch.object(GitHubClient, "connect", return_value=github),
-        patch.object(GitHubClient, "as_app", return_value=app_github),
+        patch.object(
+            GitHubClient, "connect", side_effect=lambda **_: client(token="token")
+        ) as as_requester,
+        patch.object(GitHubClient, "as_app", side_effect=lambda *_, **__: client(token="token")),
         patch(
             "openswe.human_review.dashboard.review_blockers",
             AsyncMock(return_value=["it is a draft"] if case == "draft" else []),
@@ -188,34 +234,8 @@ async def test_dashboard_selects_review_workflow(
             "openswe.human_review.dashboard.request_review",
             AsyncMock(return_value=RequestResult(success=True, request_id="standard")),
         ) as standard,
-        patch.object(
-            PullRequestClient,
-            "pull",
-            AsyncMock(
-                side_effect=AssertionError("Retrieval must not nominate or read GitHub")
-                if case == "active_other_user"
-                else None,
-                return_value={
-                    "state": "open",
-                    "head": {"sha": "abc"},
-                    "base": {"ref": "main"},
-                    "user": {"login": "alice"},
-                    "title": "Manual PR",
-                    "body": "<!-- hidden -->\nThe PR description.\nWith more context.",
-                },
-            ),
-        ),
-        patch.object(
-            ChangedFile,
-            "of_pull",
-            AsyncMock(
-                return_value=[
-                    ChangedFile(
-                        filename="app.py", additions=30 if case == "large" else 1, patch="+x"
-                    )
-                ]
-            ),
-        ),
+        patch.object(PullRequestClient, "pull", AsyncMock(side_effect=read_pull)) as pulls,
+        patch.object(ChangedFile, "of_pull", AsyncMock(side_effect=read_files)),
         patch(
             "openswe.expedited_review.nomination.latest_review_states",
             AsyncMock(
@@ -231,22 +251,21 @@ async def test_dashboard_selects_review_workflow(
         ),
         patch.object(RepoSettings, "cached", AsyncMock(return_value=RepoSettings())),
         patch.object(PullRequest, "load", AsyncMock(return_value=pr)),
-        patch.object(PullRequest, "save", AsyncMock(return_value=pr)),
+        patch.object(
+            PullRequest,
+            "save",
+            AsyncMock(
+                return_value=pr,
+                side_effect=RuntimeError("record failed") if case == "record_failed" else None,
+            ),
+        ),
         patch.object(
             HumanReviewRequest,
             "save",
             autospec=True,
             side_effect=save_request,
         ) as save,
-        patch.object(
-            HumanReviewRequest,
-            "get",
-            AsyncMock(
-                return_value=ready_approval
-                if case in {"active_ready", "active_unposted"}
-                else approval
-            ),
-        ),
+        patch.object(HumanReviewRequest, "get", AsyncMock(return_value=approval)),
         patch.object(
             ReviewCard,
             "post_expedited",
@@ -262,9 +281,17 @@ async def test_dashboard_selects_review_workflow(
         ),
         patch("openswe.slack.dm.post_dm", AsyncMock()) as dm,
     ):
+        if case == "record_failed":
+            with pytest.raises(RuntimeError, match="record failed"):
+                await DashboardReviewRequest(pr_ref, Origin(requester=requester), "token").request()
+            # Hosting the diff image begins only once the request is about to be saved.
+            assert uploads == []
+            return
         if case in {"active_save_failed", "active_timestamp_failed", "active_cleanup_failed"}:
             with pytest.raises(RuntimeError, match="save failed"):
                 await DashboardReviewRequest(pr_ref, Origin(requester=requester), "token").request()
+            # No card was posted, so the diff image hosted for it is not left behind.
+            assert [upload.cancelled() for upload in uploads] == [True]
             discard.assert_awaited_once()
             reopen.assert_awaited_once()
             if case == "active_save_failed":
@@ -277,9 +304,13 @@ async def test_dashboard_selects_review_workflow(
         result = await DashboardReviewRequest(pr_ref, Origin(requester=requester), "token").request(
             channel="C1", inline_summary="Custom summary." if case == "custom_summary" else None
         )
+    # Never the requester's own token: their dashboard tabs may have pushed it over
+    # GitHub's secondary rate limit, which would hold the request up for a minute.
+    as_requester.assert_not_called()
     if case == "active_post_failed":
         assert not result.success
         assert "post_failed" in result.error
+        assert [upload.cancelled() for upload in uploads] == [True]
         discard.assert_awaited_once()
         reopen.assert_awaited_once()
         standard.assert_not_awaited()
@@ -295,25 +326,41 @@ async def test_dashboard_selects_review_workflow(
         assert result.channel == "C1"
         assert result.permalink == "https://slack/card"
         post.assert_awaited_once()
+        # The card is handed the diff image's upload, begun before the request was saved.
+        assert len(uploads) == 1 and post.call_args.kwargs["diff_image"] is uploads[0]
         standard.assert_not_awaited()
         saved = save.call_args_list[0].args[0]
         assert saved.tldr == (
             "Custom summary."
             if case == "custom_summary"
-            else "The PR description. With more context."
+            else "<!-- hidden -->\nThe PR description.\nWith more context."
         )
         assert saved.kind == "expedited"
         assert saved.requested_by_user_id == requester.id
         assert saved.thread_id == ""
         assert saved.run_config == {"expedited_review_channel": ""}
-    elif case in {"active", "active_ready", "active_other_user"}:
+    elif case in {"active", "active_ready", "active_other_user", "active_pending_other_user"}:
         assert result.request_id == str(approval.id)
         assert result.reused
         assert result.channel == "C1"
-        assert result.permalink == "https://slack/card"
+        assert result.permalink == (
+            "https://slack/dm"
+            if case == "active_ready"
+            else ""
+            if case == "active_pending_other_user"
+            else "https://slack/card"
+        )
+        if case in {"active_ready", "active_pending_other_user"}:
+            assert approval.awaiting_ready
+            assert not approval.slack_message_ts
         post.assert_not_awaited()
         standard.assert_not_awaited()
     else:
         assert result.request_id == "standard"
         post.assert_not_awaited()
         standard.assert_awaited_once()
+    if case in {"eligible", "large"}:
+        # Expedited review, and the standard review it falls back to, use the one read.
+        pulls.assert_awaited_once()
+    if case == "large":
+        assert standard.call_args.kwargs["snapshot"] is not None

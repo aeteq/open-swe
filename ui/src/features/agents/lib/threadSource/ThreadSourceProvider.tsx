@@ -8,6 +8,12 @@ import type { ReactNode } from "react"
 import type { ThreadSource } from "./types"
 
 const ThreadSourceContext = createContext<ThreadSource | null>(null)
+const RefreshThreadSourceContext = createContext<(() => void) | null>(null)
+
+/** Read the thread again, and join its run, after one is started outside the thread source. */
+export function useRefreshThreadSource(): (() => void) | null {
+  return useContext(RefreshThreadSourceContext)
+}
 
 /**
  * The thread's transcript and run controls, whichever backend serves them.
@@ -34,10 +40,13 @@ function StreamSource({
   children: ReactNode
 }) {
   const source = useAgentStreamSource(threadId)
+  const hydrate = source.stream.hydrate
   return (
-    <ThreadSourceContext.Provider value={source}>
-      {children}
-    </ThreadSourceContext.Provider>
+    <RefreshThreadSourceContext.Provider value={() => void hydrate()}>
+      <ThreadSourceContext.Provider value={source}>
+        {children}
+      </ThreadSourceContext.Provider>
+    </RefreshThreadSourceContext.Provider>
   )
 }
 
@@ -73,9 +82,10 @@ export function ThreadSourceProvider({
   children: ReactNode
 }) {
   const preferStream = useStreamPreference()
-  return transcript && !preferStream ? (
-    <TranscriptSource threadId={threadId}>{children}</TranscriptSource>
-  ) : (
-    <StreamSource threadId={threadId}>{children}</StreamSource>
-  )
+
+  if (!transcript || preferStream) {
+    return <StreamSource threadId={threadId}>{children}</StreamSource>
+  }
+
+  return <TranscriptSource threadId={threadId}>{children}</TranscriptSource>
 }

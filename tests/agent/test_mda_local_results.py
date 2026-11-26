@@ -18,7 +18,6 @@ from langchain_core.tools import BaseTool
 from langchain_core.tools import tool as as_tool
 from langgraph.types import Command
 
-from openswe.bridge.cli_result import cli_result
 from openswe.prompts import prompt
 from openswe.slack.tools.no_reply_needed import slack_no_reply_needed
 from openswe.tools.note_on_diff import note_on_diff
@@ -26,7 +25,6 @@ from openswe.tools.propose_pr_review import propose_pr_review
 from openswe.tools.propose_review_comment import propose_review_comment
 from openswe.tools.record_human_input import record_human_input
 from openswe.tools.sandbox_output import chunk_output_as_jsonl
-from openswe.tools.web_search import _bounded_inline_results
 
 _ROOT = Path(__file__).parents[2]
 
@@ -76,8 +74,6 @@ def _mdas(answer: object) -> str:
         (propose_pr_review, _MDA.propose_pr_review, {"event": "COMMENT", "body": "  Looks good  "}),
         (propose_pr_review, _MDA.propose_pr_review, {"event": "REQUEST_CHANGES", "body": " "}),
         (propose_pr_review, _MDA.propose_pr_review, {"event": "COMMENT", "body": "x" * 10_001}),
-        (cli_result, _MDA.cli_result, {"stdout": "ok", "exit_code": 0}),
-        (cli_result, _MDA.cli_result, {"stdout": "", "exit_code": 256, "unchanged": True}),
     ],
 )
 async def test_a_tool_mda_runs_answers_as_the_backends(
@@ -117,12 +113,6 @@ async def test_a_human_input_summary_is_recorded_as_the_backend_records_it(summa
 def test_a_large_result_is_offloaded_in_the_backends_chunks(length: int) -> None:
     text = ("ä" + "x" * 9) * (length // 10) + "y" * (length % 10)
     assert _MDA.chunk_output_as_jsonl(text) == chunk_output_as_jsonl(text)
-
-
-@pytest.mark.parametrize("length", [100_000, 100_001])
-def test_search_results_too_large_to_offload_are_cut_as_the_backend_cuts_them(length: int) -> None:
-    text = "x" * length
-    assert _MDA.bounded_inline_results(text) == _bounded_inline_results(text)
 
 
 def _mda_prompt(name: str) -> str:

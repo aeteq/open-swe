@@ -3,12 +3,10 @@
 The backend still describes each, grants it and marks it (``ToolSpec.runtime_runs``);
 this runtime runs a marked tool it has here in place of calling its operation, and
 answers as the operation would, byte for byte (``rt.local_results``). A tool it has
-not, or one that offloads a large result where the run has no sandbox of MDA's, goes
-to the operation. The model's own requests go only to public addresses
-(``rt.public_http``), and large results go to the sandbox MDA owns.
+not goes to the operation. The model's own requests go only to public addresses
+(``rt.public_http``), and large results go to the thread's sandbox, which MDA owns.
 """
 
-import asyncio
 import json
 import logging
 import posixpath
@@ -20,11 +18,11 @@ from uuid import uuid4
 import httpx2
 from deepagents.backends.protocol import SandboxBackendProtocol
 from langchain.tools import ToolRuntime
-from markdownify import markdownify
 from pydantic import ConfigDict, JsonValue, SkipValidation, TypeAdapter, validate_call
 from runtime_api.catalog import ToolSpec
 from runtime_api.operations import OperationResult
 from runtime_api.sandbox_setup import WORK_DIR
+from runtime_api.web_pages import PageText
 
 from rt import local_results as results
 from rt.backend import Run
@@ -49,18 +47,16 @@ class _Call:
     credentials: Mapping[str, str]
 
     @property
-    def sandbox(self) -> SandboxBackendProtocol | None:
-        """The thread's sandbox, when MDA owns it."""
+    def sandbox(self) -> SandboxBackendProtocol:
+        """The thread's sandbox."""
         files = getattr(self.runtime, "backend", None)
-        if self.run.planned.sandbox is None or not isinstance(files, SandboxBackendProtocol):
-            return None
+        if not isinstance(files, SandboxBackendProtocol):
+            raise RuntimeError("This run has no sandbox")
         return files
 
     async def write_output(self, tool: str, content: str, extension: str) -> str:
         """Where ``content`` went in the sandbox, as the backend's ``write_sandbox_output`` writes it."""
         sandbox = self.sandbox
-        if sandbox is None:
-            raise RuntimeError("This run has no sandbox of MDA's")
         await sandbox_setup(self.run).booted()
         path = posixpath.join(WORK_DIR, f"{tool}-{uuid4().hex}.{extension}")
         written = await sandbox.awrite(path, content)
@@ -76,76 +72,6 @@ type _Answer = _Content | tuple[_Content, dict[str, JsonValue]]
 @dataclass(frozen=True)
 class _LocalTool:
     run: Callable[[_Call, Mapping[str, JsonValue]], Awaitable[_Answer]]
-    # Whether a large result goes to the sandbox, so a run without one of MDA's calls
-    # the operation, which offloads it to the run's own files.
-    offloads: bool = False
-
-
-@validate_call(config=_arbitrary)
-async def web_search(
-    call: SkipValidation[_Call], /, query: str, num_results: int = 5, include_contents: bool = True
-) -> _Answer:
-    api_key = next(
-        (
-            call.credentials[ref.slug]
-            for ref in call.spec.connections
-            if ref.slug in call.credentials
-        ),
-        None,
-    )
-    if not api_key:
-        logger.warning("exa_api_key_missing")
-        return {
-            "success": False,
-            "error": "EXA_API_KEY is not configured. Please add it to your environment variables.",
-        }
-    try:
-        from exa_py import Exa  # noqa: PLC0415 - heavy import, as the backend defers it
-
-        client = Exa(api_key=api_key)
-        if include_contents:
-            found = await asyncio.to_thread(
-                # The backend's call, whose result this one's must match.
-                client.search_and_contents,  # ty: ignore[deprecated]
-                query,
-                text=True,
-                num_results=num_results,
-                type="auto",
-            )
-        else:
-            found = await asyncio.to_thread(
-                client.search, query, num_results=num_results, type="auto"
-            )
-        text = str(found)
-        try:
-            path = await call.write_output(
-                "web-search", results.chunk_output_as_jsonl(text), "jsonl"
-            )
-        except Exception:
-            logger.info("Web search sandbox unavailable; returning bounded inline results")
-            return {
-                "success": True,
-                "results_path": None,
-                "results": results.bounded_inline_results(text),
-                "result_chars": len(text),
-                "error": None,
-            }
-        return {
-            "success": True,
-            "results_path": path,
-            "results": None,
-            "result_chars": len(text),
-            "error": None,
-        }
-    except Exception as exc:
-        logger.exception("web_search failed")
-        return {
-            "success": False,
-            "results_path": None,
-            "results": None,
-            "result_chars": 0,
-            "error": f"{type(exc).__name__}: {exc}",
-        }
 
 
 @validate_call(config=_arbitrary)
@@ -154,7 +80,7 @@ async def fetch_url(call: SkipValidation[_Call], /, url: str, timeout: int = 30)
         async with httpx2.AsyncClient(timeout=timeout, trust_env=False) as client:
             response = await request_public(client, "GET", url, headers={"User-Agent": _USER_AGENT})
             response.raise_for_status()
-            markdown = results.truncated_markdown(markdownify(response.text))
+            markdown = results.truncated_markdown(await PageText.markdown(response.text))
         return {
             "url": str(response.url),
             "markdown_content": markdown,
@@ -271,19 +197,17 @@ def _plain(answer: Callable[..., Mapping[str, object]]) -> _LocalTool:
     return _LocalTool(run)
 
 
-def _with_call(answer: Callable[..., Awaitable[_Answer]], *, offloads: bool = False) -> _LocalTool:
+def _with_call(answer: Callable[..., Awaitable[_Answer]]) -> _LocalTool:
     async def run(call: _Call, arguments: Mapping[str, JsonValue]) -> _Answer:
         return await answer(call, **arguments)
 
-    return _LocalTool(run, offloads=offloads)
+    return _LocalTool(run)
 
 
 _LOCAL_TOOLS: Final[Mapping[str, _LocalTool]] = {
-    "web_search": _with_call(web_search, offloads=True),
     "fetch_url": _with_call(fetch_url),
-    "http_request": _with_call(http_request, offloads=True),
+    "http_request": _with_call(http_request),
     "slack_no_reply_needed": _LocalTool(_no_reply_needed),
-    "cli_result": _plain(results.cli_result),
     "record_human_input": _LocalTool(_record_human_input),
     "note_on_diff": _plain(results.note_on_diff),
     "propose_review_comment": _plain(results.propose_review_comment),
@@ -291,12 +215,9 @@ _LOCAL_TOOLS: Final[Mapping[str, _LocalTool]] = {
 }
 
 
-def runs_locally(spec: ToolSpec, run: Run, runtime: ToolRuntime) -> bool:
-    """Whether this runtime runs ``spec``'s tool itself for this call."""
-    tool = _LOCAL_TOOLS.get(spec.name)
-    if not spec.runtime_runs or tool is None:
-        return False
-    return not tool.offloads or _Call(spec, run, runtime, {}).sandbox is not None
+def runs_locally(spec: ToolSpec) -> bool:
+    """Whether this runtime runs ``spec``'s tool itself."""
+    return spec.runtime_runs and spec.name in _LOCAL_TOOLS
 
 
 def _rejection(spec: ToolSpec, arguments: Mapping[str, JsonValue]) -> str | None:

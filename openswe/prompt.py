@@ -1,17 +1,15 @@
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
 from runtime_api.provenance import Provenance
 
-from openswe.bridge.constants import BridgeClient
 from openswe.config import ENV
 from openswe.input_messages import RunMessage, dynamic_context_hash, run_context
 from openswe.notion.settings import notion_settings
 from openswe.prompts import prompt
-from openswe.sandboxes.providers.langsmith import LangSmithCreateOptions
 from openswe.utils.authorship import (
     OPEN_SWE_BOT_EMAIL,
     OPEN_SWE_BOT_NAME,
@@ -65,20 +63,6 @@ def _render_repo_instructions_section(instructions: str | None) -> str:
     return prompt("system/repo-instructions", instructions=instructions.strip())
 
 
-def _render_workspace_section(
-    name: str | None, instructions: str | None, repos: list[str] | None
-) -> str:
-    if not (instructions and instructions.strip()) and not repos:
-        return ""
-    label = f" ({name.strip()})" if name and name.strip() else ""
-    return prompt(
-        "system/workspace-instructions",
-        label=label,
-        instructions=(instructions or "").strip(),
-        repos=repos or [],
-    )
-
-
 def _render_collaboration_section() -> str:
     return prompt(
         "system/collaboration",
@@ -89,30 +73,59 @@ def _render_collaboration_section() -> str:
 
 @dataclass(frozen=True)
 class SystemPrompt:
-    """A thread's system prompt, rendered on its first run and kept for its whole life.
-
-    Any byte that differs between two runs makes the model provider's prompt cache
-    miss from there on, so every later turn would pay again for the whole
-    conversation. What can change from one turn to the next is a ``TurnContext``.
-
-    ``shared`` is the same for every thread of the deployment, ``workspace`` for every
-    thread of its workspace, and
-    ``thread`` is what only this thread's says. Each part is shared by fewer threads
-    than the one before it, so a new thread's first model call reads the parts ahead
-    of its own from the cache earlier threads wrote.
-    """
+    """Cacheable shared, execution and thread prompt components."""
 
     shared: str
-    workspace: str = ""
+    execution: str = ""
     thread: str = ""
 
+    @staticmethod
+    def execution_section(instructions: str, repos: list[str]) -> str:
+        if not instructions.strip() and not repos:
+            return ""
+        return prompt(
+            "system/execution-instructions", instructions=instructions.strip(), repos=repos
+        )
+
+    @classmethod
+    def from_state(cls, state: Mapping[str, object]) -> SystemPrompt | None:
+        full = state.get("rendered_system_prompt")
+        execution = state.get("rendered_execution_prompt")
+        thread = state.get("rendered_thread_prompt")
+        if not all(isinstance(part, str) for part in (full, execution, thread)):
+            return None
+        assert isinstance(full, str) and isinstance(execution, str) and isinstance(thread, str)
+        for part in (thread, execution):
+            if not part:
+                continue
+            if full == part:
+                full = ""
+            elif full.endswith(f"\n\n{part}"):
+                full = full[: -len(part) - 2]
+            else:
+                return None
+        return cls(shared=full, execution=execution, thread=thread)
+
+    @classmethod
+    def execution_update(
+        cls,
+        state: Mapping[str, object],
+        rendered: SystemPrompt | None,
+        *,
+        execution: str,
+    ) -> dict[str, str | bool]:
+        baseline = rendered or cls.from_state(state)
+        if baseline is None:
+            raise ValueError("The system prompt must be rendered before applying instructions")
+        updated = cls(shared=baseline.shared, execution=execution, thread=baseline.thread).state()
+        return {} if all(state.get(key) == value for key, value in updated.items()) else updated
+
     def state(self) -> dict[str, str | bool]:
-        """What the thread's state keeps: the whole prompt, which ends in the workspace's
-        part and then the thread's, and those parts, which the runtime caches apart."""
-        parts = (self.shared, self.workspace, self.thread)
+        """The whole prompt and its independently cached components."""
+        parts = (self.shared, self.execution, self.thread)
         return {
             "rendered_system_prompt": "\n\n".join(p for p in parts if p),
-            "rendered_workspace_prompt": self.workspace,
+            "rendered_execution_prompt": self.execution,
             "rendered_thread_prompt": self.thread,
             "system_prompt_fixed": True,
         }
@@ -123,14 +136,11 @@ def construct_system_prompt(
     artifact_url: str | None = None,
     default_repo: dict[str, str] | None = None,
     repo_custom_instructions: str | None = None,
-    workspace_name: str | None = None,
-    workspace_instructions: str | None = None,
-    admin_workspaces: bool = False,
+    admin: bool = False,
     sole_writer: bool = False,
     continued_from_collaborative: bool = False,
-    workspace_repos: list[str] | None = None,
 ) -> SystemPrompt:
-    """Render the agent's system prompt, once for the thread's whole life."""
+    """Render shared instructions and the current thread context."""
     shared = prompt(
         "system/main",
         dashboard_context_section=prompt(
@@ -157,11 +167,10 @@ def construct_system_prompt(
         ),
         continued_from_collaborative=continued_from_collaborative,
         repo_instructions_section=_render_repo_instructions_section(repo_custom_instructions),
-        admin_workspaces=admin_workspaces,
+        admin=admin,
         sole_writer=sole_writer,
     )
-    workspace = _render_workspace_section(workspace_name, workspace_instructions, workspace_repos)
-    return SystemPrompt(shared=shared, workspace=workspace, thread=thread)
+    return SystemPrompt(shared=shared, thread=thread)
 
 
 @dataclass(frozen=True)
@@ -170,26 +179,22 @@ class TurnContext:
 
     Each part reaches the model as a ``run`` context block, added when it differs
     from the one the model last saw.
-
-    ``local_checkout`` says the working directory already *is* the user's own
-    repository — a thread bridged to their machine — so the clone-or-sync and
-    git-identity steps a hosted sandbox needs would rewrite their checkout.
-    ``local_checkout_client`` is the app serving that machine: only the CLI
-    prints a result the run must hand it.
     """
 
     working_dir: str
-    working_folder: bool = False
     source: str = "dashboard"
     slack_context: bool = False
+    automation_slack_reply: bool = False
     slack_ask: bool = False
     slack_breakout: bool = False
     slack_by_the_way: bool = False
     slack_follow_up_suggestions: bool = False
     implementation_walkthrough_enabled: bool = False
-    sandbox_file_downloads: bool = False
-    local_checkout: bool = False
-    local_checkout_client: BridgeClient = "cli"
+    local_access: bool = False
+    # The thread ran on its owner's machine before it moved to a cloud sandbox.
+    moved_off_mac: bool = False
+    # Externally created sandbox (evals): omit /workspace preload and repo-setup assumptions.
+    external_sandbox: bool = False
     # Why the run's managed tool catalog could not be read, if it could not.
     tool_catalog_note: str = ""
     # The sender's other recent threads, whose activity changes from turn to turn.
@@ -197,25 +202,25 @@ class TurnContext:
 
     def environment(self) -> str:
         environment = prompt(
-            "system/working-environment-local"
-            if self.local_checkout
+            "system/working-environment-external"
+            if self.external_sandbox
             else "system/working-environment",
             working_dir=self.working_dir,
-            desktop=self.local_checkout_client == "desktop",
-            working_folder=self.working_folder,
-            sandbox_defaults=None if self.local_checkout else LangSmithCreateOptions.resolve(),
         )
+        if self.local_access:
+            environment += "\n\n" + prompt("system/local-access")
+        if self.moved_off_mac:
+            environment += "\n\n" + prompt("system/moved-off-mac")
         if self.implementation_walkthrough_enabled:
             environment += "\n\n" + prompt("system/implementation-walkthrough")
-        if self.sandbox_file_downloads:
-            environment += "\n\n" + prompt("system/sandbox-file-downloads")
+        environment += "\n\n" + prompt("system/sandbox-file-downloads")
         if note := self.tool_catalog_note.strip():
             environment += "\n\n" + note
         return environment
 
     def source_guidance(self) -> str:
         sections = [prompt("system/source-context", source_guidance=self._source_guidance())]
-        if not self.local_checkout and (scope := _render_repository_scope_section()):
+        if scope := _render_repository_scope_section():
             sections.append(scope)
         return "\n\n".join(sections)
 
@@ -236,7 +241,10 @@ class TurnContext:
             name = "generic"
         if name in {"slack", "schedule"}:
             guidance = prompt(
-                f"system/source-{name}", breakout=self.slack_breakout, slack=self.slack_context
+                f"system/source-{name}",
+                breakout=self.slack_breakout,
+                slack=self.slack_context,
+                automation_slack_reply=self.automation_slack_reply,
             )
         elif name == "notion":
             guidance = prompt(

@@ -1,6 +1,7 @@
 """Act on a pull request using the signed-in user's GitHub permissions."""
 
 import logging
+import re
 from collections.abc import Collection
 from typing import Annotated, ClassVar, Literal
 
@@ -16,13 +17,19 @@ from openswe.github.http import (
     GraphQLError,
     github_request,
 )
-from openswe.github.pull_request_status import PullRequestClient, pull_request_identity
+from openswe.github.pull_request_status import (
+    MergeOutcome,
+    PullRequestClient,
+    pull_request_identity,
+)
 from openswe.github.repo_merge_methods import MergeMethod
 from openswe.github.squash_message import GitHubUser, SquashSource
 
 logger = logging.getLogger(__name__)
 
-PullRequestActionName = Literal["merge", "close", "mark-ready", "update-branch"]
+PullRequestActionName = Literal[
+    "merge", "disable-auto-merge", "close", "mark-ready", "update-branch"
+]
 _COMMENTS_PER_PAGE = 100
 
 # REST cannot clear the draft flag, so marking a PR ready has to go through GraphQL.
@@ -40,6 +47,8 @@ mutation MarkPullRequestReady($pullRequestId: ID!) {
 class PullRequestActionResult(BaseModel):
     action: PullRequestActionName
     done: bool
+    auto_merge: bool = False
+    in_merge_queue: bool = False
 
 
 def _graphql_error_message(payload: dict[str, object]) -> str | None:
@@ -68,7 +77,10 @@ class _PullRequestActionBase(BaseModel):
     invalid_response: ClassVar[str]
     unconfirmed: ClassVar[str]
 
-    async def perform(self, client: httpx2.AsyncClient, owner: str, repo: str, number: int) -> None:
+    async def perform(
+        self, client: httpx2.AsyncClient, owner: str, repo: str, number: int
+    ) -> MergeOutcome | None:
+        """Act on the PR; a merge reports its confirmed GitHub outcome."""
         raise NotImplementedError
 
     async def _request(
@@ -78,9 +90,11 @@ class _PullRequestActionBase(BaseModel):
         url: str,
         payload: dict[str, object] | None = None,
     ) -> tuple[httpx2.Response, dict[str, object]]:
-        body: dict[str, object] = {} if payload is None else {"json": payload}
         try:
-            response = await github_request(client, method, url, max_retries=0, **body)
+            if payload is None:
+                response = await github_request(client, method, url, max_retries=0)
+            else:
+                response = await github_request(client, method, url, max_retries=0, json=payload)
         except httpx2.HTTPError as exc:
             raise HTTPException(502, self.transport_failure) from exc
         try:
@@ -112,12 +126,17 @@ class _PullRequestActionBase(BaseModel):
             raise self._refusal(response, parsed)
 
 
+_MERGEABLE_NOW = re.compile(r"\b(clean|unstable) status\b", re.IGNORECASE)
+
+
 class MergeAction(_PullRequestActionBase):
     action: Literal["merge"]
     sha: str = Field(pattern=r"^[0-9a-fA-F]{40,64}$")
     merge_method: MergeMethod
     auto_merge: bool = False
     resolve_conversations: bool = False
+    bypass_rules: bool = False
+    queue_only: bool = False
 
     transport_failure: ClassVar[str] = (
         "Could not confirm merge. Refresh to check the PR before retrying."
@@ -127,10 +146,14 @@ class MergeAction(_PullRequestActionBase):
     )
     unconfirmed: ClassVar[str] = "GitHub did not confirm the merge."
 
-    async def perform(self, client: httpx2.AsyncClient, owner: str, repo: str, number: int) -> None:
+    async def perform(
+        self, client: httpx2.AsyncClient, owner: str, repo: str, number: int
+    ) -> MergeOutcome:
+        if self.queue_only and self.bypass_rules:
+            raise HTTPException(422, "Queue entry cannot bypass repository rules.")
         pull = GitHubClient(client).repo(owner, repo).pull_request(number)
         resolved: list[str] = []
-        if self.resolve_conversations:
+        if self.resolve_conversations and not self.bypass_rules:
             current = await pull.pull()
             head = current.get("head")
             if not isinstance(head, dict) or head.get("sha") != self.sha:
@@ -154,7 +177,7 @@ class MergeAction(_PullRequestActionBase):
                     f"{len(resolved)} conversations were already resolved; review them on GitHub before retrying.",
                 )
         try:
-            await self._merge(client, owner, repo, number, pull)
+            return await self._merge(client, owner, repo, number, pull)
         except HTTPException as exc:
             if resolved:
                 raise HTTPException(
@@ -171,26 +194,63 @@ class MergeAction(_PullRequestActionBase):
         repo: str,
         number: int,
         pull: PullRequestClient,
-    ) -> None:
+    ) -> MergeOutcome:
+        if self.queue_only:
+            return await self._enable_auto_merge(pull, None)
         message = (
             await self._squash_message(client, owner, repo, number)
             if self.merge_method == "squash"
             else None
         )
+        if self.bypass_rules:
+            await self._merge_now(client, owner, repo, number, message)
+            return "merged"
         if self.auto_merge:
             try:
-                await pull.enable_auto_merge(
-                    sha=self.sha, method=self.merge_method, commit_message=message
-                )
-            except GitHubError as exc:
-                raise HTTPException(exc.response.status_code, exc.message) from exc
-            except GraphQLError as exc:
-                raise HTTPException(422, exc.message) from exc
-            except (httpx2.HTTPError, ValueError) as exc:
-                raise HTTPException(
-                    502, "Could not confirm auto-merge. Refresh before retrying."
-                ) from exc
-            return
+                return await self._enable_auto_merge(pull, message)
+            except HTTPException as exc:
+                if exc.status_code != 422 or not _MERGEABLE_NOW.search(str(exc.detail)):
+                    raise
+            await self._merge_now(client, owner, repo, number, message)
+            return "merged"
+        try:
+            await self._merge_now(client, owner, repo, number, message)
+            return "merged"
+        except HTTPException as refusal:
+            if refusal.status_code != 405:
+                raise
+            try:
+                return await self._enable_auto_merge(pull, message)
+            except HTTPException as exc:
+                raise refusal from exc
+
+    async def _enable_auto_merge(
+        self, pull: PullRequestClient, message: str | None
+    ) -> Literal["auto_merge", "queued"]:
+        try:
+            return await pull.enable_auto_merge(
+                sha=self.sha,
+                method=self.merge_method,
+                commit_message=message,
+                queue_only=self.queue_only,
+            )
+        except GitHubError as exc:
+            raise HTTPException(exc.response.status_code, exc.message) from exc
+        except GraphQLError as exc:
+            raise HTTPException(422, exc.message) from exc
+        except (httpx2.HTTPError, ValueError) as exc:
+            raise HTTPException(
+                502, "Could not confirm auto-merge. Refresh before retrying."
+            ) from exc
+
+    async def _merge_now(
+        self,
+        client: httpx2.AsyncClient,
+        owner: str,
+        repo: str,
+        number: int,
+        message: str | None,
+    ) -> None:
         payload: dict[str, object] = {"sha": self.sha, "merge_method": self.merge_method}
         if message is not None:
             payload["commit_message"] = message
@@ -358,8 +418,25 @@ class UpdateBranchAction(_PullRequestActionBase):
             raise self._refusal(response, payload)
 
 
+class DisableAutoMergeAction(_PullRequestActionBase):
+    action: Literal["disable-auto-merge"]
+
+    async def perform(self, client: httpx2.AsyncClient, owner: str, repo: str, number: int) -> None:
+        pull = GitHubClient(client).repo(owner, repo).pull_request(number)
+        try:
+            await pull.disable_auto_merge()
+        except GitHubError as exc:
+            raise HTTPException(exc.response.status_code, exc.message) from exc
+        except GraphQLError as exc:
+            raise HTTPException(422, exc.message) from exc
+        except (httpx2.HTTPError, ValueError) as exc:
+            raise HTTPException(
+                502, "Could not confirm auto-merge was disabled. Refresh before retrying."
+            ) from exc
+
+
 PullRequestAction = Annotated[
-    MergeAction | CloseAction | MarkReadyAction | UpdateBranchAction,
+    MergeAction | DisableAutoMergeAction | CloseAction | MarkReadyAction | UpdateBranchAction,
     Field(discriminator="action"),
 ]
 
@@ -430,7 +507,11 @@ async def resolve_review_threads(
             extra={"pr_repo_full_name": f"{owner}/{repo}", "pr_number": number},
         )
         raise HTTPException(502, "GitHub did not return the review threads")
-    open_ids = {thread["thread_id"] for thread in threads if thread.get("thread_id")}
+    open_ids = {
+        thread_id
+        for thread in threads
+        if isinstance(thread_id := thread.get("thread_id"), str) and thread_id
+    }
     wanted = open_ids if thread_ids is None else dict.fromkeys(thread_ids)
     resolved: list[str] = []
     failed: list[str] = []
@@ -450,7 +531,7 @@ async def act_on_pull_request(
     if pull_request_identity({"repo_full_name": f"{owner}/{repo}", "number": number}) is None:
         raise HTTPException(422, "invalid pull request")
     try:
-        await action.perform(pull.repo.github.http, owner, repo, number)
+        outcome = await action.perform(pull.repo.github.http, owner, repo, number)
     except HTTPException as exc:
         logger.warning(
             "Pull request action failed",
@@ -464,4 +545,10 @@ async def act_on_pull_request(
             exc_info=exc.__cause__ is not None,
         )
         raise
-    return PullRequestActionResult(action=action.action, done=True)
+    return PullRequestActionResult(
+        action=action.action,
+        done=True,
+        # Older clients must also keep queued PRs open until GitHub merges them.
+        auto_merge=outcome in {"auto_merge", "queued"},
+        in_merge_queue=outcome == "queued",
+    )

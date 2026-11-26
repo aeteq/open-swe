@@ -62,6 +62,7 @@ async def _launch(
         timeout=timeout,
         callback=callback,
         owner_thread_id=owner_thread_id,
+        origin=RunConfig.from_runtime().origin,
         tools_url_env=TOOLS_URL_ENV,
         tools_url_file=TOOLS_URL_FILE,
     )
@@ -218,9 +219,9 @@ def owns_task(task_id: str) -> bool:
     before task kinds existed, and such a task can still be running in a
     sandbox that predates this code.
     """
-    from openswe.workspaces.refresh import owns_task as refresh_owns_task
+    from openswe.execution_images import EXECUTION_IMAGES
 
-    return not refresh_owns_task(task_id)
+    return not EXECUTION_IMAGES.owns_task(task_id)
 
 
 async def _control(action: str, task_id: str | None) -> dict[str, JsonValue]:

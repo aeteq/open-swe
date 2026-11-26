@@ -1,17 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router"
 
 import { SettingsPage } from "@/components/AppShell"
+import { ExecutionDefaultsSettings } from "@/features/settings/components/ExecutionDefaultsSettings"
 import { ExpeditedReviewSection } from "@/features/settings/components/ExpeditedReviewSection"
 import { FeaturedAppsSection } from "@/features/settings/components/FeaturedAppsSettings"
-import { ManagedToolsGatewaySection } from "@/features/settings/components/ManagedToolsGatewaySection"
+import { ProtectedPathsSection } from "@/features/settings/components/ProtectedPathsSection"
 import { ReviewSettings } from "@/features/settings/components/ReviewSettings"
+import { SandboxGitHubBudgetSection } from "@/features/settings/components/SandboxGitHubBudgetSection"
 import { ShadowReviewSection } from "@/features/settings/components/ShadowReviewSection"
 import {
   DefaultRepoSection,
-  LLMGatewaySection,
   ModelDefaultsSection,
-} from "@/features/settings/components/WorkspaceSettingsSections"
-import { INSTANCE_SCOPE } from "@/features/settings/lib/settingsScope"
+  ModelRoutingSection,
+} from "@/features/settings/components/DefaultsSettingsSections"
 import { useOptions, useRepos } from "@/lib/profile"
 import { pageTitle } from "@/lib/pageTitle"
 
@@ -27,28 +28,31 @@ function AdminDefaultsPage() {
     <SettingsPage
       adminOnly
       title="Defaults"
-      description="Settings every workspace inherits. Open a workspace to override one there."
+      description="Robin-wide execution defaults, model routing, and review settings."
     >
-      <ModelDefaultsSection
-        scope={INSTANCE_SCOPE}
-        models={(modelOptions.data?.models ?? []).filter(
-          (model) => model.can_be_default !== false
-        )}
-      />
-      <DefaultRepoSection
-        scope={INSTANCE_SCOPE}
+      <ExecutionDefaultsSettings
         repositories={repos.data?.repositories ?? []}
       />
-      <LLMGatewaySection scope={INSTANCE_SCOPE} />
-      <ReviewSettings scope={INSTANCE_SCOPE} canEdit />
-      <ExpeditedReviewSection scope={INSTANCE_SCOPE} />
-      <ShadowReviewSection
-        scope={INSTANCE_SCOPE}
+      <ModelDefaultsSection
         models={(modelOptions.data?.models ?? []).filter(
           (model) => model.can_be_default !== false
         )}
       />
-      <ManagedToolsGatewaySection />
+      <ModelRoutingSection
+        models={(modelOptions.data?.models ?? []).filter(
+          (model) => model.can_be_default !== false
+        )}
+      />
+      <DefaultRepoSection repositories={repos.data?.repositories ?? []} />
+      <ProtectedPathsSection />
+      <ReviewSettings canEdit />
+      <ExpeditedReviewSection />
+      <ShadowReviewSection
+        models={(modelOptions.data?.models ?? []).filter(
+          (model) => model.can_be_default !== false
+        )}
+      />
+      <SandboxGitHubBudgetSection />
       <FeaturedAppsSection />
     </SettingsPage>
   )

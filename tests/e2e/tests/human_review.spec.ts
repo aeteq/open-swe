@@ -413,18 +413,19 @@ test.describe("Human review in Slack", () => {
     const review = (card.blocks ?? [])
       .flatMap((block) => block.elements ?? [])
       .find((element) => element.action_id === "open_swe_option_select_review");
-    // Trigger Server forwards no URL button's click, so the answer links the PR instead.
-    expect(review?.url).toBeUndefined();
+    expect(review?.url).toBe(
+      `${(process.env.E2E_UI_SERVER ?? "http://127.0.0.1:3100").replace(/\/$/, "")}/agents/reviews/${REPO.owner}/${REPO.repo}/${seeded.number}`,
+    );
     await shootCard(page, "open");
     await loginAs(page, ALICE);
     await page.goto(
       `/agents/reviews/${REPO.owner}/${REPO.repo}/${seeded.number}`,
     );
-    const reviewRequested = page.getByRole("button", {
+    const reviewRequested = page.getByRole("link", {
       name: "Review requested",
       exact: true,
     });
-    await expect(reviewRequested).toBeEnabled();
+    await expect(reviewRequested).toBeVisible();
     const popupPromise = page.waitForEvent("popup");
     await reviewRequested.click();
     const slackPage = await popupPromise;
@@ -602,6 +603,53 @@ test.describe("Human review in Slack", () => {
     );
   });
 
+  test("a card for Robin's own pull request names Robin, and Robin's echoed card starts no run", async ({
+    page,
+    request,
+  }) => {
+    await setReviewChannel(request);
+    await loginAs(page, ALICE);
+    const seeded = await seedOpenPullRequest(page, {
+      repo: `${REPO.owner}/${REPO.repo}`,
+      title: "Robin tidies the greeting",
+      author: "robin-agent[bot]",
+      check_runs: GREEN,
+    });
+    const asked = await page.request.post(
+      `/dashboard/api/repos/${REPO.owner}/${REPO.repo}/pulls/${seeded.number}/human-review`,
+      { headers: SAME_ORIGIN_HEADERS, data: {} },
+    );
+    expect(asked.ok(), await asked.text()).toBeTruthy();
+    const posted = await latestRequest(request);
+    const card = await reviewCard(request, posted);
+    expect(cardText(card)).toContain("By <@U0BOT>");
+    expect(cardText(card)).not.toContain("robin-agent");
+
+    // Slack delivers Robin's own posts back to it; the mention on its card must not wake it.
+    const echoed = (await control(request, "/mock/slack/send", {
+      channel: REVIEW_CHANNEL,
+      thread_ts: card.ts,
+      user: "U0BOT",
+      text: cardText(card),
+    })) as { thread_id: string | null; webhook: unknown };
+    expect(echoed.webhook).toEqual({
+      status: "ignored",
+      reason: "Event from this bot user",
+    });
+    expect(echoed.thread_id).toBeNull();
+
+    await click(request, posted, "Dismiss", BOB.slack);
+    await expect
+      .poll(async () => (await latestRequest(request)).state, {
+        timeout: 30_000,
+      })
+      .toBe("cancelled");
+    expect(cardText(await reviewCard(request, posted))).toContain(
+      "authored by <@U0BOT>",
+    );
+    expect(await reviewRequests(request)).toHaveLength(1);
+  });
+
   test("approved pull requests do not offer Slack review requests", async ({
     page,
     request,
@@ -652,8 +700,8 @@ test.describe("Human review in Slack", () => {
     ).toBeEnabled();
     await row.getByRole("button", { name: "Request review in Slack" }).click();
     await expect(
-      row.getByRole("button", { name: "Review requested" }),
-    ).toBeEnabled();
+      row.getByRole("link", { name: "Review requested" }),
+    ).toBeVisible();
     await expect
       .poll(async () => (await latestRequest(request)).pr_number)
       .toBe(seeded.number);
@@ -665,6 +713,13 @@ test.describe("Human review in Slack", () => {
   }) => {
     test.setTimeout(240_000);
     await setReviewChannel(request);
+
+    await control(request, "/mock/slack/send", {
+      channel: REVIEW_CHANNEL,
+      user: BOB.slack,
+      mention_bot: false,
+      text: "I work on the greeting code.",
+    });
 
     // Bob keeps his bot DM as one concierge conversation, which already exists.
     await control(request, "/control/user-preferences", {
@@ -818,7 +873,11 @@ test.describe("Human review in Slack", () => {
         timeout: 30_000,
       })
       .toBe(true);
-    expect((await latestRequest(request)).state).toBe("merged");
+    await expect
+      .poll(async () => (await latestRequest(request)).state, {
+        timeout: 30_000,
+      })
+      .toBe("merged");
   });
 
   test("nobody signs up, so the thread's agent picks the code owner Open SWE suggests; they accept from their DM and their approval merges it", async ({
@@ -827,6 +886,12 @@ test.describe("Human review in Slack", () => {
   }) => {
     test.setTimeout(120_000);
     await setReviewChannel(request);
+    await control(request, "/mock/slack/send", {
+      channel: REVIEW_CHANNEL,
+      user: BOB.slack,
+      mention_bot: false,
+      text: "I work on the greeting code.",
+    });
     // Alice owns everything but wrote the PR; Bob owns the directory it changes.
     await control(request, "/control/repo-file", {
       repo: `${REPO.owner}/${REPO.repo}`,
@@ -912,7 +977,11 @@ test.describe("Human review in Slack", () => {
         timeout: 30_000,
       })
       .toBe(true);
-    expect((await latestRequest(request)).state).toBe("merged");
+    await expect
+      .poll(async () => (await latestRequest(request)).state, {
+        timeout: 30_000,
+      })
+      .toBe("merged");
   });
 
   test("a picked reviewer declines with a reason; the thread's agent picks the other code owner", async ({
@@ -921,6 +990,14 @@ test.describe("Human review in Slack", () => {
   }) => {
     test.setTimeout(180_000);
     await setReviewChannel(request);
+    for (const person of [BOB, DANA]) {
+      await control(request, "/mock/slack/send", {
+        channel: REVIEW_CHANNEL,
+        user: person.slack,
+        mention_bot: false,
+        text: "I work on the greeting code.",
+      });
+    }
     await control(request, "/control/collaborator-permission", {
       login: DANA.login,
       permission: "write",

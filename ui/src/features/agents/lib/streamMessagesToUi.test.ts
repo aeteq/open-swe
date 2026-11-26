@@ -7,6 +7,8 @@ import {
 import { describe, expect, it } from "vitest"
 
 import { streamMessagesToUi } from "./streamMessagesToUi"
+import { attachmentUrl } from "./transcript/api"
+import { groupQuietRuns } from "@/features/agents/components/messages/quietRuns"
 
 describe("streamMessagesToUi", () => {
   it("drops superseded partial replies and their unexecuted tools after a retry", () => {
@@ -35,6 +37,37 @@ describe("streamMessagesToUi", () => {
     expect(messages).toHaveLength(1)
     expect(messages[0]?.chunks).toEqual([
       expect.objectContaining({ kind: "text", text: "Recovered answer" }),
+    ])
+  })
+
+  it("shows an image the state read links to from its stored copy, beside inline ones", () => {
+    const messages = streamMessagesToUi([
+      new HumanMessage({
+        id: "person-message",
+        content: [
+          {
+            type: "image",
+            url: "/dashboard/api/threads/t-1/transcript/attachments/a-1",
+            mime_type: "image/jpeg",
+            file_name: "a.jpg",
+          },
+          { type: "image", base64: "aW1hZ2U=", mime_type: "image/png" },
+          { type: "image", url: "https://example.com/elsewhere.png" },
+          { type: "text", text: "What's wrong here?" },
+        ],
+      }),
+    ])
+
+    expect(messages[0]?.chunks).toEqual([
+      {
+        kind: "image",
+        url: attachmentUrl("t-1", "a-1"),
+        credentials: "session",
+        mimeType: "image/jpeg",
+        fileName: "a.jpg",
+      },
+      { kind: "image", base64: "aW1hZ2U=", mimeType: "image/png" },
+      { kind: "text", text: "What's wrong here?" },
     ])
   })
 
@@ -202,6 +235,62 @@ describe("streamMessagesToUi", () => {
     ).toEqual(["user-1", "user-2"])
   })
 
+  it("keeps wake-up runs separate and groups their quiet work", () => {
+    const messages = streamMessagesToUi([
+      new HumanMessage({ id: "user", content: "Watch CI" }),
+      new AIMessage({ id: "answer", content: "Watching." }),
+      new HumanMessage({
+        id: "wake-1",
+        content:
+          '<input-message sender="system:monitor" kind="system">Check CI</input-message>',
+      }),
+      new AIMessage({
+        id: "run-1",
+        content: "",
+        tool_calls: [{ id: "check-1", name: "execute", args: {} }],
+      }),
+      new ToolMessage({ tool_call_id: "check-1", content: "pending" }),
+      new HumanMessage({
+        id: "wake-2",
+        content:
+          '<input-message sender="system:thread-wakeup" kind="system">Check again</input-message>',
+      }),
+      new AIMessage({
+        id: "run-2",
+        content: "",
+        tool_calls: [{ id: "check-2", name: "execute", args: {} }],
+      }),
+      new ToolMessage({ tool_call_id: "check-2", content: "pending" }),
+      new HumanMessage({
+        id: "wake-3",
+        content:
+          '<input-message sender="system:goal" kind="system">Final check</input-message>',
+      }),
+      new AIMessage({ id: "answer-2", content: "CI passed." }),
+    ])
+
+    expect(messages.map((message) => message.id)).toEqual([
+      "user",
+      "answer",
+      "wake-1",
+      "run-1",
+      "wake-2",
+      "run-2",
+      "wake-3",
+      "answer-2",
+    ])
+    expect(
+      messages
+        .filter((message) => message.author === "agent")
+        .map((message) => message.turnKey)
+    ).toEqual(["user", "wake-1", "wake-2", "wake-3"])
+    const grouped = groupQuietRuns(messages)
+    expect(grouped.find((entry) => entry.type === "quiet")).toMatchObject({
+      type: "quiet",
+      stretch: { runCount: 2, actionCount: 2, triggers: [["Context", 2]] },
+    })
+  })
+
   it("identifies local task calls as subagents", () => {
     const messages = streamMessagesToUi([
       new AIMessage({
@@ -243,6 +332,103 @@ describe("streamMessagesToUi", () => {
     expect(messages[0]?.chunks[0]).toMatchObject({
       kind: "tool-execution",
       toolKind: "sql",
+    })
+  })
+
+  it("names a result's media blocks and leaves their base64 out of its output", () => {
+    const content = [
+      { type: "text", text: "Read 3 files." },
+      { type: "image", base64: "iVBORw0KGgo", mime_type: "image/png" },
+      { type: "file", base64: "A".repeat(4096), mime_type: "application/pdf" },
+      {
+        type: "image",
+        url: "/dashboard/api/threads/t-1/transcript/attachments/a-1",
+        mime_type: "image/png",
+      },
+    ]
+    const messages = streamMessagesToUi(
+      [
+        new AIMessage({
+          id: "ai-1",
+          content: "",
+          tool_calls: [
+            { id: "call-1", name: "read_file", args: {}, type: "tool_call" },
+          ],
+        }),
+        new ToolMessage({ tool_call_id: "call-1", content }),
+      ],
+      [
+        {
+          id: "call-1",
+          callId: "call-1",
+          name: "read_file",
+          namespace: ["tools:call-1"],
+          input: {},
+          args: {},
+          output: content,
+          status: "finished",
+          error: undefined,
+        },
+      ]
+    )
+
+    expect(messages[0]?.chunks[0]).toMatchObject({
+      kind: "tool-execution",
+      output: "Read 3 files.\n[file application/pdf, 3 KB]",
+      images: [
+        { kind: "image", mimeType: "image/png" },
+        {
+          kind: "image",
+          url: attachmentUrl("t-1", "a-1"),
+          credentials: "session",
+        },
+      ],
+    })
+  })
+
+  it("keeps the links of media a result only points to", () => {
+    const content = [
+      { type: "text", text: "Found 2 links." },
+      { type: "image", url: "https://example.com/chart.png" },
+      {
+        type: "file",
+        url: "https://example.com/report.pdf",
+        mime_type: "application/pdf",
+      },
+    ]
+    const messages = streamMessagesToUi(
+      [
+        new AIMessage({
+          id: "ai-1",
+          content: "",
+          tool_calls: [
+            { id: "call-1", name: "fetch", args: {}, type: "tool_call" },
+          ],
+        }),
+        new ToolMessage({ tool_call_id: "call-1", content }),
+      ],
+      [
+        {
+          id: "call-1",
+          callId: "call-1",
+          name: "fetch",
+          namespace: ["tools:call-1"],
+          input: {},
+          args: {},
+          output: content,
+          status: "finished",
+          error: undefined,
+        },
+      ]
+    )
+
+    expect(messages[0]?.chunks[0]).toMatchObject({
+      kind: "tool-execution",
+      output: [
+        "Found 2 links.",
+        "[image] https://example.com/chart.png",
+        "[file application/pdf] https://example.com/report.pdf",
+      ].join("\n"),
     })
   })
 

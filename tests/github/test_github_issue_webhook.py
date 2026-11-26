@@ -4,7 +4,7 @@ import hmac
 import importlib
 import uuid
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx2
 import pytest
@@ -34,9 +34,9 @@ _TEST_SLACK_SECRET = "test-slack-secret"
 
 @pytest.fixture(autouse=True)
 def _no_incident_channels(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The Slack webhook offers each event to Incidents first; none of these channels is one."""
+    """The Slack webhook offers each event to channel rules first; none of these channels matches one."""
     monkeypatch.setattr(
-        "openswe.incidents.channels.handle_slack_event", AsyncMock(return_value=None)
+        "openswe.routing.channel_rules.handle_slack_event", AsyncMock(return_value=None)
     )
 
 
@@ -405,6 +405,7 @@ async def test_github_webhook_ignores_untagged_comment_on_pr_agent_did_not_open(
 
 
 def test_process_github_review_finding_reply_dispatches_sanitized_reply_body(monkeypatch) -> None:
+    monkeypatch.setattr(github_webhooks.index, "get", AsyncMock(return_value=None))
     captured: dict[str, object] = {}
 
     async def fake_get_thread_metadata_safe(_thread_id: str) -> dict[str, object]:
@@ -508,6 +509,7 @@ def test_trigger_pr_review_from_ref_refuses_draft(monkeypatch) -> None:
 
 @pytest.mark.parametrize("review_source", ["slack", "dashboard"])
 def test_trigger_pr_review_from_ref_creates_reviewer_run(monkeypatch, review_source: str) -> None:
+    monkeypatch.setattr(github_webhooks.index, "get", AsyncMock(return_value=None))
     dashboard_draft = review_source == "dashboard"
     captured: dict[str, object] = {}
     metadata: dict[str, object] = {
@@ -780,18 +782,12 @@ async def test_process_github_pr_review_skips_only_empty_untagged_approvals(
         link.assert_not_awaited()
 
 
-@pytest.mark.parametrize(("workspace", "runs_in"), [("core", "core"), (None, "oss")])
-def test_a_github_issue_run_works_in_its_threads_workspace_else_the_repositorys(
-    monkeypatch, workspace: str | None, runs_in: str
-) -> None:
-    """A follow-up lands in the thread's workspace even if the repository is preferred elsewhere."""
+@pytest.mark.parametrize(("owner", "name"), [("langchain-ai", "open-swe"), ("acme", "other")])
+def test_a_github_issue_run_uses_the_event_repository(monkeypatch, owner: str, name: str) -> None:
     monkeypatch.setattr(
         webhook_common,
         "get_or_resolve_thread_github_token",
         lambda thread_id, email: asyncio.sleep(0, result="app-token"),
-    )
-    monkeypatch.setattr(
-        webhook_common, "workspace_for_repo_config", lambda repo: asyncio.sleep(0, result="oss")
     )
     monkeypatch.setattr(
         webhook_common,
@@ -811,16 +807,16 @@ def test_a_github_issue_run_works_in_its_threads_workspace_else_the_repositorys(
                     "title": "Fix the flaky test",
                     "html_url": "https://github.com/langchain-ai/open-swe/issues/42",
                 },
-                "repository": {"owner": {"login": "langchain-ai"}, "name": "open-swe"},
+                "repository": {"owner": {"login": owner}, "name": name},
                 "sender": {"login": "octocat", "id": 7},
             },
             "thread-1",
-            workspace=workspace,
         )
     )
 
     assert configurable is not None
-    assert configurable["workspace"] == configurable["environment"] == runs_in
+    assert configurable["source"] == "github"
+    assert configurable["repo"] == {"owner": owner, "name": name}
     assert configurable["github_issue"] == {
         "id": "12345",
         "number": 42,
@@ -843,7 +839,6 @@ def test_a_github_issue_run_needs_the_senders_email(monkeypatch) -> None:
                 "sender": {"login": "stranger"},
             },
             "thread-1",
-            workspace=None,
         )
     )
 
@@ -876,6 +871,27 @@ async def test_an_issue_thread_continues_only_once_a_run_took_the_issue(
     monkeypatch.setattr(github_webhooks.THREADS, "state", read)
 
     assert await github_webhooks.conversation_started("thread-1") is started
+    read.assert_awaited_once_with("thread-1", select=["values.messages"])
+
+
+async def test_channel_history_selects_only_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, list[str] | None]] = []
+
+    async def fake_state(thread_id: str, *, select: list[str] | None = None) -> dict[str, object]:
+        calls.append((thread_id, select))
+        if thread_id == "pr-thread":
+            return {"values": {"messages": []}}
+        return {"values": {"messages": [{"type": "human", "content": "context"}]}}
+
+    monkeypatch.setattr(github_webhooks.THREADS, "state", fake_state)
+
+    messages = await github_webhooks._channel_history("channel-thread", "pr-thread")
+
+    assert messages == [{"type": "human", "content": "context"}]
+    assert calls == [
+        ("pr-thread", ["values.messages"]),
+        ("channel-thread", ["values.messages"]),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -901,9 +917,6 @@ def test_a_new_issue_thread_on_a_public_repository_records_a_single_repository_s
         "get_or_resolve_thread_github_token",
         lambda thread_id, email: asyncio.sleep(0, result="app-token"),
     )
-    monkeypatch.setattr(
-        webhook_common, "workspace_for_repo_config", lambda repo: asyncio.sleep(0, result="oss")
-    )
     monkeypatch.setattr(webhook_common, "upsert_agent_thread_metadata", fake_upsert)
     monkeypatch.setattr(
         User, "email_for_login", lambda login: asyncio.sleep(0, result="octocat@example.com")
@@ -926,9 +939,38 @@ def test_a_new_issue_thread_on_a_public_repository_records_a_single_repository_s
                 "sender": {"login": "octocat"},
             },
             "thread-1",
-            workspace=None,
         )
     )
 
     assert captured["token_repositories"] == scope
     assert (configurable is not None) is prepared
+
+
+async def test_review_resolution_targets_recovered_findings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openswe.thread_ids import mda_successor_thread_id, reviewer_thread_id
+
+    original = reviewer_thread_id("acme", "app", 12)
+    successor = mda_successor_thread_id(original)
+    monkeypatch.setattr(
+        github_webhooks.index, "current_thread_id", AsyncMock(return_value=successor)
+    )
+    monkeypatch.setattr(
+        webhook_common, "get_thread_metadata_safe", AsyncMock(return_value={"kind": "reviewer"})
+    )
+    github = MagicMock()
+    connection = MagicMock()
+    connection.__aenter__.return_value = github
+    monkeypatch.setattr(github_webhooks.GitHubClient, "as_app", lambda *_: connection)
+    reconcile = AsyncMock()
+    monkeypatch.setattr(github_webhooks, "reconcile_linked_findings", reconcile)
+
+    await github_webhooks.process_github_review_thread(
+        {
+            "repository": {"owner": {"login": "acme"}, "name": "app"},
+            "pull_request": {"number": 12},
+        }
+    )
+
+    reconcile.assert_awaited_once_with(successor, github.repo().pull_request())

@@ -5,12 +5,20 @@ import type {
   JsonObject,
   PluginPermission,
   PullRequest,
+  PullRequestFiles,
   PullRequestRole,
   PullRequestSearch,
   RepositoryInfo,
+  ReviewOutcome,
   RepositoryTree,
   StoredAttachment,
+  SlackBot,
   StoredDocument,
+  ThreadArtifact,
+  ThreadMessages,
+  ThreadPage,
+  ThreadSource,
+  ThreadSummary,
 } from "@openswe/plugin-sdk"
 
 import { AgentsApiError, agentsRequest } from "@/features/agents/lib/api"
@@ -34,6 +42,9 @@ export type SidebarIcon =
   | "chat-circle"
   | "calendar"
   | "lightbulb"
+  | "images"
+  | "siren"
+  | "robot"
 
 export interface PluginManifest {
   name: string
@@ -42,7 +53,7 @@ export interface PluginManifest {
   description: string
   sidebar: { label: string; icon: SidebarIcon }
   permissions: Array<PluginPermission>
-  /** What reviews do for the app in workspaces that add it to them. */
+  /** What reviews do when the app is added to them. */
   review?: ReviewStep | null
 }
 
@@ -72,6 +83,15 @@ export interface App {
   listed: boolean
   /** Its newest release; none while it has only previews. */
   latest: AppVersion | null
+}
+
+/** Everyone's installs of an app after an admin moved them to `release`. */
+export interface InstallsMoved {
+  release: number
+  moved: number
+  current: number
+  /** Installs whose own release lacked a permission `release` asks for, left for their person to approve. */
+  waiting: number
 }
 
 export interface InstalledPlugin {
@@ -135,6 +155,50 @@ function plugin(id: string): string {
   return `/plugins/${segment(id)}`
 }
 
+interface ThreadSummaryWire {
+  thread_id: string
+  title: string | null
+  source: string
+  status: string
+  visibility: "public" | "private"
+  created_at: string
+  updated_at: string
+  url: string | null
+  slack: {
+    channel_id: string
+    thread_ts: string
+    channel_name: string | null
+    permalink: string | null
+  } | null
+  has_artifact: boolean
+  bot: { key: string; name: string | null } | null
+}
+
+function threadSummary(wire: ThreadSummaryWire): ThreadSummary {
+  return {
+    threadId: wire.thread_id,
+    title: wire.title,
+    source: wire.source,
+    status: wire.status,
+    visibility: wire.visibility,
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at,
+    url: wire.url,
+    slack: wire.slack && {
+      channelId: wire.slack.channel_id,
+      threadTs: wire.slack.thread_ts,
+      channelName: wire.slack.channel_name,
+      permalink: wire.slack.permalink,
+    },
+    hasArtifact: wire.has_artifact,
+    bot: wire.bot,
+  }
+}
+
+function threadPath(id: string, threadId: string): string {
+  return `${plugin(id)}/threads/${segment(threadId)}`
+}
+
 function ownerAndName(repository: string): string {
   const [owner = "", name = "", ...rest] = repository.split("/")
   if (rest.length) throw new UnsafePathError("repository must be owner/repo")
@@ -193,6 +257,7 @@ interface DocumentWire {
 interface PullRequestWire {
   number: number
   title: string
+  body?: string | null
   url: string
   state: string
   merged: boolean
@@ -211,6 +276,7 @@ interface PullRequestWire {
 const pullRequest = (wire: PullRequestWire): PullRequest => ({
   number: wire.number,
   title: wire.title,
+  body: wire.body,
   url: wire.url,
   state: wire.state,
   merged: wire.merged,
@@ -224,6 +290,30 @@ const pullRequest = (wire: PullRequestWire): PullRequest => ({
   updatedAt: wire.updated_at,
   requestedReviewers: wire.requested_reviewers,
   requestedTeams: wire.requested_teams,
+})
+
+interface PullRequestFilesWire {
+  files: Array<{
+    path: string
+    previous_path: string | null
+    status: PullRequestFiles["files"][number]["status"]
+    additions: number
+    deletions: number
+    patch: string | null
+  }>
+  truncated: boolean
+}
+
+const pullRequestFiles = (wire: PullRequestFilesWire): PullRequestFiles => ({
+  files: wire.files.map((file) => ({
+    path: file.path,
+    previousPath: file.previous_path,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    patch: file.patch,
+  })),
+  truncated: wire.truncated,
 })
 
 const stored = (wire: DocumentWire): StoredDocument => ({
@@ -269,6 +359,23 @@ export function avatarBlob(url: string | null): Promise<Blob | null> {
     avatars.set(sized, pending)
   }
   return pending
+}
+
+interface PersonWire {
+  login: string
+  name: string
+  avatar_url: string | null
+}
+
+/** People as the frame shows them, each picture fetched as bytes. */
+function withAvatars(people: ReadonlyArray<PersonWire>) {
+  return Promise.all(
+    people.map(async (person) => ({
+      login: person.login,
+      name: person.name,
+      avatar: await avatarBlob(person.avatar_url),
+    }))
+  )
 }
 
 export interface RoomTarget {
@@ -332,6 +439,12 @@ export const pluginsApi = {
       headers: { "Content-Type": "text/html" },
       body: html,
     }),
+  /** Admins only: move every person's install of the app to a release, its newest by default. */
+  upgradeInstalls: (appId: string, release?: number) =>
+    agentsRequest<InstallsMoved>(
+      `/plugins/apps/${segment(appId)}/installs/upgrade`,
+      { method: "POST", ...json({ release: release ?? null }) }
+    ),
   setListed: (appId: string, listed: boolean) =>
     agentsRequest<void>(`/plugins/apps/${segment(appId)}`, {
       method: "PATCH",
@@ -583,12 +696,25 @@ export const pluginsApi = {
         }),
       })
     ).sha,
+  requestReview: (id: string, repository: string, number: number) =>
+    agentsRequest<ReviewOutcome>(
+      `${repo(id, repository)}/pulls/${number}/review`,
+      {
+        method: "POST",
+      }
+    ),
   pull: async (id: string, repository: string, number: number) => {
     const found = await orNull(
       agentsRequest<PullRequestWire>(`${repo(id, repository)}/pulls/${number}`)
     )
     return found && pullRequest(found)
   },
+  pullFiles: async (id: string, repository: string, number: number) =>
+    pullRequestFiles(
+      await agentsRequest<PullRequestFilesWire>(
+        `${repo(id, repository)}/pulls/${number}/files`
+      )
+    ),
   findPull: async (id: string, repository: string, head: string) => {
     const found = await agentsRequest<PullRequestWire | null>(
       `${repo(id, repository)}/pulls${query({ head })}`
@@ -597,7 +723,9 @@ export const pluginsApi = {
   },
   searchPulls: async (
     id: string,
-    role: PullRequestRole
+    role: PullRequestRole,
+    page?: number,
+    author?: string
   ): Promise<PullRequestSearch> => {
     const found = await agentsRequest<{
       pulls: Array<{
@@ -611,7 +739,8 @@ export const pluginsApi = {
         updated_at: string | null
       }>
       incomplete: boolean
-    }>(`${plugin(id)}/github/pulls${query({ role })}`)
+      next_page: number | null
+    }>(`${plugin(id)}/github/pulls${query({ role, page, author })}`)
     return {
       pulls: found.pulls.map((pull) => ({
         repository: pull.repository,
@@ -624,6 +753,7 @@ export const pluginsApi = {
         updatedAt: pull.updated_at,
       })),
       incomplete: found.incomplete,
+      nextPage: found.next_page ?? null,
     }
   },
   openPull: async (
@@ -644,20 +774,88 @@ export const pluginsApi = {
       })
     ),
 
-  people: async (id: string, logins: Array<string>) => {
-    const people = await agentsRequest<
-      Array<{ login: string; name: string; avatar_url: string | null }>
-    >(
-      `${plugin(id)}/people?${logins.map((l) => `login=${encodeURIComponent(l)}`).join("&")}`
+  listThreads: async (
+    id: string,
+    options: {
+      source: ThreadSource
+      bot?: string
+      limit?: number
+      offset?: number
+    }
+  ): Promise<ThreadPage> => {
+    const page = await agentsRequest<{
+      threads: Array<ThreadSummaryWire>
+      next_offset: number | null
+    }>(`${plugin(id)}/threads${query(options)}`)
+    return {
+      threads: page.threads.map(threadSummary),
+      nextOffset: page.next_offset,
+    }
+  },
+  slackBots: (id: string): Promise<Array<SlackBot>> =>
+    agentsRequest<Array<SlackBot>>(`${plugin(id)}/bots`),
+  thread: async (id: string, threadId: string) => {
+    const found = await orNull(
+      agentsRequest<ThreadSummaryWire>(threadPath(id, threadId))
     )
-    return Promise.all(
-      people.map(async (person) => ({
-        login: person.login,
-        name: person.name,
-        avatar: await avatarBlob(person.avatar_url),
-      }))
+    return found && threadSummary(found)
+  },
+  threadMessages: async (
+    id: string,
+    threadId: string,
+    limit?: number
+  ): Promise<ThreadMessages | null> => {
+    const found = await orNull(
+      agentsRequest<{
+        messages: Array<{
+          id: string
+          role: "user" | "assistant"
+          text: string
+          truncated: boolean
+          sender_id: string | null
+          sender_name: string | null
+          timestamp: string
+        }>
+        omitted: number
+      }>(`${threadPath(id, threadId)}/messages${query({ limit })}`)
+    )
+    return (
+      found && {
+        messages: found.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          text: message.text,
+          truncated: message.truncated,
+          senderId: message.sender_id,
+          senderName: message.sender_name,
+          timestamp: message.timestamp,
+        })),
+        omitted: found.omitted,
+      }
     )
   },
+  threadArtifact: (
+    id: string,
+    threadId: string
+  ): Promise<ThreadArtifact | null> =>
+    orNull(
+      agentsRequest<ThreadArtifact | null>(
+        `${threadPath(id, threadId)}/artifact`
+      )
+    ).then((found) => found ?? null),
+
+  people: async (id: string, logins: Array<string>) =>
+    withAvatars(
+      await agentsRequest<Array<PersonWire>>(
+        `${plugin(id)}/people?${logins.map((l) => `login=${encodeURIComponent(l)}`).join("&")}`
+      )
+    ),
+  searchPeople: async (id: string, q: string, limit?: number) =>
+    withAvatars(
+      await agentsRequest<Array<PersonWire>>(
+        `${plugin(id)}/people/search${query({ q, limit })}`
+      )
+    ),
 
   publishRoom: async (id: string, target: RoomTarget, update: Uint8Array) =>
     (

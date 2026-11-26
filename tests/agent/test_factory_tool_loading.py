@@ -1,20 +1,19 @@
 """Integration tools the graph factory loads into a run."""
 
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import langgraph_sdk
 import pytest
-from langchain.agents.middleware.types import ModelRequest
 from langchain_core.tools import StructuredTool
 from langgraph.graph.state import RunnableConfig
 
-from openswe.dashboard.workspace_settings import WorkspaceSettings
+from openswe.dashboard.settings import Settings
 from openswe.mcp.runtime import MCPTools
 from openswe.sandboxes.state import SANDBOX_BACKENDS
 from openswe.sandboxes.tool_runtime import ToolSurface
 from openswe.server import agent_catalog
+from openswe.threads import index
 
 pytestmark = pytest.mark.usefixtures("registry_db")
 
@@ -41,11 +40,9 @@ def _config() -> RunnableConfig:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("initial_plan_mode", [False, True])
 @pytest.mark.parametrize("github_login", ["octocat", None])
-@pytest.mark.parametrize("managed_gateway", [None, "configured-gateway"])
-async def test_workspace_mcps_load_for_non_admins_with_legacy_plan_state(
+async def test_mcp_tools_load_for_non_admins_with_legacy_plan_state(
     initial_plan_mode: bool,
     github_login: str | None,
-    managed_gateway: str | None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("CONFIGURED_ADMINS", "workspace-admin")
@@ -69,6 +66,7 @@ async def test_workspace_mcps_load_for_non_admins_with_legacy_plan_state(
     )
 
     thread_id = "thread-factory-tools"
+    await index.create(thread_id, runtime="mda", metadata={"visibility": "public"})
     SANDBOX_BACKENDS.pop(thread_id, None)
     with (
         patch(
@@ -78,19 +76,14 @@ async def test_workspace_mcps_load_for_non_admins_with_legacy_plan_state(
         ),
         patch("openswe.server.resolve_triggering_user_identity", return_value=None),
         patch(
-            "openswe.server.ensure_sandbox_for_thread",
-            new_callable=AsyncMock,
-            return_value=MagicMock(),
-        ),
-        patch(
             "openswe.server.resolve_sandbox_work_dir",
             new_callable=AsyncMock,
             return_value="/workspace",
         ),
         patch(
-            "openswe.server.cached_workspace_settings",
+            "openswe.server.cached_settings",
             new_callable=AsyncMock,
-            return_value=WorkspaceSettings(_MODEL_DEFAULTS),
+            return_value=Settings(_MODEL_DEFAULTS),
         ),
         patch("openswe.server.load_profile", new_callable=AsyncMock, return_value=None),
         patch("openswe.server.load_thread_settings", new_callable=AsyncMock, return_value={}),
@@ -100,7 +93,7 @@ async def test_workspace_mcps_load_for_non_admins_with_legacy_plan_state(
         patch(
             "openswe.server._run_mcp_tools",
             new_callable=AsyncMock,
-            return_value=(managed_gateway, MCPTools([mcp_tool])),
+            return_value=MCPTools([mcp_tool]),
         ),
     ):
         config = _config()
@@ -112,8 +105,8 @@ async def test_workspace_mcps_load_for_non_admins_with_legacy_plan_state(
     tool_names = {
         tool.name if hasattr(tool, "name") else tool.__name__ for tool in surface.base_tools
     }
-    for name in ("connect_managed_tools", "discover_managed_tools"):
-        assert (name in tool_names) is (managed_gateway is not None)
+    # Personal managed tools load only in private threads, so neither tool is offered here.
+    assert not tool_names & {"connect_managed_tools", "discover_managed_tools"}
     assert not tool_names.intersection(
         {
             "linear_comment",
@@ -129,26 +122,6 @@ async def test_workspace_mcps_load_for_non_admins_with_legacy_plan_state(
 
     dynamic = surface.dynamic
     assert dynamic is not None
-    captured: list[str] = []
-
-    async def capture(request: ModelRequest) -> Any:
-        captured.extend(tool.name for tool in request.tools)
-        return MagicMock()
-
-    for state, expected in [
-        ({}, [mcp_tool.name]),
-        ({"plan_mode": True}, [mcp_tool.name]),
-        ({"plan_mode": False}, [mcp_tool.name]),
-    ]:
-        captured.clear()
-        request = ModelRequest(
-            model=MagicMock(),
-            messages=[],
-            tools=[],
-            runtime=MagicMock(),
-            state={**state, "messages": [], "loaded_integration_tools": [mcp_tool.name]},
-        )
-        await dynamic.awrap_model_call(request, capture)
-        assert captured == expected
+    assert [tool.name for tool in await dynamic.catalog_tools()] == [mcp_tool.name]
 
     SANDBOX_BACKENDS.pop(thread_id, None)

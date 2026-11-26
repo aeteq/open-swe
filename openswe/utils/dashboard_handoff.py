@@ -5,7 +5,6 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from openswe.input_messages import FieldValue, FieldValues, InputMessageContext
 
-DASHBOARD_HANDOFF_SENDER_ID = "system:dashboard-handoff"
 DASHBOARD_HANDOFF_BODY = (
     "This follow-up was sent from Web. The conversation has moved to Web, so answer in "
     "the dashboard stream with a normal assistant message. Do not call slack_reply "
@@ -70,11 +69,14 @@ def dashboard_input_context(
     sender_id: str,
     relayed_from: str | None,
     replies: Sequence[PassageReply] = (),
+    attached_paths: Sequence[str] = (),
 ) -> InputMessageContext:
     """The envelope of a dashboard send: typed on Web, or relayed by another agent thread."""
     data: dict[str, FieldValue | FieldValues | list[FieldValues]] = {}
     if replies:
         data["reply"] = [reply.fields() for reply in replies]
+    if attached_paths:
+        data["attached_file"] = [{"sandbox_path": path} for path in attached_paths]
     context: InputMessageContext = {"sender_id": sender_id, "surface": "web", "kind": "human"}
     if relayed_from is not None:
         context["surface"] = "automation"

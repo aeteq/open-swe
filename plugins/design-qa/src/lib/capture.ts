@@ -1,4 +1,9 @@
-import type { JsonObject, JsonValue, StoredDocument } from "@openswe/plugin-sdk"
+import type {
+  JsonObject,
+  JsonValue,
+  ReviewOutcome,
+  StoredDocument,
+} from "@openswe/plugin-sdk"
 
 /**
  * Design QA's captures, as it keeps them in its own storage: one document per
@@ -35,10 +40,49 @@ export interface PixelRect {
   height: number
 }
 
+/** How serious a note is: `error` breaks the design system or the page, `warning` looks off. */
+export type Severity = "error" | "warning" | "info"
+
 /** What the AI assessment noted about one area of a scenario's screenshots. */
 export interface FrontendAnnotation extends PixelRect {
   title: string
   body: string
+  severity: Severity
+}
+
+/** One place the change departs from the design system. */
+export interface DesignSystemFinding {
+  severity: Exclude<Severity, "info">
+  title: string
+  body: string
+  /** Where the design system says so: a document and section, a component or a token. */
+  rule: string
+  /** The file and line in the diff, when the finding is in code. */
+  location: string | null
+  /** The scenario whose screenshots show it, when one does. */
+  scenario: string | null
+}
+
+/** The review's check of every visual change against the repository's design system. */
+export interface DesignSystemReview {
+  /** The documents, skills and packages it checked against; empty when the repository has none. */
+  sources: string[]
+  findings: DesignSystemFinding[]
+}
+
+/** How risky the visual change is, from 1 (low) to 5 (high), as Robin's code review scores it. */
+export interface RiskAssessment {
+  score: 1 | 2 | 3 | 4 | 5
+  reason: string
+}
+
+/** A place the diff shows up that the review mapped but couldn't shoot. */
+export interface MissedSurface {
+  title: string
+  /** The browser path it lives at, when the review knew one. */
+  path: string | null
+  /** The gate that kept it hidden, such as a feature flag or missing data. */
+  reason: string
 }
 
 /** One page or interaction state, captured on the base preview and the pull request's. */
@@ -50,6 +94,9 @@ export interface FrontendScenario {
   /** The `*_url` fields name attachments of the capture's document. */
   before_url: string | null
   after_url: string | null
+  /** The same state in dark mode; null when the site has none. */
+  before_dark_url: string | null
+  after_dark_url: string | null
   before_video_url: string | null
   after_video_url: string | null
   width: number | null
@@ -67,15 +114,32 @@ export interface FrontendScenario {
   error: string | null
 }
 
+/** The color scheme a scenario's screenshots were taken in. */
+export type ShotTheme = "light" | "dark"
+
+/** A scenario's base and PR screenshots in one theme. */
+export interface ScenarioShots {
+  before: string | null
+  after: string | null
+  theme: ShotTheme
+}
+
 export interface FrontendReport {
   production_url: string | null
+  /** A few short points, one per line starting with `- `. */
   summary: string
+  /** Null for captures saved before reviews scored risk. */
+  risk: RiskAssessment | null
+  /** Null for captures saved before reviews checked the design system. */
+  design_system: DesignSystemReview | null
   ai_review_status: "not_run" | "running" | "complete" | "failed"
   /** The private thread the AI assessment ran in, for `nav.openThread`. */
   assessment_thread_id: string | null
   assessment_error: string | null
   build_verification: "unverified" | "verified"
   video_status: "unavailable" | "recorded"
+  /** The surfaces the review mapped from the diff but couldn't capture. */
+  missed: MissedSurface[]
   scenarios: FrontendScenario[]
 }
 
@@ -97,6 +161,65 @@ export interface FrontendReviewRun {
 
 /** How long a capture may stay unfinished before it reads as interrupted. */
 export const UNFINISHED_AFTER_MS = 15 * 60 * 1000
+
+export class CaptureAttempt {
+  constructor(
+    readonly outcome: ReviewOutcome | null,
+    readonly now = Date.now()
+  ) {}
+
+  get previewPending(): boolean {
+    return (
+      this.outcome?.status === "blocked" &&
+      this.now - Date.parse(this.outcome.created_at) < 90 * 60_000 &&
+      CaptureAttempt.isPreviewPending(this.outcome.reason)
+    )
+  }
+
+  get nonvisual(): boolean {
+    return (
+      this.outcome?.status === "skipped" &&
+      /^(?:No visual changes:|The pull request changes no file this app reviews)|\b(?:no frontend files|no visual changes|nothing visible)\b/i.test(
+        this.outcome.reason
+      ) &&
+      !/\b(?:preview|base|unavailable|missing|cannot|could not)\b/i.test(
+        this.outcome.reason
+      )
+    )
+  }
+
+  get unavailable(): boolean {
+    return this.outcome?.status === "skipped" && !this.nonvisual
+  }
+
+  get label(): string {
+    if (this.previewPending) return "Preview pending"
+    if (
+      this.outcome?.status === "blocked" &&
+      CaptureAttempt.isPreviewPending(this.outcome.reason)
+    )
+      return "Preview status needs refresh"
+    if (this.nonvisual) return "No visual changes"
+    if (this.unavailable) return "Comparison unavailable"
+    if (this.outcome?.status === "queued") return "Capture queued"
+    if (this.outcome?.status === "blocked") return "Capture blocked"
+    if (this.outcome?.status === "failed") return "Capture failed"
+    return "Captured"
+  }
+
+  static isPreviewPending(reason: string | null | undefined): boolean {
+    return Boolean(
+      reason &&
+      !/\b(?:failed|cancelled|timed out|authentication|sign-in)\b/i.test(
+        reason
+      ) &&
+      (/^Preview pending:/i.test(reason) ||
+        /\bpreview\b.{0,40}\b(?:is deploying|is building|not deployed yet|isn't deployed yet|still deploying|still building)\b/i.test(
+          reason
+        ))
+    )
+  }
+}
 
 type Json = JsonValue | undefined
 
@@ -138,6 +261,10 @@ class Fields {
 
   oneOf<T extends string>(key: string, options: readonly T[], or: T): T {
     return options.find((option) => option === this.found[key]) ?? or
+  }
+
+  has(key: string): boolean {
+    return this.found[key] != null
   }
 
   isTrue(key: string): boolean {
@@ -199,6 +326,10 @@ export class StoredCapture {
           : {
               production_url: reported.text("production_url"),
               summary: reported.text("summary") ?? "",
+              risk: StoredCapture.risk(reported.fields("risk")),
+              design_system: reported.has("design_system")
+                ? StoredCapture.designSystem(reported.fields("design_system"))
+                : null,
               ai_review_status: reported.oneOf(
                 "ai_review_status",
                 ["not_run", "running", "complete", "failed"],
@@ -216,6 +347,7 @@ export class StoredCapture {
                 ["unavailable", "recorded"],
                 "unavailable"
               ),
+              missed: StoredCapture.missed(reported.fields("coverage")),
               scenarios,
             },
     }
@@ -239,11 +371,83 @@ export class StoredCapture {
     }
   }
 
+  /** Whether `scenario` was also shot in dark mode on both sides. */
+  static hasDark(scenario: FrontendScenario): boolean {
+    return scenario.before_dark_url !== null && scenario.after_dark_url !== null
+  }
+
+  /** `scenario`'s screenshots in `theme`, or its light ones when it has no dark pair. */
+  static shots(scenario: FrontendScenario, theme: ShotTheme): ScenarioShots {
+    return theme === "dark" && StoredCapture.hasDark(scenario)
+      ? {
+          before: scenario.before_dark_url,
+          after: scenario.after_dark_url,
+          theme,
+        }
+      : {
+          before: scenario.before_url,
+          after: scenario.after_url,
+          theme: "light",
+        }
+  }
+
   /** When a UUIDv7 id was made, from its first 48 bits; null for any other id. */
   static createdAt(id: string): string | null {
     const hex = id.replaceAll("-", "")
     if (!/^[0-9a-f]{32}$/i.test(hex) || hex[12] !== "7") return null
     return new Date(Number.parseInt(hex.slice(0, 12), 16)).toISOString()
+  }
+
+  private static risk(found: Fields): RiskAssessment | null {
+    const score = found.count("score")
+    if (score === null || !Number.isInteger(score) || score < 1 || score > 5)
+      return null
+    return {
+      score: score as RiskAssessment["score"],
+      reason: found.text("reason") ?? "",
+    }
+  }
+
+  private static designSystem(found: Fields): DesignSystemReview {
+    return {
+      sources: found.texts("sources"),
+      findings: found.list("findings").flatMap((value) => {
+        const finding = Fields.of(value)
+        const title = finding.text("title")
+        if (title === null) return []
+        return [
+          {
+            severity: finding.oneOf(
+              "severity",
+              ["error", "warning"],
+              "warning"
+            ),
+            title,
+            body: finding.text("body") ?? "",
+            rule: finding.text("rule") ?? "",
+            location: finding.text("location"),
+            scenario: finding.text("scenario"),
+          },
+        ]
+      }),
+    }
+  }
+
+  private static missed(found: Fields): MissedSurface[] {
+    return found.list("missed").flatMap((value) => {
+      const surface = Fields.of(value)
+      const path = surface.text("path")
+      const title = surface.text("title") ?? path
+      return title === null
+        ? []
+        : [
+            {
+              title,
+              path,
+              reason: surface.text("reason") ?? "",
+            },
+          ]
+    })
   }
 
   private static scenario(value: JsonValue, index: number): FrontendScenario {
@@ -261,6 +465,8 @@ export class StoredCapture {
       ),
       before_url: found.text("before_url"),
       after_url: found.text("after_url"),
+      before_dark_url: found.text("before_dark_url"),
+      after_dark_url: found.text("after_dark_url"),
       before_video_url: found.text("before_video_url"),
       after_video_url: found.text("after_video_url"),
       width: found.count("width"),
@@ -270,7 +476,18 @@ export class StoredCapture {
         const rect = box.rect()
         const title = box.text("title")
         return rect && title !== null
-          ? [{ ...rect, title, body: box.text("body") ?? "" }]
+          ? [
+              {
+                ...rect,
+                title,
+                body: box.text("body") ?? "",
+                severity: box.oneOf(
+                  "severity",
+                  ["error", "warning", "info"],
+                  "info"
+                ),
+              },
+            ]
           : []
       }),
       mask_rects: found

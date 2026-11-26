@@ -1,8 +1,11 @@
 /**
  * Request-level timing for the handful of dashboard calls that gate a thread:
- * time to response headers plus the backend's `Server-Timing` phase breakdown.
- * Only header metadata is recorded; never bodies, cookies, or tokens.
+ * time to response headers (for a state read, then its body and its parse) plus
+ * the backend's `Server-Timing` phase breakdown. Only timings and header
+ * metadata are recorded, never bodies, cookies, or tokens.
  */
+
+import { startSpan } from "./trace"
 
 export interface ServerTimingEntry {
   name: string
@@ -17,6 +20,9 @@ export type TimedRequestKind =
   | "thread_transcript"
   | "stream_events"
   | "command"
+  /** The SDK's lookups for a run to join or queue when it opens a thread. */
+  | "running_lookup"
+  | "pending_lookup"
 
 export interface ClassifiedRequest {
   kind: TimedRequestKind
@@ -29,6 +35,9 @@ export interface RequestTiming extends ClassifiedRequest {
   /** Milliseconds from request start to response headers. */
   ttfbMs: number
   serverTiming: Array<ServerTimingEntry>
+  /** A state read reports again once parsed: its body's download after the headers. */
+  bodyMs?: number
+  parseMs?: number
 }
 
 type RequestTimingListener = (timing: RequestTiming) => void
@@ -44,6 +53,13 @@ const KINDS_BY_SUFFIX: Record<string, TimedRequestKind> = {
   "/transcript": "thread_transcript",
   "/stream/events": "stream_events",
   "/commands": "command",
+  // `@langchain/react` 2.0 starts a run and streams it in one request.
+  "/runs/stream": "command",
+}
+
+const LOOKUPS_BY_STATUS: Record<string, TimedRequestKind> = {
+  running: "running_lookup",
+  pending: "pending_lookup",
 }
 
 export function classifyDashboardRequest(
@@ -53,7 +69,12 @@ export function classifyDashboardRequest(
   const match = THREAD_REQUEST_RE.exec(pathname)
   if (!match?.[1]) return null
   const suffix = (match[2] ?? "").replace(/\/$/, "")
-  const kind = KINDS_BY_SUFFIX[suffix]
+  const kind =
+    suffix === "/runs"
+      ? LOOKUPS_BY_STATUS[
+          new URL(url, "http://localhost").searchParams.get("status") ?? ""
+        ]
+      : KINDS_BY_SUFFIX[suffix]
   return kind ? { kind, threadId: match[1].toLowerCase() } : null
 }
 
@@ -104,21 +125,78 @@ function requestUrl(input: RequestInfo | URL): string {
  * wrapped function looks `fetch` up at call time, which keeps the head warmup
  * script's hand-off patch (`apiWarmup.ts`) working underneath it.
  */
-export function withRequestTiming(fetchImpl: typeof fetch): typeof fetch {
+export function withRequestTiming(
+  fetchImpl: typeof fetch,
+  { measureLists = false }: { measureLists?: boolean } = {}
+): typeof fetch {
   return async (input, init) => {
-    const classified =
-      typeof window === "undefined"
-        ? null
-        : classifyDashboardRequest(requestUrl(input))
-    if (!classified) return fetchImpl(input, init)
+    if (typeof window === "undefined") return fetchImpl(input, init)
+    const url = requestUrl(input)
+    const classified = classifyDashboardRequest(url)
+    const method = String(
+      init?.method ??
+        (typeof input === "string" || input instanceof URL
+          ? "GET"
+          : input.method)
+    ).toUpperCase()
+    const listKind =
+      measureLists && method === "GET" && url
+        ? /\/dashboard\/api\/threads\/(pinned|repos|page)\/?$/i
+            .exec(url.split(/[?#]/, 1)[0] ?? "")?.[1]
+            ?.toLowerCase()
+        : undefined
+    if (!classified && !listKind) return fetchImpl(input, init)
     const started = performance.now()
-    const response = await fetchImpl(input, init)
-    recordRequestTiming({
-      ...classified,
-      status: response.status,
-      ttfbMs: performance.now() - started,
-      serverTiming: parseServerTiming(response.headers.get("server-timing")),
-    })
+    const request = fetchImpl(input, init) as Promise<Response> & {
+      __openSweWarmTiming?: { startedAt?: number; endedAt?: number }
+    }
+    const warmTiming = listKind ? request.__openSweWarmTiming : undefined
+    let listSpan: ReturnType<typeof startSpan> | undefined
+    try {
+      if (listKind)
+        listSpan = startSpan(
+          "thread_list_request",
+          { endpoint: listKind },
+          { startedAt: warmTiming?.startedAt ?? started }
+        )
+    } catch {}
+    let response: Response
+    try {
+      response = await request
+    } catch (error) {
+      try {
+        listSpan?.end({ outcome: "error" }, { endedAt: warmTiming?.endedAt })
+      } catch {}
+      throw error
+    }
+    try {
+      listSpan?.end(
+        { status: response.status, outcome: response.ok ? "success" : "error" },
+        { endedAt: warmTiming?.endedAt }
+      )
+    } catch {}
+    if (classified) {
+      const timing: RequestTiming = {
+        ...classified,
+        status: response.status,
+        ttfbMs: performance.now() - started,
+        serverTiming: parseServerTiming(response.headers.get("server-timing")),
+      }
+      recordRequestTiming(timing)
+      // `json()` would time the download and the parse as one.
+      if (classified.kind === "thread_state")
+        response.json = async () => {
+          const text = await response.text()
+          const bodyAt = performance.now()
+          const parsed: unknown = JSON.parse(text)
+          recordRequestTiming({
+            ...timing,
+            bodyMs: bodyAt - started - timing.ttfbMs,
+            parseMs: performance.now() - bodyAt,
+          })
+          return parsed
+        }
+    }
     return response
   }
 }

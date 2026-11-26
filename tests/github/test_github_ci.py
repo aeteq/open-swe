@@ -1,5 +1,6 @@
 """Unit tests for GitHub CI read helpers used by the auto-fix flow."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import httpx2
@@ -134,3 +135,269 @@ async def test_write_permission_fails_closed(monkeypatch: pytest.MonkeyPatch) ->
 
     assert not await _repo().can_write("bob")
     assert not await _repo().can_write("")
+
+
+def test_baby_sit_skill_names_every_robin_check() -> None:
+    skill = (Path(__file__).parents[2] / "mda/bundled_skills/baby-sit/SKILL.md").read_text()
+
+    assert [name for name in github_ci.OPEN_SWE_CHECK_NAMES if f"`{name}`" not in skill] == []
+
+
+def test_commit_check_failures_are_the_failing_runs_and_statuses() -> None:
+    checks = github_ci.CommitChecks(
+        runs=[
+            {"id": 1, "name": "lint", "status": "completed", "conclusion": "failure"},
+            {"id": 2, "name": "tests", "status": "completed", "conclusion": "success"},
+            {"id": 3, "name": "e2e", "status": "in_progress", "conclusion": None},
+            {"id": 6, "name": "build", "status": "completed", "conclusion": "cancelled"},
+            {"id": 7, "name": "lint", "status": "completed", "conclusion": "stale"},
+        ],
+        statuses=[
+            {"id": 4, "context": "deploy", "state": "error"},
+            {"id": 5, "context": "docs", "state": "success"},
+        ],
+    )
+
+    assert checks.failures == [
+        github_ci.CheckFailure(name="lint", conclusion="failure", url="", run_id=1),
+        github_ci.CheckFailure(name="build", conclusion="cancelled", url="", run_id=6),
+        github_ci.CheckFailure(name="deploy", conclusion="error", url="", run_id=None),
+    ]
+
+
+def _suite(
+    suite_id: int,
+    runs: list[dict[str, object]],
+    *,
+    slug: str = "github-actions",
+    more: bool = False,
+) -> dict[str, object]:
+    actions = slug == "github-actions"
+    return {
+        "databaseId": suite_id,
+        "app": {"databaseId": 15368 if actions else 1, "slug": slug},
+        "workflowRun": {"event": "pull_request", "workflow": {"databaseId": 7}}
+        if actions
+        else None,
+        "checkRuns": {"pageInfo": {"hasNextPage": more}, "nodes": runs},
+    }
+
+
+def _graphql_run(run_id: int, status: str, conclusion: str | None) -> dict[str, object]:
+    return {
+        "databaseId": run_id,
+        "name": "tests" if run_id < 30 else "scan",
+        "status": status,
+        "conclusion": conclusion,
+        "detailsUrl": f"https://ci.example/{run_id}",
+        "url": f"https://github.com/o/r/runs/{run_id}",
+    }
+
+
+def test_commit_ci_reads_graphql_in_rest_terms_without_superseded_reruns() -> None:
+    suites = [
+        _suite(1, [_graphql_run(10, "COMPLETED", "TIMED_OUT")]),
+        _suite(2, [_graphql_run(20, "IN_PROGRESS", None)]),
+        _suite(3, [_graphql_run(30, "COMPLETED", "SUCCESS")], slug="socket"),
+    ]
+    commit = {
+        "oid": "a" * 40,
+        "status": {
+            "contexts": [
+                {"context": "deploy", "state": "FAILURE", "targetUrl": "https://d"},
+                {"context": "docs", "state": "EXPECTED", "targetUrl": None},
+            ]
+        },
+        "checkSuites": {"pageInfo": {"hasNextPage": False}, "nodes": suites},
+    }
+
+    ci = github_http.CommitCI.from_graphql(commit)
+
+    assert ci is not None
+    assert [
+        (run["id"], run["status"], run["conclusion"], run["html_url"], run["app"]["id"])
+        for run in ci.runs
+    ] == [
+        (20, "in_progress", None, "https://ci.example/20", 15368),
+        (30, "completed", "success", "https://github.com/o/r/runs/30", 1),
+    ]
+    assert ci.statuses == [
+        {"context": "deploy", "state": "failure", "target_url": "https://d"},
+        {"context": "docs", "state": "pending", "target_url": None},
+    ]
+    assert github_ci.CommitChecks.of(ci).state == "failure"
+
+    suites.append(_suite(4, [], more=True))
+    assert github_http.CommitCI.from_graphql(commit) is None
+
+
+def _withheld_workflows(path: list[object], field: str = "workflowRun") -> list[dict[str, object]]:
+    """GitHub's errors for a token that reads Checks but not ``field`` of each suite."""
+    return [
+        {
+            "type": "FORBIDDEN",
+            "message": "Resource not accessible by integration",
+            "path": [*path, "checkSuites", "nodes", index, field],
+        }
+        for index in (0, 1)
+    ]
+
+
+def _withheld_commit(sha: str, field: str = "workflowRun") -> dict[str, object]:
+    suites = [
+        _suite(1, [_graphql_run(10, "COMPLETED", "FAILURE")]),
+        _suite(2, [_graphql_run(20, "COMPLETED", "SUCCESS")]),
+    ]
+    for suite in suites:
+        suite[field] = None
+    return {
+        "oid": sha,
+        "status": {"contexts": [{"context": "deploy", "state": "SUCCESS", "targetUrl": None}]},
+        "checkSuites": {"pageInfo": {"hasNextPage": False}, "nodes": suites},
+    }
+
+
+@pytest.mark.parametrize("field", ["workflowRun", "app"])
+async def test_ci_reads_keep_checks_when_github_withholds_suite_fields(
+    monkeypatch: pytest.MonkeyPatch, field: str
+) -> None:
+    sha = "a" * 40
+    commit = _withheld_commit(sha, field)
+    answers = {
+        "query CommitCI(": {
+            "data": {"repository": {"object": commit}},
+            "errors": _withheld_workflows(["repository", "object"], field),
+        },
+        "query PullRequestCI(": {
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "state": "OPEN",
+                        "headRefOid": sha,
+                        "headRefName": "feature",
+                        "baseRefName": "main",
+                        "commits": {"nodes": [{"commit": commit}]},
+                    }
+                }
+            },
+            "errors": _withheld_workflows(
+                ["repository", "pullRequest", "commits", "nodes", 0, "commit"], field
+            ),
+        },
+    }
+    answers["query PullRequestHeadChecks("] = answers["query PullRequestCI("]
+    actions = {"id": 15368, "slug": "github-actions"}
+    rest = {
+        "/check-runs": {
+            "total_count": 2,
+            "check_runs": [
+                {"id": 10, "name": "tests", "conclusion": "failure", "app": actions},
+                {"id": 20, "name": "tests", "conclusion": "success", "app": actions},
+            ],
+        },
+        "/status": {"total_count": 1, "statuses": [{"context": "deploy", "state": "success"}]},
+        "/actions/runs": {"total_count": 0, "workflow_runs": []},
+    }
+    urls: list[str] = []
+
+    async def request(
+        _client: object, _method: str, url: str, json: dict[str, str] | None = None, **_: object
+    ) -> httpx2.Response:
+        urls.append(url)
+        if json is None:
+            return _response(url, next(body for end, body in rest.items() if url.endswith(end)))
+        answer = next(body for name, body in answers.items() if name in json["query"])
+        return _response(url, answer)
+
+    monkeypatch.setattr(github_http, "github_request", request)
+    repo = _repo()
+
+    commit_ci = await repo.commit_ci(sha)
+    pull_ci = await repo.pull_request(1).ci()
+    head = await repo.pull_request(1).head_checks()
+
+    pinned = github_ci.RequiredCheck("tests", 15368)
+    for ci in (commit_ci, pull_ci.checks):
+        assert [(run["id"], run["conclusion"]) for run in ci.runs] == [
+            (10, "failure"),
+            (20, "success"),
+        ]
+        assert [status["context"] for status in ci.statuses] == ["deploy"]
+        assert pinned.reported_by(ci.runs, ci.statuses)
+    if field == "workflowRun":
+        # Without workflow identities a failed redeploy could hide behind an earlier success.
+        assert head.runs is None
+    else:
+        assert head.runs is not None
+        assert [(run["id"], run["conclusion"]) for run in head.runs] == [
+            (10, "failure"),
+            (20, "success"),
+        ]
+    graphql_reads = urls.count(github_http.GITHUB_GRAPHQL)
+    assert graphql_reads == 3 and (len(urls) > graphql_reads) == (field == "app")
+
+
+async def test_commit_ci_raises_graphql_errors_outside_workflow_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sha = "a" * 40
+    errors = [
+        *_withheld_workflows(["repository", "object"]),
+        {"type": "FORBIDDEN", "message": "denied", "path": ["repository", "object", "status"]},
+    ]
+
+    async def request(_client: object, _method: str, url: str, **_: object) -> httpx2.Response:
+        return _response(
+            url, {"data": {"repository": {"object": _withheld_commit(sha)}}, "errors": errors}
+        )
+
+    monkeypatch.setattr(github_http, "github_request", request)
+
+    with pytest.raises(github_http.GraphQLError) as raised:
+        await _repo().commit_ci(sha)
+    assert raised.value.errors == errors
+
+
+@pytest.mark.parametrize("graphql_denial", ["FORBIDDEN", 403])
+@pytest.mark.parametrize("rest_status", [200, 403])
+async def test_pull_ci_reads_over_rest_when_graphql_is_denied(
+    monkeypatch: pytest.MonkeyPatch, graphql_denial: str | int, rest_status: int
+) -> None:
+    sha = "a" * 40
+    rest = {
+        "/pulls/1": {
+            "state": "open",
+            "merged": False,
+            "head": {"sha": sha, "ref": "feature"},
+            "base": {"ref": "main"},
+        },
+        "/check-runs": {
+            "total_count": 1,
+            "check_runs": [
+                {"id": 10, "name": "tests", "status": "completed", "conclusion": "failure"}
+            ],
+        },
+        "/status": {"total_count": 0, "statuses": []},
+    }
+
+    async def request(_client: object, _method: str, url: str, **_: object) -> httpx2.Response:
+        if url == github_http.GITHUB_GRAPHQL:
+            if isinstance(graphql_denial, int):
+                return _response(url, {"message": "Resource not accessible"}, graphql_denial)
+            denied = {"type": graphql_denial, "message": "denied", "path": ["repository"]}
+            return _response(url, {"data": {"repository": None}, "errors": [denied]})
+        if rest_status != 200:
+            return _response(url, {"message": "Resource not accessible"}, rest_status)
+        return _response(url, next(body for end, body in rest.items() if url.endswith(end)))
+
+    monkeypatch.setattr(github_http, "github_request", request)
+
+    result = await github_http.read_result(_repo().pull_request(1).ci())
+
+    if rest_status != 200:
+        assert (result.value, result.status) == (None, "forbidden")
+        return
+    ci = result.value
+    assert ci is not None
+    assert (ci.state, ci.head_sha, ci.head_ref, ci.base_ref) == ("open", sha, "feature", "main")
+    assert github_ci.CommitChecks.of(ci.checks).state == "failure"

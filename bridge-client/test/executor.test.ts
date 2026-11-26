@@ -87,7 +87,20 @@ describe("execute", () => {
     expect(result.output).toContain("err")
   })
 
-  test("runs in the bridge root", async () => {
+  test("fails the call, not the process, when the working directory is gone", async () => {
+    const executor = new LocalExecutor(join(await workspace(), "missing"))
+    await expect(executor.execute("pwd", 30)).rejects.toThrow()
+  })
+
+  test("reports a command that exits at once", async () => {
+    const executor = new LocalExecutor(await workspace())
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const result = await executor.execute("exit 7", 30)
+      expect(result.exit_code).toBe(7)
+    }
+  })
+
+  test("runs in its working directory", async () => {
     const root = await workspace()
     await writeFile(join(root, "marker.txt"), "x")
     const result = await new LocalExecutor(root).execute("ls", null)
@@ -101,7 +114,55 @@ describe("execute", () => {
     expect(result.output).toContain("[command timed out after 1s]")
   })
 
-  test("stops a running command when the bridge closes", async () => {
+  test("returns when the shell exits, though a server it started keeps the pipes open", async () => {
+    const root = await workspace()
+    const executor = new LocalExecutor(root)
+    const started = Date.now()
+    const result = await executor.execute(
+      "echo starting; sleep 30 & echo $! > server.pid",
+      60
+    )
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(result.exit_code).toBe(0)
+    expect(result.output).toContain("starting")
+    const server = Number(
+      (await readFile(join(root, "server.pid"), "utf8")).trim()
+    )
+    // The server outlives the command, as a service the agent started must.
+    expect(() => process.kill(server, 0)).not.toThrow()
+    process.kill(server, "SIGKILL")
+  })
+
+  test("a server it started keeps writing after the command returns", async () => {
+    const root = await workspace()
+    const result = await new LocalExecutor(root).execute(
+      "(while :; do echo tick; sleep 0.05; done) & echo $! > server.pid",
+      60
+    )
+    expect(result.exit_code).toBe(0)
+    const server = Number(
+      (await readFile(join(root, "server.pid"), "utf8")).trim()
+    )
+    await new Promise((done) => setTimeout(done, 300))
+    // Its output has nowhere to break: it is not a pipe this process reads.
+    expect(() => process.kill(server, 0)).not.toThrow()
+    process.kill(server, "SIGKILL")
+  })
+
+  test("a timeout kills what ignores SIGTERM, even after the shell exits", async () => {
+    const root = await workspace()
+    const result = await new LocalExecutor(root).execute(
+      "sh -c 'trap \"\" TERM; while :; do sleep 1; done' & echo $! > child.pid; wait",
+      1
+    )
+    expect(result.exit_code).toBe(124)
+    const child = Number(
+      (await readFile(join(root, "child.pid"), "utf8")).trim()
+    )
+    expect(() => process.kill(child, 0)).toThrow()
+  })
+
+  test("stops a running command on request", async () => {
     const executor = new LocalExecutor(await workspace())
     const started = Date.now()
     const running = executor.execute("sleep 30", 300)
@@ -134,95 +195,5 @@ describe("execute", () => {
     } finally {
       delete process.env["OPEN_SWE_CLI_TEST_API_KEY"]
     }
-  })
-})
-
-describe("upload_files", () => {
-  test("writes bytes and creates parent directories", async () => {
-    const root = await workspace()
-    const executor = new LocalExecutor(root)
-    const responses = await executor.uploadFiles([
-      { path: "nested/deep/file.txt", content_base64: btoa("written") },
-    ])
-    expect(responses).toEqual([{ path: "nested/deep/file.txt", error: null }])
-    expect(await readFile(join(root, "nested/deep/file.txt"), "utf8")).toBe(
-      "written"
-    )
-  })
-
-  test("reports invalid paths and undecodable content", async () => {
-    const executor = new LocalExecutor(await workspace())
-    const responses = await executor.uploadFiles([
-      { path: "", content_base64: "" },
-      { path: "bad.txt", content_base64: "not base64 ***" },
-    ])
-    expect(responses[0]?.error).toBe("invalid_path")
-    expect(responses[1]?.error).toBe("invalid base64 content")
-  })
-
-  test("reports permission_denied for an unwritable directory", async () => {
-    const root = await workspace()
-    const locked = join(root, "locked")
-    await Bun.$`mkdir -p ${locked}`.quiet()
-    await Bun.$`chmod 500 ${locked}`.quiet()
-    try {
-      const executor = new LocalExecutor(root)
-      const responses = await executor.uploadFiles([
-        { path: "locked/denied.txt", content_base64: btoa("x") },
-      ])
-      expect(responses[0]?.error).toBe("permission_denied")
-    } finally {
-      await Bun.$`chmod 700 ${locked}`.quiet()
-    }
-  })
-})
-
-describe("download_files", () => {
-  test("returns base64 content for readable files", async () => {
-    const root = await workspace()
-    await writeFile(join(root, "read.txt"), "contents")
-    const executor = new LocalExecutor(root)
-    const responses = await executor.downloadFiles(["read.txt"])
-    expect(responses[0]?.error).toBeNull()
-    expect(atob(responses[0]?.content_base64 ?? "")).toBe("contents")
-  })
-
-  test("maps missing files and directories to contract errors", async () => {
-    const root = await workspace()
-    await Bun.$`mkdir -p ${join(root, "adir")}`.quiet()
-    const executor = new LocalExecutor(root)
-    const responses = await executor.downloadFiles(["missing.txt", "adir"])
-    expect(responses[0]?.error).toBe("file_not_found")
-    expect(responses[0]?.content_base64).toBeNull()
-    expect(responses[1]?.error).toBe("is_a_directory")
-  })
-})
-
-describe("dispatch", () => {
-  test("rejects unknown methods", async () => {
-    const executor = new LocalExecutor(await workspace())
-    expect(await executor.dispatch("teleport", {})).toEqual({
-      error: "unsupported method teleport",
-    })
-  })
-
-  test("wraps execute results in the wire shape", async () => {
-    const executor = new LocalExecutor(await workspace())
-    const outcome = await executor.dispatch("execute", { command: "echo hi" })
-    expect(outcome).toHaveProperty("result")
-    if (!("result" in outcome)) throw new Error("expected a result")
-    expect(outcome.result["exit_code"]).toBe(0)
-    expect(outcome.result["truncated"]).toBe(false)
-    expect(String(outcome.result["output"]).trim()).toBe("hi")
-  })
-
-  test("rejects malformed upload and download params", async () => {
-    const executor = new LocalExecutor(await workspace())
-    expect(await executor.dispatch("upload_files", { files: [{}] })).toEqual({
-      error: "upload_files requires files with path and content_base64",
-    })
-    expect(await executor.dispatch("download_files", {})).toEqual({
-      error: "download_files requires a paths array",
-    })
   })
 })

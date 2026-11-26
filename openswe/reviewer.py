@@ -1,10 +1,10 @@
-"""Reviewer graph factory.
+"""The review run: its catalog, its preparation and its prompt.
 
-Mirrors `openswe.server.get_agent`'s sandbox lifecycle but configures a deep
-agent for code review only:
+``reviewer_catalog`` works out what an MDA review run offers, and
+``prepare_reviewer_run`` readies the run before its first model call:
 
-- Deterministic repo prep (clone-or-fetch + checkout) before the agent's first
-  model call so the LLM doesn't burn tokens narrating ``gh repo clone``.
+- Deterministic repo prep (clone-or-fetch + checkout) so the model doesn't
+  burn tokens narrating ``gh repo clone``.
 - A computed unified diff and the set of (file, line) tuples in that diff,
   passed via the runnable config so ``add_finding`` can validate at creation
   time rather than failing at GitHub-publish time.
@@ -21,28 +21,25 @@ import posixpath
 import re
 import uuid
 import warnings
-from collections.abc import Mapping, Sequence
-from functools import partial
+from collections.abc import Sequence
 from typing import Any, Final, NamedTuple, NotRequired, cast
 
 logger = logging.getLogger(__name__)
 
 from langgraph.graph.state import RunnableConfig
 from langgraph.runtime import Runtime
-from runtime_api.catalog import InboxSpec, McpServerSpec
+from runtime_api.catalog import InboxSpec
 
 warnings.filterwarnings("ignore", module="langchain_core._api.deprecation")
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*", category=UserWarning)
 
-from deepagents.backends.protocol import BackendProtocol, SandboxBackendProtocol
+from deepagents.backends.protocol import SandboxBackendProtocol
 from deepagents.middleware.skills import SkillsMiddleware, SkillsState
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool
 from runtime_api.models import (
     DEFAULT_LLM_REASONING,
     ModelKwargs,
-    make_model,
     provider_model_kwargs,
 )
 from runtime_api.provenance import Provenance
@@ -50,13 +47,15 @@ from runtime_api.provenance import Provenance
 from openswe.analytics.usage import record_agent_invocation_usage
 from openswe.dashboard.options import gate_fable_model
 from openswe.dashboard.repo_access import repo_is_private
-from openswe.dashboard.workspace_settings_cache import cached_workspace_settings
+from openswe.dashboard.settings_cache import cached_settings
+from openswe.execution import ExecutionProfile
 from openswe.github.app import get_github_app_installation_token_with_expiry
+from openswe.github.http import GitHubClient
 from openswe.github.org_membership import OPEN_SWE_AUTHOR_LOGINS
-from openswe.github.sandbox_access import READ_ONLY_REVIEW_PERMISSIONS
+from openswe.github.pull_requests import PullRequest
 from openswe.github.thread_token import cache_github_token_for_thread
-from openswe.mcp.models import MCPToolProvenance
-from openswe.mcp.tiers import mcp_tools_for
+from openswe.mcp.managed import BotTools
+from openswe.mcp.runtime import load_mcp_tools
 from openswe.middleware import (
     BasePrepareRunMiddleware,
 )
@@ -89,7 +88,6 @@ from openswe.run_config import RunConfig
 from openswe.runtime import (
     DEFAULT_LLM_MAX_TOKENS,
     ensure_sandbox_for_thread,
-    get_cached_sandbox_backend,
 )
 from openswe.sandboxes.paths import resolve_sandbox_work_dir
 from openswe.sandboxes.repo_prep import materialize_trusted_skills, prepare_review_repo
@@ -108,15 +106,12 @@ from openswe.tools import (
     resolve_finding_thread,
     suggest_task,
     update_finding,
-    web_search,
 )
 from openswe.tools.review_apps import ReviewAppTools
 from openswe.utils import ttl_cache
 from openswe.utils.agents_md import fetch_agents_md, fetch_scoped_agents_md
 from openswe.utils.api_standards_skill import fetch_api_standards_skill
-from openswe.utils.deferred_model import make_deferred_error_model
 from openswe.utils.startup_trace import aphase
-from openswe.workspaces.store import DEFAULT_WORKSPACE_SLUG
 
 REVIEWER_SUBAGENT_SYSTEM_PROMPT = prompt("reviewer/subagent")
 
@@ -154,6 +149,7 @@ def _reviewer_system_prompt(
     api_standards_skill: str | None = None,
     skills_prompt: str | None = None,
     review_apps: ReviewApps | None = None,
+    concise_findings: bool = False,
 ) -> SystemPrompt:
     """The reviewer's system prompt: what every review shares, then what its repository's
     do, then what depends on the pull request's changed files and checkout, such as the
@@ -168,12 +164,13 @@ def _reviewer_system_prompt(
             reviewer_eval=reviewer_eval,
             approval_assessment=bool(approval_policy),
         ),
-        workspace=prompt(
+        execution=prompt(
             "reviewer/repository",
             org_guidelines=org_guidelines or "",
             repo_style_prompt=repo_style_prompt or "",
             agents_md_content=agents_md_content or "",
             api_standards_skill=api_standards_skill or "",
+            concise_findings=concise_findings,
         ),
         thread="\n\n".join(
             part
@@ -262,6 +259,7 @@ def _build_re_review_context(
     pr_title: str = "",
     pr_body: str = "",
     existing_threads_block: str = "",
+    full_review: bool = False,
 ) -> str:
     return prompt(
         "reviewer/rereview-context",
@@ -274,6 +272,7 @@ def _build_re_review_context(
         overview=_format_pr_overview(pr_title, pr_body),
         existing_findings=existing_findings_block,
         existing_threads=existing_threads_block,
+        full_review=full_review,
     )
 
 
@@ -441,19 +440,6 @@ def _format_existing_findings(findings: list[Finding]) -> str:
     return "\n".join(lines) if lines else "_(no open findings)_"
 
 
-def _make_model_or_defer(
-    model_id: str,
-    *,
-    use_gateway: bool,
-    **kwargs: Any,
-) -> BaseChatModel:
-    try:
-        return make_model(model_id, use_gateway=use_gateway, **kwargs)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Deferring reviewer model setup failure for %s", model_id, exc_info=True)
-        return make_deferred_error_model(e, model_id=model_id)
-
-
 async def _cached_api_standards_skill() -> str | None:
     return await ttl_cache.cached(
         "reviewer:api-standards-skill",
@@ -468,10 +454,14 @@ class PrepareReviewerRunState(PrepareRunState):
     review_approval_policy: NotRequired[str | None]
     review_approval_errors: NotRequired[list[str]]
     review_config_errors: NotRequired[list[str]]
+    review_changes_approval: NotRequired[bool]
+    # A run for a deployed preview: the findings there were when it started, which its
+    # publish leaves to the review that recorded them.
+    review_earlier_finding_ids: NotRequired[list[str] | None]
 
 
-async def _cached_org_guidelines(workspace: str | None) -> str | None:
-    return (await cached_workspace_settings(workspace)).org_review_guidelines
+async def _cached_org_guidelines() -> str | None:
+    return (await cached_settings()).org_review_guidelines
 
 
 async def ensure_reviewer_github_token(thread_id: str, cfg: RunConfig) -> str | None:
@@ -497,15 +487,9 @@ async def ensure_reviewer_github_token(thread_id: str, cfg: RunConfig) -> str | 
     return github_token
 
 
-async def ensure_reviewer_sandbox_for_thread(
-    thread_id: str,
-    cfg: RunConfig,
-) -> SandboxBackendProtocol:
+async def ensure_reviewer_sandbox_for_thread(thread_id: str) -> SandboxBackendProtocol:
     return await ensure_sandbox_for_thread(
         thread_id,
-        workspace_slug=cfg.workspace_slug,
-        github_proxy_repositories=[cfg.repo.full_name] if cfg.repo else [],
-        github_proxy_permissions=READ_ONLY_REVIEW_PERMISSIONS,
         # A reviewer sandbox holds nothing but a checkout `prepare_review_repo`
         # re-derives every run, and reviewer threads outlive their sandbox: one
         # thread per PR, re-triggered on every push. Staying bound to an
@@ -554,12 +538,10 @@ class PrepareReviewerRunMiddleware(BasePrepareRunMiddleware):
         *,
         thread_id: str,
         config: RunnableConfig,
-        use_gateway: bool,
         model: ReviewerModelChoice,
     ) -> None:
         self._thread_id = thread_id
         self._config = config
-        self._use_gateway = use_gateway
         self._model = model
 
     def _prepare_config_fingerprint(self) -> Any:
@@ -632,7 +614,7 @@ async def prepare_reviewer_run(
     async def _check_out() -> _ReviewCheckout:
         async with aphase(thread_id, "prepare.checkout"):
             try:
-                sandbox_backend = await ensure_reviewer_sandbox_for_thread(thread_id, cfg)
+                sandbox_backend = await ensure_reviewer_sandbox_for_thread(thread_id)
             except SandboxUnreachableError as exc:
                 # This run dies without a sandbox. Say so on the PR instead of leaving
                 # it looking unreviewed, unless it is a shadow nobody on the PR knows of.
@@ -667,6 +649,7 @@ async def prepare_reviewer_run(
     pr_url = cfg.pr_url or ""
     last_reviewed_sha = cfg.last_reviewed_sha or ""
     is_re_review = bool(cfg.re_review)
+    full_review = False
     reviewer_event = cfg.reviewer_event or ""
     reviewer_eval = cfg.is_eval
     if reviewer_eval:
@@ -676,6 +659,7 @@ async def prepare_reviewer_run(
     )
 
     async def _fetch_diff_context() -> tuple[str, dict[str, dict[str, set[int]]] | None]:
+        nonlocal full_review
         if not can_fetch_pr or github_token is None or not isinstance(pr_number, int):
             return "", None
         fetched_diff: str | None = None
@@ -703,14 +687,24 @@ async def prepare_reviewer_run(
                 head_ref=diff_head,
                 merge_base=merge_base,
                 diff_text=fetched_diff,
+                fallback_base_ref=base_sha,
             )
+            if materialized.merge_base:
+                full_review = True
             diff_text = materialized.diff_text
         except RuntimeError, ValueError:
             logger.exception("Failed to materialize review diff")
             if fetched_diff is None:
+                fetched_diff = await fetch_pr_diff(
+                    owner=repo_owner, repo=repo_name, pr_number=pr_number, token=github_token
+                )
+                full_review = True
+            if fetched_diff is None:
                 return "", None
             diff_text = fetched_diff
-        return diff_text, compute_diff_line_set(diff_text)
+        # Parsing a large diff takes seconds of CPU, which on the event loop would stall
+        # every other request this server is answering.
+        return diff_text, await asyncio.to_thread(compute_diff_line_set, diff_text)
 
     async def _fetch_pr_overview() -> tuple[str, str]:
         if not can_fetch_pr or github_token is None or not isinstance(pr_number, int):
@@ -770,7 +764,7 @@ async def prepare_reviewer_run(
     # Benchmark runs score the stock reviewer, without our workspace's
     # guidelines, per-repo style prompts, or API standards.
     async def _fetch_org_guidelines() -> str | None:
-        return None if reviewer_eval else await _cached_org_guidelines(cfg.workspace_slug)
+        return None if reviewer_eval else await _cached_org_guidelines()
 
     async def _fetch_api_standards_skill() -> str | None:
         return None if reviewer_eval else await _cached_api_standards_skill()
@@ -805,7 +799,7 @@ async def prepare_reviewer_run(
             checkout.sandbox_backend,
             f"{checkout.work_dir}/{repo_name}",
             base_sha,
-            changed_files(diff_text),
+            await asyncio.to_thread(changed_files, diff_text),
         )
 
     async def _fetch_approval_policy() -> ApprovalPolicy | None:
@@ -823,6 +817,12 @@ async def prepare_reviewer_run(
             repo_owner, repo_name, pr_number, head_sha, token=github_token
         )
 
+    async def _fetch_changes_approval() -> bool:
+        if reviewer_eval or not isinstance(pr_number, int):
+            return False
+        async with GitHubClient.connect(token=github_token) as github:
+            return await ApprovalPolicy.changed_by(github.repo(repo_owner, repo_name), pr_number)
+
     # Only the diff waits on the checkout.
     checkout_task = asyncio.create_task(_check_out())
     diff_context_task = asyncio.create_task(_fetch_diff_context())
@@ -833,6 +833,7 @@ async def prepare_reviewer_run(
     org_guidelines_task = asyncio.create_task(_fetch_org_guidelines())
     approval_policy_task = asyncio.create_task(_fetch_approval_policy())
     config_errors_task = asyncio.create_task(_fetch_config_errors())
+    changes_approval_task = asyncio.create_task(_fetch_changes_approval())
     api_standards_task = asyncio.create_task(_fetch_api_standards_skill())
     scoped_agents_md_task = asyncio.create_task(_fetch_scoped_agents_md())
     tasks = (
@@ -845,6 +846,7 @@ async def prepare_reviewer_run(
         org_guidelines_task,
         approval_policy_task,
         config_errors_task,
+        changes_approval_task,
         api_standards_task,
         scoped_agents_md_task,
     )
@@ -859,6 +861,7 @@ async def prepare_reviewer_run(
         org_guidelines = await org_guidelines_task
         policy = await approval_policy_task
         config_errors = await config_errors_task
+        changes_approval = await changes_approval_task
         api_standards_skill = await api_standards_task
     finally:
         for task in tasks:
@@ -869,6 +872,7 @@ async def prepare_reviewer_run(
     approval_policy = policy.render() if policy is not None else None
 
     review_context = ""
+    earlier_finding_ids: list[str] | None = None
     if pr_number is not None:
         if reviewer_event == "finding_reply":
             existing_findings = await list_findings_async(thread_id)
@@ -885,6 +889,19 @@ async def prepare_reviewer_run(
                 pr_body=pr_body,
                 existing_threads_block=existing_threads_block,
             )
+        elif reviewer_event == "preview_ready":
+            earlier_finding_ids = [
+                finding["id"] for finding in await list_findings_async(thread_id)
+            ]
+            review_context = prompt(
+                "reviewer/preview-ready-context",
+                repo_owner=repo_owner,
+                repo_name=repo_name,
+                pr_number=pr_number,
+                pr_url=pr_url,
+                head_sha=head_sha,
+                overview=_format_pr_overview(pr_title, pr_body),
+            )
         elif is_re_review and last_reviewed_sha:
             existing_findings = await list_findings_async(thread_id)
             review_context = _build_re_review_context(
@@ -894,6 +911,7 @@ async def prepare_reviewer_run(
                 pr_number=pr_number,
                 last_reviewed_sha=last_reviewed_sha,
                 head_sha=head_sha,
+                full_review=full_review,
                 existing_findings_block=_format_existing_findings(existing_findings),
                 pr_title=pr_title,
                 pr_body=pr_body,
@@ -923,7 +941,18 @@ async def prepare_reviewer_run(
         api_standards_skill=api_standards_skill,
         skills_prompt=checkout.skills_prompt,
         review_apps=await ReviewApps.of(cfg),
+        concise_findings=bool(repo_owner and repo_name)
+        and await PullRequest.concise_for_repo(repo_owner, repo_name),
     )
+    execution = ExecutionProfile.current()
+    if execution is not None:
+        system_prompt = SystemPrompt(
+            shared=system_prompt.shared,
+            execution="\n\n".join(
+                part for part in (execution.prompt(), system_prompt.execution) if part
+            ),
+            thread=system_prompt.thread,
+        )
     run_context = prompt(
         "reviewer/run-context",
         blocks=[
@@ -956,6 +985,8 @@ async def prepare_reviewer_run(
         "review_approval_policy": approval_policy,
         "review_approval_errors": policy.errors if policy is not None else [],
         "review_config_errors": config_errors,
+        "review_changes_approval": changes_approval,
+        "review_earlier_finding_ids": earlier_finding_ids,
         "diff_text": pr_diff_text,
         "diff_line_set": pr_diff_line_set,
     }
@@ -971,11 +1002,10 @@ class ReviewerModelChoice(NamedTuple):
 class ReviewerModels(NamedTuple):
     main: ReviewerModelChoice
     subagent: ReviewerModelChoice
-    use_gateway: bool
 
 
 async def resolve_reviewer_models(cfg: RunConfig) -> ReviewerModels:
-    """Pick the reviewer and subagent models for a run, per run config then workspace defaults."""
+    """Pick the reviewer and subagent models for a run, per run config then global defaults."""
     if cfg.reviewer_model_id:
         model_id = cfg.reviewer_model_id
         reasoning_effort = cfg.reviewer_reasoning_effort
@@ -985,21 +1015,21 @@ async def resolve_reviewer_models(cfg: RunConfig) -> ReviewerModels:
         (
             (model_id, reasoning_effort),
             (subagent_model_id, subagent_effort),
-        ) = (await cached_workspace_settings(cfg.workspace_slug)).default_model_pair("reviewer")
+        ) = (await cached_settings()).default_model_pair("reviewer")
         logger.info(
-            "Using workspace default reviewer model: model=%s effort=%s",
+            "Using global default reviewer model: model=%s effort=%s",
             model_id,
             reasoning_effort,
         )
         logger.info(
-            "Using workspace default reviewer subagent model: model=%s effort=%s",
+            "Using global default reviewer subagent model: model=%s effort=%s",
             subagent_model_id,
             subagent_effort,
         )
     if cfg.reviewer_subagent_model_id:
         subagent_model_id = cfg.reviewer_subagent_model_id
         subagent_effort = cfg.reviewer_subagent_reasoning_effort
-    settings = await cached_workspace_settings(cfg.workspace_slug)
+    settings = await cached_settings()
     fable_enabled = settings.fable_enabled
     model_id, reasoning_effort = gate_fable_model(
         model_id, reasoning_effort, fable_enabled=fable_enabled
@@ -1028,77 +1058,63 @@ async def resolve_reviewer_models(cfg: RunConfig) -> ReviewerModels:
             ),
             subagent_effort,
         ),
-        use_gateway=settings.effective_gateway_enabled,
     )
 
 
-# Read-only tools by connection name, then by the names Notion's hosted server uses now
-# and used before. Every other tool, which may write, stays off the reviewer: a generic
-# `fetch` from another connection could send requests with that connection's credentials.
-READ_ONLY_MCP_TOOLS: Final[Mapping[str, frozenset[str]]] = {
-    "notion": frozenset(
-        {
-            "search",
-            "ai-search",
-            "fetch",
-            "get-comments",
-            "query-data-sources",
-            "notion-search",
-            "notion-fetch",
-            "notion-get-comments",
-            "notion-query-data-sources",
-        }
-    ),
-}
+# A run for a newly deployed preview does only the apps' work (``reviewer_event``
+# ``"preview_ready"``): it can add and publish findings that work turns up, but gets nothing
+# that changes the review's existing findings, replies on the pull request or suggests tasks.
+PREVIEW_READY_EXCLUDED_TOOLS: Final = frozenset(
+    {
+        "update_finding",
+        "resolve_finding_thread",
+        "reply_to_finding_thread",
+        "suggest_task",
+    }
+)
+
+
+# Read-only Notion tools, by the names Robin's bot kit and Notion's hosted server give them.
+# Every other tool, which may write, stays off the reviewer: a generic `fetch` from another
+# service could send requests with that service's credentials.
+READ_ONLY_MCP_TOOLS: Final = frozenset(
+    {
+        "notion_search",
+        "notion_fetch",
+        "notion_get_comments",
+        "notion_query_data_sources",
+        "notion-search",
+        "notion-fetch",
+        "notion-get-comments",
+        "notion-query-data-sources",
+    }
+)
 
 
 class ReviewerMCP:
-    """The read-only MCP tools a review may use, from the instance and workspace tiers.
+    """The read-only MCP tools a review may use, from Robin's bot kit; never a person's own."""
 
-    Never a person's own connection. A tool the backend serves comes as a tool; a server
-    the run connects to itself, through an MDA connection, comes narrowed to the allowlist.
-    """
-
-    def __init__(
-        self, tools: Sequence[BaseTool] = (), servers: Sequence[McpServerSpec] = ()
-    ) -> None:
+    def __init__(self, tools: Sequence[BaseTool] = ()) -> None:
         self.tools = list(tools)
-        self.servers = list(servers)
 
     @classmethod
     async def of_run(cls, cfg: RunConfig) -> ReviewerMCP:
         """What ``cfg``'s review may use: nothing for a benchmark run, which scores the
         stock reviewer, or a public repository, where anyone can steer a review through the
         PR's text and what it reads from private pages could end up in its public comments."""
-        if cfg.is_eval or not await cls._reviews_private_repo(cfg):
+        bot = BotTools()
+        if cfg.is_eval or not bot.configured() or not await cls._reviews_private_repo(cfg):
             return cls()
-        loaded = await mcp_tools_for(None, cfg.workspace_slug or DEFAULT_WORKSPACE_SLUG, None)
-        return cls(
-            [tool for tool in loaded if cls._read_only(tool)],
-            [
-                server.model_copy(update={"tools": tools})
-                for server in loaded.runtime_servers
-                if (
-                    tools := {
-                        name: called
-                        for name, called in server.tools.items()
-                        if name in READ_ONLY_MCP_TOOLS.get(server.name, frozenset())
-                    }
-                )
-            ],
-        )
+        loaded = await load_mcp_tools(bot.source())
+        return cls([tool for tool in loaded if cls._read_only(tool)])
 
     def tool(self, name: str) -> BaseTool | None:
-        """The backend-served tool a call names; MDA calls a server's tools itself."""
+        """The tool a call names."""
         return next((tool for tool in self.tools if tool.name == name), None)
 
     @staticmethod
     def _read_only(tool: BaseTool) -> bool:
-        metadata = tool.metadata or {}
-        provenance = metadata.get("mcp_provenance")
-        return isinstance(provenance, MCPToolProvenance) and metadata.get(
-            "mcp_tool_name"
-        ) in READ_ONLY_MCP_TOOLS.get(provenance.connection_name, frozenset())
+        return (tool.metadata or {}).get("mcp_tool_name") in READ_ONLY_MCP_TOOLS
 
     @staticmethod
     async def _reviews_private_repo(cfg: RunConfig) -> bool:
@@ -1126,7 +1142,6 @@ def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
                 publish_review,
                 resolve_finding_thread,
                 reply_to_finding_thread,
-                web_search,
                 fetch_url,
                 http_request,
                 suggest_task,
@@ -1134,18 +1149,6 @@ def reviewer_tools(mcp_tools: Sequence[BaseTool] = ()) -> list[BaseTool]:
         ),
         *mcp_tools,
     ]
-
-
-async def _reconnect_reviewer_sandbox(thread_id: str, cfg: RunConfig) -> SandboxBackendProtocol:
-    await ensure_reviewer_github_token(thread_id, cfg)
-    return await ensure_reviewer_sandbox_for_thread(thread_id, cfg)
-
-
-def reviewer_sandbox(thread_id: str, cfg: RunConfig) -> BackendProtocol:
-    """The review thread's sandbox, connected again with a fresh token whenever it is gone."""
-    return get_cached_sandbox_backend(
-        thread_id, reconnect=partial(_reconnect_reviewer_sandbox, thread_id, cfg)
-    )
 
 
 async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None:
@@ -1157,18 +1160,17 @@ async def reviewer_catalog(config: RunnableConfig, surface: ToolSurface) -> None
     models = await resolve_reviewer_models(cfg)
     async with aphase(cfg.thread_id, "factory.mcp_tools"):
         mcp = await ReviewerMCP.of_run(cfg)
-    use_gateway = models.use_gateway
 
     surface.base_tools = reviewer_tools(mcp.tools)
-    surface.mcp_servers = mcp.servers
     if (app_tools := await ReviewAppTools.of_run(cfg)) is not None:
         await app_tools.offer(surface)
     surface.inbox = InboxSpec(surface=WEB_REPLY_SURFACE, model_id=cfg.agent_model_id)
-    surface.excluded = SHELL_SEARCH_EXCLUDED_TOOLS
+    surface.excluded = SHELL_SEARCH_EXCLUDED_TOOLS | (
+        PREVIEW_READY_EXCLUDED_TOOLS if cfg.reviewer_event == "preview_ready" else frozenset()
+    )
     surface.models = SurfaceModels(
         main=ModelChoice(models.main.model_id, dict(models.main.kwargs)),
         subagent=ModelChoice(models.subagent.model_id, dict(models.subagent.kwargs)),
-        use_gateway=use_gateway,
     )
     surface.subagents = [
         SurfaceSubagent(

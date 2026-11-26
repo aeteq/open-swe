@@ -1,9 +1,8 @@
 """Open SWE's middleware around each model call, run here as the catalog's ``LoopRules`` say.
 
 Before each call it ends the run where a rule says to, adds the thread's task
-context, keeps the sandbox's
-GitHub proxy fresh, picks the call's route and model, and assembles its system
-prompt and tool list. A thread's route is classified here, once, alongside the run's
+context, picks the call's route and model, and assembles its system prompt and tool
+list. A thread's route is classified here, once, alongside the run's
 preparation (``rt.routing``). After an answer that calls no tool, it
 asks again for the reply or CLI result the run owes. When the run ends, it asks
 for the graph's own end-of-run work and reports the end, neither of which the run
@@ -19,7 +18,6 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Collection, Mapping, Sequence
-from datetime import UTC, datetime, timedelta
 from typing import Final
 from xml.etree import ElementTree
 
@@ -36,7 +34,6 @@ from pydantic import JsonValue, TypeAdapter
 from runtime_api.catalog import (
     CLIENT_CALL_PENDING,
     JOINED_TASK_CONTEXT,
-    CliResultRules,
     LoopRules,
     Nudging,
     ReplyRules,
@@ -47,20 +44,14 @@ from runtime_api.catalog import (
 from runtime_api.endpoint import call
 from runtime_api.loop import (
     FINISH_SCOUT_PLAN,
-    INCIDENT_CONTEXT,
-    REFRESH_GITHUB_PROXY,
     REPLY_ON_BEHALF,
     RUN_ENDED,
     SETTLE_REVIEW_CHECK,
     STEP_LIMIT_REACHED,
     BeforeModel,
-    GitHubProxyRefreshed,
     ModelCall,
     PhaseResult,
-    Prepared,
-    RefreshGitHubProxy,
     ReplyOnBehalf,
-    Routed,
     RunEnded,
     ScoutPlanEnd,
 )
@@ -68,12 +59,12 @@ from runtime_api.model_errors import is_model_failure_reply
 from runtime_api.models import model_for
 from runtime_api.operations import RunRequest
 from runtime_api.provenance import Provenance
+from runtime_api.route_questions import TaskRoute
 
 from rt.backend import (
     OpenSweBackend,
     RunLocal,
     harness_message,
-    human_messages,
     run_call,
 )
 from rt.routing import Route, RouteClassifier
@@ -84,24 +75,13 @@ logger = logging.getLogger(__name__)
 # What ``ModelCallLimitMiddleware`` ends a run with once it reaches its limit.
 _LIMIT_MARKER: Final = "Model call limits exceeded"
 _SUMMARIZATION_EVENT: Final = "_summarization_event"
-# Held state: when the sandbox's GitHub token next needs replacing. It lives in the thread's
-# checkpoint, so it holds for the next run on whichever backend replica serves it.
-_GITHUB_PROXY_DUE: Final = "github_proxy_refresh_at"
-# A token is replaced this long before it expires. The backend never hands out one with
-# less left, so a replacement is not due again at once.
-_GITHUB_PROXY_WINDOW: Final = timedelta(minutes=10)
-# A thread whose sandbox has no GitHub proxy is asked again after this long.
-_GITHUB_PROXY_RECHECK: Final = timedelta(minutes=30)
-# A refresh that failed is tried again after this long, so a failure that keeps happening
-# does not hold up every model call.
-_GITHUB_PROXY_RETRY: Final = timedelta(minutes=1)
+# Held state: the classifier already labeled the thread's first request for its trace.
+_SHADOWED: Final = "jev_shadowed"
 _json_dicts = TypeAdapter(list[dict[str, JsonValue]])
 # Starts the id of each message that tells the model its role in the thread's task.
 _ROLE: Final = "task-role:"
 # Starts the id of the message holding what the backend worked out for this run.
 _RUN_CONTEXT: Final = "run-context:"
-# Starts the id of the message holding an incident run's instructions for its next call.
-_INCIDENT: Final = "incident-context:"
 
 
 def content_text(content: object) -> str:
@@ -202,24 +182,6 @@ def _held(state: Mapping[str, object]) -> Mapping[str, object]:
     return held if isinstance(held, Mapping) else {}
 
 
-def _github_proxy_due(refreshed: GitHubProxyRefreshed, now: datetime) -> dict[str, JsonValue]:
-    due = (
-        refreshed.expires_at - _GITHUB_PROXY_WINDOW
-        if refreshed.expires_at is not None
-        else now + _GITHUB_PROXY_RECHECK
-    )
-    return {_GITHUB_PROXY_DUE: due.isoformat()}
-
-
-def _moment(value: object) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
 class _Turn:
     """What happened since the last thing a person said."""
 
@@ -262,25 +224,6 @@ class _Turn:
         return ""
 
 
-class Asked:
-    """The GitHub token refresh a model call waits on, asked for alongside the inbox."""
-
-    def __init__(self, proxy: Awaitable[dict[str, JsonValue]]) -> None:
-        self._proxy = asyncio.ensure_future(proxy)
-        self._answered = False
-
-    async def answers(self) -> dict[str, JsonValue]:
-        self._answered = True
-        return await self._proxy
-
-    async def close(self) -> None:
-        """Stop what is still asked; what failed unread is logged."""
-        self._proxy.cancel()
-        [result] = await asyncio.gather(self._proxy, return_exceptions=True)
-        if not self._answered and isinstance(result, Exception):
-            logger.warning("A call before the model call failed unread", exc_info=result)
-
-
 class RunLoop:
     """What happens around each of the run's model calls, as its ``LoopRules`` say."""
 
@@ -306,37 +249,20 @@ class RunLoop:
         update: dict[str, JsonValue] = {JOINED_TASK_CONTEXT: None}
         if self.rules.reply is not None:
             update.update(reply_surface=self.rules.reply.surface, reply_nudges=0)
-        if self.rules.cli_result is not None:
-            update["cli_result_nudges"] = 0
         return update
 
     @property
     def looks_at_answers(self) -> bool:
-        return self.rules.reply is not None or self.rules.cli_result is not None
-
-    def ask(self, state: Mapping[str, object]) -> Asked | None:
-        """Start what the backend is asked before a model call whose answer the inbox does
-        not change; None when the run stops here whatever the inbox holds."""
-        held = _held(state)
-        if self._stops(held):
-            return None
-        return Asked(self._github_proxy(held))
+        return self.rules.reply is not None
 
     def _stops(self, held: Mapping[str, object]) -> bool:
         return any(held.get(key) for key in self.rules.stop_when)
 
-    async def before_model(
-        self, state: Mapping[str, object], asked: Asked | None = None
-    ) -> BeforeModel:
+    async def before_model(self, state: Mapping[str, object]) -> BeforeModel:
         held = _held(state)
         if self._stops(held) or self._awaits_client(state):
             return BeforeModel(jump_to="end")
-        if asked is None:
-            asked = Asked(self._github_proxy(held))
-        try:
-            update = await asked.answers()
-        finally:
-            await asked.close()
+        update: dict[str, JsonValue] = {}
         context = self._task_context(held)
         messages = _messages(state)
         visible = visible_messages(state)
@@ -378,35 +304,22 @@ class RunLoop:
                     source="task_context",
                 )
             )
-        if self.rules.incident:
-            # In a message, not the system prompt: they change from call to call, and a
-            # changed system prompt misses the provider's cache for the whole conversation.
-            incident = await call(
-                self._backend,
-                INCIDENT_CONTEXT,
-                Routed(run_id=run_id(), humans=human_messages(messages)),
-            )
-            if incident.instructions and incident.instructions != latest_with_id(
-                visible, _INCIDENT
-            ):
-                added.append(
-                    harness_message(
-                        incident.instructions,
-                        message_id=f"{_INCIDENT}{uuid.uuid4()}",
-                        source="incident_context",
-                        provenance=Provenance(kind="context", sender="run:incident"),
-                    )
-                )
         route = await self._route(held, [*visible, *added])
         if route is not None:
+            self._backend.run.route = route.route
             update.update(self._kept(route))
-        current = {**held, **update}
-        # Subagents follow the route too, including on a run resumed without preparing; a
-        # route kept for this run alone is already on the run.
-        if (kept := kept_route(current.get("model_route"))) is not None:
+        elif (
+            self._backend.run.route is None
+            and (kept := kept_route(held.get("model_route"))) is not None
+        ):
             self._backend.run.route = kept
-        model = None if self._models is None else model_for(self._models, current)
-        system_prompt, workspace_prompt, thread_prompt = self._system_prompt(current)
+        current = {**held, **update}
+        model = (
+            None
+            if self._models is None
+            else model_for(self._models, {**current, "model_route": self._backend.run.route})
+        )
+        system_prompt, execution_prompt, thread_prompt = self._system_prompt(current)
         if self.rules.client_prompt:
             system_prompt = f"{system_prompt}\n\n{self.rules.client_prompt}"
         return BeforeModel(
@@ -414,7 +327,7 @@ class RunLoop:
             messages=_json_dicts.validate_python(messages_to_dict(added)),
             call=ModelCall(
                 system_prompt=system_prompt,
-                workspace_prompt=workspace_prompt,
+                execution_prompt=execution_prompt,
                 thread_prompt=thread_prompt,
                 hidden_tools=self._hidden(current),
                 model=model,
@@ -422,7 +335,6 @@ class RunLoop:
                 if self._models is None or (model is not None and model.reads_images)
                 else self._models.vision,
                 fallback=None if model is None else model.fallback,
-                use_gateway=self._models is not None and self._models.use_gateway,
             ),
         )
 
@@ -438,33 +350,6 @@ class RunLoop:
                 return True
         return False
 
-    async def _github_proxy(self, held: Mapping[str, object]) -> dict[str, JsonValue]:
-        """Put a new GitHub token on the sandbox once the one there is about to expire.
-
-        The call is awaited, so the model's first command never runs on an expired
-        token. A failure leaves the run going and the call is made again a minute later.
-        """
-        if not self.rules.refresh_github_proxy:
-            return {}
-        now = datetime.now(UTC)
-        due = _moment(held.get(_GITHUB_PROXY_DUE))
-        if due is not None and now < due:
-            return {}
-        try:
-            refreshed = await call(
-                self._backend, REFRESH_GITHUB_PROXY, RefreshGitHubProxy(run_id=run_id())
-            )
-        except Exception:
-            logger.warning("Could not refresh the sandbox's GitHub token", exc_info=True)
-            return {_GITHUB_PROXY_DUE: (now + _GITHUB_PROXY_RETRY).isoformat()}
-        return _github_proxy_due(refreshed, now)
-
-    def prepared(self, prepared: Prepared) -> dict[str, JsonValue]:
-        """Held state that keeps the token preparation put on the sandbox until it is due."""
-        if prepared.github_proxy is None or not self.rules.refresh_github_proxy:
-            return {}
-        return _github_proxy_due(prepared.github_proxy, datetime.now(UTC))
-
     def _task_context(self, held: Mapping[str, object]) -> TaskContext:
         """The thread's role and task: the catalog's, or the task it joined since."""
         context = self.rules.task_context or TaskContext()
@@ -475,8 +360,9 @@ class RunLoop:
 
     def classify_ahead(self, state: Mapping[str, object]) -> asyncio.Task[Route] | None:
         """Start classifying the turn's route while the run prepares, where the thread's
-        held state leaves its route to the classifier."""
-        if not self._classifies(_held(state)):
+        held state leaves its route to the classifier or its trace awaits a shadow answer."""
+        held = _held(state)
+        if not (self._classifies(held) or self._shadows(held)):
             return None
         return asyncio.ensure_future(self._classifier.classify(_messages(state)))
 
@@ -491,6 +377,13 @@ class RunLoop:
             and held.get("model_route_attempted_for") != run_id()
         )
 
+    def _shadows(self, held: Mapping[str, object]) -> bool:
+        """Whether the turn classifies the thread's request for its trace alone."""
+        rules = self.rules.routing
+        return (
+            rules is not None and rules.shadow and rules.mode != "auto" and not held.get(_SHADOWED)
+        )
+
     async def routed(
         self,
         held: Mapping[str, object],
@@ -503,15 +396,20 @@ class RunLoop:
         ``held`` is the state the run's preparation left, which may have changed what
         ``classify_ahead`` saw: a classification it no longer needs is stopped.
         """
+        shadowed: dict[str, JsonValue] = {}
+        if self._shadows(held):
+            # The classification is for the trace alone; the arm routes as it always does.
+            shadowed = await self._shadowed(messages, classifying)
+            classifying = None
         try:
             route = await self._route(held, messages, classifying)
         finally:
             if classifying is not None:
                 classifying.cancel()
         if route is None:
-            return {}
+            return shadowed
         self._backend.run.route = route.route
-        update = self._kept(route)
+        update = {**shadowed, **self._kept(route)}
         rules = self.rules.routing
         model_id = rules.route_model_ids.get(route.route) if rules is not None else None
         if rules is not None and route.route != "default" and model_id:
@@ -519,6 +417,20 @@ class RunLoop:
                 selected_model_id=model_id, selected_effort=rules.route_efforts.get(route.route)
             )
         return update
+
+    async def _shadowed(
+        self, messages: Sequence[BaseMessage], classifying: asyncio.Task[Route] | None
+    ) -> dict[str, JsonValue]:
+        """What the classifier says about the thread's first request, for the trace; the
+        run's model is untouched. A failure, no task type from Jev, or a message that asks
+        for nothing leaves it for a later turn."""
+        try:
+            classified = await (classifying or self._classifier.classify(messages))
+        except Exception:
+            logger.warning("Could not classify the thread's request", exc_info=True)
+            return {}
+        self._backend.run.classified = classified.trace_metadata
+        return {_SHADOWED: True} if classified.task_type not in (None, TaskRoute.NO_TASK) else {}
 
     @staticmethod
     def _kept(route: Route) -> dict[str, JsonValue]:
@@ -554,6 +466,7 @@ class RunLoop:
         else:
             classified = await (classifying or self._classifier.classify(messages))
             route, persist = classified.route, classified.persist
+            self._backend.run.classified = classified.trace_metadata
         if rules.mode == "auto" or requested:
             model_id = requested if requested else rules.route_model_ids.get(route)
             if isinstance(model_id, str) and model_id:
@@ -561,24 +474,21 @@ class RunLoop:
         return Route(route=route, persist=persist)
 
     def _system_prompt(self, held: Mapping[str, object]) -> tuple[str, str, str]:
-        """The prompt every thread shares, the part its workspace's threads share, and the
-        part only this one's says, all fixed for the thread's life: a changed byte misses
-        the provider's cache.
-
-        The rendered prompt ends in the workspace's part and then the thread's. A thread
-        rendered before the backend named a part has none, and the first holds the rest.
-        """
+        """The shared, execution and thread partitions of the cached prompt."""
         rendered = held.get("rendered_system_prompt")
         rest = rendered if isinstance(rendered, str) else ""
         parts: list[str] = []
-        for key in ("rendered_thread_prompt", "rendered_workspace_prompt"):
-            part = held.get(key)
+        for keys in (
+            ("rendered_thread_prompt",),
+            ("rendered_execution_prompt", "rendered_workspace_prompt"),
+        ):
+            part = next((held[key] for key in keys if key in held), None)
             part = part if isinstance(part, str) and rest.endswith(part) else ""
             rest = rest.removesuffix(part).rstrip()
             parts.append(part)
-        thread, workspace = parts
+        thread, execution = parts
         sections = [self.rules.deployment_prompt, rest]
-        return "\n\n".join(section for section in sections if section), workspace, thread
+        return "\n\n".join(section for section in sections if section), execution, thread
 
     def _hidden(self, held: Mapping[str, object]) -> list[str]:
         hidden = set(self.rules.hidden_tools)
@@ -594,7 +504,7 @@ class RunLoop:
         return {reply.nudge_sender} if reply is not None and reply.nudge_sender else set()
 
     async def after_model(self, state: Mapping[str, object]) -> PhaseResult:
-        """Ask again for the CLI result, then the reply an answer owes."""
+        """Ask again for the reply an answer owes."""
         messages = state.get("messages")
         last = messages[-1] if isinstance(messages, list) and messages else None
         if not isinstance(last, AIMessage) or last.tool_calls:
@@ -606,11 +516,7 @@ class RunLoop:
             # written for it is the run's answer.
             if self.rules.reply is not None and held.get("reply_surface") == "slack":
                 await self._reply_on_behalf(state, content_text(last.content))
-            return PhaseResult(update={"reply_nudges": 0, "cli_result_nudges": 0})
-        if self.rules.cli_result is not None:
-            asked = self._cli_result(self.rules.cli_result, state, held, update)
-            if asked is not None:
-                return asked
+            return PhaseResult(update={"reply_nudges": 0})
         if self.rules.reply is not None:
             return await self._reply(self.rules.reply, state, held, update)
         return PhaseResult(update=update)
@@ -630,37 +536,6 @@ class RunLoop:
             )
         ]
         return _json_dicts.validate_python(messages_to_dict(added))
-
-    def _cli_result(
-        self,
-        rules: CliResultRules,
-        state: Mapping[str, object],
-        held: Mapping[str, object],
-        update: dict[str, JsonValue],
-    ) -> PhaseResult | None:
-        turn = _Turn(_messages(state), self._guards)
-        call_ids = {
-            str(tool_call.get("id"))
-            for tool_call in turn.calls()
-            if tool_call.get("name") == rules.tool
-        }
-        if turn.succeeded(call_ids):
-            update["cli_result_nudges"] = 0
-            return None
-        nudges = held.get("cli_result_nudges")
-        asked = nudges if isinstance(nudges, int) else 0
-        if asked >= rules.max_nudges:
-            logger.warning(
-                "Run ended without a CLI result after every nudge",
-                extra={"result_tool": rules.tool, "result_attempts": asked},
-            )
-            update["cli_result_nudges"] = 0
-            return None
-        return PhaseResult(
-            update={**update, "cli_result_nudges": asked + 1},
-            messages=self._nudge(rules, state),
-            jump_to="model",
-        )
 
     async def _reply(
         self,

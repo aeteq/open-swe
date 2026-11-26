@@ -1,5 +1,6 @@
-Inspect or stop background work: sandbox commands and workspace refreshes.
+Inspect or stop background work: sandbox commands and global execution image builds.
 
 `status` and `stop` require `task_id`; `list` does not.
-A refresh's status carries `steps` — which stage it reached — and, while a script is running, a tail of that script's live `bash -x` trace read off the builder sandbox; workspace refreshes are visible only to workspace admins.
-Status reads are for explicit user requests, for following a long rebuild, or when completion needs inspection — not for polling loops.
+An image build carries `steps` and, while a script runs, a tail of its live `bash -x` trace from the builder sandbox.
+Image tasks use `image-` IDs and are available only in a private admin conversation; shared threads can still inspect their own sandbox commands.
+Status reads are for explicit requests, following a long rebuild, or inspecting completion, not polling loops.

@@ -11,11 +11,14 @@ from openswe.merge_queue import dispatch
 from openswe.merge_queue.admission import QueuePolicy
 from openswe.merge_queue.configuration import QueueConfiguration
 from openswe.merge_queue.dispatch import (
+    DeferralForbidden,
+    DispatchEnvelope,
     DispatchGateway,
     DispatchRejected,
     WorkflowPolicy,
     WorkflowPolicyMismatch,
 )
+from openswe.merge_queue.recovery import RecoveryMember, RecoverySettings
 from openswe.merge_queue.validation_contract import ValidationPolicy, ValidationRequest
 
 
@@ -127,9 +130,17 @@ async def test_dispatch_retries_only_authenticated_preflight_failures(
     assert all(request.content == sent[0].content for request in sent)
 
 
-def test_service_suite_policy_requires_new_revision_and_changes_validation_trust():
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"validation_suite": "services"},
+        {"allow_main_advance": True},
+        {"allow_test_exceptions": True},
+    ],
+)
+def test_service_suite_policy_requires_new_revision_and_changes_validation_trust(change):
     config = QueueConfiguration(
-        workspace_id=uuid7(),
+        routing_id=uuid7(),
         repository="acme/widgets",
         repository_id=42,
         mode="native",
@@ -139,6 +150,7 @@ def test_service_suite_policy_requires_new_revision_and_changes_validation_trust
         workflow_policy_revision=1,
         check_app_id=456,
         operator_emails=frozenset({"operator@example.com"}),
+        recovery=RecoverySettings(channel_id="C123", operator_id=uuid7()),
         policy=QueuePolicy(checks={}, validation=ValidationPolicy(dispatch_actor_id=123)),
     )
     approved = WorkflowPolicy(
@@ -149,13 +161,101 @@ def test_service_suite_policy_requires_new_revision_and_changes_validation_trust
         workflow_policy_revision=1,
         dispatch_actor_id=123,
         check_app_id=456,
-        validation_suite="services",
+        **change,
     )
     with pytest.raises(ValueError, match="revision"):
         config.with_workflow_policy(approved)
     updated = config.with_workflow_policy(
         approved.model_copy(update={"workflow_policy_revision": 2})
     )
-    assert updated.policy.validation.suite == "services"
+    assert updated.policy.validation.suite == approved.validation_suite
+    assert updated.allow_main_advance == approved.allow_main_advance
+    assert updated.allow_test_exceptions == approved.allow_test_exceptions
     assert updated.native_trust != config.native_trust
     assert updated.generation != config.generation
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "ok",
+        "multiple",
+        "timeout",
+        "gateway",
+        "redirect",
+        "rejected",
+        "forbidden",
+        "unsigned",
+        "wrong-request",
+    ],
+)
+async def test_deferral_uses_gateway_without_replaying_uncertain_removal(monkeypatch, outcome):
+    envelope = DispatchEnvelope(
+        contract=ValidationRequest(
+            repository="acme/widgets",
+            batch_id=uuid7(),
+            attempt_id=uuid7(),
+            candidate_sha="a" * 40,
+            workflow_sha="b" * 40,
+            dispatch_actor_id=123,
+        ),
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    member = RecoveryMember(entry_id="entry-2", number=2, head_sha="c" * 40)
+    additional = (
+        (RecoveryMember(entry_id="entry-3", number=3, head_sha="d" * 40),)
+        if outcome == "multiple"
+        else ()
+    )
+    key = uuid7()
+    sent = []
+
+    def respond(request):
+        sent.append(request)
+        assert str(request.url) == "https://dispatcher.example/merge-queue/deferrals"
+        assert (
+            request.headers["X-Merge-Queue-Signature"]
+            == hmac.digest(b"s" * 32, b"deferral:" + request.content, "sha256").hex()
+        )
+        assert json.loads(request.content) == {
+            "dispatch_body": envelope.model_dump_json(exclude_none=True),
+            "request_key": str(key),
+            "expires_at": envelope.model_dump(mode="json")["expires_at"],
+            **member.model_dump(mode="json"),
+            **(
+                {"additional_members": [m.model_dump(mode="json") for m in additional]}
+                if additional
+                else {}
+            ),
+        }
+        if outcome == "timeout":
+            raise httpx2.ReadTimeout("Response lost", request=request)
+        headers = {"Location": "https://other.example/"}
+        if outcome in {"forbidden", "wrong-request"}:
+            headers["X-Merge-Queue-Deferral-Signature"] = hmac.digest(
+                b"s" * 32,
+                b"deferral-forbidden:" + (request.content if outcome == "forbidden" else b"other"),
+                "sha256",
+            ).hex()
+        return httpx2.Response(
+            {"ok": 204, "multiple": 204, "gateway": 502, "redirect": 307, "rejected": 409}.get(
+                outcome, 403
+            ),
+            headers=headers,
+        )
+
+    monkeypatch.setattr(dispatch, "pooled_transport", lambda: httpx2.MockTransport(respond))
+    gateway = DispatchGateway(
+        "https://dispatcher.example/merge-queue/dispatch", SecretStr("s" * 32)
+    )
+    if outcome in {"ok", "multiple"}:
+        await gateway.defer(
+            envelope, key, member, additional_members=additional, expires_at=envelope.expires_at
+        )
+    else:
+        with pytest.raises((httpx2.HTTPError, ValueError)) as error:
+            await gateway.defer(envelope, key, member, expires_at=envelope.expires_at)
+        assert isinstance(error.value, DeferralForbidden) is (outcome == "forbidden")
+        if outcome == "forbidden":
+            assert "GitHub denied queue removal" in str(error.value)
+    assert len(sent) == 1

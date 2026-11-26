@@ -8,8 +8,10 @@ import type {
 } from "@/features/agents/lib/types"
 import { AUTOMATION_EVENT_PROVIDERS } from "@/features/agents/lib/types"
 import {
+  DEFAULT_SCHEDULE,
+  ScheduleSpec,
   describeCron,
-  isDescribableCron,
+  localTimeZone,
 } from "@/features/automations/lib/cron"
 
 /** A trigger being edited: its required fields may still be empty. */
@@ -18,6 +20,7 @@ export type TriggerDraft =
       key: string
       kind: "schedule"
       cron: string
+      timezone: string
       /** Edit the cron as text rather than through a preset. */
       custom: boolean
       slackChannels: Array<string>
@@ -27,6 +30,9 @@ export type TriggerDraft =
       kind: "github"
       repo: string | null
       events: Array<GitHubTriggerEvent>
+      headBranchesExclude: BranchPatterns
+      baseBranches: BranchPatterns
+      allowPublicRepo: boolean
     }
   | {
       key: string
@@ -47,24 +53,76 @@ export type TriggerDraft =
       maxRunsPerHour: string
     }
 
+/** A GitHub trigger's branch globs as edited, one per line, so a glob like `release-[1,2]` keeps its comma. */
+export class BranchPatterns {
+  constructor(readonly text = "") {}
+
+  static of(patterns: Array<string> = []): BranchPatterns {
+    return new BranchPatterns(patterns.join("\n"))
+  }
+
+  get entries(): Array<string> {
+    return this.text
+      .split("\n")
+      .map((pattern) => pattern.trim())
+      .filter(Boolean)
+  }
+
+  /** Why the server would refuse these globs, naming the field they fill. */
+  problem(field: string): string | null {
+    const entries = this.entries
+    if (entries.length > 20) return `${field} takes at most 20 patterns.`
+    return entries.some((pattern) => pattern.length > 200)
+      ? `${field} patterns must be 200 characters or fewer.`
+      : null
+  }
+}
+
 let nextKey = 0
 const draftKey = () => `trigger-${++nextKey}`
 
-export function scheduleDraft(cron: string, slackChannels: Array<string> = []) {
+/** A new schedule runs in the viewer's own time zone; a saved one keeps its own. */
+export function scheduleDraft(
+  cron: string = DEFAULT_SCHEDULE.cron,
+  timezone: string = localTimeZone(),
+  slackChannels: Array<string> = []
+) {
   return {
     key: draftKey(),
     kind: "schedule" as const,
     cron,
-    custom: !isDescribableCron(cron),
+    timezone,
+    custom: ScheduleSpec.parse(cron) === null,
     slackChannels,
   }
 }
 
+/** A fresh trigger of `kind`, as the trigger's kind menu switches to it. */
+export function draftOfKind(kind: TriggerDraft["kind"]): TriggerDraft {
+  switch (kind) {
+    case "schedule":
+      return scheduleDraft()
+    case "github":
+      return githubDraft()
+    case "slack":
+      return slackDraft()
+    case "linear":
+      return linearDraft()
+  }
+}
+
 export function githubDraft(
-  repo: string | null = null,
-  events: Array<GitHubTriggerEvent> = []
+  trigger?: Extract<AutomationTriggerConfig, { kind: "github" }>
 ) {
-  return { key: draftKey(), kind: "github" as const, repo, events }
+  return {
+    key: draftKey(),
+    kind: "github" as const,
+    repo: trigger?.repo ?? null,
+    events: trigger?.events ?? ([] as Array<GitHubTriggerEvent>),
+    headBranchesExclude: BranchPatterns.of(trigger?.head_branches_exclude),
+    baseBranches: BranchPatterns.of(trigger?.base_branches),
+    allowPublicRepo: trigger?.allow_public_repo ?? false,
+  }
 }
 
 export function slackDraft(
@@ -99,13 +157,17 @@ export function draftsFor(
   schedule?: AgentSchedule,
   templateCron?: string | null
 ): Array<TriggerDraft> {
-  if (!schedule) return templateCron ? [scheduleDraft(templateCron)] : []
+  if (!schedule) return [scheduleDraft(templateCron ?? undefined)]
   return schedule.triggers.map((trigger): TriggerDraft => {
     switch (trigger.kind) {
       case "schedule":
-        return scheduleDraft(trigger.cron, trigger.slack_channels)
+        return scheduleDraft(
+          trigger.cron,
+          trigger.timezone ?? "UTC",
+          trigger.slack_channels
+        )
       case "github":
-        return githubDraft(trigger.repo, trigger.events)
+        return githubDraft(trigger)
       case "slack":
         return slackDraft(trigger)
       case "linear":
@@ -118,14 +180,28 @@ function runsPerHour(value: string): number | null {
   return value.trim() ? Number(value) : null
 }
 
-/** Why a draft cannot be saved yet, or null when it can. */
-export function draftProblem(draft: TriggerDraft): string | null {
+/**
+ * Why a draft cannot be saved yet, or null when it can. `isPublicRepo` says whether a
+ * repository is known not to be private: anyone can write its issues and pull requests,
+ * so its trigger has to be confirmed.
+ */
+export function draftProblem(
+  draft: TriggerDraft,
+  isPublicRepo: (repo: string) => boolean = () => false
+): string | null {
   switch (draft.kind) {
     case "schedule":
       return draft.cron.trim() ? null : "Enter a cron schedule."
     case "github":
       if (!draft.repo) return "Pick the repository whose events run this."
-      return draft.events.length === 0 ? "Pick at least one event." : null
+      if (draft.events.length === 0) return "Pick at least one event."
+      if (isPublicRepo(draft.repo) && !draft.allowPublicRepo) {
+        return "Confirm this trigger may run on a public repository."
+      }
+      return (
+        draft.headBranchesExclude.problem("Skip head branches") ??
+        draft.baseBranches.problem("Base branches")
+      )
     case "slack":
     case "linear": {
       if (draft.kind === "slack" && !draft.channel) {
@@ -158,6 +234,7 @@ export function toTriggers(
           {
             kind: "schedule",
             cron: draft.cron.trim(),
+            timezone: draft.timezone,
             ...(draft.slackChannels.length > 0 && {
               slack_channels: draft.slackChannels,
             }),
@@ -165,7 +242,16 @@ export function toTriggers(
         ]
       case "github":
         return draft.repo
-          ? [{ kind: "github", repo: draft.repo, events: draft.events }]
+          ? [
+              {
+                kind: "github",
+                repo: draft.repo,
+                events: draft.events,
+                head_branches_exclude: draft.headBranchesExclude.entries,
+                base_branches: draft.baseBranches.entries,
+                ...(draft.allowPublicRepo ? { allow_public_repo: true } : {}),
+              },
+            ]
           : []
       case "slack":
         return draft.channel
@@ -202,10 +288,11 @@ export function toTriggers(
 export function describeTriggers(schedule: AgentSchedule): string {
   const parts = schedule.triggers.map((trigger) => {
     if (trigger.kind === "schedule") {
+      const when = describeCron(trigger.cron, trigger.timezone ?? "UTC")
       const reads = trigger.slack_channels?.length ?? 0
       return reads > 0
-        ? `${describeCron(trigger.cron)}, reading ${reads} Slack channel${reads === 1 ? "" : "s"}`
-        : describeCron(trigger.cron)
+        ? `${when}, reading ${reads} Slack channel${reads === 1 ? "" : "s"}`
+        : when
     }
     const provider = AUTOMATION_EVENT_PROVIDERS[trigger.kind]
     const events: Record<string, string> = provider.events

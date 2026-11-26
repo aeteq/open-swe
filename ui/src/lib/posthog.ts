@@ -10,11 +10,9 @@ const pages = new Set([
   "agents",
   "review",
   "usage",
-  "workspaces",
   "integrations",
   "admin",
   "assistant",
-  "incidents",
   "cloud-agents",
   "feature-flags",
 ])

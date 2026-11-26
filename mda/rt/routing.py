@@ -9,7 +9,7 @@ keeps its own for the runs it answers from their plan. Both ask the questions in
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from langchain_core.messages import HumanMessage
 from runtime_api.provenance import Provenance
@@ -26,10 +26,23 @@ class Route:
     # False when the classifier could not decide; the run uses the route for this run
     # only, so a later turn classifies again instead of keeping a fallback.
     persist: bool = True
+    # What Jev said the request is, by question, which the trace records. Not part of the
+    # route itself, so two routes compare equal without them.
+    answers: dict[str, str] = field(default_factory=dict, compare=False)
+
+    @property
+    def task_type(self) -> str | None:
+        """What kind of task Jev said the request is; None where it was not asked or gave none."""
+        return self.answers.get("task_type")
+
+    @property
+    def trace_metadata(self) -> dict[str, str]:
+        """Jev's answers, for the turn's trace."""
+        return {f"jev_{question}": choice for question, choice in self.answers.items()}
 
 
 class RouteClassifier:
-    """Routes the person's latest request by what kind of task it is."""
+    """Routes the person's latest request by how open-ended it is."""
 
     @staticmethod
     def latest_task(messages: Sequence[object]) -> str:
@@ -38,28 +51,33 @@ class RouteClassifier:
         Context blocks (sender metadata, dynamic context) are appended as
         ``HumanMessage``s after the real input, so the newest ``HumanMessage`` is
         usually machine-authored. Only a message whose provenance says a person wrote it
-        carries a request.
+        carries a request. A run no person started (a schedule, a merged pull request's
+        rollout check, a background event) has none; its task is the latest event sent
+        to it.
         """
         plain = ""
+        event = ""
         for message in reversed(messages):
             if not isinstance(message, HumanMessage):
                 continue
             content = message.content
-            if (provenance := Provenance.of(message)) is not None and provenance.human:
-                if authored := input_message_text(content):
-                    return authored
+            if (provenance := Provenance.of(message)) is not None:
+                if provenance.human:
+                    return input_message_text(content) or ""
+                if not event and provenance.kind == "system":
+                    event = input_message_text(content) or ""
                 continue
             text = message.text
             if plain or not isinstance(text, str) or "<dynamic-context" in text:
                 continue
             if "<input-message" not in text:
                 plain = text
-        return plain
+        return plain or event
 
     async def classify(self, messages: Sequence[object]) -> Route:
         """The route the person's latest request takes; ``default`` for this run alone when
         the classifier cannot say."""
-        chosen, persist = await TaskRoute.classify(self.latest_task(messages), prompt=prompt)
-        if chosen is None:
-            return Route("default", persist=False)
-        return Route(chosen, persist=persist)
+        decision = await TaskRoute.decide(self.latest_task(messages), prompt=prompt)
+        if decision.route is None:
+            return Route("default", persist=False, answers=decision.answers)
+        return Route(decision.route, persist=decision.persist, answers=decision.answers)

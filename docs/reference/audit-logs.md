@@ -4,32 +4,37 @@ Robin stores metadata-only audit records in PostgreSQL's `open_swe.audit_logs` t
 The envelope follows LangSmith's current audit schema: `id`, `request_time`, `operation_name`, nullable `operation_succeeded`, `user_id`, `api_key_id`, `workspace_id`, and JSONB `enrichments`.
 Robin has no organization or second LangSmith user identity, so those columns are omitted; API-key IDs retain Robin's text representation.
 
-Records have no cascading foreign keys: deleting an account, key, or workspace must not erase its history.
+Records have no cascading foreign keys: deleting an account or key must not erase its history.
 Application writes are insert-only and duplicate event IDs are ignored.
 Time, workspace/time, and operation/time indexes support queries.
 
 ## Coverage
 
-- Authenticated dashboard `POST`, `PUT`, `PATCH`, and `DELETE` requests, including API-key and federated GitHub Actions thread requests.
+- Authenticated dashboard `POST`, `PUT`, `PATCH`, and `DELETE` requests to endpoints explicitly opted in with `audit_endpoint`, including selected API-key thread requests.
   Operation names use the endpoint name without its `api_` prefix.
-  This is **API activity**, not proof of a committed business mutation: some POST endpoints are reads, and HTTP success follows the response status.
-- The `save_user_settings`, `save_user_instructions`, `manage_feature_flags`, and `manage_review_approval_mode` tools, whether called by the agent directly or from code mode.
-  Read actions are excluded.
+  This is **API activity**, not proof of a committed business mutation: HTTP success follows the response status.
+- Tools explicitly opted in with `audit_tool`, whether called directly or from code mode.
+  Coverage includes settings and instructions, skills, review configuration and publication, PR creation and expedited merging, human-review requests, integration bindings and automation administration, projects, and thread management.
+  `slack_post_message` records channel-post and automation-creator DM attempts, including membership refusals and Slack failures, without retaining the destination or message.
+  Declared read actions are excluded.
   Exceptions and returned `ok: false`, `success: false`, or errors count as failures.
-- Workspace lifecycle, repository-configuration, and workspace-settings HTTP operations attach the target workspace ID before deletion or after creation.
-  Feature-flag tool writes attach their explicit target workspace; instance-wide writes have no workspace ID.
-  Other operations may have no workspace scope.
+  Success describes the tool's result, not necessarily every side effect; for example, a successful Slack headline can have a failed details reply.
+- Integration-binding and global-settings mutations record their verified actor and target resource metadata.
+  Shared defaults and image operations have no Robin execution-environment scope.
+  Historical workspace IDs remain audit data, not routing configuration.
 
 Human IDs come from verified sessions.
 API-key actors use the key ID, not its creator.
-Tool records identify an agent, with the initiating user only for a direct user run, and include thread/sandbox provenance where available.
-A saved requester context is not evidence of a fresh human action.
-Tool `enrichments.workspace` can describe the execution workspace; `workspace_id` is set only for explicitly bound scopes.
+Tool records identify an agent, with the initiating user only for a direct user run or a direct remote MCP caller, and include thread/sandbox provenance where available.
+`enrichments.run_id` correlates opted-in tool events with the executing MDA run when available; it comes from server-side runtime context, never tool arguments or a tracing callback's ID.
+It is omitted when unavailable, including remote MCP calls outside a run, without substituting a preparation ID.
+A saved requester context is not evidence of a fresh human action; scheduled and background runs can carry run correlation without acquiring human attribution.
+Historical `workspace_id` values remain available for audit queries; global operations do not infer a Robin environment from a thread or binding.
 
 Enrichments allowlist actor and execution metadata, HTTP method, route **template**, status, and UUID path resource IDs.
-Instance and workspace settings saves also record `settings_scope` and `settings_changes`: changed field names mapped to `before`/`after` stored override values.
+Global settings saves also record `settings_scope` and `settings_changes`: changed field names mapped to `before`/`after` stored values.
 Feature-flag booleans (including `model_routing_enabled`) and the human-review assignment timeout retain their values; all non-null text values are `[REDACTED]`.
-A null value means the override was unset, restoring defaults or inheritance, not the effective resolved value.
+A null value means the override was unset, restoring defaults, not the effective resolved value.
 Unchanged fields, timestamps, and unknown fields are excluded.
 These changes are attached only after persistence succeeds, even if a later step fails; a no-op save records an empty map.
 A failed comparison read omits the changes rather than inventing previous values.
@@ -37,9 +42,11 @@ Concurrent saves can observe the same previous value; this is not transactional 
 
 Request/response bodies, tool arguments/results, query strings, headers, credentials, and exception text are never stored.
 No IP address is inferred from untrusted forwarded headers.
-Production and preview installations retain their own audit history; a workspace override additionally identifies its workspace.
+Production and preview installations retain their own audit history.
 
-Unauthenticated failures, failures before an actor is bound (including CSRF), GET/read access, login/logout, webhook-driven actions, arbitrary shell commands, and tools not listed above are not covered.
+Unauthenticated failures, failures before an actor is bound (including CSRF), GET/read access, login/logout, webhook-driven actions, arbitrary shell commands, and HTTP endpoints or tools without an explicit audit opt-in are not covered.
+In particular, this is not a complete outbound-action ledger: arbitrary HTTP requests, managed integration tools, and other Slack delivery paths such as `slack_reply` are not captured here.
+Classifier policy verdicts and runtime turn traces are separate from this mutation audit history.
 There is no historical backfill.
 
 ## Querying
@@ -68,3 +75,31 @@ Writes are bounded to three seconds, shielded from AnyIO request cancellation, a
 A crash, database outage, or failed write can lose an event; this is not a transactional or tamper-proof compliance ledger.
 PostgreSQL administrators can still change rows.
 There is no automatic expiry or external export; operators must manage retention and backups for their installation.
+
+### Structured settings and usage tools
+
+`read_settings` and `patch_settings` expose schemas derived from the dashboard's typed global, execution, personal and repository settings models, not arbitrary SQL.
+Admins may access every resource and select a target person's immutable UUID.
+Nonadmins may access only their own personal settings when the backend supplies `personal_settings_tools_enabled: true` in the trusted run context (default off).
+This is a per-run parameter, not a persisted admin setting or a model-supplied tool argument; existing private-thread and ownership checks still apply.
+Existing ordinary personal-settings tools retain their access rules.
+Unknown fields and wrong types are rejected by existing validators/writers.
+Identity and credential metadata are not settings fields.
+
+Reads remain private, with admin-surface authorization for global, execution, repository and other-person resources.
+Supported shared writes require a verified sole writer and return only acknowledgements.
+Global, execution, repository opt-in and review-style writes use atomic version checks, including against dashboard writes.
+Personal settings and repository instructions keep their existing validated partial-write semantics.
+Writes use normal audit, cache and side-effect paths.
+Saving execution defaults never publishes images or recreates sandboxes.
+
+`read_usage` uses the same recorded analytics as Usage.
+Admins may read all users from a private admin surface; nonadmins may read only themselves.
+Own-only filters use immutable person IDs and their scoped identity aliases before final ranking, totals and pagination; personal responses omit other-user, reviewer and global ingestion metadata.
+Month-to-date starts at midnight UTC on the first; deployment reporting cutover can limit recorded coverage.
+Recorded costs may be incomplete and exclude external gateway calls.
+For the caller only, the tool also reuses the Usage page's authorized live gateway-policy counters, preserving policy-window resets and authorization/unavailability statuses instead of treating these as arbitrary-period totals.
+Other-user/deployment-wide live gateway spend is not supported.
+
+These resources are Robin instance/user/repository records, not Smith organization/tenant tables.
+Existing admin, private-owner and repository-access boundaries apply; no raw database tool, tenant-table access or cross-person credential grant is added.

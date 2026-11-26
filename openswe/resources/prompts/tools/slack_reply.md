@@ -1,14 +1,29 @@
-Send a message to the person who asked, in Slack and the Web UI.
-This is the only way your words reach them: a plain assistant message is never delivered.
+Send a reply to the current Slack conversation, also visible in the Web UI.
+Use this only when the current Source Context routes the response to Slack, explicitly authorizes a Slack reply, or an event-subscription turn explicitly directs rollout/deployment results to the Slack thread where that check was requested.
+The event-subscription exception applies only to those results; also report them through a normal assistant message in the dashboard.
+This tool's presence does not mean the current run may use it: its schema stays visible across response surfaces for prompt caching.
+Otherwise, when the response channel is web, answer through normal assistant messages; do not call this tool or search for another Slack tool to deliver the answer.
+A Slack conversation in the history does not override the current response channel.
+Follow the latest surface handoff.
 
-Use this for clarifying questions, essential progress updates, and the final answer or outcome.
+For Slack responses, this is how your words reach the asker; plain assistant messages are not delivered to Slack.
+The following instructions apply only when replying through this tool.
+Use it for clarifying questions, essential progress updates, and the final answer or outcome.
 `response_type` says whether this reply ends your turn.
 Use `"progress"` for a reply you will keep working after — the opening acknowledgement, an interim status note.
 Use `"final"` for anything that leaves the asker holding the ball: the answer, the outcome, a failure, a blocking question, an approval request.
 A `progress` reply settles nothing, so a turn that ends on one is treated as an unanswered turn.
-For Slack-triggered information-only requests, put the complete answer in `message`, not merely a summary, and do not repeat it in the final assistant response.
-Make `message` as concise as possible: default to one sentence with only the outcome/status and link, or one blocking question.
-Omit greetings, preambles, headings, recaps, implementation details, and redundant context; use bullets only when multiple items are essential.
+In Slack, default to 1–3 concise sentences or a few short bullets in `message`, leading with the result and any required action.
+Put longer supporting detail in a linked artifact; honor explicit requests for in-thread text.
+Do not split a long answer across multiple Slack replies.
+Keep the short summary, essential blockers, failures, and required decisions or actions visible in `message`.
+Do not paste bulk raw diffs, logs, or file listings into `message`; summarize or quote only the relevant excerpt and link the complete output in a PR or a file shared with `create_sandbox_file_download_url`.
+If Slack rejects a reply with `msg_too_long`, share the complete content as a downloadable file and retry with a concise summary and link rather than silently truncating it.
+Use `publish_artifact` for longer supporting detail, when the user asks for an artifact or HTML, or when interactive or visual content materially benefits from it; honor requests for in-thread text.
+When sharing an artifact, include a concise outcome and its link in `message`.
+Do not repeat the answer in the final assistant response.
+Keep status updates concise; do not add artifacts when a short answer is sufficient.
+Omit greetings, preambles, redundant recaps, and unnecessary detail; use headings or bullets when they improve readability.
 End the run by posting a concise final outcome here.
 
 Format `message` using standard Markdown: **bold**, _italic_, ~~strikethrough~~, [link text](url), and Markdown lists.
@@ -39,10 +54,12 @@ Do not add no-op options such as "Just discussing", "Do nothing", or "Ignore" �
 Do not add options such as "Reply in Slack" or "Tell me more" that merely ask the user to type a reply; they can already reply manually.
 Do not invent choices for open-ended questions.
 
-When the decision belongs to a specific person, set `option_user_id` to their Slack user ID (the `U...` ID, not their name or GitHub login).
+For ordinary shared-work choices, such as filing a ticket or fixing a bug in a draft PR, omit `option_user_id` so another participant can choose on their own behalf.
+Reporting the issue or triggering the run does not make someone the sole decision-maker.
+A shared click is a request from the clicker, subject to their own linked account, GitHub/repository access, and the action's server-side authorization; it does not grant the reporter's identity or credentials.
+When the decision inherently belongs to a specific person—personal preferences, account consent, author-only readiness, or a sensitive approval requiring their authorization—set `option_user_id` to their Slack user ID (the `U...` ID, not their name or GitHub login).
 This restricts all option buttons to that person server-side; an @mention alone does not.
-Use the intended decision-maker, even when someone else triggered the run.
-Omit `option_user_id` only for genuinely shared choices that anyone may answer.
+Use the intended decision-maker, even when someone else triggered the run; never remove required recipient restrictions to make an approval shared.
 Recipient-scoped options cannot be combined with custom `blocks`.
 
 To mention/tag a user, use Slack's mention format: <@USER_ID>.

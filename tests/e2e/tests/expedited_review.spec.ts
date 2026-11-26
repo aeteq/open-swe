@@ -311,24 +311,20 @@ test.describe("Expedited Slack review", () => {
     await page
       .locator(`[data-channel-id="D_${author!.slack_id.replace(/^U_/, "")}"]`)
       .click();
-    await expect(card(page)).toContainText(/Draft\./);
+    await expect(card(page)).toContainText(
+      /Marking it ready on GitHub alone does not post anything in Slack/,
+    );
     await expect(
       card(page).getByRole("button", { name: "Approve" }),
     ).toHaveCount(0);
     const diff = card(page).locator("img.block-image");
     await expect(diff).toBeVisible();
-    await expect(diff).toHaveAttribute("alt", /config\.py.*greet\.py/);
-    await expect(diff).not.toHaveAttribute("alt", /CHANGELOG/);
-    // 44 lines changed outside tests; only the 4 not covered by the auto-approve rule are
-    // drawn, and the other 40 are listed by guideline.
+    await expect(diff).toHaveAttribute("alt", "Diff of 2 files");
     await expect(card(page)).toContainText(
-      /Robin judged these auto-approvable under `?\.open-swe\/auto-approve-rules\/`? \(not shown\)/,
+      /Robin judged these auto-approvable/,
     );
     await expect(card(page)).toContainText(
-      /Release notes_?: `?CHANGELOG\.md`? \+30 −0/,
-    );
-    await expect(card(page)).toContainText(
-      /Generated constants_?: `?config\.py`? 1 hunk \+10 −0/,
+      "Review the full diff and omitted files",
     );
     // Git appends the enclosing line to a header, so compare only the ranges.
     expect(
@@ -369,9 +365,9 @@ test.describe("Expedited Slack review", () => {
     // 3. Only the author can mark it ready. Their click undrafts the PR and
     //    opens the card for approval; it is not an approval.
     await expect(
-      card(page).getByRole("button", { name: "Mark ready for review" }),
+      card(page).getByRole("button", { name: "Request review in Slack" }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Mark ready for review" }).click();
+    await page.getByRole("button", { name: "Request review in Slack" }).click();
     await expect
       .poll(async () => (await latest(request)).awaiting_ready, {
         timeout: 60_000,

@@ -3,7 +3,16 @@ import {
   InfoRegularIcon,
   WarningRegularIcon,
 } from "@langchain/macaw-components/icons"
-import { Component, createElement, memo, useMemo, useState } from "react"
+import {
+  Component,
+  createContext,
+  createElement,
+  memo,
+  use,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import { ChatCenteredTextIcon } from "@phosphor-icons/react/dist/ssr/ChatCenteredText"
 import { LightbulbIcon } from "@phosphor-icons/react/dist/ssr/Lightbulb"
 import { WarningOctagonIcon } from "@phosphor-icons/react/dist/ssr/WarningOctagon"
@@ -23,12 +32,18 @@ import {
   PreviewablePullRequestLink,
 } from "@/features/agents/components/PullRequestPreview"
 import { CodeBlock } from "./CodeBlock"
+import { useCopyAction } from "@langchain/macaw-components/CopyButton"
+import { IconButton } from "@langchain/macaw-components/IconButton"
+import { ArrowsOutSimpleIcon } from "@phosphor-icons/react/dist/ssr/ArrowsOutSimple"
+import { CheckIcon } from "@phosphor-icons/react/dist/ssr/Check"
+import { CopySimpleIcon } from "@phosphor-icons/react/dist/ssr/CopySimple"
 import { MermaidDiagram } from "./MermaidDiagram"
 import { TableScroll } from "./TableScroll"
 import {
   orderedListGutterStyle,
   remarkGithubAlerts,
   remarkNormalizeListItemIndentation,
+  remarkResolveRelativeUrls,
 } from "./markdownPlugins"
 
 interface MarkdownProps {
@@ -36,14 +51,28 @@ interface MarkdownProps {
   /** When true, keep Streamdown in streaming mode for the duration of the run. */
   isLive?: boolean
   /**
-   * Rewrite image `src` URLs before rendering (e.g. route private GitHub
-   * attachments through an authenticated proxy). Return the URL unchanged to
-   * leave it as-is.
+   * Rewrite image and attachment video `src` URLs before rendering (e.g. route
+   * private GitHub attachments through an authenticated proxy). Return the URL
+   * unchanged to leave it as-is.
    */
-  transformImageUrl?: (src: string) => string
+  transformMediaUrl?: (src: string) => string
+  /** The workspace file the content was read from; its relative links open with `onOpenFile`. */
+  workspacePath?: string
+  /** Where the workspace file's relative images load from. */
+  imageBase?: string
+  onOpenFile?: (path: string) => void
   enlargeImages?: boolean
   className?: string
 }
+
+// Stand-in origins for a workspace document's relative links and images. The
+// sanitizer keeps only http(s) URLs and hardening drops relative ones, so they
+// travel as these and become real URLs in `urlTransform`, which runs last.
+const WORKSPACE_LINK = "https://robin-workspace.invalid/"
+const DOCUMENT_IMAGE = "https://robin-document.invalid/"
+// Images resolve below this, so one whose `..` climbs out of the document's
+// folder is dropped instead of clamped onto a file of the same name.
+const DOCUMENT_FOLDER = `${DOCUMENT_IMAGE}folder/`
 
 const REMARK_PLUGINS = [
   ...Object.values(defaultRemarkPlugins),
@@ -117,7 +146,13 @@ function fencedCode(node: HastElement | undefined) {
   }
 }
 
+/** The `transformMediaUrl` a GitHub attachment video plays through. */
+const MediaUrlTransform = createContext<((src: string) => string) | undefined>(
+  undefined
+)
+
 function GithubAttachment({ href }: { href: string }) {
+  const transformMediaUrl = use(MediaUrlTransform)
   const [failed, setFailed] = useState(false)
   if (failed)
     return (
@@ -127,7 +162,7 @@ function GithubAttachment({ href }: { href: string }) {
     )
   return (
     <video
-      src={href}
+      src={transformMediaUrl ? transformMediaUrl(href) : href}
       controls
       playsInline
       preload="metadata"
@@ -135,6 +170,83 @@ function GithubAttachment({ href }: { href: string }) {
       className="max-h-[70vh] max-w-full rounded-lg border border-subtle"
       onError={() => setFailed(true)}
     />
+  )
+}
+
+function ExternalLink({
+  node: _node,
+  children,
+  ...props
+}: ExtraProps & ComponentProps<"a">) {
+  return (
+    <PreviewablePullRequestLink {...props} target="_blank" rel="noreferrer">
+      {children}
+    </PreviewablePullRequestLink>
+  )
+}
+
+function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
+  const [open, setOpen] = useState(false)
+  const inline = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const { copied, onCopy } = useCopyAction()
+  const table = <table {...props}>{children}</table>
+  const copy = (
+    <IconButton
+      icon={copied ? CheckIcon : CopySimpleIcon}
+      label={copied ? "Copied" : "Copy table"}
+      size="xs"
+      color="secondary"
+      variant="plain"
+      onClick={() =>
+        onCopy(inline.current?.querySelector("table")?.innerText ?? "")
+      }
+    />
+  )
+
+  return (
+    <>
+      <div
+        ref={inline}
+        className="chat-markdown-table flex items-start gap-space-2"
+      >
+        <TableScroll className="min-w-0 flex-1">{table}</TableScroll>
+        <div className="flex shrink-0 gap-space-1 pt-space-1">
+          {copy}
+          <IconButton
+            ref={trigger}
+            icon={ArrowsOutSimpleIcon}
+            label="Expand table"
+            size="xs"
+            color="secondary"
+            variant="plain"
+            aria-haspopup="dialog"
+            onClick={() => setOpen(true)}
+          />
+        </div>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          title="Table"
+          className="h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none"
+          childrenClassName="min-h-0 flex-1 overflow-auto"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            trigger.current?.focus({ preventScroll: true })
+          }}
+        >
+          <div className="flex justify-end">{copy}</div>
+          <div className="chat-markdown min-h-0 min-w-0">
+            <TableScroll
+              className="chat-markdown-table"
+              viewportClassName="max-h-full"
+            >
+              {table}
+            </TableScroll>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -241,15 +353,10 @@ const COMPONENTS: Components = {
       </div>
     )
   },
-  table: ({
-    node: _node,
-    children,
-    ...props
-  }: ExtraProps & ComponentProps<"table">) => (
-    <TableScroll className="chat-markdown-table">
-      <table {...props}>{children}</table>
-    </TableScroll>
+  table: ({ node: _node, ...props }: ExtraProps & ComponentProps<"table">) => (
+    <MarkdownTable {...props} />
   ),
+  thead: passthrough("thead"),
   inlineCode: ({
     node: _node,
     ...props
@@ -262,15 +369,7 @@ const COMPONENTS: Components = {
       className="border border-subtle"
     />
   ),
-  a: ({
-    node: _node,
-    children,
-    ...props
-  }: ExtraProps & ComponentProps<"a">) => (
-    <PreviewablePullRequestLink {...props} target="_blank" rel="noreferrer">
-      {children}
-    </PreviewablePullRequestLink>
-  ),
+  a: ExternalLink,
 }
 
 interface BoundaryProps {
@@ -316,53 +415,79 @@ class MarkdownErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 export const Markdown = memo(function Markdown({
   content,
   isLive = false,
-  transformImageUrl,
+  transformMediaUrl,
+  workspacePath,
+  imageBase,
+  onOpenFile,
   enlargeImages = false,
   className,
 }: MarkdownProps) {
   const [image, setImage] = useState<{ src: string; alt: string } | null>(null)
   const components = useMemo(
-    () =>
-      enlargeImages
-        ? {
-            ...COMPONENTS,
-            img: ({ src, alt }: ExtraProps & ComponentProps<"img">) => (
-              <img
-                src={typeof src === "string" ? src : undefined}
-                alt={alt ?? ""}
-                loading="lazy"
-                role="button"
-                tabIndex={0}
-                aria-label={`Enlarge ${alt || "image"}`}
-                className="cursor-zoom-in border border-subtle focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+    () => ({
+      ...COMPONENTS,
+      ...(workspacePath !== undefined &&
+        onOpenFile && {
+          a: ({ node, href, ...props }: ExtraProps & ComponentProps<"a">) =>
+            href?.startsWith(WORKSPACE_LINK) ? (
+              <a
+                {...props}
+                href="#"
                 onClick={(event) => {
                   event.preventDefault()
-                  event.stopPropagation()
-                  if (typeof src === "string") setImage({ src, alt: alt ?? "" })
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault()
-                    event.currentTarget.click()
-                  }
+                  onOpenFile(
+                    decodeURIComponent(new URL(href).pathname.slice(1))
+                  )
                 }}
               />
+            ) : (
+              <ExternalLink {...props} node={node} href={href} />
             ),
-          }
-        : COMPONENTS,
-    [enlargeImages]
+        }),
+      ...(enlargeImages && {
+        img: ({ src, alt }: ExtraProps & ComponentProps<"img">) => (
+          <img
+            src={typeof src === "string" ? src : undefined}
+            alt={alt ?? ""}
+            loading="lazy"
+            role="button"
+            tabIndex={0}
+            aria-label={`Enlarge ${alt || "image"}`}
+            className="cursor-zoom-in border border-subtle focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (typeof src === "string") setImage({ src, alt: alt ?? "" })
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault()
+                event.currentTarget.click()
+              }
+            }}
+          />
+        ),
+      }),
+    }),
+    [enlargeImages, workspacePath, onOpenFile]
   )
   const urlTransform = useMemo(() => {
-    if (!transformImageUrl) return undefined
+    if (!transformMediaUrl && workspacePath === undefined) return undefined
     return (
       url: string,
       key: string,
       node: Parameters<typeof defaultUrlTransform>[2]
-    ) =>
-      key === "src"
-        ? transformImageUrl(url)
-        : defaultUrlTransform(url, key, node)
-  }, [transformImageUrl])
+    ) => {
+      if (key === "src" && url.startsWith(DOCUMENT_IMAGE)) {
+        // Returned as is: the default would empty the desktop's preview scheme.
+        return imageBase && url.startsWith(DOCUMENT_FOLDER)
+          ? new URL(url.slice(DOCUMENT_FOLDER.length), imageBase).href
+          : ""
+      }
+      if (key === "src" && transformMediaUrl) return transformMediaUrl(url)
+      return defaultUrlTransform(url, key, node)
+    }
+  }, [transformMediaUrl, workspacePath, imageBase])
 
   return (
     <div
@@ -372,19 +497,34 @@ export const Markdown = memo(function Markdown({
       )}
     >
       <MarkdownErrorBoundary content={content}>
-        <Streamdown
-          mode={isLive ? "streaming" : "static"}
-          parseIncompleteMarkdown={isLive}
-          isAnimating={isLive}
-          shikiTheme={SHIKI_THEME}
-          className="streamdown-agent max-w-full min-w-0 space-y-0"
-          components={components}
-          remarkPlugins={REMARK_PLUGINS}
-          allowedTags={ALLOWED_TAGS}
-          urlTransform={urlTransform}
-        >
-          {content}
-        </Streamdown>
+        <MediaUrlTransform value={transformMediaUrl}>
+          <Streamdown
+            mode={isLive ? "streaming" : "static"}
+            parseIncompleteMarkdown={isLive}
+            isAnimating={isLive}
+            shikiTheme={SHIKI_THEME}
+            className="streamdown-agent max-w-full min-w-0 space-y-0"
+            components={components}
+            remarkPlugins={
+              workspacePath !== undefined
+                ? [
+                    ...REMARK_PLUGINS,
+                    [
+                      remarkResolveRelativeUrls,
+                      {
+                        images: `${DOCUMENT_FOLDER}document`,
+                        links: `${WORKSPACE_LINK}${workspacePath}`,
+                      },
+                    ],
+                  ]
+                : REMARK_PLUGINS
+            }
+            allowedTags={ALLOWED_TAGS}
+            urlTransform={urlTransform}
+          >
+            {content}
+          </Streamdown>
+        </MediaUrlTransform>
       </MarkdownErrorBoundary>
       <Dialog
         open={image !== null}

@@ -21,6 +21,7 @@ from langgraph_sdk.schema import (
 )
 
 from managed_deepagents._channels.types import ChannelError
+from managed_deepagents._log import logger
 from managed_deepagents._telemetry.otel import (
     TRACE_ID_METADATA_KEY,
     current_log_context,
@@ -53,10 +54,22 @@ class IngressThreadOrigin(TypedDict):
     sender: str
 
 
+TAKEABLE_METADATA_KEY = "mda_takeable"
+_TAKEN_CANCEL_REASON_PREFIX = "taken:"
+#: Key under which the values a join returns carry the error a run ended with.
+_JOIN_ERROR_KEY = "__error__"
+#: The errors the Agent Server ends a cancelled run with: stopped, or replaced.
+_JOIN_CANCELLED_ERRORS = frozenset({"UserInterrupt", "UserRollback"})
+#: Keys a join can return without the run's values, which say nothing of its end.
+_JOIN_INCONCLUSIVE_KEYS = frozenset({"__feedback__"})
+
+
 class IngressRunObservation(TypedDict):
     values: dict[str, Any]
     #: ``None`` when the server omitted a status; each transport validates it.
     status: RunStatus | None
+    #: Steering moved this run's message into the thread's active run.
+    taken: NotRequired[Literal[True]]
 
 
 class _RunOptions(TypedDict, total=False):
@@ -94,6 +107,7 @@ def _run_options(
     metadata: Mapping[str, Any] | None = None,
     *,
     webhook: str | None = None,
+    takeable: bool = False,
 ) -> _RunOptions:
     options: _RunOptions = {}
     if webhook is not None:
@@ -103,6 +117,8 @@ def _run_options(
     if config is not None:
         options["config"] = config
     run_metadata: dict[str, Any] = dict(metadata or {})
+    if takeable:
+        run_metadata[TAKEABLE_METADATA_KEY] = True
     # Hand the current log context's trace id, provider event type and user
     # resolution to the run, beside the run's own metadata, so the run's
     # telemetry can report them. The Agent Server merges run metadata into the
@@ -303,6 +319,12 @@ def lookup_status(error: Exception) -> int | None:
     return status if isinstance(status, int) else None
 
 
+def _has_authored_context(context: Context | None) -> bool:
+    return context is not None and not (
+        isinstance(context, Mapping) and set(context) <= {"mda_channel"}
+    )
+
+
 async def start_ingress_run(
     *,
     client: LangGraphClient,
@@ -339,7 +361,16 @@ async def start_ingress_run(
         assistant_id,
         input=run_input,
         multitask_strategy=multitask_strategy,
-        **_run_options(context, config, metadata, webhook=webhook),
+        **_run_options(
+            context,
+            config,
+            metadata,
+            webhook=webhook,
+            takeable=multitask_strategy == "enqueue"
+            and not state
+            and webhook is None
+            and not _has_authored_context(context),
+        ),
     )
     return _started_run(thread_id, run)
 
@@ -358,6 +389,11 @@ async def resume_ingress_run(
     """Enqueue a keyed interrupt response without creating a thread."""
     if thread_origin is not None:
         thread = await client.threads.get(thread_id)
+        binding = _resumed_binding(thread, thread_origin["binding"])
+        if binding is not thread_origin["binding"]:
+            thread_origin = {**thread_origin, "binding": binding}
+            if isinstance(context, Mapping) and "mda_channel" in context:
+                context = cast("Context", {**context, "mda_channel": binding})
         await _write_thread_record(client, thread_id, thread, thread_origin)
     run = await client.runs.create(
         thread_id,
@@ -367,6 +403,21 @@ async def resume_ingress_run(
         **_run_options(context, config, metadata),
     )
     return _started_run(thread_id, run)
+
+
+def _resumed_binding(thread: object, binding: ChannelBinding) -> ChannelBinding:
+    """A resume continues the paused run, so it keeps that run's stored ``reply``."""
+    metadata = thread.get("metadata") if isinstance(thread, Mapping) else None
+    record = parse_thread_record(metadata)
+    stored = record.origin.channel if record is not None and record.origin is not None else None
+    if (
+        "reply" in binding
+        or stored is None
+        or stored.reply is None
+        or stored.source_thread_key != binding["source_thread_key"]
+    ):
+        return binding
+    return {**binding, "reply": stored.reply}
 
 
 def _next_record(metadata: object, origin: IngressThreadOrigin) -> ThreadRecord:
@@ -401,13 +452,54 @@ def _started_run(thread_id: str, run: Mapping[str, object]) -> StartedIngressRun
     return {"thread_id": thread_id, "run_id": run_id}
 
 
+def _joined_status(values: object) -> RunStatus | None:
+    """How a joined run ended, read from the values its join returned.
+
+    ``None`` when the join does not say: a run joined after it ended, whose
+    events are gone, returns no values, and so does one cancelled before it
+    emitted any. The Agent Server puts the error a run ended with under
+    ``__error__``, and a cancelled run's is its ``UserInterrupt``.
+    """
+    if not isinstance(values, Mapping) or not values.keys() - _JOIN_INCONCLUSIVE_KEYS:
+        return None
+    if _JOIN_ERROR_KEY not in values:
+        return "success"
+    error = values[_JOIN_ERROR_KEY]
+    if isinstance(error, Mapping) and error.get("error") in _JOIN_CANCELLED_ERRORS:
+        return "interrupted"
+    return "error"
+
+
 async def observe_ingress_run(
     *, client: LangGraphClient, thread_id: str, run_id: str
 ) -> IngressRunObservation:
     """Join an accepted run and read its status for the transport to validate."""
     values = await client.runs.join(thread_id, run_id)
-    run = await client.runs.get(thread_id, run_id)
+    try:
+        run = await client.runs.get(thread_id, run_id)
+    except Exception as error:
+        # An answer with a status is the caller's to read: ``rollback`` deletes
+        # the run a newer message replaced, so its status read is a 404.
+        if lookup_status(error) is not None:
+            raise
+        # No answer at all. An Agent Server that is shutting down finishes the
+        # join it was serving and accepts no new connection, so the status read
+        # fails although the run ended. The join says how, when it has values.
+        joined = _joined_status(values)
+        if joined is None:
+            raise
+        logger.warning(
+            "channel run status could not be read; its join result stands (%s, status=%s)",
+            logger.safe_error_label(error),
+            joined,
+        )
+        set_log_attributes({"run_status": joined})
+        return {"values": values, "status": joined}
     status = run.get("status") if isinstance(run, Mapping) else None
     if isinstance(status, str):
         set_log_attributes({"run_status": status})
-    return {"values": values, "status": status}
+    observed: IngressRunObservation = {"values": values, "status": status}
+    cancel_reason = run.get("cancel_reason") if isinstance(run, Mapping) else None
+    if isinstance(cancel_reason, str) and cancel_reason.startswith(_TAKEN_CANCEL_REASON_PREFIX):
+        observed["taken"] = True
+    return observed

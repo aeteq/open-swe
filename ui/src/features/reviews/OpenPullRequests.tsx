@@ -4,15 +4,17 @@ import {
   ArrowUpIcon,
   MagnifyingGlassRegularIcon,
 } from "@langchain/macaw-components/icons"
-import { Spinner } from "@langchain/macaw-components/Spinner"
 import { EmptyState } from "@langchain/macaw-components/EmptyState"
 import { Button } from "@langchain/macaw-components/Button"
+import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/ssr/ArrowClockwise"
 import { Input } from "@langchain/macaw-components/Input"
-import { Skeleton } from "@langchain/macaw-components/Skeleton"
+import { Icon } from "@langchain/macaw-components/Icon"
+import { Text } from "@langchain/macaw-components/Text"
 import { Typeahead } from "@langchain/macaw-components/Typeahead"
+import { cn } from "@/lib/utils"
+import { CheckIcon } from "@phosphor-icons/react/dist/ssr/Check"
 import { ArrowsDownUpIcon } from "@phosphor-icons/react/dist/ssr/ArrowsDownUp"
 import { useQueries, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 
 import { api, type OpenPullRequest, type ReviewSummary } from "@/lib/api"
@@ -23,13 +25,16 @@ import {
   PullRequestCard,
   type PullRequestOutcome,
 } from "./components/PullRequestCard"
-import { PullRequestDetail } from "./components/PullRequestDetail"
-import { PullRequestList } from "./components/PullRequestList"
+import { PullRequestWorkspace } from "./PullRequestWorkspace"
+import { reviewKeys } from "./lib/reviewKeys"
+import {
+  PullRequestList,
+  PullRequestListSkeleton,
+} from "./components/PullRequestList"
 import { PullRequestReview } from "./components/PullRequestReview"
 import {
   leftOpenList,
   PULL_REQUEST_STATUS,
-  pullRequestPreviewQuery,
   pullRequestStatusQuery,
   refreshPullRequest,
 } from "./lib/cache"
@@ -102,7 +107,6 @@ export function OpenPullRequests({
       direction: sort === next && direction === "asc" ? "desc" : "asc",
     })
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
   const query = useOpenPullRequests(login, repo, sort, direction, scope)
   const knownRepos = useRepos()
   const descriptionSearch = usePullRequestSearch(search)
@@ -127,6 +131,7 @@ export function OpenPullRequests({
   const [settled, setSettled] = useState<
     Partial<Record<string, PullRequestOutcome>>
   >({})
+  const retained = new Set(Object.keys(settled).filter((key) => settled[key]))
   const pages = query.data?.pages ?? []
   const latest = pages.at(-1)
   const rows = pages.flatMap((loaded) => loaded.pullRequests)
@@ -160,6 +165,7 @@ export function OpenPullRequests({
     })
     .filter(
       (pr) =>
+        retained.has(pullRequestKey(pr)) ||
         !leftOpenList(
           queryClient.getQueryData(pullRequestStatusQuery(login, pr).queryKey)
         )
@@ -179,7 +185,8 @@ export function OpenPullRequests({
   const { all, detailsLoading } = usePullRequestDetails(
     login,
     matchingRows,
-    requestedRows
+    requestedRows,
+    retained
   )
   const filtered = all.filter(
     (pr) =>
@@ -220,21 +227,8 @@ export function OpenPullRequests({
       ...repo,
     ]),
   ].sort()
-  // Layout follows the row actually on screen, not the search param. Filtering
-  // the selected PR out closes the preview and returns the list to full width
-  // instead of stranding it in rail form with no way to close.
-  const selectedRow = selected
-    ? all.find((row) => pullRequestKey(row) === selected)
-    : undefined
-  const railed = Boolean(selectedRow)
-  const selectedIndex = visible.findIndex(
-    (row) => pullRequestKey(row) === selected
-  )
-  const nextRow = selectedIndex >= 0 ? visible[selectedIndex + 1] : undefined
-  useEffect(() => {
-    if (nextRow)
-      void queryClient.prefetchQuery(pullRequestPreviewQuery(nextRow))
-  }, [queryClient, nextRow])
+  const selection = parsePullRequestSelection(selected)
+  const railed = Boolean(selection)
 
   // Everything the filters leave, in list order, not just the rows scrolled into view.
   const queue = (filter?.length ? filtered : matchingRows)
@@ -243,18 +237,9 @@ export function OpenPullRequests({
   const repoLabels = new RepositoryLabels(repoNames)
   const firstInQueue = parsePullRequestSelection(queue[0])
   const reviewOneByOne = () =>
-    firstInQueue &&
-    void navigate({
-      to: "/agents/reviews/$owner/$repo/$number",
-      params: {
-        owner: firstInQueue.owner,
-        repo: firstInQueue.repo,
-        number: String(firstInQueue.number),
-      },
-      search: { queue },
-    })
+    firstInQueue && onFiltersChange({ pr: queue[0], queue })
 
-  const card = (pr: OpenPullRequest) => {
+  const card = (pr: OpenPullRequest, onSelect: () => void) => {
     const key = pullRequestKey(pr)
     return (
       <PullRequestCard
@@ -265,7 +250,8 @@ export function OpenPullRequests({
         selected={selected === key}
         onSelect={() => {
           refreshPullRequest(queryClient, login, pr)
-          onFiltersChange({ pr: key })
+          onFiltersChange({ pr: key, queue: undefined })
+          onSelect()
         }}
         review={
           summariesUnavailable ? null : (
@@ -285,13 +271,11 @@ export function OpenPullRequests({
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
-      {/* Both columns grow from a zero basis, so opening a preview animates the
-          list across rather than resizing it in place. */}
-      <div
-        className="flex min-h-0 min-w-0 flex-col transition-[flex-grow] duration-slow ease-out"
-        style={{ flexGrow: 1, flexBasis: 0 }}
-      >
+    <PullRequestWorkspace
+      pr={selection}
+      onClose={() => onFiltersChange({ pr: undefined, queue: undefined })}
+    >
+      {(onSelect) => (
         <section
           className="mt-space-4 flex min-h-0 flex-1 flex-col gap-space-3"
           aria-label={
@@ -301,7 +285,7 @@ export function OpenPullRequests({
           }
         >
           {scope !== "mine" && (
-            <div className="flex items-center gap-space-2 text-xs text-secondary">
+            <div className="flex flex-wrap items-center gap-space-2 text-xs text-secondary">
               <span>
                 {scope === "review-assigned"
                   ? "Requested reviews, your drafts, then speculative reviews"
@@ -319,14 +303,23 @@ export function OpenPullRequests({
                 </Button>
               )}
               {firstInQueue && (
-                <Button size="xs" className="ml-auto" onClick={reviewOneByOne}>
+                <Button
+                  size="xs"
+                  className="ml-auto"
+                  onClick={() => {
+                    reviewOneByOne()
+                    onSelect()
+                  }}
+                >
                   Review one by one ({queue.length})
                 </Button>
               )}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-space-2">
-            <div className="w-56 shrink-0">
+            <div
+              className={cn("max-w-full shrink-0", railed ? "w-full" : "w-96")}
+            >
               <Typeahead
                 multiple
                 disableCloseOnSelect
@@ -346,6 +339,38 @@ export function OpenPullRequests({
                 }
                 options={repoNames}
                 getOptionLabel={(name) => repoLabels.label(name)}
+                renderOption={(name, { selected: isSelected }) => {
+                  const label = repoLabels.label(name)
+                  const middle = Math.max(
+                    Math.ceil(label.length / 2),
+                    label.length - 16
+                  )
+                  return (
+                    <>
+                      <Icon
+                        aria-hidden
+                        icon={CheckIcon}
+                        size="md"
+                        className={cn(
+                          "shrink-0 text-icon-primary",
+                          isSelected ? "opacity-100" : "opacity-0"
+                        )}
+                      />
+                      <Text
+                        as="span"
+                        variant="sm"
+                        className="flex min-w-0 flex-1 overflow-hidden leading-4 tracking-normal whitespace-nowrap"
+                        title={name}
+                        aria-label={label}
+                      >
+                        <span className="min-w-0 truncate">
+                          {label.slice(0, middle)}
+                        </span>
+                        <span className="shrink-0">{label.slice(middle)}</span>
+                      </Text>
+                    </>
+                  )
+                }}
                 filterOptions={(options, { inputValue }) =>
                   options.filter((name) => repoLabels.matches(name, inputValue))
                 }
@@ -357,7 +382,10 @@ export function OpenPullRequests({
             </div>
             <Input
               size="sm"
-              className="min-w-40 flex-1 [&_input:placeholder-shown]:text-ellipsis"
+              className={cn(
+                "min-w-40 flex-1 [&_input:placeholder-shown]:text-ellipsis",
+                railed && "basis-full"
+              )}
               leftIcon={MagnifyingGlassRegularIcon}
               aria-label="Search pull requests"
               title="Search title, description, or PR number"
@@ -367,7 +395,7 @@ export function OpenPullRequests({
                 onFiltersChange({ q: next || undefined }, true)
               }
             />
-            <div className="w-48 shrink-0">
+            <div className={cn("shrink-0", railed ? "min-w-0 flex-1" : "w-48")}>
               <Typeahead
                 multiple
                 disableCloseOnSelect
@@ -430,7 +458,9 @@ export function OpenPullRequests({
               size="xs"
               color="secondary"
               variant="outlined"
+              leftDecorator={ArrowClockwiseIcon}
               disabled={query.isFetching}
+              loading={query.isFetching}
               onClick={() => {
                 setSettled({})
                 for (const [
@@ -455,11 +485,13 @@ export function OpenPullRequests({
                 void queryClient.invalidateQueries({
                   queryKey: ["my-pr-review-summaries", login],
                 })
-                // An open preview outlives a refresh, so its checks and
-                // comments would otherwise stay as they were when it opened.
-                void queryClient.invalidateQueries({
-                  queryKey: ["pr-preview"],
-                })
+                if (selection)
+                  for (const queryKey of [
+                    reviewKeys.detail(selection),
+                    reviewKeys.checks(selection),
+                    reviewKeys.conversation(selection),
+                  ])
+                    void queryClient.invalidateQueries({ queryKey })
               }}
             >
               Refresh
@@ -481,7 +513,7 @@ export function OpenPullRequests({
             </p>
           )}
           {query.isLoading ? (
-            <Skeleton className="h-56 w-full" />
+            <PullRequestListSkeleton compact={railed} />
           ) : incomplete ? (
             <p
               role="status"
@@ -498,13 +530,10 @@ export function OpenPullRequests({
                   detailsLoading ||
                   query.isFetchingNextPage ||
                   descriptionSearch.isSearching ? (
-                    <div
-                      role="status"
-                      aria-label="Loading matching PRs"
-                      className="flex justify-center rounded-lg border border-default py-space-8"
-                    >
-                      <Spinner size="sm" />
-                    </div>
+                    <PullRequestListSkeleton
+                      compact={railed}
+                      label="Loading matching PRs"
+                    />
                   ) : (
                     <EmptyState
                       size="sm"
@@ -532,7 +561,7 @@ export function OpenPullRequests({
                       setGrowth({ key: listKey, rows: requested + chunkSize })
                     }
                   >
-                    {card}
+                    {(pr) => card(pr, onSelect)}
                   </PullRequestList>
                 )}
                 <div className="flex items-center gap-space-3 text-xs text-secondary">
@@ -554,36 +583,7 @@ export function OpenPullRequests({
             )
           )}
         </section>
-      </div>
-
-      <div
-        className="flex min-h-0 min-w-0 overflow-hidden transition-[flex-grow] duration-slow ease-out"
-        style={{ flexGrow: selectedRow ? 2.2 : 0, flexBasis: 0 }}
-      >
-        {selectedRow && (
-          <div className="flex min-h-0 w-full min-w-[420px] pt-space-4 pl-space-4">
-            <PullRequestDetail
-              key={selected}
-              pr={selectedRow}
-              login={login}
-              outcome={settled[pullRequestKey(selectedRow)]}
-              onClose={() => onFiltersChange({ pr: undefined })}
-              expandedFiles={filters.files}
-              scrollAnchor={filters.at}
-              onPositionChange={(changes) => onFiltersChange(changes, true)}
-              onSettled={(outcome) =>
-                setSettled((previous) => ({
-                  ...previous,
-                  [pullRequestKey(selectedRow)]: outcome,
-                }))
-              }
-              onReady={() =>
-                refreshPullRequest(queryClient, login, selectedRow)
-              }
-            />
-          </div>
-        )}
-      </div>
-    </div>
+      )}
+    </PullRequestWorkspace>
   )
 }

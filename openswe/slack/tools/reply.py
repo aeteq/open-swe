@@ -11,22 +11,26 @@ from langchain_core.messages import BaseMessage, ToolMessage
 from langchain_core.messages.content import create_text_block
 from langgraph.config import get_config
 from langgraph.prebuilt import InjectedState
-from langgraph_sdk.client import LangGraphClient
 
 from openswe import event_claims
 from openswe.dashboard.options import model_supports_images
 from openswe.input_messages import input_message_timestamps
 from openswe.prompts import prompt
 from openswe.run_config import RunConfig
+from openswe.schedules.delivery import AutomationThreadDelivery, DeliveryRefused
 from openswe.slack.blocks import (
     MARKDOWN_TEXT_MAX_CHARS,
     MESSAGE_MAX_BLOCKS,
+    SECTION_TEXT_MAX_CHARS,
     block_payload,
     context,
     option_actions,
+    section,
+    split_lines,
 )
 from openswe.slack.client import (
     SlackNotice,
+    format_slack_web_link_footer,
     get_active_slack_thread,
     get_slack_permalink,
     post_slack_ephemeral_reply,
@@ -48,12 +52,12 @@ from openswe.slack.review_links import preserve_github_links as github_link_deli
 from openswe.slack.routed_work import RoutedWork
 from openswe.slack.thinking import restore_slack_thinking_status, settle_slack_thread_status
 from openswe.slack.tools.read_thread_messages import fetch_and_format_thread
+from openswe.threads.store import THREADS
+from openswe.utils.dashboard_links import dashboard_thread_url
 from openswe.utils.http import DEFAULT_HTTP_TIMEOUT
 from openswe.utils.http_pool import pooled_transport
-from openswe.utils.json_types import thread_metadata
 from openswe.utils.multimodal import fetch_image_block, vision_not_supported_warning
 from openswe.utils.run_usage import RunUsageSummary, summarize_run_usage
-from openswe.utils.thread_ops import langgraph_client as get_langgraph_client
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +98,8 @@ async def slack_reply(
         result = await send_slack_reply(
             message, response_type, options, blocks, state, option_user_id=option_user_id
         )
+    result.pop("channel_id", None)
+    result.pop("footer", None)
     image_urls = result.pop("image_urls", None)
     if not image_urls:
         return result
@@ -133,30 +139,48 @@ async def send_slack_reply(
     run_id = _current_run_id(config)
     slack_thread = cfg.slack_thread.dump() if cfg.slack_thread else {}
     thread_id = cfg.thread_id
-    if cfg.slack_ask is True and cfg.slack_by_the_way_thread_ts:
+    automation = cfg.source == "schedule"
+    if not automation and cfg.slack_ask is True and cfg.slack_by_the_way_thread_ts:
         return await _by_the_way_reply(
             cfg, cfg.slack_by_the_way_thread_ts, message, response_type, blocks, options
         )
-    if cfg.slack_ask is True:
+    if not automation and cfg.slack_ask is True:
         return await _ephemeral_reply(cfg, message, blocks, options, state)
-    client = get_langgraph_client()
-    active = await get_active_slack_thread(
-        thread_id,
-        slack_thread if isinstance(slack_thread, dict) else None,
-    )
-    active = active or {}
-    if (
-        isinstance(slack_thread, dict)
-        and slack_thread.get("channel_id") == active.get("channel_id")
-        and slack_thread.get("thread_ts") == active.get("thread_ts")
-        and isinstance(slack_thread.get("reply_thread_ts"), str)
-    ):
-        active["reply_thread_ts"] = slack_thread["reply_thread_ts"]
-
+    if automation:
+        if cfg.automation_slack_reply is None:
+            return {"success": False, "error": "This automation has no Slack reply destination"}
+        pending: list[object] = list(blocks or [])
+        while pending:
+            item = pending.pop()
+            if isinstance(item, dict):
+                if "action_id" in item or item.get("type") in {"actions", "input", "button"}:
+                    return {
+                        "success": False,
+                        "error": "Automation replies cannot have interactive blocks",
+                    }
+                pending.extend(item.values())
+            elif isinstance(item, list):
+                pending.extend(item)
+        if options or option_user_id:
+            return {"success": False, "error": "Automation replies cannot have options"}
+        active = cfg.automation_slack_reply.model_dump()
+    else:
+        active = await get_active_slack_thread(
+            thread_id,
+            slack_thread if isinstance(slack_thread, dict) else None,
+        )
+        active = active or {}
+        if (
+            isinstance(slack_thread, dict)
+            and slack_thread.get("channel_id") == active.get("channel_id")
+            and slack_thread.get("thread_ts") == active.get("thread_ts")
+            and isinstance(slack_thread.get("reply_thread_ts"), str)
+        ):
+            active["reply_thread_ts"] = slack_thread["reply_thread_ts"]
     channel_id = active.get("channel_id")
     thread_ts = active.get("thread_ts")
     if not channel_id or not thread_ts:
-        if await _already_moved_to_dashboard(client, thread_id):
+        if not automation and await _already_moved_to_dashboard(thread_id):
             return _dashboard_handoff(thread_id)
         return {
             "success": False,
@@ -166,17 +190,25 @@ async def send_slack_reply(
     if not message.strip():
         return {"success": False, "error": "Message cannot be empty"}
 
-    from openswe.slack.code_channels import is_code_channel_session
-
     reply_thread_ts = active.get("reply_thread_ts")
     post_thread_ts = (
         str(reply_thread_ts)
-        if is_code_channel_session(str(thread_ts)) and isinstance(reply_thread_ts, str)
+        if (str(thread_ts) == "0") and isinstance(reply_thread_ts, str)
         else str(thread_ts)
     )
 
-    async with slack_thread_mutation_lock(channel_id, thread_ts):
-        if state and run_id:
+    triggering_user_id = _triggering_user_id(cfg)
+    async with slack_thread_mutation_lock(
+        channel_id, thread_ts, purpose="ownership" if automation else None
+    ):
+        if automation:
+            try:
+                delivery = await AutomationThreadDelivery.for_run(cfg)
+                channel_id, thread_ts = delivery.channel_id, delivery.thread_ts
+                triggering_user_id = delivery.triggering_user_id
+            except DeliveryRefused as exc:
+                return {"success": False, "error": str(exc)}
+        if not automation and state and run_id:
             conflict = await _stale_reply_guard(state, channel_id, post_thread_ts, run_id)
             if conflict is not None:
                 return conflict
@@ -185,7 +217,8 @@ async def send_slack_reply(
         )
         if has_options and len(message) > _NATIVE_MARKDOWN_MAX_CHARS:
             return _oversized_options_error(message)
-        if blocks is not None and len(blocks) + _WEB_LINK_BLOCKS > MESSAGE_MAX_BLOCKS:
+        reserve = _WEB_LINK_BLOCKS + int(automation)
+        if blocks is not None and len(blocks) + reserve > MESSAGE_MAX_BLOCKS:
             return {
                 "success": False,
                 "error": "Message exceeds Slack's block budget",
@@ -195,14 +228,29 @@ async def send_slack_reply(
         slack_blocks = blocks
         if blocks is None:
             slack_blocks = _reply_blocks(
-                message, options, reserve=_WEB_LINK_BLOCKS, option_user_id=option_user_id
+                message, options, reserve=reserve, option_user_id=option_user_id
             )
             if len(message) > _NATIVE_MARKDOWN_MAX_CHARS:
                 message = markdown_to_mrkdwn(message)
         usage = _usage_with_effort(summarize_run_usage(state), state, cfg)
-        agent_thread_id = (
-            None if is_code_channel_session(str(thread_ts)) else str(thread_id or "") or None
-        )
+        agent_thread_id = None if (str(thread_ts) == "0") else str(thread_id or "") or None
+        if automation:
+            if len(message) > 40_000:
+                return {
+                    "success": False,
+                    "error": "Automation replies must fit in 40,000 characters",
+                }
+            if not slack_blocks:
+                slack_blocks = block_payload(
+                    [section(chunk) for chunk in split_lines(message, SECTION_TEXT_MAX_CHARS)]
+                )
+            if len(slack_blocks) + reserve > MESSAGE_MAX_BLOCKS:
+                return {"success": False, "error": "Message exceeds Slack's block budget"}
+            notice = SlackNotice(kind="automation", key=thread_id or "")
+            slack_blocks = [
+                *slack_blocks,
+                {**context("Automation reply."), "block_id": notice.block_id},
+            ]
         try:
             message_ts = await _post_and_store_mapping(
                 channel_id,
@@ -210,15 +258,16 @@ async def send_slack_reply(
                 message,
                 blocks=slack_blocks,
                 usage=usage,
-                post_thread_ts=post_thread_ts,
+                post_thread_ts=thread_ts if automation else post_thread_ts,
                 agent_thread_id=agent_thread_id,
                 run_id=run_id,
-                triggering_user_id=_triggering_user_id(cfg),
+                triggering_user_id=triggering_user_id,
+                inherit_current_run=not automation,
             )
         except SlackRequestError as exc:
-            if exc.code == "thread_not_found":
+            if exc.code == "thread_not_found" and not automation:
                 moved = bool(thread_id) and await move_thread_to_dashboard(
-                    client, str(thread_id), str(channel_id), str(thread_ts)
+                    str(thread_id), str(channel_id), str(thread_ts)
                 )
                 return _dashboard_handoff(thread_id) if moved else _dashboard_handoff_failed()
             return {
@@ -228,7 +277,7 @@ async def send_slack_reply(
                 "message_chars": len(message),
                 "hint": _slack_reply_failure_hint(exc.code),
             }
-        if message_ts and cfg.source == "slack" and not is_code_channel_session(str(thread_ts)):
+        if message_ts and cfg.source == "slack" and not (str(thread_ts) == "0"):
             try:
                 await _handle_kickoff(
                     str(channel_id),
@@ -242,13 +291,17 @@ async def send_slack_reply(
                     "Could not update Slack investigation kickoff state",
                     extra={"slack_channel": channel_id, "slack_thread_ts": thread_ts},
                 )
-    if message_ts and response_type == "final" and thread_id and run_id:
+    if not automation and message_ts and response_type == "final" and thread_id and run_id:
         await RoutedWork(thread_id).answered(run_id)
-    if run_id and not is_code_channel_session(str(thread_ts)):
+    if not automation and run_id and not (str(thread_ts) == "0"):
         # Slack drops the status when the app posts.
         await restore_slack_thinking_status(str(channel_id), str(thread_ts))
     return {
         "success": True,
+        "channel_id": str(channel_id),
+        "footer": format_slack_web_link_footer(
+            dashboard_thread_url(agent_thread_id) if agent_thread_id else None, usage
+        ),
         "message_ts": message_ts,
         "message_url": await get_slack_permalink(str(channel_id), message_ts)
         if message_ts
@@ -491,17 +544,17 @@ async def _ephemeral_reply(
     return {"success": True}
 
 
-async def _already_moved_to_dashboard(client: LangGraphClient, thread_id: str | None) -> bool:
+async def _already_moved_to_dashboard(thread_id: str | None) -> bool:
     if not thread_id:
         return False
     try:
-        thread = await client.threads.get(thread_id)
+        thread = await THREADS.get(thread_id)
     except Exception:
         logger.exception(
             "Could not check whether the thread left Slack", extra={"agent_thread_id": thread_id}
         )
         return False
-    return slack_thread_detached(thread_metadata(thread))
+    return thread is not None and slack_thread_detached(thread.metadata)
 
 
 def _dashboard_handoff_failed() -> dict[str, Any]:
@@ -631,6 +684,7 @@ async def _post_and_store_mapping(
     run_id: str | None = None,
     triggering_user_id: str | None = None,
     post_thread_ts: str | None = None,
+    inherit_current_run: bool = True,
 ) -> str:
     message_ts = await post_slack_thread_reply_with_ts(
         channel_id,
@@ -647,5 +701,6 @@ async def _post_and_store_mapping(
             message_ts,
             run_id=run_id,
             triggering_user_id=triggering_user_id,
+            inherit_current_run=inherit_current_run,
         )
     return message_ts

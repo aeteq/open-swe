@@ -7,7 +7,8 @@ case-insensitively. ``full_name`` keeps the casing GitHub reported for display.
 
 import logging
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Self
 from uuid import UUID, uuid7
 
@@ -17,12 +18,17 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from openswe.config import ENV
 from openswe.database import postgres
 from openswe.database.orm import NOW, Base
+from openswe.github.checks import APPROVAL_CHECK_RUN_NAME
+from openswe.github.ci import RequiredCheck
 from openswe.github.http import GitHubAppUnavailable, GitHubClient
 from openswe.github.repo_names import normalize_repo_full_name
 
 logger = logging.getLogger(__name__)
+
+_APPROVAL_CHECK_TTL = timedelta(hours=1)
 
 
 class Repository(Base):
@@ -41,6 +47,10 @@ class Repository(Base):
     github_checked_at: Mapped[datetime | None] = mapped_column(default=None, init=False)
     # Automatic review is opt-in; ``None`` means nobody has turned it on or off yet.
     review_enabled: Mapped[bool | None] = mapped_column(default=None, init=False)
+    review_settings_version: Mapped[UUID | None] = mapped_column(default=None, init=False)
+    # Whether the default branch requires the ``Robin Approves`` check, and when that was read.
+    approval_check_required: Mapped[bool | None] = mapped_column(default=None, init=False)
+    approval_check_checked_at: Mapped[datetime | None] = mapped_column(default=None, init=False)
 
     def __post_init__(self) -> None:
         self.full_name = normalize_repo_full_name(self.full_name)
@@ -64,6 +74,53 @@ class Repository(Base):
             ).returning(cls.id)
         )
         return result.scalar_one()
+
+    @property
+    def review_version(self) -> str:
+        return f"{self.id}:{self.review_settings_version or 'unversioned'}"
+
+    @classmethod
+    async def set_review_enabled(
+        cls, full_name: str, enabled: bool, *, expected_version: str | None = None
+    ) -> None:
+        key = normalize_repo_full_name(full_name).lower()
+        version = uuid7()
+        async with postgres.session() as session:
+            if expected_version == "missing":
+                row = cls(full_name=full_name)
+                statement = (
+                    insert(cls)
+                    .values(
+                        id=row.id,
+                        key=key,
+                        full_name=row.full_name,
+                        review_enabled=enabled,
+                        review_settings_version=version,
+                    )
+                    .on_conflict_do_nothing(index_elements=[cls.key])
+                    .returning(cls.id)
+                )
+            else:
+                statement = update(cls).where(cls.key == key)
+                if expected_version is None:
+                    await cls.ensure_id(session, full_name)
+                else:
+                    row_id, separator, previous = expected_version.partition(":")
+                    if not separator:
+                        raise ValueError("Invalid repository settings version")
+                    statement = statement.where(
+                        cls.id == UUID(row_id),
+                        cls.review_settings_version.is_(None)
+                        if previous == "unversioned"
+                        else cls.review_settings_version == UUID(previous),
+                    )
+                statement = statement.values(
+                    review_enabled=enabled, review_settings_version=version
+                ).returning(cls.id)
+            if (await session.execute(statement)).scalar_one_or_none() is None:
+                raise ValueError(
+                    "Settings changed; read the resource privately again before retrying"
+                )
 
     @classmethod
     async def resolve_default_branch(cls, owner: str, name: str) -> str:
@@ -89,6 +146,82 @@ class Repository(Base):
         return ""
 
     @classmethod
+    async def requires_approval_check(
+        cls, owner: str, name: str, branch: str, *, include_any_source: bool = False
+    ) -> bool | None:
+        """Whether Robin's check is required, with separate caches for publishing and creation."""
+        if include_any_source:
+            from langgraph_api.cache import swr
+
+            key = (
+                f"approval-check-publishing:{owner.lower()}/{name.lower()}:"
+                f"{ENV.GITHUB_APP_ID.get()}:{branch}"
+            )
+            try:
+                result = await swr(
+                    key,
+                    partial(cls._read_approval_check, owner, name, branch, include_any_source=True),
+                    fresh_for=_APPROVAL_CHECK_TTL,
+                    max_age=timedelta(hours=24),
+                )
+                return result.value
+            except GitHubAppUnavailable, httpx2.HTTPError, ValueError:
+                logger.warning(
+                    "Could not read the branch's required checks",
+                    extra={"repo_full_name": f"{owner}/{name}", "branch": branch},
+                    exc_info=True,
+                )
+                return None
+        full_name = f"{owner}/{name}"
+        cacheable = branch == await cls.resolve_default_branch(owner, name)
+        row = await cls.get(full_name) if cacheable else None
+        if (
+            row is not None
+            and row.approval_check_required is not None
+            and row.approval_check_checked_at is not None
+            and datetime.now(UTC) - row.approval_check_checked_at < _APPROVAL_CHECK_TTL
+        ):
+            return row.approval_check_required
+        try:
+            required = await cls._read_approval_check(owner, name, branch)
+        except GitHubAppUnavailable, httpx2.HTTPError, ValueError:
+            logger.warning(
+                "Could not read the branch's required checks",
+                extra={"repo_full_name": full_name, "branch": branch},
+                exc_info=True,
+            )
+            return row.approval_check_required if row is not None else None
+        if cacheable:
+            async with postgres.session() as session:
+                repository_id = await cls.ensure_id(session, full_name)
+                await session.execute(
+                    update(cls)
+                    .where(cls.id == repository_id)
+                    .values(
+                        approval_check_required=required,
+                        approval_check_checked_at=datetime.now(UTC),
+                    )
+                )
+        return required
+
+    @classmethod
+    async def _read_approval_check(
+        cls, owner: str, name: str, branch: str, *, include_any_source: bool = False
+    ) -> bool:
+        async with GitHubClient.as_app(owner, name) as github:
+            checks = await RequiredCheck.for_branch(
+                github.repo(owner, name), branch, include_review_checks=True
+            )
+        if checks is None:
+            raise ValueError("Could not determine required checks")
+        app_id = int(ENV.GITHUB_APP_ID.get() or 0)
+        return any(
+            check.name == APPROVAL_CHECK_RUN_NAME
+            and (check.app_id == app_id or (include_any_source and check.app_id is None))
+            for check in checks
+        )
+
+    @classmethod
     async def all(cls) -> list[Self]:
         async with postgres.session() as session:
             return list(await session.scalars(select(cls).order_by(cls.key)))
@@ -101,16 +234,40 @@ class Repository(Base):
             return {row.key: row for row in rows}
 
     @classmethod
+    async def none_installed(cls, keys: Iterable[str], *, checked_since: datetime) -> bool:
+        """Whether a lookup since ``checked_since`` found none of ``keys`` in the installation."""
+        keys = list(keys)
+        rows = await cls.by_keys(keys)
+        return bool(keys) and all(
+            (row := rows.get(key)) is not None
+            and row.github_id is None
+            and row.github_checked_at is not None
+            and row.github_checked_at >= checked_since
+            for key in keys
+        )
+
+    @classmethod
     async def record_github_ids(
-        cls, github_ids: Mapping[str, int | None], *, checked_at: datetime
+        cls,
+        github_ids: Mapping[str, int | None],
+        *,
+        checked_at: datetime,
+        full_names: Mapping[str, str] | None = None,
     ) -> None:
-        """Store what a lookup found for each key; keys without a row are skipped."""
+        """Store what a lookup found for each key, adding the row of a key without one, named
+        as ``full_names`` spells it, so the next lookup reads it instead of listing again."""
         async with postgres.session() as session:
             for key, github_id in github_ids.items():
+                row = cls(full_name=(full_names or {}).get(key, key))
+                if row.key != key:
+                    # A spelling such as ``owner/repo.git`` that names another key's row.
+                    continue
+                found = {"github_id": github_id, "github_checked_at": checked_at}
+                upsert = insert(cls).values(
+                    id=row.id, key=row.key, full_name=row.full_name, **found
+                )
                 await session.execute(
-                    update(cls)
-                    .where(cls.key == key)
-                    .values(github_id=github_id, github_checked_at=checked_at)
+                    upsert.on_conflict_do_update(index_elements=[cls.key], set_=found)
                 )
 
     @property

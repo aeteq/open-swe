@@ -2,6 +2,7 @@ from collections import Counter
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -10,8 +11,9 @@ import pytest
 
 from openswe.github.codeowners import CodeOwners
 from openswe.github.pull_requests import PullRequest
-from openswe.human_review.picking import ReviewerAvailability
+from openswe.human_review.coverage import Coverage
 from openswe.human_review.requests import HumanReviewRequest
+from openswe.slack.availability import ReviewerAvailability
 from openswe.users import User, UserIdentity
 from tests.conftest import FakeUserRecords
 
@@ -47,10 +49,10 @@ def test_the_last_matching_codeowners_rule_owns_a_path(path: str, owners: tuple[
 async def test_the_largest_code_owner_area_comes_first_and_an_approval_leaves_the_rest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from openswe.human_review import picking
+    from openswe.human_review import coverage
 
-    monkeypatch.setattr(picking, "team_members", AsyncMock(return_value=["Grace", "Ada"]))
-    coverage = await picking.Coverage.build(
+    monkeypatch.setattr(coverage, "team_members", AsyncMock(return_value=["Grace", "Ada"]))
+    coverage = await Coverage.build(
         _CODEOWNERS,
         [
             "smith-frontend/src/design-system/Button.tsx",
@@ -89,6 +91,20 @@ async def test_strict_codeowners_fetch_distinguishes_missing_from_unreadable(
         assert (owners is None) == (status == 404)
 
 
+class TestTouchedFiles:
+    async def test_history_scores_only_the_thirty_largest_changed_files(self) -> None:
+        from openswe.expedited_review.eligibility import ChangedFile
+        from openswe.human_review.picking import _touched
+
+        files = [ChangedFile(filename=f"file-{i}.py", additions=i) for i in range(32)]
+        repo = MagicMock()
+        repo.recent_file_authors = AsyncMock(
+            return_value={file.filename: {"ada", f"author-{i}"} for i, file in enumerate(files)}
+        )
+        touched = await _touched(repo, "release", files)
+        assert touched == Counter({"ada": 30, **{f"author-{i}": 1 for i in range(2, 32)}})
+
+
 def test_off_shift_on_friday_evening_waits_for_monday_morning() -> None:
     hours = ReviewerAvailability(ZoneInfo("America/New_York"))
     friday_evening = datetime(2026, 10, 2, 23, tzinfo=UTC)
@@ -101,6 +117,7 @@ def test_off_shift_on_friday_evening_waits_for_monday_morning() -> None:
     ("profile", "classification", "skip_reason"),
     [
         (None, None, "opted_out"),
+        (None, None, "not_recent_channel_poster"),
         ({"display_name": "Ada (oOo)"}, None, "out_of_office"),
         ({"display_name": "Ada", "real_name": "Ada Smith (OOO)"}, None, "out_of_office"),
         (
@@ -131,7 +148,9 @@ async def test_auto_picks_skip_unavailable_owners_and_recent_authors(
     from openswe.human_review import picking
     from openswe.slack import availability
 
-    monkeypatch.setattr(availability, "select_jev_choice", AsyncMock(return_value=classification))
+    monkeypatch.setattr(
+        availability, "JEV", SimpleNamespace(choose_one=AsyncMock(return_value=classification))
+    )
     ada = User(
         identities=[
             UserIdentity(provider="github", external_id="1", login="ada"),
@@ -139,10 +158,19 @@ async def test_auto_picks_skip_unavailable_owners_and_recent_authors(
         ]
     )
     grace = User(identities=[UserIdentity(provider="github", external_id="2", login="grace")])
+    monkeypatch.setattr(
+        HumanReviewRequest,
+        "recent_channel_posters",
+        AsyncMock(
+            return_value={grace.id}
+            if skip_reason == "not_recent_channel_poster"
+            else {ada.id, grace.id}
+        ),
+    )
     if skip_reason == "opted_out":
         user_records.seed("profile", "ada", {"auto_human_review_enabled": False})
     monkeypatch.setattr(
-        picking,
+        availability,
         "get_slack_user_info",
         AsyncMock(return_value={"profile": profile} if profile is not None else None),
     )
@@ -173,7 +201,59 @@ async def test_auto_picks_skip_unavailable_owners_and_recent_authors(
     assert filtered.skipped == ({"ada": skip_reason} if skip_reason else {})
 
 
-async def test_remaining_owner_suggestions_share_one_github_history_read() -> None:
+@pytest.mark.parametrize("readable", [True, False])
+async def test_recent_channel_posters_require_top_level_posts_within_seven_days(
+    readable: bool,
+) -> None:
+    from datetime import timedelta
+
+    from openswe.human_review import requests
+    from openswe.slack.channels import SlackChannel
+    from openswe.slack.payloads import SlackMessage
+
+    now = datetime.now(UTC)
+    fresh = str(now.timestamp())
+    boundary = str((now - timedelta(days=7)).timestamp())
+    stale = str((now - timedelta(days=8)).timestamp())
+    users = {
+        name: User(identities=[UserIdentity(provider="slack", external_id=name)])
+        for name in ("U_ADA", "U_GRACE", "U_STALE", "U_REPLY", "U_BROADCAST", "U_BOT", "U_NOISE")
+    }
+    channel = MagicMock(spec=SlackChannel)
+    channel.id = "C_REVIEW"
+    channel.messages = AsyncMock(
+        return_value=[
+            SlackMessage(ts=fresh, user="U_ADA", thread_ts=fresh, reply_count=1),
+            SlackMessage(ts=boundary, user="U_GRACE"),
+            SlackMessage(ts=stale, user="U_STALE", reply_count=1),
+            SlackMessage(ts=fresh, thread_ts=stale, user="U_REPLY"),
+            SlackMessage(ts=fresh, thread_ts=stale, user="U_BROADCAST", subtype="thread_broadcast"),
+            SlackMessage(ts=fresh, user="U_BOT", bot_id="B1"),
+            SlackMessage(ts=fresh, user="U_NOISE", subtype="channel_join"),
+        ]
+        if readable
+        else []
+    )
+    pr = PullRequest(owner="lc", repo="repo", number=7)
+    request = HumanReviewRequest(
+        pull_request_id=pr.id, head_sha="abc", kind="standard", slack_channel_id=channel.id
+    )
+    with (
+        patch.object(SlackChannel, "load", AsyncMock(return_value=channel)),
+        patch.object(requests, "datetime", wraps=datetime) as clock,
+        patch.object(
+            User,
+            "for_identities",
+            AsyncMock(side_effect=lambda _, ids: {key: users[key] for key in ids}),
+        ),
+    ):
+        clock.now.return_value = now
+        assert await request.recent_channel_posters() == (
+            {users["U_ADA"].id, users["U_GRACE"].id} if readable else set()
+        )
+
+
+async def test_remaining_owner_suggestions_exclude_already_assigned_areas() -> None:
     from openswe.expedited_review.eligibility import ChangedFile
     from openswe.github.http import GitHubClient, RepoClient
     from openswe.human_review import standard
@@ -197,16 +277,12 @@ async def test_remaining_owner_suggestions_share_one_github_history_read() -> No
         patch.object(GitHubClient, "as_app", github_app),
         patch.object(ChangedFile, "of_pull", AsyncMock(return_value=files)),
         patch.object(CodeOwners, "fetch", AsyncMock(return_value=owners)),
-        patch.object(RepoClient, "commits", AsyncMock(return_value=[])) as history,
+        patch.object(RepoClient, "recent_file_authors", AsyncMock(return_value={})),
         patch.object(User, "for_login", AsyncMock(return_value=None)),
         patch.object(standard, "_auto_assign_hold", AsyncMock(return_value=False)),
         patch.object(standard, "_wake_picker", AsyncMock(return_value=True)) as wake,
     ):
         await standard._pick_remaining_owners(request, ["ada"])
 
-    assert history.await_count == len(files)
-    assert {call.kwargs["path"] for call in history.await_args_list} == {
-        file.filename for file in files
-    }
     suggestions = wake.await_args.kwargs["suggestions"]
     assert [suggestion.area.handles for suggestion in suggestions] == [("@grace",), ("@linus",)]

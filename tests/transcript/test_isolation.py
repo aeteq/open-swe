@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from openswe import completion
 from openswe.database import postgres
+from openswe.threads.principals import Principal
 from openswe.transcript.attachments import PendingAttachment
 from openswe.transcript.engine import Command, append, delete_transcript
 from openswe.transcript.events import (
@@ -208,7 +209,7 @@ async def test_a_visibility_flip_reaches_the_transcript_read_path(registry_db: N
     """The mirror is what the transcript API authorizes against, so it must follow."""
     thread_id = str(uuid7())
     await _create(thread_id, visibility="public")
-    stranger = {"sub": "someone-else", "email": "someone-else@example.com"}
+    stranger = Principal.of_person({"sub": "someone-else", "email": "someone-else@example.com"})
 
     await _readable_transcript(thread_id, stranger)
 
@@ -217,7 +218,7 @@ async def test_a_visibility_flip_reaches_the_transcript_read_path(registry_db: N
     with pytest.raises(HTTPException) as refused:
         await _readable_transcript(thread_id, stranger)
     assert refused.value.status_code == 404
-    await _readable_transcript(thread_id, {"sub": OWNER, "email": None})
+    await _readable_transcript(thread_id, Principal.of_person({"sub": OWNER, "email": None}))
     snapshot = await load_snapshot(thread_id)
     assert snapshot is not None
     assert snapshot.thread.title == "Renamed"
@@ -227,7 +228,7 @@ async def test_a_live_stream_ends_when_its_reader_loses_access(registry_db: None
     """Authorization is granted once per request; the stream outlives it."""
     thread_id = str(uuid7())
     await _create(thread_id, visibility="public")
-    stranger = {"sub": "someone-else", "email": "someone-else@example.com"}
+    stranger = Principal.of_person({"sub": "someone-else", "email": "someone-else@example.com"})
 
     async with aclosing(_stream(thread_id, 0, stranger)) as stream:
 
@@ -250,7 +251,7 @@ async def test_a_stream_that_ends_during_its_replay_unsubscribes(registry_db: No
     """A cursor past the head ends the stream before it ever awaits a notification."""
     thread_id = str(uuid7())
     await _create(thread_id)
-    owner = {"sub": OWNER, "email": None}
+    owner = Principal.of_person({"sub": OWNER, "email": None})
 
     async with aclosing(_stream(thread_id, 10_000, owner)) as stream:
         assert await anext(stream) == "event: deleted\ndata: {}\n\n"
@@ -269,7 +270,7 @@ async def test_a_replay_is_refused_to_a_reader_who_lost_access(registry_db: None
     """The request was authorized while public; the replay itself sees the flip."""
     thread_id = str(uuid7())
     await _create(thread_id, visibility="public")
-    stranger = {"sub": "someone-else", "email": "someone-else@example.com"}
+    stranger = Principal.of_person({"sub": "someone-else", "email": "someone-else@example.com"})
     await _readable_transcript(thread_id, stranger)
 
     await mirror_thread_metadata(thread_id, {"visibility": "private"})
@@ -321,6 +322,19 @@ async def test_a_routing_notice_survives_the_turn_that_produced_it(registry_db: 
                 actor_kind="agent",
                 turn_id=turn_id,
             ),
+            *[
+                Command(
+                    command_id=f"notice:execution:{captured_at}",
+                    event=RunNotice(
+                        turn_id=turn_id,
+                        kind="execution_stale",
+                        data={"captured_at": captured_at},
+                    ),
+                    actor_kind="agent",
+                    turn_id=turn_id,
+                )
+                for captured_at in ("old", "new")
+            ],
             Command(
                 command_id="notice:offloading",
                 event=RunNotice(
@@ -332,12 +346,26 @@ async def test_a_routing_notice_survives_the_turn_that_produced_it(registry_db: 
         ],
     )
 
+    async with postgres.transaction() as conn:
+        await conn.execute(
+            text("""
+                UPDATE thread_event
+                SET payload = jsonb_set(payload, '{kind}', '"workspace_stale"')
+                WHERE thread_id = :thread_id AND command_id = 'notice:execution:old'
+            """),
+            {"thread_id": thread_id},
+        )
+
     running = await load_snapshot(thread_id)
     assert running is not None
     assert {notice.kind for notice in running.notices} == {
         "model_routed",
         "conversation_offloading",
+        "execution_stale",
     }
+    assert [notice.data for notice in running.notices if notice.kind == "execution_stale"] == [
+        {"captured_at": "new"}
+    ]
 
     await append(
         thread_id,
@@ -354,8 +382,20 @@ async def test_a_routing_notice_survives_the_turn_that_produced_it(registry_db: 
     settled = await load_snapshot(thread_id)
     assert settled is not None
     assert [(notice.kind, notice.data) for notice in settled.notices] == [
-        ("model_routed", {"model": "claude-haiku"})
+        ("execution_stale", {"captured_at": "new"}),
+        ("model_routed", {"model": "claude-haiku"}),
     ]
+    async with postgres.transaction() as conn:
+        assert (
+            await conn.scalar(
+                text("""
+                SELECT payload ->> 'kind' FROM thread_event
+                WHERE thread_id = :thread_id AND command_id = 'notice:execution:old'
+            """),
+                {"thread_id": thread_id},
+            )
+            == "workspace_stale"
+        )
 
 
 async def test_an_attachment_is_served_only_to_a_reader_of_its_own_thread(
@@ -400,7 +440,7 @@ async def test_an_attachment_is_served_only_to_a_reader_of_its_own_thread(
         ],
     )
 
-    owner = {"sub": OWNER, "email": None}
+    owner = Principal.of_person({"sub": OWNER, "email": None})
     response = await api_get_thread_attachment(thread_id, attachment_id, owner)
     assert response.body == b"pretend-png"
     assert response.headers["content-type"] == "image/png"
@@ -414,7 +454,9 @@ async def test_an_attachment_is_served_only_to_a_reader_of_its_own_thread(
     assert missing.value.status_code == 404
 
     with pytest.raises(HTTPException) as refused:
-        await api_get_thread_attachment(thread_id, attachment_id, {"sub": "stranger"})
+        await api_get_thread_attachment(
+            thread_id, attachment_id, Principal.of_person({"sub": "stranger"})
+        )
     assert refused.value.status_code == 404
 
 

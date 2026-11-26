@@ -5,13 +5,14 @@ import logging
 import posixpath
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Any, Literal
+from functools import partial
+from typing import Any
 
 from fastapi import HTTPException
 from langgraph.constants import END
 from langgraph_sdk.errors import NotFoundError
+from pydantic import JsonValue
 
-from openswe.bridge.store import BridgeStore, SandboxBridgeBinding
 from openswe.github.http import GitHubClient
 from openswe.github.pull_request_checks import PullRequestState, get_pull_request_check_states
 from openswe.github.pull_request_context import PullRequestFixScope, get_pull_request_context
@@ -21,7 +22,6 @@ from openswe.message_queue import QueuedMessage, QueuedPreview
 from openswe.review.session import ReviewSession, ReviewSessionMetadata
 from openswe.sandboxes.browsers import ThreadBrowser
 from openswe.slack.client import parse_github_pr_url
-from openswe.tasks.store import sidebar_memberships
 from openswe.threads.access import _authorized_thread, _readable_thread_metadata
 from openswe.threads.blobs import copy_thread_blobs, referenced_blob_digests
 from openswe.threads.creation import TITLE_LOCKED_KEY, create_thread
@@ -33,7 +33,6 @@ from openswe.threads.listing import (
     settle_review_walkthrough,
 )
 from openswe.threads.machine_reads import machine_thread
-from openswe.threads.moves import SandboxMove
 from openswe.threads.principals import Principal
 from openswe.threads.read_state import THREAD_READ_STATES
 from openswe.threads.runs import (
@@ -140,28 +139,18 @@ async def get_dashboard_thread(
     record = timings if timings is not None else {}
     client = langgraph_client()
     with phase(record, "thread_get"):
-        try:
-            thread = await client.threads.get(thread_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Thread lookup failed for %s", thread_id, exc_info=True)
-            raise HTTPException(404, "thread not found") from exc
-
-    metadata = thread_metadata(thread)
-    assert_thread_readable(metadata, login, email)
+        indexed = await THREADS.get(thread_id)
+    if indexed is None:
+        raise HTTPException(404, "thread not found")
+    assert_thread_readable(indexed.metadata, login, email)
 
     # The transcript is hydrated client-side by the SDK (`StreamProvider` reads
     # `GET …/state` → `stream.messages`), so the detail endpoint returns
     # metadata only — no server-side message conversion.
-    thread, latest_run_status, latest_run_id = await _refresh_latest_run_metadata(
-        client, thread, timings=record
-    )
+    with phase(record, "runs_list"):
+        thread = await THREADS.with_latest_run(indexed)
     with phase(record, "summary"):
-        summary = await _thread_summary(
-            thread,
-            latest_run_status=latest_run_status,
-            latest_run_id=latest_run_id,
-            viewer_login=login,
-        )
+        summary = await _thread_summary(thread.as_langgraph(), viewer_login=login)
     with phase(record, "subagents"):
         await asyncio.gather(
             attach_subagents([summary]),
@@ -270,7 +259,7 @@ async def cancel_dashboard_thread(
     if bot_triggered:
         assert_thread_readable(metadata, login, email)
     else:
-        _assert_thread_postable(metadata, login, email)
+        await _assert_thread_postable(metadata, login, email)
 
     try:
         cancelled_run_ids, kept_queued = await _cancel_active_thread_runs(
@@ -309,7 +298,7 @@ async def cancel_machine_thread(thread_id: str, principal: Principal) -> JsonObj
         thread = await client.threads.get(thread_id)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(404, "thread not found") from exc
-    principal.assert_can_post(thread_metadata(thread))
+    await principal.assert_can_post(thread_metadata(thread))
     try:
         cancelled_run_ids, _ = await _cancel_active_thread_runs(client, thread_id)
     except Exception as exc:  # noqa: BLE001
@@ -363,7 +352,7 @@ async def delete_dashboard_thread(thread_id: str, login: str, *, email: str | No
         raise HTTPException(404, "thread not found") from exc
 
     metadata = thread_metadata(thread)
-    _assert_thread_postable(metadata, login, email)
+    await _assert_thread_postable(metadata, login, email)
 
     run_id = metadata.get("latest_run_id")
     if isinstance(run_id, str) and run_id:
@@ -421,16 +410,7 @@ _CONTINUED_METADATA_KEYS = (
 )
 
 
-def _continued_workspace(metadata: Mapping[str, Any]) -> str | None:
-    """The workspace to carry into a private continuation; ``environment`` is the pre-workspace key."""
-    for key in ("workspace", "environment"):
-        value = metadata.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
-async def share_thread_with_workspace(
+async def share_thread(
     thread_id: str, requester_login: str, *, email: str | None = None
 ) -> dict[str, object]:
     """Publish a private thread only at its owner's explicit request."""
@@ -441,8 +421,6 @@ async def share_thread_with_workspace(
         raise HTTPException(403, "only the thread owner can share it")
     if metadata.get("visibility") != "private":
         raise HTTPException(409, "thread is not private")
-    if SandboxBridgeBinding.reaches_a_machine(metadata):
-        raise HTTPException(409, "a thread running on its owner's machine cannot be shared")
     if _thread_is_busy(thread):
         raise HTTPException(409, "stop the run before sharing this thread")
     for status in ("pending", "running"):
@@ -483,38 +461,6 @@ async def share_thread_with_workspace(
     )
 
 
-async def move_thread(
-    thread_id: str,
-    login: str,
-    *,
-    email: str | None = None,
-    bridge_id: str | None,
-    target: Literal["cloud"] | None,
-) -> dict[str, object]:
-    """Move a thread onto its owner's machine or off it to the cloud, before its next message."""
-    thread = await _authorized_thread(thread_id, login, email=email)
-    bridge = (
-        None
-        if bridge_id is None
-        else await BridgeStore.require_open(
-            bridge_id, owner_id=Principal.of_login(login, email).sender_id
-        )
-    )
-    move = await SandboxMove.requested(
-        thread_id, thread_metadata(thread), login=login, bridge=bridge, target=target
-    )
-    if move is None:
-        raise HTTPException(409, "this thread already runs there")
-    try:
-        await move.carry_out()
-    except Exception as exc:
-        raise HTTPException(502, f"could not move this thread: {exc}") from exc
-    updated = await THREADS.get(thread_id)
-    if updated is None:
-        raise HTTPException(404, "thread not found")
-    return await _thread_summary(updated.as_langgraph(), viewer_login=login)
-
-
 async def continue_thread_privately(
     thread_id: str, login: str, *, email: str | None = None
 ) -> dict[str, Any]:
@@ -545,9 +491,6 @@ async def continue_thread_privately(
     new_metadata: dict[str, Any] = {
         key: metadata[key] for key in _CONTINUED_METADATA_KEYS if metadata.get(key) is not None
     }
-    workspace = _continued_workspace(metadata)
-    if workspace is not None:
-        new_metadata["workspace"] = workspace
     new_metadata.update(
         {
             "source": DASHBOARD_SOURCE,
@@ -608,8 +551,6 @@ async def resolve_all_dashboard_threads(login: str, *, email: str | None = None)
                 metadata={
                     "resolved": True,
                     "resolved_at_ms": now_ms,
-                    "auto_resolved_by_prs": False,
-                    "attention_reason": None,
                 },
             )
 
@@ -629,8 +570,6 @@ async def resolve_dashboard_thread(
             metadata_update: JsonObject = {
                 "resolved": resolved,
                 "resolved_at_ms": _now_ms() if resolved else None,
-                "auto_resolved_by_prs": False,
-                "attention_reason": None,
             }
             await THREADS.update(thread_id, metadata_update)
             if resolved:
@@ -644,23 +583,9 @@ async def resolve_dashboard_thread(
         logger.debug("Could not update resolved state for thread %s", thread_id, exc_info=True)
         raise HTTPException(502, "failed to update thread") from exc
     if resolved:
-        try:
-            workers = await sidebar_memberships([thread_id], workers_of=True)
-        except Exception:
-            logger.exception(
-                "Could not list task workers during archive", extra={"thread_id": thread_id}
-            )
-            workers = {}
-        for worker_id in workers:
-            try:
-                async with agent_thread_pr_state_lock(worker_id):
-                    await _authorized_thread(worker_id, login, email=email)
-                    await THREADS.update(worker_id, metadata_update)
-            except Exception:
-                logger.exception(
-                    "Could not archive task worker",
-                    extra={"thread_id": worker_id, "coordinator_thread_id": thread_id},
-                )
+        await THREADS.archive_task_workers(
+            thread_id, metadata_update, check=partial(_authorized_thread, login=login, email=email)
+        )
     thread = {**as_thread_dict(thread), "metadata": {**metadata, **metadata_update}}
     return await _thread_summary(thread, viewer_login=login)
 
@@ -744,36 +669,22 @@ async def get_dashboard_thread_state(
     thread_id: str,
     login: str,
     *,
+    select: list[str] | None = None,
     email: str | None = None,
     timings: dict[str, float] | None = None,
-) -> dict[str, Any]:
+    principal: Principal | None = None,
+) -> dict[str, JsonValue]:
+    """The thread's state as a client reads it, narrowed by its runtime to the ``select``
+    fields when given."""
     record = timings if timings is not None else {}
-    client = langgraph_client()
     with phase(record, "thread_get"):
-        try:
-            thread = await client.threads.get(thread_id)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(404, "thread not found") from exc
-    metadata = thread_metadata(thread)
-    assert_thread_readable(metadata, login, email)
-    thread, latest_run_status, _ = await _refresh_latest_run_metadata(
-        client, thread, timings=record
-    )
-    metadata = thread_metadata(thread)
+        thread = await THREADS.get(thread_id)
+    if thread is None:
+        raise HTTPException(404, "thread not found")
+    if principal is not None:
+        principal.assert_can_read(thread.metadata)
+    else:
+        assert_thread_readable(thread.metadata, login, email)
+
     with phase(record, "get_state"):
-        state = await client.threads.get_state(thread_id)
-    result = as_json_object(state)
-    # The SDK's `useStream` opens its live event subscription only when the
-    # hydrated `getState()` looks active (`next` non-empty / absent). When a
-    # run was just started out-of-band (our REST run-create), the latest
-    # checkpoint can still be the previous finished one with `next == []`,
-    # which the SDK reads as idle and never opens the stream. Drop `next`
-    # while a run is pending/running so the SDK treats the thread as active.
-    metadata_run_status = metadata.get("latest_run_status")
-    if (
-        _thread_is_busy(thread)
-        or latest_run_status in {"pending", "running"}
-        or metadata_run_status in {"pending", "running"}
-    ):
-        result.pop("next", None)
-    return result
+        return await THREADS.client_state_of(thread, select=select, timings=record)
